@@ -214,6 +214,12 @@ export class CommitteeSettingsTabComponent {
   // (dealako #4899 review). The override map only ever holds an add/config-change snapshot — a
   // removed uid is cleared via clearMlOverride, never left in this map — so this can't resurrect a
   // row the user just unlinked.
+  //
+  // A pending row still goes through `patchCommitteeSyncMode`, not just the raw override snapshot:
+  // the snapshot's own `committees[]` predates the link, so it has no entry for this committee yet,
+  // and `lfx-mailing-list-sync-settings` resolves its `committee()` input by scanning that array —
+  // without this, the card shows the list's name with no sync controls at all (greptile, Copilot,
+  // Cursor bugbot #4899 review).
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
     const overrides = this.associatedMlOverrides();
     if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
@@ -223,7 +229,7 @@ export class CommitteeSettingsTabComponent {
       return override ? this.patchCommitteeSyncMode(ml, override.sync_mode) : ml;
     });
     const fetchedUids = new Set(fetched.map((ml) => ml.uid));
-    const pendingRows = [...overrides.entries()].filter(([uid]) => !fetchedUids.has(uid)).map(([, ml]) => ml);
+    const pendingRows = [...overrides.entries()].filter(([uid]) => !fetchedUids.has(uid)).map(([, ml]) => this.patchCommitteeSyncMode(ml, ml.sync_mode));
     return pendingRows.length > 0 ? [...patched, ...pendingRows] : patched;
   });
 

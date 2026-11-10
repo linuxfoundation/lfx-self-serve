@@ -71,80 +71,89 @@
             <i class="fa-light fa-spinner-third fa-spin"></i>
             <span>Loading mailing lists…</span>
           </div>
-        } @else if (mlRefreshFailed() && associatedMailingLists().length === 0) {
-          <lfx-ui-note variant="error" announce data-testid="settings-ml-refresh-failed-notice">
-            Couldn't load mailing lists for this group.
-            <lfx-ui-button note-action variant="secondary" (click)="retryMlRefresh()" data-testid="settings-ml-refresh-retry-button">Retry</lfx-ui-button>
-          </lfx-ui-note>
-        } @else if (associatedMailingLists().length === 0) {
-          <div class="text-[12.5px] text-gray-400 py-2">
-            @if (canEdit() && mailingListLinkBlocked()) {
-              No mailing lists associated. You need Manage access to a mailing list to link it to this group.
-            } @else if (canEdit()) {
-              No mailing lists associated. Click "+ Add List" to link one.
-            } @else {
-              No mailing lists associated.
-            }
-          </div>
         } @else {
-          @for (ml of associatedMailingListRows(); track ml.uid) {
-            <div
-              class="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3 flex items-center justify-between gap-3"
-              [attr.data-testid]="'settings-associated-ml-' + ml.uid">
-              <div class="flex items-center gap-2.5 min-w-0">
-                <div class="w-8 h-8 rounded-md bg-blue-100 flex items-center justify-center flex-shrink-0">
-                  <i class="fa-light fa-envelope text-blue-600 text-xs"></i>
-                </div>
-                <div class="min-w-0">
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="text-[13px] font-semibold text-gray-900">{{ ml.group_name }}</span>
-                    @if (ml.public) {
-                      <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
-                    } @else {
-                      <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
-                    }
-                    <span class="text-[11px] text-gray-500">{{ ml.type | mailingListType }}</span>
-                  </div>
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">
-                    @let mlEmail = ml | mailingListEmail;
-                    @if (mlEmail) {
-                      {{ mlEmail }} ·
-                    }
-                    {{ ml.subscriber_count }} subscribers
-                  </div>
-                </div>
+          @if (mlRefreshFailed()) {
+            <!-- Shown independently of whether any rows render below — a pending add-override row can
+                 keep the list non-empty even while the committee refetch that would confirm it keeps
+                 failing, and that pending row carries no refresh/retry affordance of its own (cursor
+                 #4899 review: "Retry lost after pending add"). -->
+            <lfx-ui-note variant="error" announce data-testid="settings-ml-refresh-failed-notice">
+              Couldn't load mailing lists for this group.
+              <lfx-ui-button note-action variant="secondary" (click)="retryMlRefresh()" data-testid="settings-ml-refresh-retry-button">Retry</lfx-ui-button>
+            </lfx-ui-note>
+          }
+          @if (associatedMailingLists().length === 0) {
+            @if (!mlRefreshFailed()) {
+              <div class="text-[12.5px] text-gray-400 py-2">
+                @if (canEdit() && mailingListLinkBlocked()) {
+                  No mailing lists associated. You need Manage access to a mailing list to link it to this group.
+                } @else if (canEdit()) {
+                  No mailing lists associated. Click "+ Add List" to link one.
+                } @else {
+                  No mailing lists associated.
+                }
               </div>
-              @if (canEdit()) {
-                <div class="flex items-center gap-1 flex-shrink-0">
-                  @if (syncPreviewEnabled()) {
+            }
+          } @else {
+            @for (ml of associatedMailingListRows(); track ml.uid) {
+              <div
+                class="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3 flex items-center justify-between gap-3"
+                [attr.data-testid]="'settings-associated-ml-' + ml.uid">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-8 h-8 rounded-md bg-blue-100 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light fa-envelope text-blue-600 text-xs"></i>
+                  </div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="text-[13px] font-semibold text-gray-900">{{ ml.group_name }}</span>
+                      @if (ml.public) {
+                        <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
+                      } @else {
+                        <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
+                      }
+                      <span class="text-[11px] text-gray-500">{{ ml.type | mailingListType }}</span>
+                    </div>
+                    <div class="text-[11.5px] text-gray-400 mt-0.5">
+                      @let mlEmail = ml | mailingListEmail;
+                      @if (mlEmail) {
+                        {{ mlEmail }} ·
+                      }
+                      {{ ml.subscriber_count }} subscribers
+                    </div>
+                  </div>
+                </div>
+                @if (canEdit()) {
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    @if (syncPreviewEnabled()) {
+                      <lfx-button
+                        label="Sync Now"
+                        icon="fa-light fa-arrows-rotate"
+                        [text]="true"
+                        size="small"
+                        severity="secondary"
+                        styleClass="!text-gray-500 hover:!text-blue-600"
+                        [disabled]="!ml.removable || !ml.syncModeSupported"
+                        [ariaLabel]="'Sync mailing list ' + ml.group_name"
+                        [tooltip]="ml.syncTooltip"
+                        (onClick)="openSyncPreviewDialog(ml)"
+                        [attr.data-testid]="'settings-sync-now-ml-' + ml.uid"></lfx-button>
+                    }
                     <lfx-button
-                      label="Sync Now"
-                      icon="fa-light fa-arrows-rotate"
+                      [icon]="removingMlUid() === ml.uid ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-xmark'"
                       [text]="true"
+                      [rounded]="true"
                       size="small"
                       severity="secondary"
-                      styleClass="!text-gray-500 hover:!text-blue-600"
-                      [disabled]="!ml.removable || !ml.syncModeSupported"
-                      [ariaLabel]="'Sync mailing list ' + ml.group_name"
-                      [tooltip]="ml.syncTooltip"
-                      (onClick)="openSyncPreviewDialog(ml)"
-                      [attr.data-testid]="'settings-sync-now-ml-' + ml.uid"></lfx-button>
-                  }
-                  <lfx-button
-                    [icon]="removingMlUid() === ml.uid ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-xmark'"
-                    [text]="true"
-                    [rounded]="true"
-                    size="small"
-                    severity="secondary"
-                    styleClass="!text-gray-400 hover:!text-red-500"
-                    [disabled]="!!removingMlUid() || !ml.removable"
-                    [ariaLabel]="'Remove mailing list ' + ml.group_name"
-                    [tooltip]="ml.removeTooltip"
-                    (onClick)="removeMailingList(ml)"
-                    [attr.data-testid]="'settings-remove-ml-' + ml.uid"></lfx-button>
-                </div>
-              }
-            </div>
+                      styleClass="!text-gray-400 hover:!text-red-500"
+                      [disabled]="!!removingMlUid() || !ml.removable"
+                      [ariaLabel]="'Remove mailing list ' + ml.group_name"
+                      [tooltip]="ml.removeTooltip"
+                      (onClick)="removeMailingList(ml)"
+                      [attr.data-testid]="'settings-remove-ml-' + ml.uid"></lfx-button>
+                  </div>
+                }
+              </div>
+            }
           }
         }
 

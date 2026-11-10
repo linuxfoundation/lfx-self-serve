@@ -1449,6 +1449,56 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     expect((component as any).associatedMlOverrides().size).toBe(0);
   });
 
+  it('gives a pending add row a committees[] entry for the current committee, so the drawer can resolve its sync controls (#4899 review)', async () => {
+    // Simulates index lag: the list exists on the project but the committee refetch hasn't caught up
+    // with the just-added link yet, so it comes back without this uid at all.
+    const NEW_ML = makeMl({ uid: 'ml-new', committees: [] });
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of([])),
+            getMailingListsByProject: vi.fn(() => of([NEW_ML])),
+            getMailingList: vi.fn(() => of(NEW_ML)),
+            updateMailingList: vi.fn(() => of(NEW_ML)),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    (component as any).saveMailingListAssociation(new Set(['ml-new']), new Set(), new Map([['ml-new', MailingListSyncMode.MANUAL]]));
+    await fixture.whenStable();
+
+    const pendingRow = component.associatedMailingLists().find((m) => m.uid === 'ml-new');
+    // Before the fix, this pending row carried the raw project snapshot's `committees: []` straight
+    // through, so `lfx-mailing-list-sync-settings`' own `committee()` lookup (which scans
+    // `committees[]` for the committee uid) resolved to null and the card rendered with no sync
+    // controls at all (greptile/Copilot/cursor #4899 review: "Pending add rows skip committee patch").
+    expect(pendingRow?.committees?.some((c) => c.uid === 'committee-1')).toBe(true);
+  });
+
   it('resets all overrides when the committee uid changes (#4899 review)', async () => {
     await createFixture({ associatedMailingLists: [makeMl({ uid: 'ml-1', sync_mode: undefined })] });
 
@@ -1614,6 +1664,64 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     expect(component.associatedMailingLists().map((m) => m.uid)).toEqual(['ml-1']);
   });
 
+  it('clears unlinkedMlUids once a real refetch confirms the uid is gone, not only via the picker relink path (#4899 review)', async () => {
+    const ML = makeMl({ uid: 'ml-1', writer: true });
+    let callCount = 0;
+    const getMailingListsByCommittee = vi.fn(() => {
+      callCount++;
+      // First call is the initial load; every call after that is the refetch removeMailingList
+      // triggers via refreshMl$ — by then the index has caught up and genuinely no longer returns
+      // ml-1, confirming its absence rather than staying stale (the relink path is already covered
+      // by the test above) (#4899 review).
+      return of(callCount === 1 ? [ML] : []);
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee,
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of(ML)),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.associatedMailingLists().map((m) => m.uid)).toEqual(['ml-1']);
+
+    component.removeMailingList(ML);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The refetch triggered by removeMailingList's refreshMl$.next() now genuinely confirms ml-1
+    // is gone, so unlinkedMlUids should have self-cleared instead of suppressing the uid forever.
+    expect((component as any).unlinkedMlUids().size).toBe(0);
+    expect(component.associatedMailingLists().map((m) => m.uid)).toEqual([]);
+  });
+
   it('replaces a pending drawer-set override with the picker dialog direction change for the same list (#4899 review)', async () => {
     const ML = makeMl({ uid: 'ml-1', writer: true, sync_mode: undefined });
     await TestBed.configureTestingModule({
@@ -1707,6 +1815,61 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     // A failed first load has no last-good snapshot, so the card itself must surface a retry
     // affordance instead of just the (unreachable, since showAutoSyncButton requires a writable
     // list) drawer retry button (dealako/Copilot #4899 review).
+    const retryButton = fixture.nativeElement.querySelector('[data-testid="settings-ml-refresh-retry-button"]');
+    expect(retryButton).toBeTruthy();
+  });
+
+  it('still shows the card-level retry affordance when a refresh fails while a pending add row keeps the list non-empty (cursor #4899 review: "Retry lost after pending add")', async () => {
+    const NEW_ML = makeMl({ uid: 'ml-new', committees: [] });
+    const getMailingListsByCommittee = vi
+      .fn()
+      .mockReturnValueOnce(of([]))
+      .mockReturnValue(throwError(() => new Error('network error')));
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee,
+            getMailingListsByProject: vi.fn(() => of([NEW_ML])),
+            getMailingList: vi.fn(() => of(NEW_ML)),
+            updateMailingList: vi.fn(() => of(NEW_ML)),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    (component as any).saveMailingListAssociation(new Set(['ml-new']), new Set(), new Map([['ml-new', MailingListSyncMode.MANUAL]]));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.associatedMailingLists().length).toBeGreaterThan(0);
+    expect(component.mlRefreshFailed()).toBe(true);
+
+    // Before the fix, the failed-refresh notice only rendered when associatedMailingLists() was
+    // empty — the pending row above kept it non-empty, so the Retry button disappeared even though
+    // the refresh genuinely failed and this pending row has no retry affordance of its own.
     const retryButton = fixture.nativeElement.querySelector('[data-testid="settings-ml-refresh-retry-button"]');
     expect(retryButton).toBeTruthy();
   });

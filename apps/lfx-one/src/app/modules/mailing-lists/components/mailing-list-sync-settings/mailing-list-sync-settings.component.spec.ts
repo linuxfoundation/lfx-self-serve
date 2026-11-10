@@ -47,6 +47,7 @@ describe('MailingListSyncSettingsComponent', () => {
       siblingCandidates?: GroupsIOMailingList[];
       updateResult?: GroupsIOMailingList | 'error';
       updateDeferred?: boolean;
+      committeeUid?: string;
     } = {}
   ): Promise<void> => {
     TestBed.resetTestingModule();
@@ -81,6 +82,9 @@ describe('MailingListSyncSettingsComponent', () => {
     fixture.componentRef.setInput('mailingList', mailingList);
     if (options.siblingCandidates) {
       fixture.componentRef.setInput('siblingCandidates', options.siblingCandidates);
+    }
+    if (options.committeeUid) {
+      fixture.componentRef.setInput('committeeUid', options.committeeUid);
     }
     fixture.detectChanges();
     await fixture.whenStable();
@@ -119,6 +123,23 @@ describe('MailingListSyncSettingsComponent', () => {
         sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
       })
     );
+  });
+
+  it('scopes to the committeeUid input, not committees[0], when a list is linked to more than one committee (#4899 review)', async () => {
+    const multiCommitteeList: GroupsIOMailingList = {
+      ...baseList,
+      committees: [
+        { uid: 'committee-1', name: 'Technical Steering Committee' },
+        { uid: 'committee-2', name: 'Marketing Committee' },
+      ],
+    };
+    await render(multiCommitteeList, { committeeUid: 'committee-2' });
+
+    fixture.componentInstance['onToggleChange'](true);
+
+    // Reverting to `committees?.[0]` would write committee-1 here and still pass every other test
+    // in this file, since they all use a single-committee fixture (dealako #4899 review).
+    expect(updateMailingList).toHaveBeenCalledWith('list-1', expect.objectContaining({ committee_uid: 'committee-2' }));
   });
 
   it('disables the toggle when another mailing list already syncs with this committee', async () => {
