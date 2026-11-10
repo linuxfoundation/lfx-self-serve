@@ -7,6 +7,7 @@ import {
   ORG_EVENT_DICTIONARY_COLUMNS,
   ORG_EVENT_FOUNDATION_OPTION_COLUMNS,
   ORG_EVENT_OPTION_COLUMNS,
+  ORG_EVENTS_COUNTED_ATTRIBUTION,
   ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -22,7 +23,6 @@ import type {
   OrgEventAttendeesSummary,
   OrgEventParticipationRow,
   OrgEventParticipationSummaryRow,
-  OrgEventsAttribution,
   OrgEventsFilters,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -43,8 +43,8 @@ import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
 /**
- * Event Attendees tab data access — one bundled GET: the person × event rows of ORG_EVENT_PARTICIPATION for the picked range,
- * attribution and participation (everyone the selection credits to the organization, by name and title; ended events only; the
+ * Event Attendees tab data access — one bundled GET: the person × event rows of ORG_EVENT_PARTICIPATION for the picked range and
+ * participation (everyone Employee match credits to the organization, by name and title; ended events only; the
  * server applies the window, the browser does not), the summary row dbt computed for the same pick, and the foundation and
  * event dropdown options of that same row set.
  */
@@ -55,27 +55,24 @@ export class OrgPeopleEventAttendeesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  public async getEventAttendees(
-    accountId: string,
-    filters: Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'>
-  ): Promise<OrgEventAttendeesResponse> {
+  public async getEventAttendees(accountId: string, filters: Pick<OrgEventsFilters, 'range' | 'participation'>): Promise<OrgEventAttendeesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
     }
 
-    const { range, attribution, participation } = filters;
+    const { range, participation } = filters;
 
-    // Only the filters that select rows are in the key. `v6` (lfx-self-serve#5315): Self-reported only reads the person-level
-    // rule from ORG_EVENT_PARTICIPATION_RANGED, so a `v5` self_reported entry may hold a different row set and must miss.
+    // Only the filters that select rows are in the key. `v7`: Employee match only; a `v6` entry may hold the retired Self-reported only
+    // or All row sets, so it must miss.
     const [{ detailRows, foundationRows, eventRows }, summary] = await Promise.all([
       withOrgCompactCache(
         accountId,
-        `people-event-attendees:v6:${range}:${attribution}:${participation}`,
+        `people-event-attendees:v7:${range}:${participation}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
-        () => this.fetchEventAttendeesRaw(accountId, range, attribution, participation),
+        () => this.fetchEventAttendeesRaw(accountId, range, participation),
         { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
       ),
-      this.readSummary(accountId, range, attribution, participation),
+      this.readSummary(accountId, range, participation),
     ]);
 
     const details: OrgEventAttendeeDetailRow[] = detailRows.map((row) => ({
@@ -110,11 +107,10 @@ export class OrgPeopleEventAttendeesService {
     return { accountId, details, summary, foundationOptions, eventOptions };
   }
 
-  /** The dbt summary row for (range, attribution, participation); zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
+  /** The dbt summary row for (range, participation), Employee match; zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
   public async readSummary(
     accountId: string,
     range: OrgEventsFilters['range'],
-    attribution: OrgEventsAttribution,
     participation: OrgEventsFilters['participation']
   ): Promise<OrgEventAttendeesSummary> {
     const sql = `
@@ -125,12 +121,13 @@ export class OrgPeopleEventAttendeesService {
         AND ATTRIBUTION = ?
         AND PARTICIPATION = ?
     `;
-    // `v2` (lfx-self-serve#5158): the stored rows no longer carry LISTED_ATTENDEES_COUNT; a `v1` entry is the old column set.
+    // `v3`: Employee match only; a `v2` entry may hold the retired Self-reported only and All rows.
     const rows = await withOrgCache(
       accountId,
-      `people-event-attendees-summary:v2:${range}:${attribution}:${participation}`,
+      `people-event-attendees-summary:v3:${range}:${participation}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      async () => (await this.snowflakeService.execute<OrgEventParticipationSummaryRow>(sql, [accountId, range, attribution, participation])).rows,
+      async () =>
+        (await this.snowflakeService.execute<OrgEventParticipationSummaryRow>(sql, [accountId, range, ORG_EVENTS_COUNTED_ATTRIBUTION, participation])).rows,
       isObjectRowArray
     );
     const row = rows[0];
@@ -145,37 +142,19 @@ export class OrgPeopleEventAttendeesService {
   private async fetchEventAttendeesRaw(
     accountId: string,
     range: OrgEventsFilters['range'],
-    attribution: OrgEventsAttribution,
     participation: OrgEventsFilters['participation']
   ): Promise<EventAttendeesRaw> {
-    // One row set, three projections: the rows, and the dropdown options narrowed to what the rows hold. Everyone the
-    // attribution and participation credit (lfx-self-serve#5158), ended events only, inside the range window. Self-reported
-    // only is person-level, like its summary row (lfx-self-serve#5315): dbt decides it once per (range, person) in
-    // ORG_EVENT_PARTICIPATION_RANGED, which the summary counts too, and the rows of a person it does not credit are not listed.
-    // ORG_EVENT_PARTICIPATION_RANGED is a view over ORG_EVENT_PARTICIPATION, so the join reads one snapshot: PARTICIPANT_REF is
-    // build-local for email-keyed identities and must never be matched across separately built tables.
-    // The list is attendee-based: a self-reported speaker who is an Employee match attendee is in the summary's speaker
-    // count but not in these rows.
-    const selfReported = attribution === 'self_reported';
+    // One row set, two projections: the rows, and the dropdown options narrowed to what the rows hold. Everyone who
+    // credits the organization by Employee match for the participation, ended events only, inside the range window.
     const where = `
       WHERE p.ACCOUNT_ID = ?
-        AND p.${orgEventsAttendeePredicate(attribution, participation)}
+        AND p.${orgEventsAttendeePredicate(participation)}
         AND p.EVENT_DATE < CURRENT_DATE()
         ${orgEventsRangeWindow('p.EVENT_DATE', range)}
-        ${selfReported ? `AND r.${orgEventsAttendeePredicate(attribution, participation)}` : ''}
     `;
-    const from = selfReported
-      ? `FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p
-         INNER JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_RANGED r
-           ON r.ACCOUNT_ID = p.ACCOUNT_ID AND r.PARTICIPANT_REF = p.PARTICIPANT_REF AND r.TIME_RANGE = ?`
-      : 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p';
-    // Speakers follow the summary's speaker rule: under Self-reported only, someone who spoke with an Employee match anywhere
-    // in the range is not a self-reported speaker.
-    const speaker = selfReported
-      ? `p.${orgEventsSpeakerPredicate(attribution)} AND r.${orgEventsSpeakerPredicate(attribution)}`
-      : `p.${orgEventsSpeakerPredicate(attribution)}`;
-    // The join placeholder precedes the WHERE one.
-    const binds = selfReported ? [range, accountId] : [accountId];
+    const from = 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p';
+    const speaker = `p.${orgEventsSpeakerPredicate()}`;
+    const binds = [accountId];
 
     const [detail, foundations, events] = await Promise.all([
       this.snowflakeService.execute<OrgEventParticipationRow>(
