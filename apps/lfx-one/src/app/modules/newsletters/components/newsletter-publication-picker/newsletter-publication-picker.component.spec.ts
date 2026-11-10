@@ -100,6 +100,14 @@ describe('NewsletterPublicationPickerComponent', () => {
     expect(emitted).toEqual([publication({ id: 'pub-2', template_key: 'set-b' })]);
   });
 
+  it('asks before a preselected publication removes written content', async () => {
+    await render({ preselectUid: 'pub-2', hasContent: true, layoutTemplateKey: 'set-a' });
+    expect(emitted).toEqual([]);
+    expect(confirm).toHaveBeenCalledOnce();
+    (confirm.mock.calls[0][0] as Confirmation).accept?.();
+    expect(emitted).toEqual([publication({ id: 'pub-2', template_key: 'set-b' })]);
+  });
+
   it('clears a selection the project does not have', async () => {
     await render({ selected: publication({ id: 'gone' }) });
     expect(emitted).toEqual([null]);

@@ -71,6 +71,9 @@ export class NewsletterContentStepComponent implements OnInit {
   // The template set of the publication this edition belongs to, when it has one (#4349). The
   // service then requires a block layout on that set, so Basic and the template picker are hidden.
   public readonly lockedTemplateKey = input<string | null>(null);
+  // An edition saved as Basic may stay Basic after its publication gains a template set, so the
+  // Basic editor stays available while it has no layout. Blocks still uses the locked set.
+  public readonly basicAllowed = input<boolean>(false);
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();
@@ -97,6 +100,7 @@ export class NewsletterContentStepComponent implements OnInit {
   protected readonly isMobile = signal<boolean>(false);
 
   protected readonly templateLocked = computed(() => this.lockedTemplateKey() !== null);
+  protected readonly basicLocked = computed(() => this.templateLocked() && !this.basicAllowed());
   protected readonly composerTemplateKey = computed(() => this.lockedTemplateKey() ?? NEWSLETTER_DEFAULT_TEMPLATE_KEY);
 
   // === Reactive form mirrors ===
@@ -153,7 +157,7 @@ export class NewsletterContentStepComponent implements OnInit {
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
     if (layout !== null) {
       this.editorMode.set('blocks');
-    } else if (this.templateLocked()) {
+    } else if (this.basicLocked()) {
       // An edition on a template set has no basic editor, even on mobile, which shows the desktop
       // notice. The composer only mounts on desktop, so a new draft opened on mobile still gets its
       // starter blocks once the viewport crosses the breakpoint.
@@ -182,7 +186,7 @@ export class NewsletterContentStepComponent implements OnInit {
     // on mobile where the desktop drag-and-drop composer cannot be used.
     if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile())) return;
     // An edition on a template set has to stay in blocks.
-    if (this.templateLocked()) return;
+    if (this.basicLocked()) return;
     if (mode === this.editorMode()) return;
     const leavingBlocks = this.editorMode() === 'blocks';
     // Read the LIVE control, not the memoized signal, so in-session blocks count.

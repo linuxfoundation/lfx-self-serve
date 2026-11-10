@@ -81,7 +81,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
 
   // Build the fixture after matchMedia is stubbed so ngOnInit reads the intended
   // viewport. blocksEnabled is on (the composer's pilot gate) for every case here.
-  async function createWith(form: FormGroup, opts: { newDraft?: boolean; lockedTemplateKey?: string } = {}): Promise<void> {
+  async function createWith(form: FormGroup, opts: { newDraft?: boolean; lockedTemplateKey?: string; basicAllowed?: boolean } = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [NewsletterContentStepComponent],
       providers: [provideNoopAnimations(), ConfirmationService, { provide: PLATFORM_ID, useValue: 'browser' }],
@@ -102,6 +102,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     fixture.componentRef.setInput('blocksEnabled', true);
     fixture.componentRef.setInput('newDraft', opts.newDraft ?? false);
     fixture.componentRef.setInput('lockedTemplateKey', opts.lockedTemplateKey ?? null);
+    fixture.componentRef.setInput('basicAllowed', opts.basicAllowed ?? false);
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -186,6 +187,16 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
 
     expect(q('newsletter-content-composer')).not.toBeNull();
     expect(StubBlockComposerComponent.seedStarters).toBe(true);
+  });
+
+  it('keeps a saved Basic edition of a templated publication on Basic, with the toggle and the locked set', async () => {
+    stubMatchMedia(false);
+    const form = makeForm(null);
+    form.get('bodyHtml')?.setValue('<p>Saved</p>');
+    await createWith(form, { lockedTemplateKey: 'aaif-weekly-agentic', basicAllowed: true });
+
+    expect(q('newsletter-content-editor-toggle')).not.toBeNull();
+    expect(q('newsletter-content-composer')).toBeNull();
   });
 
   it('keeps a draft with an authored body on the basic editor', async () => {

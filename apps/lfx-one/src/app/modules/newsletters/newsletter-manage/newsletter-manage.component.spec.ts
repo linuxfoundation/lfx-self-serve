@@ -44,6 +44,7 @@ interface ManageApi {
   handleSaveError: (err: HttpErrorResponse, isManual: boolean) => Observable<null>;
   publicationLocked: () => boolean;
   publicationFormLosesWork: () => boolean;
+  basicAllowed: () => boolean;
   selectedPublication: { (): NewsletterPublication | null; set: (value: NewsletterPublication | null) => void };
 }
 
@@ -56,6 +57,7 @@ describe('NewsletterManageComponent publications (#4349)', () => {
     getRecipientCount: ReturnType<typeof vi.fn>;
   };
   let messageAdd: ReturnType<typeof vi.fn>;
+  let committees: { uid: string; category: string }[];
 
   const newComponent = (params: Record<string, string> = {}): { component: NewsletterManageComponent; api: ManageApi } => {
     const paramMap = convertToParamMap(params);
@@ -80,6 +82,7 @@ describe('NewsletterManageComponent publications (#4349)', () => {
       getRecipientCount: vi.fn(() => of({ count: 1 })),
     };
     messageAdd = vi.fn();
+    committees = [];
     TestBed.configureTestingModule({
       imports: [NewsletterManageComponent],
       providers: [
@@ -87,7 +90,7 @@ describe('NewsletterManageComponent publications (#4349)', () => {
         { provide: PLATFORM_ID, useValue: 'server' },
         { provide: NewsletterService, useValue: newsletterService },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => flag } },
-        { provide: CommitteeService, useValue: { getCommitteesByProjectOrThrow: () => of([]) } },
+        { provide: CommitteeService, useValue: { getCommitteesByProjectOrThrow: () => of(committees) } },
         { provide: ProjectContextService, useValue: { activeContext: signal(CONTEXT), activeContextUid: signal('p-1') } },
         { provide: ProjectService, useValue: { getProjectStrict: () => of(null) } },
         { provide: UserService, useValue: { user: signal({ name: 'Test Editor', email: 'editor@example.com' }) } },
@@ -188,7 +191,14 @@ describe('NewsletterManageComponent publications (#4349)', () => {
 
   it('reads an opened edition’s publication', () => {
     newsletterService.getNewsletter.mockReturnValue(
-      of({ id: 'n-1', version: 2, status: 'draft', committee_uids: [], publication_uid: PUBLICATION.id } as unknown as Newsletter)
+      of({
+        id: 'n-1',
+        version: 2,
+        status: 'draft',
+        committee_uids: [],
+        publication_uid: PUBLICATION.id,
+        body_layout: { wrapper_key: 'w', template_key: 'set-b', blocks: [] },
+      } as unknown as Newsletter)
     );
     const { api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
     TestBed.tick();
@@ -199,7 +209,14 @@ describe('NewsletterManageComponent publications (#4349)', () => {
   it('applies an opened edition’s publication with the flag off, without showing the picker', () => {
     flag.set(false);
     newsletterService.getNewsletter.mockReturnValue(
-      of({ id: 'n-1', version: 2, status: 'draft', committee_uids: [], publication_uid: PUBLICATION.id } as unknown as Newsletter)
+      of({
+        id: 'n-1',
+        version: 2,
+        status: 'draft',
+        committee_uids: [],
+        publication_uid: PUBLICATION.id,
+        body_layout: { wrapper_key: 'w', template_key: 'set-b', blocks: [] },
+      } as unknown as Newsletter)
     );
     const { api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
     TestBed.tick();
@@ -335,5 +352,40 @@ describe('NewsletterManageComponent publications (#4349)', () => {
     lookup.next({ ...PUBLICATION, template_key: undefined });
     lookup.complete();
     expect(api.lockedTemplateKey()).toBeNull();
+  });
+  it('keeps Basic for an opened Basic edition of a templated publication until it gets a layout', () => {
+    newsletterService.getNewsletter.mockReturnValue(
+      of({
+        id: 'n-1',
+        version: 2,
+        status: 'draft',
+        committee_uids: [],
+        body_html: '<p>Saved</p>',
+        body_layout: null,
+        publication_uid: PUBLICATION.id,
+      } as unknown as Newsletter)
+    );
+    const { component, api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
+    TestBed.tick();
+    expect(newsletterService.getPublication).toHaveBeenCalled();
+    // Blocks still uses the publication's set; only Basic stays available.
+    expect(api.lockedTemplateKey()).toBe('set-b');
+    expect(api.basicAllowed()).toBe(true);
+
+    component.form.controls.bodyLayout.setValue({ wrapper_key: 'w', template_key: 'set-b', blocks: [] } as never);
+    TestBed.tick();
+    expect(api.basicAllowed()).toBe(false);
+  });
+
+  it('still replaces a publication audience after it was narrowed automatically', () => {
+    committees = ['c-1', 'c-2', 'c-3'].map((uid) => ({ uid, category: 'Newsletter' }));
+    const { component, api } = newComponent();
+    TestBed.tick();
+    api.onPublicationChange({ ...PUBLICATION, template_key: undefined, committee_uids: ['c-1', 'c-2'] });
+    TestBed.tick();
+    expect(component.form.controls.committeeUids.value).toEqual(['c-1']);
+
+    api.onPublicationChange({ ...PUBLICATION, id: 'pub-2', template_key: undefined, committee_uids: ['c-3'] });
+    expect(component.form.controls.committeeUids.value).toEqual(['c-3']);
   });
 });

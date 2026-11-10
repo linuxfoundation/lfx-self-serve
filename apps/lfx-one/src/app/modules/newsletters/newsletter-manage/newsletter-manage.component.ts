@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 
-import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, Injector, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -243,6 +243,12 @@ export class NewsletterManageComponent {
   private readonly draftPublication = signal<NewsletterPublication | null>(null);
   private readonly draftPublicationPending = signal<boolean>(false);
   private readonly draftPublicationReadFailed = signal<boolean>(false);
+  // True when the opened edition was saved without a layout. The service lets such an edition stay
+  // Basic after its publication gains a template set, though any layout it saves must use that set.
+  private readonly draftSavedAsBasic = signal<boolean>(false);
+  // Basic stays available only while that edition still has no layout. Once it has blocks, clearing
+  // the layout would be refused.
+  public readonly basicAllowed: Signal<boolean> = computed(() => this.draftSavedAsBasic() && this.bodyLayoutValue() === null);
   // The audience a publication filled in, so switching publication replaces it rather than keeping it.
   private readonly audienceFromPublication = signal<string[] | null>(null);
   // Carries a publication just created or edited from the form back to the create flow, via ?publication=.
@@ -1140,6 +1146,10 @@ export class NewsletterManageComponent {
       const filtered = current.filter((uid) => eligible.has(uid));
       const narrowed = filtered.length > 1 ? filtered.slice(0, 1) : filtered;
       if (narrowed.length !== current.length || narrowed.some((uid, i) => uid !== current[i])) {
+        // An audience a publication filled in stays the publication's after this automatic narrowing,
+        // so a later publication change still replaces it.
+        const filled = untracked(() => this.audienceFromPublication());
+        if (filled !== null && this.uidsEqual(filled, current)) this.audienceFromPublication.set(narrowed.length > 0 ? narrowed : null);
         this.form.controls.committeeUids.setValue(narrowed);
       }
     });
@@ -1730,6 +1740,7 @@ export class NewsletterManageComponent {
     const bodyHtml = draft.body_html ?? '';
     const bodyLayout = draft.body_layout ?? null;
     this.draftPublicationUid.set(draft.publication_uid ?? null);
+    this.draftSavedAsBasic.set(bodyLayout === null);
 
     // scheduled_at hydration mirrors populateFormWithMeetingData in
     // the meeting composer form service: convert the saved UTC instant into the

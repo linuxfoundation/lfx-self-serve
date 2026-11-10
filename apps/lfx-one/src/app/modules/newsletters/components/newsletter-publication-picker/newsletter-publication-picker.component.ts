@@ -147,7 +147,9 @@ export class NewsletterPublicationPickerComponent {
   private applyLoadedSelection(publications: NewsletterPublication[]): void {
     const preselected = publications.find((publication) => publication.id === this.preselectUid());
     if (preselected) {
-      this.publicationChange.emit(preselected);
+      // Through onSelect, so a preselection that would remove written content asks first.
+      this.form.controls.publication.setValue(preselected.id, { emitEvent: false });
+      this.onSelect(preselected.id);
       return;
     }
     // A switch to another project invalidates the selection.

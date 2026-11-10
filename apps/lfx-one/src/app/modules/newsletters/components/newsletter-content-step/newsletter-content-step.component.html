@@ -14,7 +14,7 @@
          Shown only where the block composer is enabled (pilot projects). On
          mobile the Blocks button is disabled because the composer is a desktop
          drag-and-drop surface; a hint below the toggle explains why. -->
-    @if (blocksEnabled() && !templateLocked()) {
+    @if (blocksEnabled() && !basicLocked()) {
       <div class="flex shrink-0 flex-col gap-1.5 sm:items-end">
         <div
           class="flex overflow-hidden rounded-md border border-gray-200"
@@ -93,11 +93,11 @@
           <p class="text-sm text-gray-600">
             This newsletter was built with the Blocks editor, which is designed for desktop and is not available on mobile. Open it on a desktop to edit the
             blocks.
-            @if (!templateLocked()) {
+            @if (!basicLocked()) {
               You can switch to the Basic editor to continue on this device, but that replaces the block content.
             }
           </p>
-          @if (!templateLocked()) {
+          @if (!basicLocked()) {
             <button
               type="button"
               class="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
