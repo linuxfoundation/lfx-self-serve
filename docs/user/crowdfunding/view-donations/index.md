@@ -3,8 +3,8 @@ title: View Donations
 description: How to view your donation history, stats, and recurring donations in LFX Self Serve.
 audience: [all]
 product_area: Crowdfunding
-tags: [crowdfunding, donations, view, history, recurring, one-time]
-last_updated: 2026-10-29
+tags: [crowdfunding, donations, view, history, recurring, one-time, anonymous]
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
@@ -27,18 +27,34 @@ Below the stats bar, the **Recurring Donations** section lists all your recurrin
 - Start date and billing description
 - Monthly amount
 - **Next charge** date for an active subscription, or **Paused since** for a paused one
+- An **Anonymous** tag when you have hidden your name on the subscription
 
-Select a recurring donation to open its detail page, where you can review the full charge history. To cancel a subscription without opening it, select the **More options** menu (⋯) on its entry and choose **Cancel**. Canceled subscriptions have no menu. See [Manage Recurring Donations](../manage-recurring-donations/).
+Select a recurring donation to open its detail page, where you can review the full charge history. The **More options** menu (⋯) on each entry offers **Hide my name** or **Show my name** (see [Hide or show your name](#hide-or-show-your-name)) and, unless the subscription is already canceled, **Cancel**. See [Manage Recurring Donations](../manage-recurring-donations/).
 
 ## Donation history
 
 The **Donation History** table lists all your donations in chronological order, including both recurring and one-time contributions. Each row shows:
 
-- Initiative name, with a **Recurring** tag for recurring contributions
+- Initiative name, with a **Recurring** tag for recurring contributions and an **Anonymous** tag when your name is hidden on the donation
 - Donation date
 - Amount
+- A **More options** menu (⋯) with **Hide my name** or **Show my name**, on donations whose name visibility can be changed
 
 Select **Load more** to see older donations.
+
+## Hide or show your name
+
+When you donate on LFX Crowdfunding you can choose to donate anonymously, and you can change that choice later from this page. An anonymous donation still appears, with its amount, everywhere donations are listed (the initiative's public page, the initiative team's financials, and an organization's donations list), but your name and email are replaced by **Anonymous**. If you donated on behalf of an organization, the organization's name and logo still show; only your name is hidden. Nobody but you can see that the donation is yours: here, in your own donation history, you always see it with your name and the **Anonymous** tag.
+
+To hide or show your name on a donation:
+
+1. Go to **Crowdfunding → Donations**.
+2. Find the donation in **Donation History**, or the subscription in **Recurring Donations**.
+3. Select the **More options** menu (⋯) and choose **Hide my name** or **Show my name**.
+
+A confirmation message appears and the **Anonymous** tag is added or removed. For a recurring donation the setting covers the whole subscription: changing it on the subscription, or on any one of its charges, applies to every charge, past and future. You can also change it from the recurring donation's detail page (see [Manage Recurring Donations](../manage-recurring-donations/#hide-or-show-your-name-on-a-recurring-donation)).
+
+Some older donations have no **More options** menu. Their name visibility can't be changed from LFX Self Serve; contact LFX support if you need it changed.
 
 ## Payment methods
 
@@ -70,5 +86,5 @@ Your full donation history is visible in the table. Selecting a recurring donati
 
 ## Related
 
-- [Manage Recurring Donations](../manage-recurring-donations/) — cancel or review a recurring subscription in detail
+- [Manage Recurring Donations](../manage-recurring-donations/) — cancel or review a recurring subscription in detail, or hide your name on it
 - [Manage Payment Methods](../manage-payment-methods/) — add or remove a saved payment method
