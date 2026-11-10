@@ -34,7 +34,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, defer, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, defer, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take, tap, timer } from 'rxjs';
 
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
@@ -379,6 +379,19 @@ export class CommitteeSettingsTabComponent {
   // committee's mailing lists until the user happens to close it themselves (cursor #4899 review).
   private autoSyncDrawerRef: ReturnType<UiDrawerService['open']> | null = null;
 
+  // The committee this drawer instance was opened for, captured once at open time — a card's save
+  // can still resolve and emit (updated)/(savingChange) during the drawer's own exit animation,
+  // before Angular tears down its content and drops those outputs, so a committee switch that
+  // happens while the drawer is closing can otherwise let a stale card's save write into the new
+  // committee's associatedMlOverrides (copilot #4899 review). onSyncSettingsUpdated/
+  // onSyncSettingsSavingChange compare this against the live committee() before writing anything.
+  private autoSyncDrawerCommitteeUid: string | undefined;
+
+  // Guards against scheduling more than one bounded follow-up refresh at a time — see the
+  // overrideMissCounts tap in initAssociatedMailingLists for why this exists (greptile, cursor
+  // bugbot #4899 review).
+  private pendingMissRetry = false;
+
   public constructor() {
     // Patch form when committee input changes
     toObservable(this.committee)
@@ -501,6 +514,7 @@ export class CommitteeSettingsTabComponent {
       canClose: () => this.drawerSavingCount() === 0,
     });
     this.autoSyncDrawerRef = ref;
+    this.autoSyncDrawerCommitteeUid = this.committee()?.uid;
     // `ref.closed` fires on every closure path, including an external disposal (e.g. browser Back)
     // that bypasses canClose — reset savingMlUids so a card's in-flight save can't leave
     // drawerSavingCount stuck non-empty for this component instance's next drawer open (#4899 review).
@@ -517,6 +531,12 @@ export class CommitteeSettingsTabComponent {
   // since a misordered pair of emissions from the same instance must not leave the count permanently
   // off by one).
   public onSyncSettingsSavingChange(mlUid: string, saving: boolean): void {
+    // A stale card's save can still flip this during the drawer's exit animation, after a committee
+    // switch already reset savingMlUids for the new committee — see autoSyncDrawerCommitteeUid's doc
+    // comment (copilot #4899 review).
+    if (this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+      return;
+    }
     const next = new Set(this.savingMlUids());
     if (saving) {
       next.add(mlUid);
@@ -530,6 +550,14 @@ export class CommitteeSettingsTabComponent {
   // drawer card's siblingCandidates (and activeSync) updates at once, then triggers a refetch to
   // reconcile with the server (#4899 review).
   public onSyncSettingsUpdated(updated: GroupsIOMailingList): void {
+    // Reject a card's save result once the committee it was opened for no longer matches the live
+    // committee() — the drawer's exit animation can keep its content (and this emit) alive past the
+    // committee-switch reset, which would otherwise write a stale list into the new committee's
+    // associatedMlOverrides and let pending-row replay expose it for an incorrect relink (copilot
+    // #4899 review).
+    if (this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+      return;
+    }
     // Apply the save result directly rather than waiting on the refetch below — getMailingListsByCommittee
     // reads an eventually-consistent query index, so the refresh triggered here can briefly return the
     // pre-save sync_mode (#4899 review, same root cause as #4880's mailingListOverride pattern).
@@ -1382,6 +1410,24 @@ export class CommitteeSettingsTabComponent {
                 }
                 if (next.size !== overrides.size) {
                   this.associatedMlOverrides.set(next);
+                }
+                // A uid that just took its first (non-pruning) miss is resurrected and editable via
+                // associatedMailingLists' pendingRows until a second fetch either confirms it's gone
+                // (pruning it) or sees it reappear — but nothing else guarantees that second fetch
+                // ever happens: refreshMl$ only fires on explicit user actions (a drawer save, retry,
+                // unlink, picker save), not on a timer. Left alone, an externally-unlinked list could
+                // stay resurrected indefinitely, and saving its card would silently relink it
+                // (greptile, cursor bugbot #4899 review). Schedule one bounded follow-up refresh so
+                // the grace window resolves on its own; bounded because the uid either gets pruned
+                // (no more misses to chase) or reconfirmed (count cleared) by that follow-up.
+                if (missCounts.size > 0 && !this.pendingMissRetry) {
+                  this.pendingMissRetry = true;
+                  timer(2000)
+                    .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+                    .subscribe(() => {
+                      this.pendingMissRetry = false;
+                      this.refreshMl$.next();
+                    });
                 }
               }
               // Lift the pending-add marking the first time a fetch contains the uid at all, matching
