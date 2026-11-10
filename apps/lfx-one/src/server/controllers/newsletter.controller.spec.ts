@@ -11,7 +11,7 @@ const {
   updateNewsletter,
   scheduleNewsletter,
   sendNewsletter,
-  getNewsletter,
+  assertLiveSendAllowed,
   cancelScheduleNewsletter,
   getReadableNewsletter,
   assertPublisherRead,
@@ -33,7 +33,7 @@ const {
   updateNewsletter: vi.fn(),
   scheduleNewsletter: vi.fn(),
   sendNewsletter: vi.fn(),
-  getNewsletter: vi.fn(),
+  assertLiveSendAllowed: vi.fn(),
   cancelScheduleNewsletter: vi.fn(),
 }));
 
@@ -57,11 +57,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 const { getEffectiveEmail } = vi.hoisted(() => ({ getEffectiveEmail: vi.fn<() => string | null>(() => 'me@example.com') }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail }));
-vi.mock('@lfx-one/shared/utils', () => ({
-  isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)),
-  // Live send is off for the editor-only release, so a draft with a layout is locked.
-  isNewsletterLiveSendLocked: vi.fn((hasLayout: boolean) => hasLayout),
-}));
+vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)) }));
 
 vi.mock('../services/newsletter.service', () => ({
   NewsletterService: class {
@@ -72,7 +68,7 @@ vi.mock('../services/newsletter.service', () => ({
     public updateNewsletter = updateNewsletter;
     public scheduleNewsletter = scheduleNewsletter;
     public sendNewsletter = sendNewsletter;
-    public getNewsletter = getNewsletter;
+    public assertLiveSendAllowed = assertLiveSendAllowed;
     public cancelScheduleNewsletter = cancelScheduleNewsletter;
     public recordShare = recordShare;
     public recordPageView = recordPageView;
@@ -108,7 +104,7 @@ const validPayload = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getNewsletter.mockResolvedValue({ body_layout: null });
+  assertLiveSendAllowed.mockResolvedValue(undefined);
 });
 
 describe('NewsletterController.getMyNewsletters', () => {
@@ -721,7 +717,7 @@ describe('NewsletterController.recordPageView', () => {
   });
 });
 
-describe('NewsletterController live-send lock for block layout drafts', () => {
+describe('NewsletterController live-send lock', () => {
   const req = {
     params: { projectUid: 'p1', newsletterUid: 'n1' },
     body: {},
@@ -729,23 +725,21 @@ describe('NewsletterController live-send lock for block layout drafts', () => {
     header: (h: string) => (h === 'If-Match' ? '3' : ''),
   } as any;
 
-  it('refuses a real send of a draft with a layout without calling upstream', async () => {
-    getNewsletter.mockResolvedValue({ body_layout: { blocks: [] } });
-    const next = vi.fn();
+  it.each(['sendNewsletter', 'scheduleNewsletter'] as const)('%s checks the lock for the version being sent', async (method) => {
+    await new NewsletterController()[method](req, buildRes(), vi.fn());
 
-    await new NewsletterController().sendNewsletter(req, buildRes(), next);
-
-    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403, code: 'NEWSLETTER_LIVE_SEND_LOCKED' });
-    expect(sendNewsletter).not.toHaveBeenCalled();
+    expect(assertLiveSendAllowed).toHaveBeenCalledWith(req, 'p1', 'n1', 3, method === 'sendNewsletter' ? 'newsletter_send' : 'newsletter_schedule');
   });
 
-  it('refuses a schedule of a draft with a layout without calling upstream', async () => {
-    getNewsletter.mockResolvedValue({ body_layout: { blocks: [] } });
+  it.each(['sendNewsletter', 'scheduleNewsletter'] as const)('%s calls nothing upstream when the lock refuses', async (method) => {
+    const err = Object.assign(new Error('locked'), { statusCode: 403 });
+    assertLiveSendAllowed.mockRejectedValue(err);
     const next = vi.fn();
 
-    await new NewsletterController().scheduleNewsletter(req, buildRes(), next);
+    await new NewsletterController()[method](req, buildRes(), next);
 
-    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403, code: 'NEWSLETTER_LIVE_SEND_LOCKED' });
+    expect(next).toHaveBeenCalledWith(err);
+    expect(sendNewsletter).not.toHaveBeenCalled();
     expect(scheduleNewsletter).not.toHaveBeenCalled();
   });
 

@@ -23,10 +23,10 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { isNewsletterLiveSendLocked, isUuid } from '@lfx-one/shared/utils';
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, ServiceValidationError } from '../errors';
+import { ServiceValidationError } from '../errors';
 import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterMemberBenefitService } from '../services/newsletter-member-benefit.service';
@@ -356,8 +356,9 @@ export class NewsletterController {
    *
    * Owns the full send pipeline in the Go service: recipient resolution
    * (NATS → committee-service), email-chrome rendering, per-recipient fan-out
-   * (NATS → email-service), and status transition. Express just proxies the
-   * If-Match version through.
+   * (NATS → email-service), and status transition. Express refuses a real send
+   * of a block layout draft while live send is off, then proxies the If-Match
+   * version through.
    */
   public async sendNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = this.requireProjectUid(req);
@@ -366,7 +367,7 @@ export class NewsletterController {
 
     try {
       const version = parseIfMatch(req);
-      await this.assertLiveSendAllowed(req, projectUid, newsletterUid, 'newsletter_send');
+      await this.newsletterService.assertLiveSendAllowed(req, projectUid, newsletterUid, version, 'newsletter_send');
       const result = await this.newsletterService.sendNewsletter(req, projectUid, newsletterUid, version);
       logger.success(req, 'newsletter_send', startTime, {
         newsletter_id: newsletterUid,
@@ -388,7 +389,8 @@ export class NewsletterController {
    * provider. Upstream applies the strict arm-time window (min lead / max
    * horizon) on top of the lenient save-time check `validateScheduledAt`
    * already ran — this handler doesn't duplicate that window check, it just
-   * validates shape so a malformed override doesn't reach the proxy.
+   * validates shape so a malformed override doesn't reach the proxy. It also
+   * refuses to schedule a block layout draft while live send is off.
    */
   public async scheduleNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Validation must run inside the try: Express 4 doesn't forward async
@@ -400,7 +402,7 @@ export class NewsletterController {
       const version = parseIfMatch(req);
       const payload = req.body as NewsletterSchedulePayload | undefined;
       const scheduledAtOverride = this.validateScheduleOverride(payload, req.path, 'newsletter_schedule');
-      await this.assertLiveSendAllowed(req, projectUid, newsletterUid, 'newsletter_schedule');
+      await this.newsletterService.assertLiveSendAllowed(req, projectUid, newsletterUid, version, 'newsletter_schedule');
 
       const result = await this.newsletterService.scheduleNewsletter(req, projectUid, newsletterUid, version, scheduledAtOverride);
       logger.success(req, 'newsletter_schedule', startTime, {
@@ -961,22 +963,6 @@ export class NewsletterController {
     }
 
     return payload.scheduled_at;
-  }
-
-  /**
-   * The editor-only release sends tests only, so a real send or schedule of a draft with a block
-   * layout is refused here as well as in the UI, until NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED is on.
-   */
-  private async assertLiveSendAllowed(req: Request, projectUid: string, newsletterUid: string, operation: string): Promise<void> {
-    const draft = await this.newsletterService.getNewsletter(req, projectUid, newsletterUid);
-    if (isNewsletterLiveSendLocked(draft.body_layout != null)) {
-      throw new AuthorizationError("Real sends from the block editor aren't switched on yet", {
-        operation,
-        service: 'newsletter_controller',
-        path: req.path,
-        code: 'NEWSLETTER_LIVE_SEND_LOCKED',
-      });
-    }
   }
 }
 

@@ -30,10 +30,11 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
+import { isNewsletterLiveSendLocked } from '@lfx-one/shared/utils/newsletter.utils';
 import { computeIsFoundation } from '@lfx-one/shared/utils/project.utils';
 import { Request } from 'express';
 
-import { isBaseApiError } from '../errors';
+import { AuthorizationError, isBaseApiError, PreconditionFailedError } from '../errors';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { NewsletterServiceClient } from './newsletter-service.client';
@@ -180,6 +181,27 @@ export class NewsletterService {
   /** `options.bearerToken` scopes an M2M override to this one read (the public share preview). */
   public getNewsletter(req: Request, projectUid: string, newsletterUid: string, options?: ApiRequestOptions): Promise<Newsletter> {
     return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid, options);
+  }
+
+  /**
+   * The editor-only release sends tests only, so a real send or schedule of a draft with a block
+   * layout is refused here as well as in the UI, until NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED is on.
+   * The check must be on the version being sent, or an edit between this read and the send could
+   * add a layout unseen, so a stale If-Match is refused here. A failed read fails closed.
+   */
+  public async assertLiveSendAllowed(req: Request, projectUid: string, newsletterUid: string, version: number, operation: string): Promise<void> {
+    const draft = await this.getNewsletter(req, projectUid, newsletterUid);
+    if (draft.version !== version) {
+      throw new PreconditionFailedError(undefined, { operation, service: 'newsletter_service', path: req.path });
+    }
+    if (isNewsletterLiveSendLocked(draft.body_layout != null)) {
+      throw new AuthorizationError("Real sends from the block editor aren't switched on yet", {
+        operation,
+        service: 'newsletter_service',
+        path: req.path,
+        code: 'NEWSLETTER_LIVE_SEND_LOCKED',
+      });
+    }
   }
 
   public getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
