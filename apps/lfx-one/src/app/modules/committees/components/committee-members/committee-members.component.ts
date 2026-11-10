@@ -53,7 +53,9 @@ import {
   countVotingReps,
   formatCommitteeEngagementFreshness,
   formatCommitteeEngagementMeetings,
+  formatInviteExpiry,
   isCommitteeEngagementRowAtRisk,
+  isInviteExpired,
   isLfStaffNonVotingSeat,
   isVotingRep,
   resolveCommitteeMemberPermission,
@@ -162,6 +164,7 @@ export class CommitteeMembersComponent implements OnInit {
   public selectedInvite = signal<CommitteeInvite | null>(null);
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
+  public resendingInviteUid = signal<string | null>(null);
   public processingApplicationUid = signal<string | null>(null);
   public readonly importSnapshotsLoading = signal(false);
   // linkedSignal: resets to 'all' when the Pending tab becomes invisible (all invites revoked /
@@ -577,6 +580,44 @@ export class CommitteeMembersComponent implements OnInit {
     });
   }
 
+  public isInviteExpired(invite: CommitteeInvite): boolean {
+    return isInviteExpired(invite.expires_at);
+  }
+
+  public inviteExpiryLabel(invite: CommitteeInvite): string | null {
+    return formatInviteExpiry(invite.expires_at);
+  }
+
+  /**
+   * Re-issues an expired invitation. A create with only the email reinstates the stored invite
+   * (fresh expiry and email) and keeps its role and organization, so nothing else is sent.
+   */
+  public resendInvite(invite: CommitteeInvite): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.resendingInviteUid() || this.revokingInviteUid()) return;
+
+    this.resendingInviteUid.set(invite.uid);
+    this.committeeService.createCommitteeInvite(committee.uid, { invitee_email: invite.invitee_email }).subscribe({
+      next: () => {
+        this.resendingInviteUid.set(null);
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Invitation Sent',
+          detail: `A new invitation has been sent to ${invite.invitee_email}.`,
+        });
+        this.pollUntilInviteRenewed(invite.uid);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.resendingInviteUid.set(null);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Unable to Resend',
+          detail: getHttpErrorDetail(err, 'Failed to resend the invitation. Please try again.'),
+        });
+      },
+    });
+  }
+
   public revokeInvite(invite: CommitteeInvite): void {
     const committee = this.committee();
     if (!committee?.uid || this.revokingInviteUid()) return;
@@ -813,6 +854,40 @@ export class CommitteeMembersComponent implements OnInit {
         // and the condition would fire immediately on the first poll regardless of the new invite.
         map((invites) => (Array.isArray(invites) ? invites.filter((i) => i.status === 'pending') : null)),
         filter((invites): invites is CommitteeInvite[] => Array.isArray(invites) && invites.length >= countBefore + expected),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
+  /**
+   * Watches the invite list until the resent invite is no longer expired, absorbing query-service
+   * indexing lag, then refreshes the roster. Falls back to a refresh when the poll gives up.
+   */
+  private pollUntilInviteRenewed(inviteUid: string): void {
+    const committeeUid = this.committee()?.uid;
+    if (!committeeUid) return;
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        exhaustMap(() => this.committeeService.getCommitteeInvites(committeeUid).pipe(catchError(() => of(null as CommitteeInvite[] | null)))),
+        take(6),
+        filter((invites): invites is CommitteeInvite[] => {
+          const renewed = Array.isArray(invites) ? invites.find((i) => i.uid === inviteUid) : undefined;
+          return !!renewed && renewed.status === 'pending' && !isInviteExpired(renewed.expires_at);
+        }),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -1198,7 +1273,20 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   private initializeInviteActionMenuItems(invite?: CommitteeInvite): MenuItem[] {
+    const resendItem: MenuItem[] =
+      invite && isInviteExpired(invite.expires_at)
+        ? [
+            {
+              label: 'Resend invitation',
+              icon: 'fa-light fa-paper-plane',
+              disabled: !!this.resendingInviteUid() || !!this.revokingInviteUid(),
+              command: () => this.resendInvite(invite),
+            },
+          ]
+        : [];
+
     return [
+      ...resendItem,
       {
         label: 'Revoke invitation',
         icon: 'fa-light fa-ban',
