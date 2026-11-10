@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, company, company, employer]
-last_updated: 2026-11-06
+last_updated: 2026-11-10
 intercom_collection: Dashboards
 ---
 
@@ -30,6 +30,8 @@ In the **Meetings** section, the card labelled **Next Meeting** shows the meetin
 If you manage groups, **My Pending Actions** also shows **Join request** rows across all the groups you can manage, with the applicant's email, optional name, and group. Select **View all** to review requests in the Pending Actions drawer. **Approve** asks you to confirm the applicant and group; **Reject** lets you add optional notes. A request disappears only after your decision is saved, and the drawer stays open while the list refreshes. After the final action is resolved, the drawer shows **All caught up!** and stays open until you close it. Users without managed groups or pending requests see no join-request rows.
 
 Navigating to another page does not cancel a confirmed approval or rejection that is already being saved. If join-request discovery is too slow or unavailable, those rows are omitted for that refresh while the other pending-action sources remain available; a later refresh can load them again.
+
+In the Pending Actions drawer, each **Meetings**, **Votes**, **Surveys** or **Other** section has a **Dismiss all** button in its header. Select it and confirm to dismiss every item in that section at once; dismissed items do not come back in this browser. Items still loading their RSVP options are skipped. **Invitations**, **Applications** and **Formation** have no **Dismiss all**, because those items are resolved by accepting or declining, reviewing, or completing them.
 
 The drawer updates as the list refreshes, including loading RSVP controls for new meeting actions. If RSVP options fail to load, you can still open the meeting page; the card and drawer try loading those options again when a replacement feed arrives. Once the list is empty, the **My Pending Actions** section fades away after you close the drawer.
 
