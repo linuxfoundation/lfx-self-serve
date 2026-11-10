@@ -482,14 +482,14 @@ export class OrgLensPeopleService {
   /**
    * What the drawer's company-email lookup answers for each identity at the account (ORG_PEOPLE_COMPANY_EMAIL_KEYS), for
    * the All Employees Company email filter: one keyed read per account, org-cached. `null` when the read fails (logged;
-   * never cached), so the roster is served without statuses rather than failing. `v2`: adds the usernames whose lookup
-   * finds no address (`lf_username_none`).
+   * never cached), so the roster is served without statuses rather than failing. `v3`: username keys are kept verbatim
+   * (see {@link fetchCompanyEmailKeys}); `v2` entries carry JavaScript-trimmed ones.
    */
   public async getCompanyEmailKeys(req: Request, accountId: string): Promise<OrgCompanyEmailKeys | null> {
     try {
       return await withOrgCache(
         accountId,
-        'people-company-email-keys:v2',
+        'people-company-email-keys:v3',
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchCompanyEmailKeys(accountId),
         isCompanyEmailKeys
@@ -1105,7 +1105,13 @@ export class OrgLensPeopleService {
     return result.rows;
   }
 
-  /** The account's ORG_PEOPLE_COMPANY_EMAIL_KEYS rows, split by key type. No address is read. */
+  /**
+   * The account's ORG_PEOPLE_COMPANY_EMAIL_KEYS rows, split by key type. No address is read.
+   *
+   * Username keys are used verbatim: the warehouse already applied `LOWER(TRIM())`, the exact comparison the drawer's
+   * username SQL makes against a JavaScript-trimmed input. Trimming them again here would let a stored value padded with
+   * a tab or NBSP match a row the drawer cannot resolve, tagging it `has`/`none` where the drawer answers `unconfirmed`.
+   */
   private async fetchCompanyEmailKeys(accountId: string): Promise<OrgCompanyEmailKeys> {
     const query = `
       SELECT KEY_TYPE, KEY_VALUE
@@ -1117,8 +1123,8 @@ export class OrgLensPeopleService {
     for (const row of result.rows) {
       if (!row.KEY_VALUE) continue;
       if (row.KEY_TYPE === 'person_key') keys.personKeys.push(row.KEY_VALUE);
-      else if (row.KEY_TYPE === 'lf_username') keys.usernames.push(row.KEY_VALUE.trim().toLowerCase());
-      else if (row.KEY_TYPE === 'lf_username_none') keys.noneUsernames.push(row.KEY_VALUE.trim().toLowerCase());
+      else if (row.KEY_TYPE === 'lf_username') keys.usernames.push(row.KEY_VALUE);
+      else if (row.KEY_TYPE === 'lf_username_none') keys.noneUsernames.push(row.KEY_VALUE);
     }
     return keys;
   }

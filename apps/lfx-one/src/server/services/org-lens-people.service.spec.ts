@@ -3,7 +3,13 @@
 
 import { createRequire } from 'node:module';
 
-import type { CompactOrgAllEmployeesRawCache, OrgCommitFilters, OrgLensTimeRange, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CompactOrgAllEmployeesRawCache,
+  OrgAllEmployeesResponse,
+  OrgCommitFilters,
+  OrgLensTimeRange,
+  OrgPersonCompanyEmailsResponse,
+} from '@lfx-one/shared/interfaces';
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -89,6 +95,7 @@ import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.
 import { logger } from './logger.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
+import { withCompanyEmailStatus } from './org-people-wire.mapper';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
@@ -930,15 +937,39 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 
   describe('company-email keys', () => {
-    it("splits the account's keys by type, lower-casing usernames", async () => {
+    it("splits the account's keys by type and keeps the warehouse's username keys verbatim", async () => {
       const insert = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAIL_KEYS VALUES (?, ?, ?)');
       insert.run(ACCOUNT, 'person_key', personKey);
-      insert.run(ACCOUNT, 'lf_username', ' MixedUser ');
-      insert.run(ACCOUNT, 'lf_username_none', 'emptyuser');
+      insert.run(ACCOUNT, 'lf_username', 'mixeduser');
+      insert.run(ACCOUNT, 'lf_username_none', '\tpadded');
       insert.run('other-account', 'person_key', 'person-elsewhere');
 
-      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toEqual({ personKeys: [personKey], usernames: ['mixeduser'], noneUsernames: ['emptyuser'] });
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-company-email-keys:v2')!)).toBe(true);
+      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toEqual({ personKeys: [personKey], usernames: ['mixeduser'], noneUsernames: ['\tpadded'] });
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-company-email-keys:v3')!)).toBe(true);
+    });
+
+    it('tags a live row exactly as the drawer answers it, a tab-padded stored username included', async () => {
+      // The warehouse keys compare LOWER(TRIM()) of the stored username, as the drawer's SQL does: a stored "\tpadded"
+      // stays padded, so neither the drawer nor the filter resolves the row's JavaScript-trimmed "padded".
+      addRosterRow(ACCOUNT, 'padded-person', '\tpadded');
+      addRosterRow(ACCOUNT, 'known-person', 'known');
+      const insert = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAIL_KEYS VALUES (?, ?, ?)');
+      insert.run(ACCOUNT, 'lf_username_none', '\tpadded');
+      insert.run(ACCOUNT, 'lf_username_none', 'known');
+
+      const keys = await service.getCompanyEmailKeys(REQ, ACCOUNT);
+      const liveRow = (key: string, lfUsername: string) => ({ personKey: key, lfUsername }) as unknown as OrgAllEmployeesResponse['rows'][number];
+      const tagged = withCompanyEmailStatus(
+        { accountId: ACCOUNT, rows: [liveRow('live-padded', 'padded'), liveRow('live-known', ' Known ')] } as OrgAllEmployeesResponse,
+        keys
+      );
+
+      expect(tagged.rows.map((row) => row.companyEmailStatus)).toEqual(['unconfirmed', 'none']);
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'padded')).toMatchObject({
+        companyEmailsStatus: 'unavailable',
+        companyEmailsReason: 'unconfirmed',
+      });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' Known ')).toMatchObject({ companyEmailsStatus: 'resolved', companyEmails: [] });
     });
 
     it('answers null and warns, storing nothing, when the keys read fails', async () => {
