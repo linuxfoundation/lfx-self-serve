@@ -31,7 +31,8 @@
       @for (group of sectionedRows(); track group.section) {
         <section role="group" [attr.aria-label]="group.label" [attr.data-testid]="'pending-actions-drawer-section-' + group.section">
           <!-- Section header: label + item-count badge + inline gray divider, matching the dashboard's section-header idiom.
-               Skipped when there is a single section — it would only repeat the drawer title and count. -->
+               With a single section the label and count are skipped — they would only repeat the drawer title and count — and the
+               row renders only when the section offers Dismiss all. -->
           @if (sectionedRows().length > 1 || group.dismissibleRows.length > 0) {
             <div class="flex items-center gap-3 px-4 pt-4 pb-2">
               @if (sectionedRows().length > 1) {
@@ -52,7 +53,7 @@
                   type="button"
                   class="shrink-0 text-xs text-gray-500 hover:text-gray-700 hover:underline transition-colors whitespace-nowrap"
                   (click)="handleDismissAll(group)"
-                  [attr.aria-label]="'Dismiss all ' + group.label.toLowerCase()"
+                  [attr.aria-label]="'Dismiss all in ' + group.label"
                   [attr.data-testid]="'pending-actions-drawer-dismiss-all-' + group.section">
                   Dismiss all
                 </button>

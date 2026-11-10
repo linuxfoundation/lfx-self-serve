@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsDrawerComponent } from './pending-actions-drawer.component';
@@ -712,6 +712,22 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('skips RSVP rows still loading their meeting, so a section of only those offers no Dismiss all', async () => {
+      meetingService.getMeeting.mockReturnValueOnce(NEVER);
+      await render([row('RSVP', 'RSVP A', { meetingUid: 'meeting-1' })]);
+
+      expect(byTestId('pending-actions-drawer-section-meetings')).not.toBeNull();
+      expect(byTestId(dismissAllId('meetings'))).toBeNull();
+    });
+
+    it('with a single dismissible section shows Dismiss all without repeating the section title or count', async () => {
+      await render([row('Survey', 'Survey A')]);
+
+      expect(byTestId(dismissAllId('surveys'))).not.toBeNull();
+      expect(byTestId('pending-actions-drawer-section-title-surveys')).toBeNull();
+      expect(byTestId('pending-actions-drawer-section-count-surveys')).toBeNull();
     });
 
     it('dismisses nothing when the confirmation is cancelled', async () => {

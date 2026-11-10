@@ -159,8 +159,8 @@ export class PendingActionsDrawerComponent {
     if (rows.length === 0) return;
     const noun = rows.length === 1 ? 'item' : 'items';
     this.confirmationService.confirm({
-      header: `Dismiss all ${group.label.toLowerCase()}`,
-      message: `Dismiss ${rows.length} ${group.label.toLowerCase()} ${noun}? They will no longer appear in your pending actions.`,
+      header: `Dismiss all in ${group.label}`,
+      message: `Dismiss ${rows.length} ${noun} from ${group.label}? They will no longer appear in your pending actions.`,
       icon: 'fa-light fa-triangle-exclamation',
       acceptLabel: 'Dismiss all',
       rejectLabel: 'Cancel',
@@ -174,7 +174,7 @@ export class PendingActionsDrawerComponent {
         this.messageService.add({
           severity: 'info',
           summary: 'Actions dismissed',
-          detail: `Dismissed ${rows.length} ${group.label.toLowerCase()} ${noun}.`,
+          detail: `Dismissed ${rows.length} ${noun} from ${group.label}.`,
         });
       },
     });
