@@ -1299,6 +1299,71 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     expect(component.refreshingMl()).toBe(false);
   });
 
+  it('keeps the Auto Sync button visible and stable during a same-committee refresh, instead of destroying and recreating it (#4899 review)', async () => {
+    const requests: Subject<GroupsIOMailingList[]>[] = [];
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => {
+              const subject = new Subject<GroupsIOMailingList[]>();
+              requests.push(subject);
+              return subject.asObservable();
+            }),
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    await fixture.whenStable();
+
+    // Resolve the initial committee-driven load with one writable list so the button renders.
+    requests[0].next([makeMl({ writer: true })]);
+    requests[0].complete();
+    await fixture.whenStable();
+
+    expect(component.showAutoSyncButton()).toBe(true);
+    const buttonBefore = fixture.nativeElement.querySelector('[data-testid="settings-auto-sync-btn"]');
+    expect(buttonBefore).toBeTruthy();
+
+    // A drawer save refetches the same committee's lists — this must not flip showAutoSyncButton
+    // off while the fetch is pending, which previously destroyed and recreated the button and lost
+    // focus (dealako #4899 review: the gate guards against exactly this same-committee refresh).
+    component.onSyncSettingsUpdated(makeMl({ writer: true }));
+    await fixture.whenStable();
+
+    expect(requests.length).toBe(2);
+    expect(component.showAutoSyncButton()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-auto-sync-btn"]')).toBe(buttonBefore);
+
+    requests[1].next([makeMl({ writer: true })]);
+    requests[1].complete();
+    await fixture.whenStable();
+
+    expect(component.showAutoSyncButton()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="settings-auto-sync-btn"]')).toBe(buttonBefore);
+  });
+
   it('leaves refreshingMl locked and shows an error toast when a refresh fails, instead of unlocking sibling cards against stale data (#4899 review)', async () => {
     const messageAdd = vi.fn();
     await TestBed.configureTestingModule({
@@ -1484,9 +1549,7 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     component = fixture.componentInstance;
     fixture.componentRef.setInput('committee', COMMITTEE);
     fixture.componentRef.setInput('canEdit', true);
-    fixture.detectChanges();
     await fixture.whenStable();
-    fixture.detectChanges();
 
     (component as any).saveMailingListAssociation(new Set(['ml-new']), new Set(), new Map([['ml-new', MailingListSyncMode.MANUAL]]));
     await fixture.whenStable();
@@ -1706,15 +1769,12 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     component = fixture.componentInstance;
     fixture.componentRef.setInput('committee', COMMITTEE);
     fixture.componentRef.setInput('canEdit', true);
-    fixture.detectChanges();
     await fixture.whenStable();
-    fixture.detectChanges();
 
     expect(component.associatedMailingLists().map((m) => m.uid)).toEqual(['ml-1']);
 
     component.removeMailingList(ML);
     await fixture.whenStable();
-    fixture.detectChanges();
 
     // The refetch triggered by removeMailingList's refreshMl$.next() now genuinely confirms ml-1
     // is gone, so unlinkedMlUids should have self-cleared instead of suppressing the uid forever.
@@ -1856,13 +1916,10 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     component = fixture.componentInstance;
     fixture.componentRef.setInput('committee', COMMITTEE);
     fixture.componentRef.setInput('canEdit', true);
-    fixture.detectChanges();
     await fixture.whenStable();
-    fixture.detectChanges();
 
     (component as any).saveMailingListAssociation(new Set(['ml-new']), new Set(), new Map([['ml-new', MailingListSyncMode.MANUAL]]));
     await fixture.whenStable();
-    fixture.detectChanges();
 
     expect(component.associatedMailingLists().length).toBeGreaterThan(0);
     expect(component.mlRefreshFailed()).toBe(true);

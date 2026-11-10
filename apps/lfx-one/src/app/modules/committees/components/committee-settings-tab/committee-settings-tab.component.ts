@@ -172,6 +172,17 @@ export class CommitteeSettingsTabComponent {
   // clearUnlinkedMlSuppression's call sites), or on committee change (see the constructor).
   private readonly unlinkedMlUids = signal<ReadonlySet<string>>(new Set());
 
+  // Mailing list uids with a genuinely pending ADD override — set only from saveMailingListAssociation's
+  // success handler, for a uid in addedMlByUid, never for a config-only change on an already-linked
+  // list. associatedMailingLists' pending-row synthesis (see initAssociatedMailingListsWithOverrides)
+  // must only resurrect an override missing from the fetch when its uid is in this set — otherwise a
+  // config-change override that never gets confirmed (the drawer-save eventual-consistency case) stays
+  // in associatedMlOverrides and gets treated as "still pending" even after the same list is unlinked
+  // outside this component, re-linking it the next time a toggle fires (dealako #4899 review). Cleared
+  // the first time a refetch contains the uid at all (see initAssociatedMailingLists' refresh-pipeline
+  // tap), or on committee change (see the constructor).
+  private readonly pendingAddMlUids = signal<ReadonlySet<string>>(new Set());
+
   // Form
   public form = new FormGroup({
     // pattern(/\S/) rejects a whitespace-only name, which `required` alone accepts and persistSettings would then silently drop.
@@ -206,32 +217,26 @@ export class CommitteeSettingsTabComponent {
   // override wholesale: the override is a pre-save snapshot, so returning it in full would mask
   // every other field (e.g. `writer`) the subsequent fetch actually refreshed (#4899 review).
   //
-  // A pending override whose uid the fetch doesn't contain at all — the add-path case, where a
+  // A pending-add override whose uid the fetch doesn't contain at all — the add-path case, where a
   // committee refetch lands before the index has the newly-linked row — is appended as its own
   // (already-patched) row rather than silently dropped. Without this, a just-added auto-sync list
   // would vanish from the card list and the drawer until a later refetch catches up, and the
   // one-auto-direction-per-committee check above would have no row to see as occupying the slot
-  // (dealako #4899 review). The override map only ever holds an add/config-change snapshot — a
-  // removed uid is cleared via clearMlOverride, never left in this map — so this can't resurrect a
-  // row the user just unlinked.
+  // (dealako #4899 review). Only a uid tracked in pendingAddMlUids gets this treatment — a
+  // config-only-change override that never gets confirmed is NOT replayed as a pending row, because
+  // (unlike an add) its list was already linked before this save, so a successful fetch missing it
+  // means it was unlinked outside this component, not that the index hasn't caught up yet; the
+  // refresh-pipeline tap (see initAssociatedMailingLists) drops that kind of override instead of
+  // leaving it to resurrect here (dealako #4899 review — this replaces the former claim that no
+  // removed uid is ever left in associatedMlOverrides, which only held for unlinks made through this
+  // same component instance).
   //
   // A pending row still goes through `patchCommitteeSyncMode`, not just the raw override snapshot:
   // the snapshot's own `committees[]` predates the link, so it has no entry for this committee yet,
   // and `lfx-mailing-list-sync-settings` resolves its `committee()` input by scanning that array —
   // without this, the card shows the list's name with no sync controls at all (greptile, Copilot,
   // Cursor bugbot #4899 review).
-  public associatedMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
-    const overrides = this.associatedMlOverrides();
-    if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
-    const fetched = this.fetchedAssociatedMailingLists();
-    const patched = fetched.map((ml) => {
-      const override = overrides.get(ml.uid);
-      return override ? this.patchCommitteeSyncMode(ml, override.sync_mode) : ml;
-    });
-    const fetchedUids = new Set(fetched.map((ml) => ml.uid));
-    const pendingRows = [...overrides.entries()].filter(([uid]) => !fetchedUids.has(uid)).map(([, ml]) => this.patchCommitteeSyncMode(ml, ml.sync_mode));
-    return pendingRows.length > 0 ? [...patched, ...pendingRows] : patched;
-  });
+  public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingListsWithOverrides();
 
   // Same override patch applied to the project-wide snapshot the picker reads — a drawer save (via
   // onSyncSettingsUpdated) only ever patches associatedMlOverrides, it never fires refreshProjectMl$
@@ -462,6 +467,9 @@ export class CommitteeSettingsTabComponent {
           // Same leak as the override above — a suppressed uid from a different committee must not
           // hide an unrelated mailing list of the same uid on this one (#4899 review).
           this.unlinkedMlUids.set(new Set());
+          // Same leak as both overrides above — a pending-add marking from a different committee must
+          // not treat an unrelated mailing list of the same uid on this one as still pending (#4899 review).
+          this.pendingAddMlUids.set(new Set());
           // Force-close any drawer left open from the previous committee — see autoSyncDrawerRef's
           // doc comment (cursor #4899 review). Bypasses canClose deliberately: a card's in-flight PUT
           // is fire-and-forget (see MailingListSyncSettingsComponent.save) and still completes against
@@ -825,6 +833,16 @@ export class CommitteeSettingsTabComponent {
     this.unlinkedMlUids.set(next);
   }
 
+  // Marks a uid as a genuinely pending add — see pendingAddMlUids' doc comment. Called only from
+  // saveMailingListAssociation's success handler, for a uid present in addedMlByUid.
+  private markPendingAddMl(uid: string): void {
+    const uids = this.pendingAddMlUids();
+    if (uids.has(uid)) return;
+    const next = new Set(uids);
+    next.add(uid);
+    this.pendingAddMlUids.set(next);
+  }
+
   private openPickerDialog(committeeUid: string, projectUid: string, projectSlug: string | undefined): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
@@ -1066,6 +1084,11 @@ export class CommitteeSettingsTabComponent {
               const overrides = new Map(this.associatedMlOverrides());
               overrides.set(r.uid, { ...ml, sync_mode: desired });
               this.associatedMlOverrides.set(overrides);
+              // Only an add-path override is a genuinely pending row — see pendingAddMlUids' doc
+              // comment (dealako #4899 review).
+              if (addedMlByUid.has(r.uid)) {
+                this.markPendingAddMl(r.uid);
+              }
             }
           }
           if (failed === 0) {
@@ -1197,6 +1220,25 @@ export class CommitteeSettingsTabComponent {
     };
   }
 
+  // See associatedMailingLists' doc comment above for the pending-row invariant this enforces.
+  private initAssociatedMailingListsWithOverrides(): Signal<GroupsIOMailingList[]> {
+    return computed(() => {
+      const overrides = this.associatedMlOverrides();
+      if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
+      const fetched = this.fetchedAssociatedMailingLists();
+      const patched = fetched.map((ml) => {
+        const override = overrides.get(ml.uid);
+        return override ? this.patchCommitteeSyncMode(ml, override.sync_mode) : ml;
+      });
+      const fetchedUids = new Set(fetched.map((ml) => ml.uid));
+      const pendingAdds = this.pendingAddMlUids();
+      const pendingRows = [...overrides.entries()]
+        .filter(([uid]) => !fetchedUids.has(uid) && pendingAdds.has(uid))
+        .map(([, ml]) => this.patchCommitteeSyncMode(ml, ml.sync_mode));
+      return pendingRows.length > 0 ? [...patched, ...pendingRows] : patched;
+    });
+  }
+
   private initAssociatedMailingListRows(): Signal<CommitteeAssociatedMailingListRow[]> {
     return computed(() =>
       this.associatedMailingLists().map((ml) => {
@@ -1251,12 +1293,12 @@ export class CommitteeSettingsTabComponent {
             tap((lists) => {
               this.refreshingMl.set(false);
               this.mlRefreshFailed.set(false);
+              const fetchedUids = new Set(lists.map((l) => l.uid));
               // Confirm absence: once this committee's refetch no longer contains a uid suppressed
               // by suppressUnlinkedMl() after a successful unlink, stop suppressing it — see
               // unlinkedMlUids' doc comment (#4899 review).
               const suppressed = this.unlinkedMlUids();
               if (suppressed.size > 0) {
-                const fetchedUids = new Set(lists.map((l) => l.uid));
                 const stillStale = new Set([...suppressed].filter((uid) => fetchedUids.has(uid)));
                 if (stillStale.size !== suppressed.size) {
                   this.unlinkedMlUids.set(stillStale);
@@ -1266,6 +1308,7 @@ export class CommitteeSettingsTabComponent {
               // catches up, the override would otherwise keep masking a further legitimate change
               // to the same list made outside this component (#4899 review).
               const overrides = this.associatedMlOverrides();
+              const pendingAdds = this.pendingAddMlUids();
               if (overrides.size > 0) {
                 const next = new Map(overrides);
                 for (const ml of lists) {
@@ -1274,8 +1317,28 @@ export class CommitteeSettingsTabComponent {
                     next.delete(ml.uid);
                   }
                 }
+                // A non-add override (a config-only change) whose uid this successful fetch doesn't
+                // return at all means the list was unlinked outside this component — keeping it would
+                // let it resurrect via associatedMailingLists' pendingRows. A genuinely pending add is
+                // exempt: its uid is expected to be briefly missing until the query index catches up
+                // (dealako #4899 review).
+                for (const uid of next.keys()) {
+                  if (!fetchedUids.has(uid) && !pendingAdds.has(uid)) {
+                    next.delete(uid);
+                  }
+                }
                 if (next.size !== overrides.size) {
                   this.associatedMlOverrides.set(next);
+                }
+              }
+              // Lift the pending-add marking the first time a fetch contains the uid at all, matching
+              // or not — from that point the row comes from the `patched` branch above, not
+              // `pendingRows`, so the marking no longer does anything useful and must not survive a
+              // later external unlink of the same uid (dealako #4899 review).
+              if (pendingAdds.size > 0) {
+                const stillPending = new Set([...pendingAdds].filter((uid) => !fetchedUids.has(uid)));
+                if (stillPending.size !== pendingAdds.size) {
+                  this.pendingAddMlUids.set(stillPending);
                 }
               }
             }),

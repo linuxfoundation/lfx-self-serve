@@ -76,9 +76,15 @@
             <!-- Shown independently of whether any rows render below — a pending add-override row can
                  keep the list non-empty even while the committee refetch that would confirm it keeps
                  failing, and that pending row carries no refresh/retry affordance of its own (cursor
-                 #4899 review: "Retry lost after pending add"). -->
+                 #4899 review: "Retry lost after pending add"). Copy branches on whether rows render:
+                 last-good or pending rows below mean the fetch is stale, not missing — "couldn't load"
+                 would contradict the rows the user can still see (cursor bugbot, dealako #4899 review). -->
             <lfx-ui-note variant="error" announce data-testid="settings-ml-refresh-failed-notice">
-              Couldn't load mailing lists for this group.
+              @if (associatedMailingLists().length > 0) {
+                Couldn't refresh mailing lists for this group. What you see below may be out of date.
+              } @else {
+                Couldn't load mailing lists for this group.
+              }
               <lfx-ui-button note-action variant="secondary" (click)="retryMlRefresh()" data-testid="settings-ml-refresh-retry-button">Retry</lfx-ui-button>
             </lfx-ui-note>
           }
