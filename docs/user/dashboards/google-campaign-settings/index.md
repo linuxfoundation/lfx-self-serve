@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab, and set the brief's registration URL.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -35,6 +35,7 @@ tags:
     business name,
     audience signals,
     implement,
+    registration url,
   ]
 last_updated: 2026-11-10
 intercom_collection: Dashboards
@@ -214,6 +215,18 @@ Paste one `https://` image link per line, or pick or upload images from the brie
 
 Each image's size and shape are checked before anything is created. The images, logo and business name are then added to the campaign after it is created, all together or not at all. They are added before the campaign's ads, so if Google Ads refuses them, the campaign has already been created without them and without its ads and keywords. Finish it in Google Ads, or create it again here with images, a logo and a business name Google Ads accepts. That is why nothing in this section is filled in from the brief, not even the business name the other campaign types start with: they are sent only when you add them.
 
+## Registration URL
+
+Every campaign sends people to the brief's **Registration URL**, and a campaign can't be created while the saved brief has none. When the event page has no registration link yet, the brief is generated without one, and the **Plan** tab says so under the event name.
+
+To set or correct it:
+
+1. On the **Implement** tab, select **Edit brief**. The brief opens on the **Plan** tab. If its editor is not open, select **Edit Brief**.
+2. Under **Registration URL**, enter the full address, starting with `https://`.
+3. Select **Save & Proceed to Implement**. The brief is saved with the new address and approved again.
+
+Typing an address into **Registration URL** on the **Implement** tab does not change the saved brief, so it does not fix a brief that has none.
+
 ## Copy, dates and budget filled in from the brief
 
 When you open the **Implement** tab for a brief, some fields start with values from the brief. You can change any of them.
@@ -379,6 +392,8 @@ A Display ad group can target existing audiences from the Google Ads account: us
 Leave the pickers alone and the campaign is created exactly as before, with no audiences.
 
 ## If something is wrong
+
+While **Create Campaign** is unavailable, a line under it says what is holding it, such as an empty **Registration URL** or a section to fix. If a create is refused, the reason appears beside the button.
 
 If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description, search theme or audience signal would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
