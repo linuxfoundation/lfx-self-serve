@@ -75,7 +75,6 @@ import {
   map,
   merge,
   of,
-  pairwise,
   Subject,
   switchMap,
   take,
@@ -2020,21 +2019,25 @@ export class NewsletterManageComponent {
   }
 
   /**
-   * When the enhanced-editor flag turns off before a new draft's first save, the save would quietly
-   * make a one-off newsletter. Clear the picked publication and tell the author instead. Only the
-   * flag is watched: a project switch also closes the gate, but the picker already clears the
-   * selection then. A first save already in flight is left alone, because its request already names
-   * the publication. pairwise() skips a flag that has never been on, so a slow flag load does not
-   * clear a ?publication= preselect. Repo convention forbids effect() for imperative side effects
-   * (see initSchedulePastGuard), so the signal is bridged to an observable.
+   * When the enhanced-editor flag turns off before a new draft is created, a save would quietly make
+   * a one-off newsletter. Clear the picked publication and tell the author instead. Only the flag is
+   * watched: a project switch also closes the gate, but the picker already clears the selection then.
+   * The check waits while a first save is in flight, because that request already names the
+   * publication, and runs again when it settles, so a failed save is still caught. A flag that has
+   * never been on is skipped, so a slow flag load does not clear a ?publication= preselect. Repo
+   * convention forbids effect() for imperative side effects (see initSchedulePastGuard), so the
+   * signal is bridged to an observable.
    */
   private initPublicationGateClose(): void {
+    const flagWasOn = signal(false);
     toObservable(this.enhancedEditorEnabled)
-      .pipe(
-        pairwise(),
-        filter(([was, now]) => was && !now && !this.isEditMode() && !this.creatingDraft() && this.selectedPublication() !== null),
-        takeUntilDestroyed(this.destroyRef)
-      )
+      .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => flagWasOn.set(true));
+    const gateClosedOnSelection = computed(
+      () => flagWasOn() && !this.enhancedEditorEnabled() && !this.isEditMode() && !this.creatingDraft() && this.selectedPublication() !== null
+    );
+    toObservable(gateClosedOnSelection)
+      .pipe(filter(Boolean), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.selectedPublication.set(null);
         this.messageService.add({
