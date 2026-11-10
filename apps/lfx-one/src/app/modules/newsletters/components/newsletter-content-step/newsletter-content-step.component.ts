@@ -154,9 +154,11 @@ export class NewsletterContentStepComponent implements OnInit {
     if (layout !== null) {
       this.editorMode.set('blocks');
     } else if (this.templateLocked()) {
-      // An edition on a template set has no basic editor, even on mobile, which shows the desktop notice.
+      // An edition on a template set has no basic editor, even on mobile, which shows the desktop
+      // notice. The composer only mounts on desktop, so a new draft opened on mobile still gets its
+      // starter blocks once the viewport crosses the breakpoint.
       this.editorMode.set('blocks');
-      this.seedStarterBlocks.set(this.newDraft() && !this.isMobile());
+      this.seedStarterBlocks.set(this.newDraft());
     } else if (this.newDraft() && !this.isMobile() && stripHtml(this.form().get('bodyHtml')?.value ?? '').length === 0) {
       this.seedStarterBlocks.set(true);
       this.editorMode.set('blocks');

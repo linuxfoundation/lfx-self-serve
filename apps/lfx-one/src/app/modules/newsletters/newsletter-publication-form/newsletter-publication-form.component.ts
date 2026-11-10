@@ -12,6 +12,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   NEWSLETTER_PUBLICATION_FROM_NAME_MAX_LENGTH,
+  NEWSLETTER_PUBLICATION_NO_TEMPLATE_OPTION,
   NEWSLETTER_PUBLICATION_NAME_MAX_LENGTH,
   NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH,
   NEWSLETTER_TEMPLATE_LABELS,
@@ -26,9 +27,7 @@ import { reconcileRouteProjectContext } from '@shared/utils/entity-project-conte
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { finalize, map, Observable } from 'rxjs';
-
-const NO_TEMPLATE_OPTION: NewsletterPublicationOption = { label: 'Each edition picks its own template', value: '' };
+import { finalize, map, Observable, take } from 'rxjs';
 
 /**
  * Creates or edits a publication: its name, template set, sender name and reply-to (#4349). The
@@ -81,8 +80,11 @@ export class NewsletterPublicationFormComponent {
   protected readonly errorMessage = signal<string | null>(null);
   private readonly loadedPublication = signal<NewsletterPublication | null>(null);
   protected readonly templateOptions: Signal<NewsletterPublicationOption[]> = this.initTemplateOptions();
+  // Set when the form is destroyed, so a save that finishes after the user left does not navigate.
+  private destroyed = false;
 
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
     reconcileRouteProjectContext(this.routeProjectUid, this.projectService, this.projectContextService, this.router, this.destroyRef);
     this.manifestService.loadTemplates(this.projectUid()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
     this.initLoadPublication();
@@ -96,15 +98,16 @@ export class NewsletterPublicationFormComponent {
     }
     this.errorMessage.set(null);
     this.saving.set(true);
+    // take(1), not takeUntilDestroyed: leaving the form must not cancel a write already sent.
     this.save$()
       .pipe(
-        finalize(() => this.saving.set(false)),
-        takeUntilDestroyed(this.destroyRef)
+        take(1),
+        finalize(() => this.saving.set(false))
       )
       .subscribe({
         next: (publication) => {
           this.messageService.add({ severity: 'success', summary: 'Publication saved', detail: `${publication.name} was saved.` });
-          this.goBack(publication.id);
+          if (!this.destroyed) this.goBack(publication.id);
         },
         error: (err: HttpErrorResponse) => this.errorMessage.set(this.saveErrorMessage(err)),
       });
@@ -156,7 +159,7 @@ export class NewsletterPublicationFormComponent {
 
   private initTemplateOptions(): Signal<NewsletterPublicationOption[]> {
     return computed(() => [
-      NO_TEMPLATE_OPTION,
+      NEWSLETTER_PUBLICATION_NO_TEMPLATE_OPTION,
       ...this.manifestService.templates().map((template) => ({ label: NEWSLETTER_TEMPLATE_LABELS[template.key] ?? template.label, value: template.key })),
     ]);
   }

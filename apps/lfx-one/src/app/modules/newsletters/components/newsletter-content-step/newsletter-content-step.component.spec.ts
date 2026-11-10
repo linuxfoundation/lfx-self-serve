@@ -175,6 +175,19 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     expect(q('newsletter-content-composer-mobile-switch')).toBeNull();
   });
 
+  it('seeds starter blocks for an edition on a template set opened on mobile once it reaches desktop', async () => {
+    stubMatchMedia(true);
+    StubBlockComposerComponent.seedStarters = false;
+    await createWith(makeForm(null), { newDraft: true, lockedTemplateKey: 'aaif-weekly-agentic' });
+    expect(q('newsletter-content-composer')).toBeNull();
+
+    fireResize(false);
+    fixture.detectChanges();
+
+    expect(q('newsletter-content-composer')).not.toBeNull();
+    expect(StubBlockComposerComponent.seedStarters).toBe(true);
+  });
+
   it('keeps a draft with an authored body on the basic editor', async () => {
     stubMatchMedia(false);
     const form = makeForm(null);

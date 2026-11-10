@@ -5,7 +5,11 @@
   @if (readOnly()) {
     <div class="flex items-center justify-between gap-3">
       <div class="text-sm text-gray-700" data-testid="newsletter-publication-picker-readonly">
-        Edition of <span class="font-medium text-gray-900">{{ selected()?.name }}</span>
+        @if (selected(); as publication) {
+          Edition of <span class="font-medium text-gray-900">{{ publication.name }}</span>
+        } @else {
+          One-off newsletter
+        }
       </div>
       @if (selected(); as publication) {
         <button

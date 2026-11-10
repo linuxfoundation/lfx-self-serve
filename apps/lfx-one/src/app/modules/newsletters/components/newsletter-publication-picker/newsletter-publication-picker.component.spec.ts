@@ -6,7 +6,7 @@ import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { NewsletterPublication } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { ConfirmationService, Confirmation } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterPublicationPickerComponent } from './newsletter-publication-picker.component';
@@ -145,6 +145,33 @@ describe('NewsletterPublicationPickerComponent', () => {
     expect(listAllPublications).not.toHaveBeenCalled();
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="newsletter-publication-picker-readonly"]')?.textContent).toContain(
       'Weekly update'
+    );
+  });
+  it('drops the previous project’s selection and list before loading another project', async () => {
+    await render({ selected: publication() });
+    expect(emitted).toEqual([]);
+    const pending = new Subject<NewsletterPublication[]>();
+    listAllPublications.mockReturnValue(pending);
+
+    await render({ projectUid: 'p-2' });
+
+    expect(emitted).toEqual([null]);
+    expect((fixture.componentInstance as unknown as { options: () => { value: string }[] }).options().map((option) => option.value)).toEqual(['']);
+  });
+
+  it('drops a change accepted after the picker turned read-only, and resets the control', async () => {
+    await render({ selected: publication(), hasContent: true, layoutTemplateKey: 'set-a' });
+    control().setValue('pub-2');
+    await render({ readOnly: true });
+    (confirm.mock.calls[0][0] as Confirmation).accept?.();
+    expect(emitted).toEqual([]);
+    expect(control().value).toBe('pub-1');
+  });
+
+  it('shows a one-off draft as one-off while it is read-only', async () => {
+    await render({ readOnly: true, selected: null });
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="newsletter-publication-picker-readonly"]')?.textContent).toContain(
+      'One-off newsletter'
     );
   });
 });

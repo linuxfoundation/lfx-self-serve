@@ -241,6 +241,7 @@ export class NewsletterManageComponent {
   // sender details and template set to every edition.
   private readonly draftPublicationUid = signal<string | null>(null);
   private readonly draftPublication = signal<NewsletterPublication | null>(null);
+  private readonly draftPublicationPending = signal<boolean>(false);
   private readonly draftPublicationReadFailed = signal<boolean>(false);
   // The audience a publication filled in, so switching publication replaces it rather than keeping it.
   private readonly audienceFromPublication = signal<string[] | null>(null);
@@ -252,20 +253,27 @@ export class NewsletterManageComponent {
     const publication = this.selectedPublication() ?? this.draftPublication();
     return publication && !publication.implicit ? publication : null;
   });
+  // The first save of a new draft is in flight. Its request already names a publication, so the
+  // picker is frozen until the draft exists and can no longer be moved.
+  public readonly creatingDraft: Signal<boolean> = computed(() => this.savingDraft() && !this.isEditMode());
+  public readonly publicationLocked: Signal<boolean> = computed(() => this.isEditMode() || this.creatingDraft());
   public readonly showPublicationPicker: Signal<boolean> = computed(
     () => this.publicationsEnabled() && (!this.isEditMode() || this.activePublication() !== null)
   );
   // Opening the publication form leaves this page. A new draft loses anything typed, and a saved
   // one loses edits the autosave has not sent yet.
+  // isDirty leaves out the schedule, so a send time the autosave has not sent yet is checked here.
   public readonly publicationFormLosesWork: Signal<boolean> = computed(() =>
-    this.isEditMode() ? this.isDirty() : this.audienceFilled() || this.subjectFilled() || this.bodyFilled()
+    this.isEditMode()
+      ? this.isDirty() || this.lastSavedSnapshot()?.scheduledAt !== this.scheduleAtIso()
+      : this.audienceFilled() || this.subjectFilled() || this.bodyFilled()
   );
-  // When an edition's publication cannot be read, the edition stays on its own template set rather
-  // than unlocking an editor the service would refuse to save.
+  // While an edition's publication is still loading, or when it cannot be read, the edition stays on
+  // its own template set rather than unlocking an editor the service would refuse to save.
   public readonly lockedTemplateKey: Signal<string | null> = computed(() => {
     const publicationKey = this.activePublication()?.template_key;
     if (publicationKey) return publicationKey;
-    return this.draftPublicationReadFailed() ? (this.bodyLayoutValue()?.template_key ?? null) : null;
+    return this.draftPublicationPending() || this.draftPublicationReadFailed() ? (this.bodyLayoutValue()?.template_key ?? null) : null;
   });
 
   // === Auth-derived ===
@@ -601,6 +609,9 @@ export class NewsletterManageComponent {
    * publication filled in is replaced.
    */
   protected onPublicationChange(publication: NewsletterPublication | null): void {
+    // A change confirmed after the first save started would leave the draft under one publication
+    // and the page showing another.
+    if (this.publicationLocked()) return;
     this.preselectPublicationUid.set(null);
     const templateKey = publication?.template_key;
     if (templateKey && this.form.controls.bodyLayout.value?.template_key !== templateKey) {
@@ -1695,13 +1706,15 @@ export class NewsletterManageComponent {
       .pipe(
         switchMap((uid) => {
           this.draftPublicationReadFailed.set(false);
+          this.draftPublicationPending.set(!!uid);
           if (!uid) return of(null);
           return this.newsletterService.getPublication(this.projectUid(), uid).pipe(
             catchError((error: unknown) => {
               console.error('[NewsletterManage] Failed to load the draft publication', error);
               this.draftPublicationReadFailed.set(true);
               return of(null);
-            })
+            }),
+            finalize(() => this.draftPublicationPending.set(false))
           );
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -1746,7 +1759,13 @@ export class NewsletterManageComponent {
     // A freshly loaded draft matches the server, so seed the saved snapshot —
     // otherwise isDirty would read true on reopen and gate preview/send off until
     // the first autosave.
-    this.recordSavedSnapshot({ subject, bodyHtml, bodyLayout: this.serializeLayout(bodyLayout), committeeUids, scheduledAt: draft.scheduled_at ?? null });
+    this.recordSavedSnapshot({
+      subject,
+      bodyHtml,
+      bodyLayout: this.serializeLayout(bodyLayout),
+      committeeUids,
+      scheduledAt: draft.scheduled_at ? new Date(draft.scheduled_at).toISOString() : null,
+    });
     this.fetchRecipientCountFor(committeeUids);
   }
 
@@ -1943,12 +1962,17 @@ export class NewsletterManageComponent {
 
     // publication_uid is added only for a publication picked with the flag on, so with the flag
     // off the request is exactly what it was before publications existed.
-    const publicationUid = this.publicationsEnabled() ? this.selectedPublication()?.id : undefined;
+    // A publication from another project is never sent: the picker clears it on a project switch.
+    const requestedPublication = this.selectedPublication();
+    const publicationUid = this.publicationsEnabled() && requestedPublication?.project_uid === projectUid ? requestedPublication.id : undefined;
     const create: CreateNewsletterRequest = publicationUid ? { ...basePayload, publication_uid: publicationUid } : basePayload;
     return this.newsletterService.createNewsletter(projectUid, create).pipe(
       take(1),
       finalize(clearSavingFlags),
       map((draft) => {
+        // Keep the page on the publication the draft was created under.
+        const savedUnder = draft.publication_uid ?? publicationUid;
+        this.selectedPublication.set(publicationUid && savedUnder === publicationUid ? requestedPublication : null);
         this.newsletterId.set(draft.id);
         this.version.set(draft.version);
         this.syncDerivedBodyHtml(draft);

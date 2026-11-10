@@ -12,7 +12,7 @@ import { NewsletterService } from '@services/newsletter.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { NewsletterPublicationFormComponent } from './newsletter-publication-form.component';
@@ -187,5 +187,30 @@ describe('NewsletterPublicationFormComponent', () => {
     expect(failed.componentInstance.form.disabled).toBe(true);
     (failed.componentInstance as unknown as { onSubmit: () => void }).onSubmit();
     expect(service.createPublication).not.toHaveBeenCalled();
+  });
+  it('lets a save finish after the form is destroyed', async () => {
+    await setup(null);
+    const response = new Subject<NewsletterPublication>();
+    service.createPublication.mockReturnValue(response);
+    form().patchValue({ name: 'Weekly update' });
+    submit();
+    fixture.destroy();
+
+    expect(response.observed).toBe(true);
+    const navigate = TestBed.inject(Router).navigate as unknown as ReturnType<typeof vi.fn>;
+    navigate.mockClear();
+    response.next(PUBLICATION);
+    expect(response.observed).toBe(false);
+    // The user already left, so the finished save does not pull them back.
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('puts each label id on the native input so the label targets it', async () => {
+    await setup(null);
+    const root = fixture.nativeElement as HTMLElement;
+    for (const id of ['newsletter-publication-name', 'newsletter-publication-from-name', 'newsletter-publication-reply-to']) {
+      expect(root.querySelectorAll(`#${id}`).length).toBe(1);
+      expect(root.querySelector(`#${id}`)?.tagName).toBe('INPUT');
+    }
   });
 });

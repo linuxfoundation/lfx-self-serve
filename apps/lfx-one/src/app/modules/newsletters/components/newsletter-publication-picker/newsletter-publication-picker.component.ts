@@ -6,13 +6,12 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { SelectComponent } from '@components/select/select.component';
+import { NEWSLETTER_PUBLICATION_ONE_OFF_OPTION } from '@lfx-one/shared/constants';
 import { NewsletterPublication, NewsletterPublicationOption } from '@lfx-one/shared/interfaces';
 import { NewsletterService } from '@services/newsletter.service';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, filter, of, switchMap, tap } from 'rxjs';
-
-const ONE_OFF_OPTION: NewsletterPublicationOption = { label: 'No publication (one-off newsletter)', value: '' };
 
 /**
  * Chooses the publication a new newsletter is an edition of (#4349). Rendered by the manage page
@@ -50,7 +49,7 @@ export class NewsletterPublicationPickerComponent {
   protected readonly loadFailed = signal<boolean>(false);
   protected readonly returnQueryParams = computed(() => (this.returnToNewsletterUid() ? { returnTo: this.returnToNewsletterUid() } : {}));
   protected readonly options: Signal<NewsletterPublicationOption[]> = computed(() => [
-    ONE_OFF_OPTION,
+    NEWSLETTER_PUBLICATION_ONE_OFF_OPTION,
     ...this.publications().map((publication) => ({ label: publication.name, value: publication.id })),
   ]);
 
@@ -104,16 +103,26 @@ export class NewsletterPublicationPickerComponent {
       rejectLabel: 'Keep current',
       acceptButtonStyleClass: 'p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => this.publicationChange.emit(publication),
-      reject: () => this.form.controls.publication.setValue(this.selected()?.id ?? '', { emitEvent: false }),
+      // The picker can turn read-only while the dialog is open (the first save started), and then
+      // the change no longer applies, so the control goes back to the selection.
+      accept: () => (this.readOnly() ? this.resetToSelected() : this.publicationChange.emit(publication)),
+      reject: () => this.resetToSelected(),
     });
+  }
+
+  private resetToSelected(): void {
+    this.form.controls.publication.setValue(this.selected()?.id ?? '', { emitEvent: false });
   }
 
   private initPublications(): void {
     toObservable(this.projectUid)
       .pipe(
         filter((projectUid) => !!projectUid && !this.readOnly()),
-        tap(() => {
+        tap((projectUid) => {
+          // Drop the previous project's list and selection first, so neither can be saved against
+          // this project while its list loads or after the load fails.
+          this.publications.set([]);
+          if (this.selected() && this.selected()?.project_uid !== projectUid) this.publicationChange.emit(null);
           this.loading.set(true);
           this.loadFailed.set(false);
         }),

@@ -185,7 +185,7 @@
                       [projectUid]="projectUid()"
                       [selected]="activePublication()"
                       [preselectUid]="preselectPublicationUid()"
-                      [readOnly]="isEditMode()"
+                      [readOnly]="publicationLocked()"
                       [hasContent]="bodyFilled()"
                       [layoutTemplateKey]="form.controls.bodyLayout.value?.template_key ?? null"
                       [returnToNewsletterUid]="newsletterId()"

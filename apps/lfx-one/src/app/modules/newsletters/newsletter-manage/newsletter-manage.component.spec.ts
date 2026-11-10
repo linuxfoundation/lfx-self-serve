@@ -13,7 +13,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { firstValueFrom, Observable, of, throwError } from 'rxjs';
+import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterManageComponent } from './newsletter-manage.component';
@@ -42,6 +42,9 @@ interface ManageApi {
   senderName: () => string;
   replyToEmail: () => string;
   handleSaveError: (err: HttpErrorResponse, isManual: boolean) => Observable<null>;
+  publicationLocked: () => boolean;
+  publicationFormLosesWork: () => boolean;
+  selectedPublication: { (): NewsletterPublication | null; set: (value: NewsletterPublication | null) => void };
 }
 
 describe('NewsletterManageComponent publications (#4349)', () => {
@@ -244,5 +247,93 @@ describe('NewsletterManageComponent publications (#4349)', () => {
     await firstValueFrom(api.saveDraft(true));
 
     expect(messageAdd.mock.calls[0][0].detail).toBe('boom');
+  });
+  it('freezes the publication while the first save is in flight, and keeps the one it was saved under', () => {
+    const response = new Subject<Newsletter>();
+    newsletterService.createNewsletter.mockReturnValue(response);
+    const { component, api } = newComponent();
+    fillDraft(component);
+    api.onPublicationChange({ ...PUBLICATION, template_key: undefined });
+
+    api.saveDraft(true).subscribe();
+    expect(api.publicationLocked()).toBe(true);
+    api.onPublicationChange({ ...PUBLICATION, id: 'pub-2', name: 'Other', template_key: undefined });
+    expect(api.selectedPublication()?.id).toBe(PUBLICATION.id);
+
+    response.next({ id: 'n-1', version: 1, body_html: '<p>Body</p>', publication_uid: PUBLICATION.id } as Newsletter);
+    response.complete();
+    expect(component.isEditMode()).toBe(true);
+    expect(api.selectedPublication()?.id).toBe(PUBLICATION.id);
+  });
+
+  it('never sends a publication from another project', async () => {
+    const { component, api } = newComponent();
+    fillDraft(component);
+    api.selectedPublication.set({ ...PUBLICATION, project_uid: 'p-other' });
+
+    await firstValueFrom(api.saveDraft(true));
+
+    expect('publication_uid' in newsletterService.createNewsletter.mock.calls[0][1]).toBe(false);
+  });
+
+  it('warns before the publication form discards a schedule-only edit', () => {
+    newsletterService.getNewsletter.mockReturnValue(
+      of({ id: 'n-1', version: 2, status: 'draft', subject: '', body_html: '', committee_uids: [], publication_uid: PUBLICATION.id } as unknown as Newsletter)
+    );
+    const { component, api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
+    TestBed.tick();
+    expect(api.publicationFormLosesWork()).toBe(false);
+
+    const future = new Date(Date.now() + 3 * 86_400_000);
+    component.form.patchValue({ sendMode: 'schedule', scheduleDate: future, scheduleTime: '10:00 AM' });
+    TestBed.tick();
+
+    expect(component.scheduleAtIso()).not.toBeNull();
+    expect(api.publicationFormLosesWork()).toBe(true);
+  });
+
+  it('does not warn for an opened edition whose saved schedule is unchanged', () => {
+    const at = new Date(Date.now() + 3 * 86_400_000);
+    at.setUTCSeconds(0, 0);
+    newsletterService.getNewsletter.mockReturnValue(
+      of({
+        id: 'n-1',
+        version: 2,
+        status: 'draft',
+        subject: '',
+        body_html: '',
+        committee_uids: [],
+        publication_uid: PUBLICATION.id,
+        // The service sends RFC 3339 with no fraction; scheduleAtIso() rebuilds it with milliseconds.
+        scheduled_at: at.toISOString().replace('.000Z', 'Z'),
+      } as unknown as Newsletter)
+    );
+    const { component, api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
+    TestBed.tick();
+
+    expect(component.scheduleAtIso()).toBe(at.toISOString());
+    expect(api.publicationFormLosesWork()).toBe(false);
+  });
+
+  it('keeps an opened edition on its own template set while its publication loads', () => {
+    const lookup = new Subject<NewsletterPublication>();
+    newsletterService.getPublication.mockReturnValue(lookup);
+    newsletterService.getNewsletter.mockReturnValue(
+      of({
+        id: 'n-1',
+        version: 2,
+        status: 'draft',
+        committee_uids: [],
+        publication_uid: PUBLICATION.id,
+        body_layout: { wrapper_key: 'w', template_key: 'set-a', blocks: [] },
+      } as unknown as Newsletter)
+    );
+    const { api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
+    TestBed.tick();
+    expect(api.lockedTemplateKey()).toBe('set-a');
+
+    lookup.next({ ...PUBLICATION, template_key: undefined });
+    lookup.complete();
+    expect(api.lockedTemplateKey()).toBeNull();
   });
 });
