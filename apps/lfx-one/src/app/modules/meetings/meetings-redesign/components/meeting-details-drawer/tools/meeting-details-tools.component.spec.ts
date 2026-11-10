@@ -4,7 +4,6 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
-import { DOCUMENT } from '@angular/common';
 import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -68,10 +67,10 @@ describe('MeetingDetailsToolsComponent', () => {
   let closed: Subject<void>;
   let closeDialog: ReturnType<typeof vi.fn>;
   let openSummary: ReturnType<typeof vi.fn>;
+  let openTranscript: ReturnType<typeof vi.fn>;
   let openRecording: ReturnType<typeof vi.fn>;
   let copyRecordingLink: ReturnType<typeof vi.fn>;
   let applySummaryChange: ReturnType<typeof vi.fn>;
-  let windowOpen: ReturnType<typeof vi.fn>;
   let modalOpen: ReturnType<typeof vi.fn>;
   let participantsVersion: WritableSignal<number>;
   let refreshParticipants: ReturnType<typeof vi.fn>;
@@ -120,10 +119,10 @@ describe('MeetingDetailsToolsComponent', () => {
     closed = new Subject<void>();
     closeDialog = vi.fn(() => closed.next());
     openSummary = vi.fn();
+    openTranscript = vi.fn();
     openRecording = vi.fn();
     copyRecordingLink = vi.fn();
     applySummaryChange = vi.fn();
-    windowOpen = vi.fn();
     modalOpen = vi.fn(() => ({ closed: new Subject<void>(), close: vi.fn() }));
     participantsVersion = signal(0);
     refreshParticipants = vi.fn();
@@ -171,11 +170,10 @@ describe('MeetingDetailsToolsComponent', () => {
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingsHomeEditService, useValue: { edit } },
         { provide: MeetingsHomeStore, useValue: { applySummaryChange } },
-        { provide: MeetingsHomeDialogsService, useValue: { openSummary, openRecording, copyRecordingLink } },
+        { provide: MeetingsHomeDialogsService, useValue: { openSummary, openTranscript, openRecording, copyRecordingLink } },
         { provide: UiModalService, useValue: { open: modalOpen } },
       ],
     });
-    TestBed.inject(DOCUMENT).defaultView!.open = windowOpen as unknown as Window['open'];
   });
 
   afterEach(() => {
@@ -426,7 +424,7 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-attendance-grid')).toBeNull();
     });
 
-    it('offers the recording, the pending summary to an invitee, and the transcript on the meeting page', async () => {
+    it('offers the recording, the pending summary to an invitee, and the transcript dialog', async () => {
       await render({}, 'ended');
 
       expect(find('meeting-details-recording')).not.toBeNull();
@@ -438,7 +436,9 @@ describe('MeetingDetailsToolsComponent', () => {
       });
 
       await click('meeting-details-transcript');
-      expect(windowOpen).toHaveBeenCalledWith(expect.stringContaining('/meetings/synthetic-meeting-1762362000000'), '_blank', 'noopener,noreferrer');
+      expect(openTranscript).toHaveBeenCalledWith('synthetic-meeting-1762362000000', expect.objectContaining({ meeting: expect.anything() }), {
+        origin: 'drawer',
+      });
     });
 
     it('opens and copies the recording link', async () => {

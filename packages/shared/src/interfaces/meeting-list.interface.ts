@@ -182,6 +182,15 @@ export interface MeetingSummaryDialogData {
   showPending?: boolean;
 }
 
+/** What the meetings home transcript dialog opens with. */
+export interface MeetingTranscriptDialogData {
+  row: MeetingHomeRow;
+  /** The past meeting whose transcript file is read. */
+  pastMeetingId: string;
+  /** Defaults to `page`. */
+  origin?: MeetingDialogOrigin;
+}
+
 /** What the meetings home edit scope dialog opens with. */
 export interface MeetingEditScopeDialogData {
   row: MeetingHomeRow;
