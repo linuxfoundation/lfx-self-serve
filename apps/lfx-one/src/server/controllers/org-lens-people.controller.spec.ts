@@ -481,6 +481,16 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
     expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null);
   });
 
+  it('looks up the records alone when any requested id has no assignment, even if the found ones agree', async () => {
+    // ID_TWO is absent from the org's assignments: agreement over ID_ONE alone could hand an email-grouped opener one
+    // member's LF addresses. Fail closed to the records, as agreedUsername does for a member without a username.
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: 'JDoe' }] });
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO}` }), buildRes(), vi.fn());
+
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], null);
+  });
+
   it.each([
     [
       'resolved when a record email exists',

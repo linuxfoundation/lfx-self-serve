@@ -699,13 +699,18 @@ export class OrgLensPeopleController {
 
   /**
    * The LF username the org's key-contact assignments with these record ids agree on (the per-caller cached read the
-   * Key Contacts tab has already warmed), or `null` when they agree on none or the read fails (logged, counts only).
+   * Key Contacts tab has already warmed), or `null` when they agree on none, when any requested id has no assignment
+   * (agreement over a subset would let an email-grouped opener reach one member's LF addresses — the DR-010 guard), or
+   * when the read fails (logged, counts only).
    */
   private async resolveKeyContactUsername(req: Request, orgUid: string, keyContactIds: readonly string[], operation: string): Promise<string | null> {
     try {
       const ids = new Set(keyContactIds);
       const { assignments } = await this.keyContactsService.getKeyContacts(req, orgUid);
       const held = assignments.filter((assignment) => ids.has(assignment.contactUid));
+      if (new Set(held.map((assignment) => assignment.contactUid)).size !== ids.size) {
+        return null;
+      }
       return agreedUsername(held.map((assignment) => assignment.username));
     } catch (error) {
       logger.warning(req, operation, 'key contacts read failed; looking up the record addresses only', {
