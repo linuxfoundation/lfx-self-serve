@@ -18,6 +18,16 @@ export class TranscendService {
   private readonly document = inject(DOCUMENT);
   private readonly renderer: Renderer2 = inject(RendererFactory2).createRenderer(null, null);
 
+  /**
+   * False when the consent manager UI cannot load on this page, so "Cookie settings" entry points hide
+   * themselves. index.html sets `data-ui-allow-in-embeds="off"` on airgap.js because public pages (the
+   * project calendar) are embedded in iframes on project sites; Transcend then skips its UI inside a
+   * frame and `showConsentManager()` is never defined there (lfx-self-serve-ops#1438). Always true on the
+   * server, which cannot know whether the page will be framed: bind it to a class, not `@if`, so the
+   * server-rendered and hydrated DOM stay the same.
+   */
+  public readonly preferencesAvailable: boolean = this.initPreferencesAvailable();
+
   // Opens the cookie-preferences consent manager. Warns when airgap.js did not load (blocked or
   // failed), so a "Cookie settings" click that cannot open anything is visible in the console.
   public showPreferences(): void {
@@ -84,5 +94,13 @@ export class TranscendService {
       return false;
     }
     return Object.values(consent.purposes ?? {}).some((value) => value === true || value === 'Auto');
+  }
+
+  /** Mirrors Transcend's own check: the UI is suppressed only in a frame (`self !== top`) with the attribute off. */
+  private initPreferencesAvailable(): boolean {
+    if (!isPlatformBrowser(this.platformId) || window.self === window.top) {
+      return true;
+    }
+    return this.document.querySelector('script[src*="/airgap.js"]')?.getAttribute('data-ui-allow-in-embeds') !== 'off';
   }
 }

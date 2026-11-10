@@ -108,7 +108,11 @@
               >
               page.
             </p>
-            <button type="button" (click)="manageCookies()" class="cursor-pointer border-0 bg-transparent p-0 text-xs text-gray-700 hover:underline">
+            <button
+              type="button"
+              (click)="manageCookies()"
+              class="cursor-pointer border-0 bg-transparent p-0 text-xs text-gray-700 hover:underline"
+              [class.hidden]="!cookieSettingsAvailable">
               Manage cookie preferences.
             </button>
           </footer>
