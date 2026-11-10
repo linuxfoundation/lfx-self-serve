@@ -21,10 +21,10 @@
       (viewAll)="context.tab.set('guests')"
       data-testid="meeting-details-rsvp-grid" />
   </div>
-} @else if (roster(); as roster) {
+} @else if (roster()) {
   <!-- Without RSVP counts (RSVPs off, or nobody invited yet), only how many are invited. -->
   <span class="flex items-center gap-[6px] text-[12px] leading-[16px] text-gray-600" data-testid="meeting-details-invited">
-    <i class="fa-light fa-users" aria-hidden="true"></i>{{ roster.length }} invited
+    <i class="fa-light fa-users" aria-hidden="true"></i>{{ rows().length }} invited
   </span>
 }
 <!-- The editor needs the project slug, as Edit Meeting does. -->

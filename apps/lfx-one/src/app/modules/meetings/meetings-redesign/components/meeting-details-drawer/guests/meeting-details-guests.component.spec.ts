@@ -92,6 +92,7 @@ describe('MeetingDetailsGuestsComponent', () => {
   let hosts: WritableSignal<readonly MeetingHostCandidate[]>;
   let guestCount: WritableSignal<number | null>;
   let participantsVersion: WritableSignal<number>;
+  let removedUids: WritableSignal<ReadonlySet<string>>;
   let composerOpen: ReturnType<typeof vi.fn>;
   let modalOpen: ReturnType<typeof vi.fn>;
   let closeDialog: ReturnType<typeof vi.fn>;
@@ -118,6 +119,7 @@ describe('MeetingDetailsGuestsComponent', () => {
     hosts = signal([]);
     guestCount = signal(null);
     participantsVersion = signal(0);
+    removedUids = signal(new Set<string>());
     removedIds = signal(new Set<string>());
     meetingService = {
       getMeetingDetail: vi.fn(() => of(current())),
@@ -153,6 +155,7 @@ describe('MeetingDetailsGuestsComponent', () => {
             occurrence,
             hosts,
             guestCount,
+            removedRegistrantUids: removedUids,
             pastMeetingId: signal('synthetic-past-id'),
             participantsVersion,
             refreshList,
@@ -285,6 +288,13 @@ describe('MeetingDetailsGuestsComponent', () => {
     expect(guestCount()).toBe(2);
     expect(names()).not.toContain('Bo Kim (You)');
     expect(hosts().map((person) => person.email)).toEqual(['org@acme.example']);
+  });
+
+  it('drops guests the drawer already removed when the tab mounts', async () => {
+    removedUids.set(new Set(['r-3']));
+    await render();
+    expect(names()).not.toContain('Cy Ng');
+    expect(guestCount()).toBe(2);
   });
 
   it('clears the count and hosts when the list becomes hidden', async () => {
@@ -584,6 +594,7 @@ describe('MeetingDetailsGuestsComponent', () => {
         })
       );
       expect(meetingService['deleteMeetingRegistrants']).toHaveBeenCalledWith('synthetic-meeting', ['r-3']);
+      expect(removedUids()).toEqual(new Set(['r-3']));
       expect(names()).toEqual(['Bo Kim (You)', 'Ada Lane']);
       expect(guestCount()).toBe(2);
       expect(refreshList).toHaveBeenCalled();

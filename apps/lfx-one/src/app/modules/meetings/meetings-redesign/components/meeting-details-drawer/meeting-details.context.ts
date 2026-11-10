@@ -79,6 +79,8 @@ export class MeetingDetailsContext {
   public readonly guestCount: WritableSignal<number | null> = signal(null);
   /** Bumped when the shown date's participants change; the sections that list them reload on it. */
   public readonly participantsVersion: WritableSignal<number> = signal(0);
+  /** Registrants removed in the drawer; every section drops them until it closes. */
+  public readonly removedRegistrantUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
 
   public constructor() {
     this.startClock();

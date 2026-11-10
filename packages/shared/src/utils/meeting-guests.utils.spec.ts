@@ -19,6 +19,7 @@ import {
   getMeetingGuestRowActions,
   resortMeetingGuestRows,
   getOfferedMeetingGuestFilters,
+  isMeetingGuestViewer,
 } from './meeting-guests.utils';
 
 const viewer = { username: 'viewer', email: 'viewer@acme.example' };
@@ -309,6 +310,13 @@ describe('filters and chips', () => {
       true
     );
     expect(filterMeetingGuestRows(unnamed, 'guest', MEETING_GUEST_EMPTY_FILTERS)).toEqual([]);
+  });
+
+  it('matches the viewer by email or username in any case, never on blanks', () => {
+    expect(isMeetingGuestViewer({ email: ' VIEWER@acme.example ' }, viewer)).toBe(true);
+    expect(isMeetingGuestViewer({ username: 'Viewer' }, viewer)).toBe(true);
+    expect(isMeetingGuestViewer({ email: 'other@acme.example', username: 'other' }, viewer)).toBe(false);
+    expect(isMeetingGuestViewer({ email: '', username: null }, { username: null, email: null })).toBe(false);
   });
 
   it('marks the viewer by email in any case', () => {
