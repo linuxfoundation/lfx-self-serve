@@ -96,8 +96,8 @@ const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SP
 const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
 
 /**
- * The forecast view `f` also holds closed events and carries no end date, so its reads keep an event until it ends
- * through the registrations view's past flag, the one the Overview events list reads.
+ * The forecast view `f` holds closed events and has no end date or past flag of its own; until it does, its reads keep an
+ * event until it ends through the registrations view's past flag, the one the Overview events list reads.
  */
 const FORECAST_EVENT_NOT_ENDED = `EXISTS (
           SELECT 1
@@ -314,7 +314,7 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * Every upcoming event's event-wide headline. The headline columns repeat on every curve row, so
+   * Every event's event-wide headline until the event ends. The headline columns repeat on every curve row, so
    * one modeled row per event is read; the model is a snapshot of now, so no period applies.
    */
   public async getRegistrationForecast(req: Request, query: HealthMetricsEventsForecastQuery): Promise<HealthMetricsEventsForecast> {
@@ -349,7 +349,7 @@ export class HealthMetricsEventsService {
 
     // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
     if (result.rows.length > HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP) {
-      logger.warning(req, 'get_events_registration_forecast', 'Upcoming event rows hit the read cap', {
+      logger.warning(req, 'get_events_registration_forecast', 'Forecast event rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
       });
@@ -1108,7 +1108,7 @@ export class HealthMetricsEventsService {
     `;
     if (await this.hasRow(req, PAST_EVENTS_VIEW, pastSql, [query.foundationSlug])) return true;
 
-    const upcomingSql = `
+    const notEndedSql = `
       SELECT 1 AS has_event
       FROM ${REGISTRATION_FORECAST_VIEW} f
       WHERE foundation_slug = ?
@@ -1116,7 +1116,7 @@ export class HealthMetricsEventsService {
         AND ${FORECAST_EVENT_NOT_ENDED}
       LIMIT 1
     `;
-    if (await this.hasRow(req, REGISTRATION_FORECAST_VIEW, upcomingSql, [query.foundationSlug])) return true;
+    if (await this.hasRow(req, REGISTRATION_FORECAST_VIEW, notEndedSql, [query.foundationSlug])) return true;
 
     // Revenue can outlive the events views' rows; hiding the tab would hide the revenue section with it.
     const revenueSql = `
