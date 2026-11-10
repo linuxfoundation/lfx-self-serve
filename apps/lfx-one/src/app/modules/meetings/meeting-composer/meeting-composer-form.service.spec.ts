@@ -2747,3 +2747,96 @@ describe('MeetingComposerFormService — timezone preselect', () => {
     expect(service.form().get('timezone')?.value).toBe('');
   });
 });
+
+/**
+ * Covers the save-payload safety half of GH-4944's fix: Start date now hydrates from the next
+ * upcoming occurrence (not the series origin) for an entire-series edit, but an organizer who
+ * never touches Start date/time must still have the save resend the true, unmodified start_time
+ * -- not the displayed next-occurrence stand-in. Resending the next-occurrence value unconditionally
+ * would move the series anchor on every untouched save, and could be misread upstream as a
+ * deliberate time change (re-emailing every registrant) when that date came from an individually
+ * rescheduled occurrence rather than the recurrence pattern's own next slot.
+ */
+describe('MeetingComposerFormService — save payload on an untouched Start date (GH-4944)', () => {
+  const mountEditing = (meeting: Partial<Meeting>): MeetingComposerFormService => {
+    const getMeeting = vi.fn().mockReturnValue(
+      of({
+        id: 'meeting-1',
+        organizer: true,
+        timezone: 'America/New_York',
+        duration: 30,
+        ...meeting,
+      } as Meeting)
+    );
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting,
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+    return service;
+  };
+
+  it('resends the untouched series origin, not the displayed next-occurrence default', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // Edit something unrelated; Start date/time are left exactly as hydrated.
+    service.form().get('title')?.setValue('Renamed');
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2025-05-27T16:45:00Z').toISOString());
+  });
+
+  it('sends the organizer-chosen date when Start date is deliberately changed', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    service
+      .form()
+      .get('startDate')
+      ?.setValue(new Date(2026, 11, 2)); // a deliberate, different date
+    const payload = (service as any).prepareMeetingData();
+
+    const saved = new Date(payload.start_time);
+    expect(saved.getUTCFullYear()).toBe(2026);
+    expect(saved.getUTCMonth()).toBe(11); // December
+    expect(saved.getUTCDate()).toBe(2);
+  });
+
+  it('falls back to resending the series origin once no future occurrence remains', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: undefined,
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '2' },
+    });
+
+    service.form().get('title')?.setValue('Renamed');
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2025-05-27T16:45:00Z').toISOString());
+  });
+});

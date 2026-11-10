@@ -64,6 +64,7 @@ import {
   generateRecurrenceObject,
   generateTempId,
   getActiveOccurrences,
+  getUpcomingMeetingStartTime,
   getUserTimezone,
   getMeetingCommitteeSelectionKey,
   isRecurrenceNeverEndSentinel,
@@ -283,6 +284,14 @@ export class MeetingComposerFormService {
   // composer-date-schedule's minDate() can let a past-dated meeting's own start date stay
   // selectable (GH-4944) without re-deriving it from the raw timestamp.
   public readonly originalStartDate = signal<Date | null>(null);
+  // The series' own raw start_time (edit mode only), distinct from originalStartTime once that
+  // defaults to the next occurrence (GH-4944): the whole-series save resends this verbatim instead
+  // of the displayed next-occurrence stand-in when the organizer never touched Start date/time, so
+  // an untouched save never moves the series anchor or risks the upstream "time changed" update
+  // path an edited-and-unchanged next-occurrence value could trigger (an override's moved time, or
+  // one inside the no-buffer window right after an occurrence ends, does not equal the pattern's
+  // own next slot upstream compares against).
+  private readonly seriesOriginStartTime = signal<string | null>(null);
 
   /**
    * Owner hydrated from the loaded meeting, and the baseline the save diffs the picker against.
@@ -423,6 +432,7 @@ export class MeetingComposerFormService {
     this.meeting.set(null);
     this.originalStartTime.set(null);
     this.originalStartDate.set(null);
+    this.seriesOriginStartTime.set(null);
     this.attachments.set([]);
     this.pendingAttachmentDeletions.set([]);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
@@ -1847,7 +1857,25 @@ export class MeetingComposerFormService {
     // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
     const formValue = this.form().getRawValue();
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
-    const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
+    const combinedStartDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
+    // Editing the entire series hydrates Start date/time from the next occurrence (GH-4944), not
+    // the series' own start_time, so an organizer who never touches those fields must still resend
+    // the true, unmodified origin -- not the displayed next-occurrence stand-in. Submitting the
+    // next occurrence's date unconditionally would move the series anchor on every save, and when
+    // that date came from an individually-rescheduled occurrence (or one just past the no-buffer
+    // reconciliation window) it no longer equals the pattern slot upstream's change-detection
+    // compares against, so the save would be misread as a deliberate time change and re-email every
+    // registrant. Comparing against originalStartTime (the same next-occurrence default actually
+    // displayed), not seriesOriginStartTime itself, correctly treats a deliberate edit back to the
+    // original date as a real, intentional change.
+    const original = this.originalStartTime();
+    const seriesOrigin = this.seriesOriginStartTime();
+    const startUnchanged =
+      this.isEditMode() &&
+      !!combinedStartDateTime &&
+      !!original &&
+      Math.abs(new Date(combinedStartDateTime).getTime() - new Date(original).getTime()) <= 60_000;
+    const startDateTime = startUnchanged && seriesOrigin ? seriesOrigin : combinedStartDateTime;
     const recurrenceObject = this.buildRecurrencePayload(formValue);
 
     return {
@@ -1980,15 +2008,23 @@ export class MeetingComposerFormService {
     // below read as a choice. Cleared before the patch rather than after, because the patch is
     // loud and the picker decides as it arrives.
     form.get('show_meeting_attendees')?.markAsPristine();
-    this.originalStartTime.set(meeting.start_time);
+    // Editing the entire series shows the next upcoming occurrence, not the series' original
+    // start_time -- for an ongoing weekly series that can be edited months or years after it
+    // first started, so defaulting to the origin meant Start date routinely landed deep in the
+    // past (GH-4944). Falls back to start_time itself once no future occurrence remains. Mirrors
+    // PCC and the same precedent already used for the join-page host-key window and dashboard
+    // cards (see getUpcomingMeetingStartTime()).
+    const effectiveStartTime = getUpcomingMeetingStartTime(meeting);
+    this.originalStartTime.set(effectiveStartTime);
+    this.seriesOriginStartTime.set(meeting.start_time ?? null);
 
-    // Parse start_time into the meeting's own timezone so the date and time pickers show
-    // the values the organizer chose, not the viewer's local equivalents.
+    // Parse the effective start time into the meeting's own timezone so the date and time
+    // pickers show the values the organizer chose, not the viewer's local equivalents.
     let startDate: Date | null = null;
     let startTime = '';
 
-    if (meeting.start_time) {
-      const utcDate = new Date(meeting.start_time);
+    if (effectiveStartTime) {
+      const utcDate = new Date(effectiveStartTime);
       const meetingTimezone = meeting.timezone || getUserTimezone();
       startDate = toZonedTime(utcDate, meetingTimezone);
       this.originalStartDate.set(startDate);
