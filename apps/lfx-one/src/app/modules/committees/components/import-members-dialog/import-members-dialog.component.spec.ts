@@ -128,11 +128,6 @@ describe('ImportMembersDialogComponent', () => {
     pending[call].response.error(new HttpErrorResponse({ status, headers: new HttpHeaders(headers), error: { message: `Upstream said ${status}.` } }));
   }
 
-  function revokeOk(index: number): void {
-    revokeResponses[index].next();
-    revokeResponses[index].complete();
-  }
-
   function expectNothingWritten(): void {
     expect(committeeService.bulkCreateCommitteeMembers).not.toHaveBeenCalled();
     expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
@@ -534,7 +529,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.addedCount()).toBe(3);
     });
 
-    it('stops after the third pause and leaves rows Not yet submitted for Retry', async () => {
+    it('stops after the third pause and preserves unknown outcomes for Retry', async () => {
       await upload('email\nada@example.com');
       vi.useFakeTimers();
       component.startImport();
@@ -553,10 +548,13 @@ describe('ImportMembersDialogComponent', () => {
 
       expect(component.phase()).toBe('results');
       expect(component.paused()).toBe(false);
-      expect(component.stopReason()).toBe('The service is still limiting requests. Wait a few minutes, then retry.');
-      expect(component.rows()[0].status).toBe('not_submitted');
+      expect(component.stopReason()).toBe('Automatic recovery has stopped after three pauses. Review the outcomes before retrying.');
+      expect(component.rows()[0]).toMatchObject({ status: 'unknown', uncertain: true });
       expect(component.retryableCount()).toBe(1);
-      expect(query('import-members-not-submitted-count')?.textContent).toContain('1 not yet submitted');
+      expect(query('import-members-unknown-count')?.textContent).toContain('1 outcome unknown');
+      expect(query('import-members-not-submitted-count')).toBeNull();
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
       expect(query('import-members-retry-btn')?.textContent).toContain('Retry 1');
 
       component.retryFailed();
@@ -575,11 +573,89 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('results');
       expect(component.stopReason()).toBe('You stopped the import.');
       expect(component.rows().every((row) => row.status === 'not_submitted')).toBe(true);
-      expect(component.rows()[0].reason).toBe('Import stopped before this row was sent.');
+      expect(component.rows()[0].reason).toBe('Not sent: You stopped the import.');
       expect(component.rows()[29].reason).toBe('Not sent: You stopped the import.');
       vi.advanceTimersByTime(120_000);
       expect(pending).toHaveLength(1);
       expect(component.retryableCount()).toBe(30);
+    });
+
+    it('keeps lost-response attempts unknown on Stop and Close while later chunks remain unsent', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      failBulk(0, 0);
+      component.stopImport();
+      fixture.detectChanges();
+
+      expect(
+        component
+          .rows()
+          .slice(0, 25)
+          .every((row) => row.status === 'unknown' && row.uncertain)
+      ).toBe(true);
+      expect(component.rows()[0].reason).toContain('outcome of an earlier attempt is unknown');
+      expect(
+        component
+          .rows()
+          .slice(25)
+          .every((row) => row.status === 'not_submitted' && !row.uncertain)
+      ).toBe(true);
+      expect(query('import-members-unknown-count')?.textContent).toContain('25 outcome unknown');
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
+      vi.advanceTimersByTime(120_000);
+      expect(pending).toHaveLength(1);
+    });
+
+    it.each(['seconds', 'date'])('stops for a long %s cooldown and guards manual Retry until its deadline', async (format) => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-10T12:00:00Z'));
+      component.startImport();
+      const header = format === 'seconds' ? '300' : new Date(Date.now() + 300_000).toUTCString();
+      failBulk(0, 429, { 'Retry-After': header });
+      fixture.detectChanges();
+
+      expect(component.phase()).toBe('results');
+      expect(component.paused()).toBe(false);
+      expect(component.rows().every((row) => row.status === 'not_submitted')).toBe(true);
+      expect(component.stopReason()).toContain('cooldown exceeds');
+      expect(query('import-members-retry-deadline')?.textContent).toContain('Retry no earlier than');
+      vi.advanceTimersByTime(299_999);
+      component.retryFailed();
+      expect(pending).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      component.retryFailed();
+      expect(pending).toHaveLength(2);
+      respond(1);
+      respond(2);
+      expect(component.addedCount()).toBe(30);
+    });
+
+    it('retains the cooldown when Stop ends a short pause', async () => {
+      await upload('email\nada@example.com');
+      vi.useFakeTimers();
+      component.startImport();
+      failBulk(0, 429, { 'Retry-After': '30' });
+      component.stopImport();
+      component.retryFailed();
+      expect(pending).toHaveLength(1);
+      vi.advanceTimersByTime(30_000);
+      component.retryFailed();
+      expect(pending).toHaveLength(2);
+    });
+
+    it('preserves uncertainty if a retry is refused before Stop', async () => {
+      await upload('email\nada@example.com');
+      vi.useFakeTimers();
+      component.startImport();
+      failBulk(0, 0);
+      vi.advanceTimersByTime(15_000);
+      failBulk(1, 403);
+      expect(component.rows()[0]).toMatchObject({ status: 'unknown', uncertain: true });
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
     });
 
     it.each([
@@ -664,24 +740,29 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-guide-voting_status')).not.toBeNull();
     });
 
-    it('confirms an uncertain row as added on resubmission and revokes its pending invite', async () => {
-      await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'ada@example.com', status: 'pending' }]);
-      await upload('email\nada@example.com');
-      vi.useFakeTimers();
-      component.startImport();
-      failBulk(0, 0);
-      expect(component.rows()[0]).toMatchObject({ status: 'waiting', uncertain: true });
+    it.each(['lost successful create', 'concurrent addition', 'stale preview snapshot'])(
+      'preserves existing-member skips after a %s instead of attributing creation or revoking invites',
+      async () => {
+        await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'ada@example.com', status: 'pending' }]);
+        await upload('email,role\nada@example.com,Chair');
+        vi.useFakeTimers();
+        component.startImport();
+        // These histories are indistinguishable on the wire: no response, then membership exists.
+        failBulk(0, 0);
+        expect(component.rows()[0]).toMatchObject({ status: 'waiting', uncertain: true });
+        vi.advanceTimersByTime(15_000);
+        respond(1, { 0: { status: 'skipped', reason: 'already_member', member_uid: 'existing-member' } });
 
-      vi.advanceTimersByTime(15_000);
-      respond(1, { 0: { status: 'skipped', reason: 'already_member' } });
-
-      expect(component.rows()[0].status).toBe('added');
-      expect(component.conflictCount()).toBe(0);
-      expect(committeeService.revokeCommitteeInvite).toHaveBeenCalledExactlyOnceWith('committee-1', 'invite-1');
-      revokeOk(0);
-      expect(component.phase()).toBe('results');
-      expect(component.addedCount()).toBe(1);
-    });
+        expect(component.rows()[0]).toMatchObject({ status: 'skipped', conflict: true, uncertain: false });
+        expect(component.rows()[0].reason).toContain('imported details may not have been applied');
+        expect(component.conflictCount()).toBe(1);
+        expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
+        expect(component.phase()).toBe('results');
+        expect(component.addedCount()).toBe(0);
+        component.close();
+        expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 1 });
+      }
+    );
 
     it('keeps going after a rate-limited invite cleanup, with a warning on the added row', async () => {
       await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' }]);

@@ -10,7 +10,6 @@ import {
   MEMBER_IMPORT_MAX_RECORDS,
   MEMBER_IMPORT_PAUSE_DELAYS_MS,
   MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS,
-  MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
   MEMBER_IMPORT_VOTING_COLUMNS,
 } from '../constants/member-import.constants';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
@@ -448,10 +447,13 @@ describe('classifyMemberImportBulkResult', () => {
     });
   });
 
-  it('counts an uncertain row that is now already a member as added', () => {
-    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member' }), { ...row, uncertain: true });
-    expect(patch).toMatchObject({ status: 'added', uncertain: false });
-    expect(patch.conflict).toBeUndefined();
+  it('does not attribute an existing membership to an uncertain attempt', () => {
+    const patch = classifyMemberImportBulkResult(result({ status: 'skipped', reason: 'already_member', member_uid: 'other-membership' }), {
+      ...row,
+      uncertain: true,
+    });
+    expect(patch).toMatchObject({ status: 'skipped', conflict: true, uncertain: false });
+    expect(patch.reason).toContain('imported details may not have been applied');
   });
 
   it('skips a duplicate within the request', () => {
@@ -493,8 +495,12 @@ describe('getMemberImportRetryDelayMs', () => {
     expect(getMemberImportRetryDelayMs('abc', 2, now)).toBe(MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS);
   });
 
-  it('caps a long Retry-After', () => {
-    expect(getMemberImportRetryDelayMs('999', 0, now)).toBe(MEMBER_IMPORT_RETRY_AFTER_MAX_MS);
+  it.each(['999', '300'])('preserves long Retry-After seconds: %s', (header) => {
+    expect(getMemberImportRetryDelayMs(header, 0, now)).toBe(Number(header) * 1000);
+  });
+
+  it('preserves an HTTP-date beyond the automatic wait budget', () => {
+    expect(getMemberImportRetryDelayMs(new Date(now + 300_000).toUTCString(), 0, now)).toBe(300_000);
   });
 
   it('never pauses for less than a second', () => {

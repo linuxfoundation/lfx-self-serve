@@ -18,6 +18,7 @@ import {
   MEMBER_IMPORT_MAX_FILE_BYTES,
   MEMBER_IMPORT_MAX_PAUSES,
   MEMBER_IMPORT_MAX_RECORDS,
+  MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
   MEMBER_IMPORT_STATUS_DISPLAY,
   MEMBER_IMPORT_TEMPLATE_FILENAME,
 } from '@lfx-one/shared/constants';
@@ -77,7 +78,7 @@ import {
  * and resubmit only the affected rows, at most MEMBER_IMPORT_MAX_PAUSES times; resubmitting is safe
  * because upstream reports a row that was already written as an existing member. Each row keeps its
  * own outcome; Retry resubmits rows that were not sent and failures that can still succeed, and
- * Close returns the cumulative added/conflict counts so the roster refreshes. Never resolves
+ * Close returns confirmed counts and any unresolved attempt so the roster refreshes. Never resolves
  * organizations, creates invitations, or changes permissions.
  * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
  * instead of writing them; the wizard saves them with Done or Update Group.
@@ -135,6 +136,8 @@ export class ImportMembersDialogComponent {
   public resumeInSeconds = signal(0);
   /** Automatic pauses taken by the current run (at most MEMBER_IMPORT_MAX_PAUSES). */
   public pauseCount = signal(0);
+  /** Minimum server deadline, retained even if automatic recovery or a pause is stopped. */
+  public retryNotBefore = signal(0);
   public readonly maxPauses = MEMBER_IMPORT_MAX_PAUSES;
   /** Ends the current pause early; in-flight requests are never cancelled. */
   private readonly stopRequested = new Subject<void>();
@@ -145,6 +148,7 @@ export class ImportMembersDialogComponent {
   public readonly skippedCount = computed(() => this.countRows('skipped'));
   public readonly addedCount = computed(() => this.countRows('added'));
   public readonly failedCount = computed(() => this.countRows('failed'));
+  public readonly unknownCount = computed(() => this.countRows('unknown'));
   public readonly waitingCount = computed(() => this.countRows('waiting'));
   public readonly notSubmittedCount = computed(() => this.countRows('not_submitted'));
   public readonly retryableCount = computed(() => this.rows().filter((row) => this.isRetryable(row)).length);
@@ -229,19 +233,26 @@ export class ImportMembersDialogComponent {
   }
 
   public retryFailed(): void {
-    if (!this.canRetry()) {
+    if (!this.canRetry() || Date.now() < this.retryNotBefore()) {
       return;
     }
     this.submitRows(this.rows().filter((row) => this.isRetryable(row)));
   }
 
-  /** Ends a paused run: the waiting rows and every unsent chunk stay Not yet submitted for a later retry. */
+  /** Ends a pause without losing unknown outcomes; genuinely unsent rows remain Not yet submitted. */
   public stopImport(): void {
     if (!this.paused()) {
       return;
     }
     this.stopReason.set('You stopped the import.');
     this.stopRequested.next();
+  }
+
+  public retryDeadlineLabel(): string {
+    const deadline = new Date(this.retryNotBefore());
+    return Number.isNaN(deadline.getTime())
+      ? 'The service requested an unsupported cooldown. Close and try again later.'
+      : `Retry no earlier than ${deadline.toLocaleString()}. Earlier attempts to retry will not submit any rows.`;
   }
 
   public close(): void {
@@ -252,7 +263,11 @@ export class ImportMembersDialogComponent {
       this.dialogRef.close();
       return;
     }
-    const result: MemberImportDialogResult = { added: this.addedCount(), conflicts: this.conflictCount() };
+    const result: MemberImportDialogResult = {
+      added: this.addedCount(),
+      conflicts: this.conflictCount(),
+      ...(this.rows().some((row) => row.uncertain) ? { uncertain: true } : {}),
+    };
     this.dialogRef.close(result);
   }
 
@@ -297,7 +312,8 @@ export class ImportMembersDialogComponent {
           return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
         case 'results': {
           const notSubmitted = this.notSubmittedCount() > 0 ? `, ${this.notSubmittedCount()} not yet submitted` : '';
-          return `${this.addedCount()} added, ${this.skippedCount()} skipped, ${this.failedCount()} failed${notSubmitted}.`;
+          const unknown = this.unknownCount() > 0 ? `, ${this.unknownCount()} outcome unknown` : '';
+          return `${this.addedCount()} added, ${this.skippedCount()} skipped, ${this.failedCount()} failed${unknown}${notSubmitted}.`;
         }
         default:
           return this.fileErrors().length > 0 ? 'The file could not be imported. See the errors below.' : '';
@@ -332,13 +348,16 @@ export class ImportMembersDialogComponent {
       chunks.push(rows.slice(start, start + MEMBER_IMPORT_BULK_CHUNK_SIZE));
     }
 
-    // `uncertain` survives a manual retry: an already_member answer then still means this import added the person.
+    // An earlier attempt may have committed; retain that fact until an authoritative result arrives.
     this.rows.update((all) =>
-      all.map((row) => (targets.has(row.rowNumber) ? { ...row, status: 'not_submitted', reason: undefined, retryable: undefined } : row))
+      all.map((row) =>
+        targets.has(row.rowNumber) ? { ...row, status: row.uncertain ? 'unknown' : 'not_submitted', reason: undefined, retryable: undefined } : row
+      )
     );
     this.stopReason.set(null);
     this.pauseCount.set(0);
     this.resumeAt.set(null);
+    this.retryNotBefore.set(0);
     this.batchTotal.set(rows.length);
     this.batchSettled.set(0);
     this.form.controls.send_notification.disable();
@@ -356,7 +375,10 @@ export class ImportMembersDialogComponent {
             return;
           }
           this.resumeAt.set(null);
-          this.rows.update((all) => all.map((row) => (row.status === 'waiting' || row.status === 'importing' ? { ...row, status: 'not_submitted' } : row)));
+          this.markUnsubmitted(
+            this.rows().filter((row) => row.status === 'waiting' || row.status === 'importing'),
+            'The import stopped.'
+          );
           this.form.controls.send_notification.enable();
           this.phase.set('results');
           this.focusResultSummary();
@@ -369,7 +391,7 @@ export class ImportMembersDialogComponent {
     return defer(() => {
       const stopReason = this.stopReason();
       if (stopReason) {
-        this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${stopReason}` });
+        this.markUnsubmitted(rows, stopReason);
         return EMPTY;
       }
       const sendable = rows.filter((row) => row.payload);
@@ -447,19 +469,26 @@ export class ImportMembersDialogComponent {
     console.error('CSV member import chunk failed', { status });
 
     if (httpError && status === 429) {
-      // The BFF limiter rejects before proxying, so nothing was written. A missing header gets the default pause.
+      // Both the BFF and upstream can throttle. Preserve any uncertainty from an earlier attempt.
       this.patchRows(rows, { status: 'waiting', reason: 'The service asked the import to slow down. It will resume automatically.' });
       return this.pauseThenResubmit(rows, httpError.headers?.get('Retry-After') ?? '', skipNotification);
     }
     if (httpError && MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(status)) {
       const reason = this.failureReason(httpError);
       this.stopReason.set(this.stopReason() ?? reason);
-      this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${reason}` });
+      this.markUnsubmitted(rows, reason);
       return EMPTY;
     }
     if (httpError && status === 400) {
       const message = extractErrorMessage(httpError, 'The service rejected these rows.');
-      this.patchRows(rows, { status: 'failed', retryable: false, reason: `${message} Fix the file and import it again.` });
+      for (const row of rows) {
+        const uncertain = this.findRow(row.rowNumber)?.uncertain;
+        this.patchRow(row.rowNumber, {
+          status: uncertain ? 'unknown' : 'failed',
+          retryable: false,
+          reason: `${uncertain ? 'The earlier outcome is unknown. ' : ''}${message} Fix the file and import it again.`,
+        });
+      }
       this.batchSettled.update((count) => count + rows.length);
       return EMPTY;
     }
@@ -474,23 +503,32 @@ export class ImportMembersDialogComponent {
 
   /**
    * Waits, then resubmits the rows as a new chunk. Stops the run instead once the pause budget is
-   * spent, and leaves the rows Not yet submitted when Stop import ends the pause early.
+   * spent. Unresolved submitted attempts remain Outcome unknown; only unsent rows are Not yet submitted.
    */
   private pauseThenResubmit(rows: MemberImportRow[], retryAfter: string | null, skipNotification: boolean): Observable<void> {
     return defer(() => {
+      const delay = getMemberImportRetryDelayMs(retryAfter, this.pauseCount());
+      if (retryAfter !== null) {
+        this.retryNotBefore.set(Math.max(this.retryNotBefore(), Date.now() + delay));
+      }
+      if (delay > MEMBER_IMPORT_RETRY_AFTER_MAX_MS) {
+        const reason = 'The service cooldown exceeds the automatic wait limit. Retry only after the cooldown shown below.';
+        this.stopReason.set(reason);
+        this.markUnsubmitted(rows, reason);
+        return EMPTY;
+      }
       const stopReason = this.stopReason();
       if (stopReason) {
-        this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${stopReason}` });
+        this.markUnsubmitted(rows, stopReason);
         return EMPTY;
       }
       if (this.pauseCount() >= MEMBER_IMPORT_MAX_PAUSES) {
-        const reason = 'The service is still limiting requests. Wait a few minutes, then retry.';
+        const reason = 'Automatic recovery has stopped after three pauses. Review the outcomes before retrying.';
         this.stopReason.set(reason);
-        this.patchRows(rows, { status: 'not_submitted', reason: `Not sent: ${reason}` });
+        this.markUnsubmitted(rows, reason);
         return EMPTY;
       }
 
-      const delay = getMemberImportRetryDelayMs(retryAfter, this.pauseCount());
       this.patchRows(rows, { status: 'waiting' });
       this.pauseCount.update((count) => count + 1);
       this.resumeInSeconds.set(Math.ceil(delay / 1000));
@@ -506,7 +544,7 @@ export class ImportMembersDialogComponent {
         switchMap((resume) => {
           this.resumeAt.set(null);
           if (!resume) {
-            this.patchRows(rows, { status: 'not_submitted', reason: 'Import stopped before this row was sent.' });
+            this.markUnsubmitted(rows, 'You stopped the import.');
             return EMPTY;
           }
           return this.submitChunk(rows, skipNotification);
@@ -555,6 +593,17 @@ export class ImportMembersDialogComponent {
     return extractErrorMessage(err, 'The member could not be added.');
   }
 
+  /** Do not claim that a row with an unconfirmed earlier attempt was never submitted. */
+  private markUnsubmitted(targets: MemberImportRow[], reason: string): void {
+    for (const target of targets) {
+      const uncertain = this.findRow(target.rowNumber)?.uncertain;
+      this.patchRow(target.rowNumber, {
+        status: uncertain ? 'unknown' : 'not_submitted',
+        reason: uncertain ? `The outcome of an earlier attempt is unknown. Review the roster before retrying. ${reason}` : `Not sent: ${reason}`,
+      });
+    }
+  }
+
   private patchRow(rowNumber: number, patch: Partial<MemberImportRow>): void {
     this.rows.update((rows) => rows.map((row) => (row.rowNumber === rowNumber ? { ...row, ...patch } : row)));
   }
@@ -571,9 +620,9 @@ export class ImportMembersDialogComponent {
     return this.rows().find((row) => row.rowNumber === rowNumber);
   }
 
-  /** Not yet submitted rows, and failures that resubmitting can still fix (never invalid rows). */
+  /** Retry unresolved attempts, unsent rows and retryable failures, but never unchanged invalid data. */
   private isRetryable(row: MemberImportRow): boolean {
-    return row.status === 'not_submitted' || (row.status === 'failed' && row.retryable !== false);
+    return row.status === 'not_submitted' || ((row.status === 'failed' || row.status === 'unknown') && row.retryable !== false);
   }
 
   private countRows(status: MemberImportRow['status']): number {

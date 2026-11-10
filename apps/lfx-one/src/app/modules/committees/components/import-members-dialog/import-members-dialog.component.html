@@ -98,6 +98,9 @@
           <lfx-tag [value]="addedCount() + ' added'" severity="success" data-testid="import-members-added-count" />
           <lfx-tag [value]="skippedCount() + ' skipped'" severity="secondary" data-testid="import-members-skipped-count" />
           <lfx-tag [value]="failedCount() + ' failed'" [severity]="failedCount() > 0 ? 'danger' : 'secondary'" data-testid="import-members-failed-count" />
+          @if (unknownCount() > 0) {
+            <lfx-tag [value]="unknownCount() + ' outcome unknown'" severity="warn" data-testid="import-members-unknown-count" />
+          }
           @if (paused()) {
             <lfx-tag [value]="waitingCount() + ' waiting'" severity="warn" data-testid="import-members-waiting-count" />
           }
@@ -134,13 +137,17 @@
 
       @if (stopReason()) {
         <p role="alert" class="text-sm text-red-700" data-testid="import-members-stop-reason">
-          The import stopped: {{ stopReason() }} Rows that were not sent are marked Not yet submitted and can be retried.
+          The import stopped: {{ stopReason() }} Rows that were not sent are marked Not yet submitted and can be retried. Rows with an unconfirmed earlier
+          attempt are marked Outcome unknown; review the roster before retrying them.
         </p>
+      }
+      @if (phase() === 'results' && retryNotBefore() > 0) {
+        <p class="text-sm text-amber-700" data-testid="import-members-retry-deadline">{{ retryDeadlineLabel() }}</p>
       }
       @if (phase() === 'results' && (retryableCount() > 0 || failedCount() > 0)) {
         <p class="text-sm text-gray-600" data-testid="import-members-retry-help">
-          Retry sends rows that are Not yet submitted and failed rows that can still succeed; added and skipped rows are never sent again. Rows the service
-          rejected as invalid need a corrected file.
+          Retry sends rows that are Not yet submitted, unknown outcomes and failed rows that can still succeed; added and skipped rows are never sent again.
+          Rows the service rejected as invalid need a corrected file.
         </p>
       }
       @if (cleanupWarningCount() > 0) {

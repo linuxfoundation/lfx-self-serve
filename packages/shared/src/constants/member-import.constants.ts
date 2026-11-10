@@ -75,6 +75,7 @@ export const MEMBER_IMPORT_STATUS_DISPLAY: Readonly<Record<MemberImportRowStatus
   ready: { label: 'Ready', severity: 'info' },
   invalid: { label: 'Invalid', severity: 'danger' },
   skipped: { label: 'Skipped', severity: 'secondary' },
+  unknown: { label: 'Outcome unknown', severity: 'warn' },
   importing: { label: 'Adding…', severity: 'info' },
   added: { label: 'Added', severity: 'success' },
   failed: { label: 'Failed', severity: 'danger' },
@@ -106,7 +107,7 @@ export const MEMBER_IMPORT_PAUSE_DELAYS_MS = [15_000, 30_000, 60_000] as const;
 /** Pause after a 429 whose Retry-After header is unreadable. */
 export const MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS = 60_000;
 
-/** Longest single automatic pause, whatever the server asks for. */
+/** Longest supported automatic pause; longer server deadlines stop recovery instead of being shortened. */
 export const MEMBER_IMPORT_RETRY_AFTER_MAX_MS = 120_000;
 
 /** Shortest single automatic pause, so a zero or past Retry-After never resubmits immediately. */

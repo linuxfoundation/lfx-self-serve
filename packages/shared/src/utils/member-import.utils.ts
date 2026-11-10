@@ -10,7 +10,6 @@ import {
   MEMBER_IMPORT_MAX_RECORDS,
   MEMBER_IMPORT_PAUSE_DELAYS_MS,
   MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS,
-  MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
   MEMBER_IMPORT_RETRY_AFTER_MIN_MS,
   MEMBER_IMPORT_VOTING_COLUMNS,
   MEMBER_IMPORT_VOTING_STATUS_LABELS,
@@ -246,10 +245,9 @@ export function prepareMemberImportRows(
 /**
  * Row patch for one bulk member create result (GH-5111).
  *
- * Added rows and people already in the group never go back into the queue. A row whose previous
- * attempt had an unknown outcome (`uncertain`) and now comes back `already_member` was written by
- * that attempt, so it counts as added. Temporary and not-attempted rows wait for an automatic
- * resubmission; invalid rows fail for good, because resending the same data cannot succeed.
+ * Added rows and people already in the group never go back into the queue. An `already_member`
+ * result confirms presence, not which request created the membership or applied its details.
+ * Temporary and not-attempted rows wait for resubmission; invalid rows cannot succeed unchanged.
  */
 export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreateRowResult, row: MemberImportRow): Partial<MemberImportRow> {
   if (result.status === 'added') {
@@ -259,7 +257,14 @@ export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreate
   if (result.status === 'skipped') {
     if (result.reason === 'already_member') {
       if (row.uncertain) {
-        return { status: 'added', reason: 'Added. Confirmed after a retry.', retryable: undefined, uncertain: false };
+        return {
+          status: 'skipped',
+          conflict: true,
+          reason:
+            'Already a member of this group. The earlier addition could not be confirmed; imported details may not have been applied. Review pending invitations.',
+          retryable: undefined,
+          uncertain: false,
+        };
       }
       return { status: 'skipped', conflict: true, reason: 'Already a member of this group.', retryable: undefined, uncertain: false };
     }
@@ -280,10 +285,10 @@ export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreate
 
   const detail = (result.message ?? '').trim() || 'The member details were rejected.';
   return {
-    status: 'failed',
-    reason: `${/[.!?]$/.test(detail) ? detail : `${detail}.`} Fix this row in the file and import it again.`,
+    status: row.uncertain ? 'unknown' : 'failed',
+    reason: `${row.uncertain ? 'The earlier outcome is unknown. ' : ''}${/[.!?]$/.test(detail) ? detail : `${detail}.`} Fix this row in the file and import it again.`,
     retryable: false,
-    uncertain: false,
+    uncertain: !!row.uncertain,
   };
 }
 
@@ -292,13 +297,13 @@ export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreate
  *
  * A non-null `retryAfter` (a 429's Retry-After header) is read as delay seconds or an HTTP-date,
  * falling back to {@link MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS} when unreadable. Without a header,
- * the backoff for this pause number applies. Always clamped to
- * [{@link MEMBER_IMPORT_RETRY_AFTER_MIN_MS}, {@link MEMBER_IMPORT_RETRY_AFTER_MAX_MS}].
+ * the backoff for this pause number applies. Valid server minimums are never shortened; callers
+ * must stop automatic recovery if the delay exceeds their supported wait budget.
  */
 export function getMemberImportRetryDelayMs(retryAfter: string | null, pauseIndex: number, now: number = Date.now()): number {
   const backoff = MEMBER_IMPORT_PAUSE_DELAYS_MS[Math.min(Math.max(pauseIndex, 0), MEMBER_IMPORT_PAUSE_DELAYS_MS.length - 1)];
   const delay = retryAfter === null ? backoff : (parseRetryAfterMs(retryAfter, now) ?? MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS);
-  return Math.min(Math.max(delay, MEMBER_IMPORT_RETRY_AFTER_MIN_MS), MEMBER_IMPORT_RETRY_AFTER_MAX_MS);
+  return Math.max(delay, MEMBER_IMPORT_RETRY_AFTER_MIN_MS);
 }
 
 function parseRetryAfterMs(value: string, now: number): number | null {

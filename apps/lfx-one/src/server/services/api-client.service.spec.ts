@@ -197,6 +197,26 @@ describe('ApiClientService — transport failures are always classified', () => 
     expect(err.toResponse()['transport'], 'an upstream answer was marked as BFF transport').toBeUndefined();
   });
 
+  it.each(['999', 'Tue, 10 Nov 2026 12:05:00 GMT'])('retains the cooldown %s even if the 429 body read fails', async (retryAfter) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: new Headers({ 'Retry-After': retryAfter }),
+        text: () => Promise.reject(new TypeError('terminated')),
+      }))
+    );
+    const err = await new ApiClientService().request('POST', 'https://example.invalid/members/bulk').catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(MicroserviceError);
+    expect(err).toMatchObject({ statusCode: 429, retryAfter });
+  });
+
+  it.each(['private@example.com', '300\r\nSet-Cookie: synthetic', 'not a deadline'])('does not retain an invalid cooldown: %s', (retryAfter) => {
+    expect(new MicroserviceError('Slow down', 429, 'RATE_LIMITED', { retryAfter }).retryAfter).toBeUndefined();
+  });
+
   it('preserves an upstream 4xx when its error body cannot be read', async () => {
     vi.stubGlobal(
       'fetch',

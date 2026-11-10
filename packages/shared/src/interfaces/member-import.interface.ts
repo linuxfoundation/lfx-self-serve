@@ -18,7 +18,7 @@ export type MemberImportCells = Partial<Record<MemberImportColumn, string>>;
  * `waiting` while a retryable outcome pauses before resubmission, and `added`/`skipped`/`failed`
  * once it settles. Rows left unsent when a run stops stay `not_submitted`.
  */
-export type MemberImportRowStatus = 'ready' | 'invalid' | 'skipped' | 'importing' | 'added' | 'failed' | 'waiting' | 'not_submitted';
+export type MemberImportRowStatus = 'ready' | 'invalid' | 'skipped' | 'importing' | 'added' | 'failed' | 'waiting' | 'not_submitted' | 'unknown';
 
 /** Which conditional member requirements apply to the selected group. */
 export interface MemberImportGroupRules {
@@ -86,7 +86,7 @@ export interface MemberImportRow {
   conflict?: boolean;
   /** False when resubmitting cannot succeed (upstream `invalid` row or a rejected chunk); the file must be fixed. */
   retryable?: boolean;
-  /** True when a prior attempt's outcome is unknown, so an `already_member` result on resubmission means this import added the person. */
+  /** True when a prior attempt may have committed; membership existence alone does not establish creation by this import. */
   uncertain?: boolean;
 }
 
@@ -115,8 +115,10 @@ export interface MemberImportDialogData {
   collectOnly?: boolean;
 }
 
-/** Cumulative outcome returned when the import dialog closes (zero counts when nothing was written). */
+/** Cumulative confirmed outcomes and unresolved attempts returned when the import dialog closes. */
 export interface MemberImportDialogResult {
   added: number;
   conflicts: number;
+  /** Refresh the roster when an attempted write may have committed without a confirmed response. */
+  uncertain?: boolean;
 }

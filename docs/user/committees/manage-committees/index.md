@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 intercom_collection: Committees
 ---
 
@@ -110,9 +110,10 @@ People already in the group or already staged in the form are skipped. Imports u
 ### Members-tab results and retry
 
 - People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
-- After the import, each row shows **Added**, **Skipped**, **Failed**, or **Not yet submitted** with the reason. Select **Retry _N_** to send the **Not yet submitted** rows and any failed rows that can still succeed. Added and skipped rows are never resubmitted, and rows the service rejected as invalid are not retried — fix them in the file and import it again.
-- If the service asks the import to slow down, or a batch hits a temporary problem, the import pauses and resumes on its own, up to 3 times per run. The dialog shows when it will resume. Select **Stop import** during a pause to end the import; rows that were not sent stay **Not yet submitted** for a later retry. If the service is still limiting requests after the third pause, the import stops and you can retry in a few minutes.
-- A retried row that turns out to have been added by an earlier attempt shows **Added** — it is never added twice.
+- After the import, each row shows **Added**, **Skipped**, **Failed**, **Outcome unknown**, or **Not yet submitted** with the reason. Select **Retry _N_** to send the **Not yet submitted** rows, unresolved attempts and any failed rows that can still succeed. Added and skipped rows are never resubmitted, and rows the service rejected as invalid are not retried — fix them in the file and import it again.
+- If the service asks the import to slow down, or a batch hits a temporary problem, the import pauses and resumes on its own, up to 3 times per run. The dialog shows when it will resume. A server cooldown longer than two minutes stops automatic recovery rather than retrying early; the dialog shows the earliest retry time. **Retry** will not submit before a known cooldown ends, even after **Stop import**. Once the pause budget is exhausted, review the outcomes before retrying.
+- Select **Stop import** during a pause to end the import. Rows that were never sent stay **Not yet submitted**. A submitted row whose response was lost stays **Outcome unknown**, not Failed or Added; close the dialog to refresh and review the roster before retrying.
+- When recovery finds an existing membership, the row is **Skipped**, not proof that this import added the person or applied the CSV details. Review the existing member and any pending invitation; skipped rows do not trigger invitation cleanup.
 - If your session expires, you lose permission to manage the group, or the group can no longer be found, the import stops with the next step to take, and rows that were not sent are marked **Not yet submitted** so you can retry them later.
 - If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, and missing-invitation errors during cleanup also stop new member requests, but never resubmit the members already added. A cleanup that is rate limited only adds the warning and does not stop the import.
 - Select **Close** to return to the roster, which refreshes to show the new members. Newly added members can take a few moments to appear.
