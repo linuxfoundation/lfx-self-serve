@@ -81,7 +81,10 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
 
   // Build the fixture after matchMedia is stubbed so ngOnInit reads the intended
   // viewport. blocksEnabled is on (the composer's pilot gate) for every case here.
-  async function createWith(form: FormGroup, opts: { newDraft?: boolean; lockedTemplateKey?: string; basicAllowed?: boolean } = {}): Promise<void> {
+  async function createWith(
+    form: FormGroup,
+    opts: { newDraft?: boolean; lockedTemplateKey?: string; basicAllowed?: boolean; blocksSwitchBlocked?: boolean } = {}
+  ): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [NewsletterContentStepComponent],
       providers: [provideNoopAnimations(), ConfirmationService, { provide: PLATFORM_ID, useValue: 'browser' }],
@@ -103,6 +106,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     fixture.componentRef.setInput('newDraft', opts.newDraft ?? false);
     fixture.componentRef.setInput('lockedTemplateKey', opts.lockedTemplateKey ?? null);
     fixture.componentRef.setInput('basicAllowed', opts.basicAllowed ?? false);
+    fixture.componentRef.setInput('blocksSwitchBlocked', opts.blocksSwitchBlocked ?? false);
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -196,6 +200,21 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     await createWith(form, { lockedTemplateKey: 'aaif-weekly-agentic', basicAllowed: true });
 
     expect(q('newsletter-content-editor-toggle')).not.toBeNull();
+    expect(q('newsletter-content-composer')).toBeNull();
+  });
+
+  it('disables Blocks for a Basic edition while its publication template set is unknown', async () => {
+    stubMatchMedia(false);
+    const form = makeForm(null);
+    form.get('bodyHtml')?.setValue('<p>Saved</p>');
+    await createWith(form, { basicAllowed: true, blocksSwitchBlocked: true });
+
+    const blocksBtn = q('newsletter-content-editor-blocks') as HTMLButtonElement;
+    expect(blocksBtn.disabled).toBe(true);
+    expect(blocksBtn.getAttribute('title')).toContain('publication has loaded');
+    blocksBtn.click();
+    fixture.detectChanges();
+    expect(form.get('bodyLayout')?.value).toBeNull();
     expect(q('newsletter-content-composer')).toBeNull();
   });
 

@@ -249,6 +249,11 @@ export class NewsletterManageComponent {
   // Basic stays available only while that edition still has no layout. Once it has blocks, clearing
   // the layout would be refused.
   public readonly basicAllowed: Signal<boolean> = computed(() => this.draftSavedAsBasic() && this.bodyLayoutValue() === null);
+  // A Basic edition whose publication is loading or unreadable has an unknown template set, so it
+  // stays on Basic until the set is known.
+  public readonly blocksSwitchBlocked: Signal<boolean> = computed(
+    () => this.bodyLayoutValue() === null && (this.draftPublicationPending() || this.draftPublicationReadFailed())
+  );
   // The audience a publication filled in, so switching publication replaces it rather than keeping it.
   private readonly audienceFromPublication = signal<string[] | null>(null);
   // Carries a publication just created or edited from the form back to the create flow, via ?publication=.
@@ -606,6 +611,7 @@ export class NewsletterManageComponent {
     this.initSchedulePastGuard();
     this.initScheduleFieldLock();
     this.initDraftPublication();
+    this.initPublicationGateClose();
   }
 
   /**
@@ -2009,6 +2015,31 @@ export class NewsletterManageComponent {
       bodyLayout: payload.bodyLayout,
       committeeUids: [...payload.committeeUids],
       scheduledAt: payload.scheduledAt,
+    });
+  }
+
+  /**
+   * When the publications gate closes before a new draft's first save, the save would quietly make
+   * a one-off newsletter. Clear the picked publication and tell the author instead. A gate that has
+   * never opened is skipped, so a slow flag load does not clear a ?publication= preselect.
+   */
+  private initPublicationGateClose(): void {
+    let gateWasOpen = false;
+    effect(() => {
+      const enabled = this.publicationsEnabled();
+      untracked(() => {
+        if (enabled) {
+          gateWasOpen = true;
+          return;
+        }
+        if (!gateWasOpen || this.isEditMode() || this.selectedPublication() === null) return;
+        this.selectedPublication.set(null);
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Publications unavailable',
+          detail: 'Publications are turned off, so this draft will be saved as a one-off newsletter.',
+        });
+      });
     });
   }
 

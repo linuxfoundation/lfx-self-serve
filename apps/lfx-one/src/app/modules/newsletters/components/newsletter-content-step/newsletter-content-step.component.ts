@@ -74,6 +74,9 @@ export class NewsletterContentStepComponent implements OnInit {
   // An edition saved as Basic may stay Basic after its publication gains a template set, so the
   // Basic editor stays available while it has no layout. Blocks still uses the locked set.
   public readonly basicAllowed = input<boolean>(false);
+  // True while a Basic edition's publication is loading or could not be read. Its template set is
+  // unknown, so switching to Blocks waits rather than seeding a set the service may refuse.
+  public readonly blocksSwitchBlocked = input<boolean>(false);
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();
@@ -102,6 +105,10 @@ export class NewsletterContentStepComponent implements OnInit {
   protected readonly templateLocked = computed(() => this.lockedTemplateKey() !== null);
   protected readonly basicLocked = computed(() => this.templateLocked() && !this.basicAllowed());
   protected readonly composerTemplateKey = computed(() => this.lockedTemplateKey() ?? NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+  protected readonly blocksToggleTitle = computed(() => {
+    if (this.isMobile()) return 'The Blocks editor is available on desktop only';
+    return this.blocksSwitchBlocked() ? "Blocks is available once this edition's publication has loaded" : null;
+  });
 
   // === Reactive form mirrors ===
   protected readonly subjectValue: Signal<string> = this.initControlValue('subject');
@@ -184,7 +191,7 @@ export class NewsletterContentStepComponent implements OnInit {
   protected setMode(mode: NewsletterEditorMode): void {
     // Blocks is unavailable when the composer is gated off for this project, and
     // on mobile where the desktop drag-and-drop composer cannot be used.
-    if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile())) return;
+    if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile() || this.blocksSwitchBlocked())) return;
     // An edition on a template set has to stay in blocks.
     if (this.basicLocked()) return;
     if (mode === this.editorMode()) return;

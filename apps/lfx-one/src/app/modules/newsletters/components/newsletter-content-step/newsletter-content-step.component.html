@@ -38,8 +38,8 @@
             [class.bg-blue-50]="editorMode() === 'blocks'"
             [class.text-blue-600]="editorMode() === 'blocks'"
             [attr.aria-pressed]="editorMode() === 'blocks'"
-            [disabled]="isMobile()"
-            [attr.title]="isMobile() ? 'The Blocks editor is available on desktop only' : null"
+            [disabled]="isMobile() || blocksSwitchBlocked()"
+            [attr.title]="blocksToggleTitle()"
             [attr.aria-describedby]="isMobile() ? 'newsletter-content-editor-desktop-hint' : null"
             data-testid="newsletter-content-editor-blocks"
             (click)="setMode('blocks')">

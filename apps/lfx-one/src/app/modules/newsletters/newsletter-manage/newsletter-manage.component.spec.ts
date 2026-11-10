@@ -45,6 +45,7 @@ interface ManageApi {
   publicationLocked: () => boolean;
   publicationFormLosesWork: () => boolean;
   basicAllowed: () => boolean;
+  blocksSwitchBlocked: () => boolean;
   selectedPublication: { (): NewsletterPublication | null; set: (value: NewsletterPublication | null) => void };
 }
 
@@ -387,5 +388,71 @@ describe('NewsletterManageComponent publications (#4349)', () => {
 
     api.onPublicationChange({ ...PUBLICATION, id: 'pub-2', template_key: undefined, committee_uids: ['c-3'] });
     expect(component.form.controls.committeeUids.value).toEqual(['c-3']);
+  });
+
+  it('keeps a Basic edition off Blocks while its publication loads or cannot be read', () => {
+    const lookup = new Subject<NewsletterPublication>();
+    newsletterService.getPublication.mockReturnValue(lookup);
+    newsletterService.getNewsletter.mockReturnValue(
+      of({
+        id: 'n-1',
+        version: 2,
+        status: 'draft',
+        committee_uids: [],
+        body_html: '<p>Saved</p>',
+        body_layout: null,
+        publication_uid: PUBLICATION.id,
+      } as unknown as Newsletter)
+    );
+    const { api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
+    TestBed.tick();
+    expect(api.blocksSwitchBlocked()).toBe(true);
+
+    lookup.error(new HttpErrorResponse({ status: 503 }));
+    TestBed.tick();
+    expect(api.blocksSwitchBlocked()).toBe(true);
+  });
+
+  it('allows Blocks for a Basic edition once its publication has loaded', () => {
+    newsletterService.getNewsletter.mockReturnValue(
+      of({
+        id: 'n-1',
+        version: 2,
+        status: 'draft',
+        committee_uids: [],
+        body_html: '<p>Saved</p>',
+        body_layout: null,
+        publication_uid: PUBLICATION.id,
+      } as unknown as Newsletter)
+    );
+    const { api } = newComponent({ id: 'n-1', projectUid: 'p-1' });
+    TestBed.tick();
+    expect(api.blocksSwitchBlocked()).toBe(false);
+  });
+
+  it('clears a picked publication and warns when the flag turns off before the first save', async () => {
+    const { component, api } = newComponent();
+    TestBed.tick();
+    fillDraft(component);
+    api.onPublicationChange({ ...PUBLICATION, template_key: undefined });
+    TestBed.tick();
+
+    flag.set(false);
+    TestBed.tick();
+
+    expect(api.selectedPublication()).toBeNull();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Publications unavailable' }));
+    await firstValueFrom(api.saveDraft(true));
+    expect('publication_uid' in newsletterService.createNewsletter.mock.calls[0][1]).toBe(false);
+  });
+
+  it('does not clear a preselected publication when the flag starts off', () => {
+    flag.set(false);
+    const { api } = newComponent();
+    api.selectedPublication.set(PUBLICATION);
+    TestBed.tick();
+
+    expect(api.selectedPublication()?.id).toBe(PUBLICATION.id);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Publications unavailable' }));
   });
 });
