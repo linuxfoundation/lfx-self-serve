@@ -80,6 +80,17 @@ export const NEWSLETTER_SPACING_DEFAULT = '0px';
 // weekly). The author can pick another set in the composer.
 export const NEWSLETTER_DEFAULT_TEMPLATE_KEY = 'aaif-member';
 
+// Publication limits. These match lfx-v2-newsletter-service's validation (#4349).
+export const NEWSLETTER_PUBLICATION_NAME_MAX_LENGTH = 200;
+export const NEWSLETTER_PUBLICATION_FROM_NAME_MAX_LENGTH = 100;
+export const NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH = 254;
+// The service lists 20 publications a page. A project has a handful, so this cap only stops a loop.
+export const NEWSLETTER_PUBLICATION_MAX_PAGES = 25;
+// The most committees one newsletter or publication audience can name.
+export const NEWSLETTER_MAX_COMMITTEES = 50;
+// Every newsletter status, for validating a status filter.
+export const NEWSLETTER_STATUSES: readonly string[] = ['draft', 'sending', 'scheduled', 'sent'];
+
 // Template set the newsletter service renders a layout with no `template_key`
 // in (declarative.FallbackTemplateKey). Kept apart from the default above so a
 // saved keyless layout still labels and loads as the service renders it.

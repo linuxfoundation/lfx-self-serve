@@ -12,6 +12,7 @@ import {
   shareButtonAriaLabel,
   visibleShareCount,
   withNewsletterPreviewDate,
+  getNewsletterPublicationErrorMessage,
 } from './newsletter.utils';
 
 describe('newsletterIssuePath', () => {
@@ -127,5 +128,23 @@ describe('isNewsletterLiveSendLocked', () => {
 
   it('keeps live send off by default for the editor-only release', () => {
     expect(isNewsletterLiveSendLocked(true)).toBe(true);
+  });
+});
+
+describe('getNewsletterPublicationErrorMessage (#4349)', () => {
+  it.each([
+    ['invalid_request: reply_to_email domain "x.example" is not an allowed reply-to domain', 'approved domain'],
+    ['invalid_request: reply_to_email is not a valid email address', 'valid reply-to'],
+    ['invalid_request: body_layout template_key "a" does not match the publication\'s template_key "b"', "publication's template set"],
+    ['invalid_request: publication uses template_key "b", supply body_layout instead of body_html', 'block editor'],
+    ['invalid_request: body_layout cannot be cleared on an edition of a publication with a template set', 'block editor'],
+    ['invalid_request: unknown template_key "z"', 'no longer available'],
+    ['invalid_request: an implicit publication cannot be updated', 'created automatically'],
+  ])('maps %s', (upstream, expected) => {
+    expect(getNewsletterPublicationErrorMessage(upstream)).toContain(expected);
+  });
+
+  it('returns null for an unrelated message', () => {
+    expect(getNewsletterPublicationErrorMessage('invalid_request: subject is required')).toBeNull();
   });
 });

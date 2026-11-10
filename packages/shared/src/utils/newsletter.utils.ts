@@ -92,3 +92,30 @@ export function isNewsletterBlocksEnabled(options: { hasLayout: boolean; flagEna
 export function isNewsletterLiveSendLocked(hasLayout: boolean, liveSendEnabled: boolean = NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED): boolean {
   return hasLayout && !liveSendEnabled;
 }
+
+/**
+ * A readable message for the 400s the publication rules produce (#4349), which the service only
+ * tells apart by their text. Returns null for anything else, so the caller keeps its own message.
+ */
+export function getNewsletterPublicationErrorMessage(upstreamMessage: string): string | null {
+  const text = upstreamMessage.toLowerCase();
+  if (text.includes('allowed reply-to domain')) {
+    return 'That reply-to address is on a domain we cannot send replies to. Use an address on an approved domain.';
+  }
+  if (text.includes('reply_to_email')) {
+    return 'Enter a valid reply-to email address.';
+  }
+  if (text.includes('does not match the publication')) {
+    return "This edition has to use its publication's template set. Reload the page to pick up the template set, then try again.";
+  }
+  if (text.includes('supply body_layout') || text.includes('cannot be cleared on an edition')) {
+    return 'This publication uses a template set, so its editions have to be built with the block editor.';
+  }
+  if (text.includes('unknown template_key')) {
+    return 'That template set is no longer available. Choose a different one.';
+  }
+  if (text.includes('implicit publication')) {
+    return 'This publication was created automatically for a single newsletter, so it cannot be changed or take new editions.';
+  }
+  return null;
+}

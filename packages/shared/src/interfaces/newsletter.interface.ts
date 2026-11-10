@@ -179,6 +179,8 @@ export interface NewsletterCancelScheduleResult {
 export interface Newsletter {
   id: string;
   project_uid: string;
+  /** The publication this newsletter is an edition of. Absent before the publications release. */
+  publication_uid?: string;
   subject: string;
   body_html: string;
   body_layout?: NewsletterLayout | null;
@@ -489,6 +491,8 @@ export interface NewsletterInviteLandingState {
 }
 
 export interface CreateNewsletterRequest {
+  /** Makes the draft an edition of this publication. Omitted, the service creates an implicit publication. */
+  publication_uid?: string;
   subject: string;
   body_html: string;
   body_layout?: NewsletterLayout | null;
@@ -500,6 +504,47 @@ export interface CreateNewsletterRequest {
    * horizon window separately.
    */
   scheduled_at?: string | null;
+}
+
+/** The recurring parent of newsletter editions (lfx-v2-newsletter-service `Publication`). */
+export interface NewsletterPublication {
+  id: string;
+  project_uid: string;
+  name: string;
+  /** The template set new editions use. Absent when each edition picks its own. */
+  template_key?: string;
+  /** Replaces the From display name at send. */
+  from_name?: string;
+  /** Replaces Reply-To at send, and is the default `ed_reply_email` for new editions. */
+  reply_to_email?: string;
+  /** Default audience new editions inherit. */
+  committee_uids: string[];
+  /** True when the service created it for a newsletter that named none. These are never listed. */
+  implicit: boolean;
+  created_by: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Body of publication create and the full-replace update: an omitted optional field is cleared. */
+export interface NewsletterPublicationRequest {
+  name: string;
+  template_key?: string;
+  from_name?: string;
+  reply_to_email?: string;
+  committee_uids?: string[];
+}
+
+export interface NewsletterPublicationListResponse {
+  publications: NewsletterPublication[];
+  next_page_token?: string;
+}
+
+/** One entry in the publication picker on the create flow. */
+export interface NewsletterPublicationOption {
+  label: string;
+  value: string;
 }
 
 export interface UpdateNewsletterRequest {
