@@ -6,11 +6,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { redirectLegacyUrls } from './redirect-legacy-urls.middleware';
 
-function run(originalUrl: string, method = 'GET'): { redirect: ReturnType<typeof vi.fn>; next: ReturnType<typeof vi.fn> } {
+function run(originalUrl: string, method = 'GET'): { redirect: ReturnType<typeof vi.fn>; setHeader: ReturnType<typeof vi.fn>; next: ReturnType<typeof vi.fn> } {
   const redirect = vi.fn();
+  const setHeader = vi.fn();
   const next = vi.fn();
-  redirectLegacyUrls({ originalUrl, method } as unknown as Request, { redirect } as unknown as Response, next as unknown as NextFunction);
-  return { redirect, next };
+  redirectLegacyUrls({ originalUrl, method } as unknown as Request, { redirect, setHeader } as unknown as Response, next as unknown as NextFunction);
+  return { redirect, setHeader, next };
 }
 
 describe('redirectLegacyUrls', () => {
@@ -27,6 +28,10 @@ describe('redirectLegacyUrls', () => {
     const { redirect, next } = run(from);
     expect(redirect).toHaveBeenCalledWith(301, to);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('marks the redirect uncacheable so a rollback is never pinned to /company', () => {
+    expect(run('/org/overview').setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 
   it('redirects HEAD too', () => {

@@ -22,5 +22,8 @@ export function redirectLegacyUrls(req: Request, res: Response, next: NextFuncti
   if (!target) {
     return next();
   }
+  // Not cached: during a rollback or a mixed-version deploy a cached 301 would keep sending a browser to `/company`
+  // on a replica that does not route it. The redirect is cheap to recompute, so correctness beats caching here.
+  res.setHeader('Cache-Control', 'no-store');
   res.redirect(301, target);
 }
