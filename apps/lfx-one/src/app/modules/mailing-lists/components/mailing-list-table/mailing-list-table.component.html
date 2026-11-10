@@ -60,12 +60,8 @@
       </div>
 
       <!-- Status Filter Pills (Public / Private with counts) -->
-      <div data-testid="mailing-list-status-filter">
-        <lfx-filter-pills
-          [options]="statusFilterOptions()"
-          [selectedFilter]="selectedStatus()"
-          ariaLabel="Filter by visibility"
-          (filterChange)="onStatusChange($event)" />
+      <div role="group" aria-label="Filter by visibility" data-testid="mailing-list-status-filter">
+        <lfx-filter-pills [options]="statusFilterOptions()" [selectedFilter]="selectedStatus()" (filterChange)="onStatusChange($event)" />
       </div>
     </div>
   </div>
