@@ -56,6 +56,8 @@
     <div class="flex flex-col items-center justify-center gap-3 py-12" data-testid="sync-preview-loading">
       @if (applying() && applyTotalCount() > 0) {
         <lfx-ui-progress class="w-full max-w-xs" [value]="applyProcessedCount()" [max]="applyTotalCount()" label="Applying changes" />
+      } @else if (!applying() && diffTotalCount() > 0) {
+        <lfx-ui-progress class="w-full max-w-xs" [value]="diffProcessedCount()" [max]="diffTotalCount()" label="Loading sync preview" />
       } @else {
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-500"></i>
         <p class="text-[12.5px] text-gray-500">

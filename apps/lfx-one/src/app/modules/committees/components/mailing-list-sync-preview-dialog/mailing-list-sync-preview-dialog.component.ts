@@ -7,6 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
 import { MailingListSyncMode } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
@@ -26,11 +27,6 @@ import { UiProgressComponent } from '@shared/uikit/progress/progress.component';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 
 type PreviewTab = 'adds' | 'removes' | 'conflicts';
-
-// Upper bound on how long a sync-diff/sync-apply job is polled before giving up — lockDynamicDialogWhile
-// gives the user no escape hatch while a poll is active, so a stuck upstream job must not trap them
-// in an unclosable dialog forever (general-code-reviewer, PR #5489 review).
-const POLL_DEADLINE_MS = 10 * 60 * 1000;
 
 @Component({
   selector: 'lfx-mailing-list-sync-preview-dialog',
@@ -243,7 +239,7 @@ export class MailingListSyncPreviewDialogComponent {
           this.diffTotalCount.set(status.total_count);
         }),
         takeWhile((status: SyncDiffJobStatus) => status.status === 'pending' || status.status === 'ongoing', true),
-        takeUntil(timer(POLL_DEADLINE_MS)),
+        takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
         finalize(() => {
           ticker.unsubscribe();
           this.loadingDiff.set(false);
@@ -319,7 +315,7 @@ export class MailingListSyncPreviewDialogComponent {
           this.applyTotalCount.set(status.total_count);
         }),
         takeWhile((status: SyncApplyJobStatus) => status.status === 'pending' || status.status === 'ongoing', true),
-        takeUntil(timer(POLL_DEADLINE_MS)),
+        takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
         finalize(() => {
           ticker.unsubscribe();
           this.applying.set(false);
