@@ -10,11 +10,11 @@
         >.
       </p>
 
-      @if (addedWithOutcome().length > 0) {
+      @if (addedResults().length > 0) {
         <div class="flex flex-col gap-2">
-          <p class="text-[11.5px] font-medium text-gray-500">Add results ({{ addedSucceededCount() }} of {{ addedWithOutcome().length }} succeeded)</p>
+          <p class="text-[11.5px] font-medium text-gray-500">Add results ({{ addedSucceededCount() }} of {{ addedResults().length }} succeeded)</p>
           <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
-            @for (row of addedWithOutcome(); track row.email) {
+            @for (row of addedResults(); track row.email) {
               <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-add-' + row.email">
                 <span class="text-gray-900">{{ row.email }}</span>
                 <span class="text-gray-500">— {{ row.outcomeText }}</span>
@@ -24,11 +24,11 @@
         </div>
       }
 
-      @if (removedWithOutcome().length > 0) {
+      @if (removedResults().length > 0) {
         <div class="flex flex-col gap-2">
-          <p class="text-[11.5px] font-medium text-gray-500">Remove results ({{ removedSucceededCount() }} of {{ removedWithOutcome().length }} succeeded)</p>
+          <p class="text-[11.5px] font-medium text-gray-500">Remove results ({{ removedSucceededCount() }} of {{ removedResults().length }} succeeded)</p>
           <div class="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
-            @for (row of removedWithOutcome(); track row.email) {
+            @for (row of removedResults(); track row.email) {
               <div class="flex items-center gap-2 text-[12.5px]" [attr.data-testid]="'sync-result-remove-' + row.email">
                 <span class="text-gray-900">{{ row.email }}</span>
                 <span class="text-gray-500">— {{ row.outcomeText }}</span>
@@ -43,12 +43,20 @@
       <lfx-button label="Close" severity="info" size="small" (onClick)="close()" data-testid="sync-preview-close-btn"></lfx-button>
     </div>
   } @else if (loadingDiff() || applying()) {
-    <!-- Long-running request in flight — no job-status endpoint exists to poll, so this reflects elapsed time only. -->
+    <!-- Progress bar once the job has reported a total; elapsed-time fallback before the first poll response arrives. -->
     <div class="flex flex-col items-center justify-center gap-3 py-12" data-testid="sync-preview-loading">
-      <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-500"></i>
-      <p class="text-[12.5px] text-gray-500">
-        {{ applying() ? 'Applying changes' : 'Loading sync preview' }}… this can take a few minutes ({{ elapsedSeconds() }}s elapsed)
-      </p>
+      @if (applying() ? applyTotalCount() > 0 : diffTotalCount() > 0) {
+        <lfx-ui-progress
+          class="w-full max-w-xs"
+          [value]="applying() ? applyProcessedCount() : diffProcessedCount()"
+          [max]="applying() ? applyTotalCount() : diffTotalCount()"
+          [label]="applying() ? 'Applying changes' : 'Loading sync preview'" />
+      } @else {
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-500"></i>
+        <p class="text-[12.5px] text-gray-500">
+          {{ applying() ? 'Applying changes' : 'Loading sync preview' }}… this can take a few minutes ({{ elapsedSeconds() }}s elapsed)
+        </p>
+      }
     </div>
   } @else if (loadError() || applyError(); as error) {
     <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="sync-preview-error">
