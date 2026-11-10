@@ -20,7 +20,7 @@ import { canViewMeetingGuests, getMeetingDetailsState, getPastMeetingResourceId,
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { catchError, filter, fromEvent, interval, map, merge, of, timer } from 'rxjs';
+import { catchError, filter, fromEvent, interval, map, merge, of, Subscription, take, timer } from 'rxjs';
 
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 
@@ -40,6 +40,8 @@ export class MeetingDetailsContext {
   private readonly destroyRef = inject(DestroyRef);
   /** Time read by the drawer's own clock; 0 until it first ticks. */
   private readonly tick = signal(0);
+  /** The live meeting load for an upcoming date picked on a past row; a newer pick replaces it. */
+  private upcomingLoad: Subscription | null = null;
   /** Registered from the drawer; counts as invited before the list catches up. */
   private readonly registered = signal(false);
 
@@ -100,6 +102,49 @@ export class MeetingDetailsContext {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.participantsVersion.update((version) => version + 1));
     this.refreshList();
+  }
+
+  /** Reopens the drawer on an upcoming date of a past row's series, with the live meeting that date needs. */
+  public showUpcoming(occurrence: MeetingOccurrence): void {
+    const row = this.row();
+    if (!isPastMeetingCalendarRow(row.meeting)) return;
+    this.upcomingLoad?.unsubscribe();
+    const seriesId = row.meeting.meeting_id;
+    const listed = this.store.upcomingRows().filter((upcoming) => upcoming.meeting.id === seriesId);
+    const exact = listed.find((upcoming) => Date.parse(upcoming.startTime) === Date.parse(occurrence.start_time));
+    if (exact) {
+      this.data.open(exact);
+      return;
+    }
+    // The feed's copy carries the viewer's invite and answers; the detail stands in when the feed does not list the series.
+    const live$ = listed.length ? of(listed[0].meeting) : this.meetingService.getMeetingDetail(seriesId);
+    const shown = this.occurrence();
+    this.upcomingLoad = live$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (meeting) => {
+        // The viewer moved to another date while it loaded.
+        if (this.occurrence() !== shown) return;
+        // The meeting's own copy of the date carries its title and agenda overrides.
+        const full = meeting.occurrences?.find((listed) => Date.parse(listed.start_time) === Date.parse(occurrence.start_time)) ?? occurrence;
+        this.data.open({
+          key: `${seriesId}:${full.occurrence_id}`,
+          meeting,
+          occurrence: full,
+          title: full.title || meeting.title,
+          occurrenceId: full.occurrence_id,
+          startTime: full.start_time,
+          durationMinutes: full.duration || meeting.duration,
+        });
+      },
+      error: (error: unknown) => {
+        console.error(`Failed to load meeting ${seriesId} for an upcoming date:`, error);
+        this.toast.show({
+          variant: 'error',
+          position: 'bottom-center',
+          message: 'Meeting unavailable',
+          description: 'Unable to open this date. Please try again.',
+        });
+      },
+    });
   }
 
   /** Reloads the home list behind the drawer after an action changed the meeting. */
