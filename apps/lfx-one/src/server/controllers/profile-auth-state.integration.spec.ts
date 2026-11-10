@@ -44,6 +44,7 @@ const { profileAuthSvc, fakeValkey, stubConstructor } = vi.hoisted(() => {
 
 vi.mock('@lfx-one/shared/constants', () => ({
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
+  AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(),
   AUTH0_TO_CDP_PROVIDER_MAP: {},
   CDP_DISPLAYABLE_IDENTITY_COMBOS: [],
   CDP_PLATFORM_ICONS: {},
@@ -56,6 +57,8 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: 'retry_required',
   EMAIL_CALLBACK_STATUS_PARAM: 'email_status',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
+  GITLAB_AUTH0_CONNECTION: 'gitlab',
+  GITLAB_AUTH0_PROVIDER: 'oauth2',
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',

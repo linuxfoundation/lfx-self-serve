@@ -240,8 +240,8 @@ export class ProfileClasComponent {
    * contributor signing a Gerrit group under their LF identity should know that is what they
    * are doing, which a silent hand-off would not tell them.
    *
-   * GitLab is the one source with no identity to offer, so it is answered with a block rather
-   * than a step.
+   * GitLab account linking is supported, but this CLA signing flow has no GitLab handoff.
+   * A GitLab-only group is therefore answered with a block rather than an identity step.
    */
   private handOffToConsole(option: ClaGroupOption): void {
     const route: ClaSignRoute = claSignRoute(option.organizations);

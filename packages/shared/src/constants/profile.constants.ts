@@ -103,6 +103,7 @@ export const YEAR_OPTIONS: { label: string; value: string }[] = Array.from({ len
  */
 export const IDENTITY_PROVIDER_OPTIONS: IdentityProviderOption[] = [
   { id: 'github', name: 'GitHub', description: 'Connect your GitHub account for code contributions', icon: 'fa-brands fa-github' },
+  { id: 'gitlab', name: 'GitLab', description: 'Connect your GitLab account for code contributions', icon: 'fa-brands fa-gitlab' },
   { id: 'linkedin', name: 'LinkedIn', description: 'Connect your LinkedIn account for employer recognition', icon: 'fa-brands fa-linkedin' },
   { id: 'google', name: 'Google', description: 'Connect your Google account to verify your email', icon: 'fa-brands fa-google' },
   { id: 'email', name: 'Email', description: 'Add an email address for notifications and attribution', icon: 'fa-light fa-envelope' },
@@ -133,6 +134,21 @@ export const CDP_TO_AUTH0_PROVIDER_MAP: Record<string, string> = Object.fromEntr
 );
 
 /**
+ * Auth0 connection name of the generic OAuth2 social connection that links
+ * GitLab accounts (#4187). Its reverse-map entry above supplies the
+ * `connection=gitlab` sent to Auth0 when connecting.
+ */
+export const GITLAB_AUTH0_CONNECTION = 'gitlab';
+
+/**
+ * Auth0 provider of identities linked through the GitLab connection. `oauth2`
+ * is the generic strategy shared by any custom social connection, so only the
+ * connection name identifies GitLab; unlinking needs this provider, not the
+ * connection name.
+ */
+export const GITLAB_AUTH0_PROVIDER = 'oauth2';
+
+/**
  * Default mapping from CDP platform → identity type, used when LFX One POSTs
  * new identities to CDP from auth-service (where the value's shape is known
  * because we control it — Auth0 always gives us email for LinkedIn, nickname
@@ -155,15 +171,24 @@ export const CDP_PLATFORM_TO_TYPE_MAP: Readonly<Record<string, CdpIdentityType |
  * profile identities UI and syncing to CDP from auth-service. Applied AFTER
  * the `custom → email` remap in cdp.service.ts, so email-style entries appear
  * here as `email + email`. LFID is handled by a dedicated auto-verify branch
- * and intentionally excluded from this allowlist.
+ * and intentionally excluded from this allowlist. Combos surfaced only when the
+ * user has linked the account live in `AUTH0_LINKED_ONLY_IDENTITY_COMBOS`.
  */
 export const CDP_DISPLAYABLE_IDENTITY_COMBOS: ReadonlySet<string> = new Set(['github+username', 'linkedin+email', 'email+email', 'google+email']);
+
+/**
+ * (platform, type) combos shown in the profile identities UI only when backed
+ * by an identity linked in auth-service. CDP-only rows for these combos stay
+ * hidden, so they are never offered for verification (Product decision, #4190).
+ */
+export const AUTH0_LINKED_ONLY_IDENTITY_COMBOS: ReadonlySet<string> = new Set(['gitlab+username']);
 
 /**
  * CDP platform to icon class mapping
  */
 export const CDP_PLATFORM_ICONS: Record<string, string> = {
   github: 'fa-brands fa-github',
+  gitlab: 'fa-brands fa-gitlab',
   google: 'fa-brands fa-google',
   linkedin: 'fa-brands fa-linkedin',
   email: 'fa-light fa-envelope',
