@@ -203,7 +203,11 @@ const LEGACY_DOCS_SINGLE_PAGES: Readonly<Record<string, string>> = {
 export function legacyDocsRedirectTarget(pathAndQuery: string): string | null {
   const queryStart = pathAndQuery.indexOf('?');
   // The docs resolver ignores case and a trailing slash, so old links in those forms still reach a page; match the same way.
-  const path = (queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart)).toLowerCase().replace(/\/+$/, '');
+  let path = (queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart)).toLowerCase();
+  // A loop, not a `/+$` regex: that pattern backtracks polynomially on a long run of slashes (CodeQL).
+  while (path.endsWith('/')) {
+    path = path.slice(0, -1);
+  }
   const query = queryStart === -1 ? '' : pathAndQuery.slice(queryStart);
   const movedPage = LEGACY_DOCS_SINGLE_PAGES[path];
   if (movedPage) {
