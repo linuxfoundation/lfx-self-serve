@@ -5844,6 +5844,40 @@ export const GOOGLE_CREATIVE_GROUPS: readonly GoogleCreativeGroup[] = [
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
 
 /**
+ * The widths the brief generator writes Google copy to (the BFF's copy prompt and `truncateAdCopy`),
+ * read from the catalogues the Implement tab validates against so the generator cannot ask for copy
+ * the seed then drops. Demand Gen headlines are the IMAGE ad's 30 (#5384, campaign-service
+ * `maxHeadlineWeight`): it is the only Demand Gen ad the brief seeds, and the video ad's 40 would hand
+ * it headlines it cannot use. `shortDescription` is the one description every brief writes for
+ * Performance Max's short slot (#5494).
+ */
+export const GENERATED_GOOGLE_COPY_WIDTHS = {
+  searchHeadline: CAMPAIGN_CHAR_LIMITS.searchHeadline,
+  searchDescription: CAMPAIGN_CHAR_LIMITS.searchDescription,
+  demandGenHeadline: demandGenFieldWidth('headlines'),
+  demandGenDescription: demandGenFieldWidth('descriptions'),
+  businessName: demandGenFieldWidth('businessName'),
+  shortDescription: GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+} as const;
+
+/** The Demand Gen image ad's catalogue width for one field, failing loudly if the catalogue loses it. */
+function demandGenFieldWidth(control: string): number {
+  const width = (GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] as readonly GoogleCreativeFieldSpec[]).find((field) => field.control === control)?.width;
+  if (width === undefined) throw new Error(`GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] has no width for ${control}`);
+  return width;
+}
+
+/**
+ * The comparison shapes that mark a generated EVENT keyword as competitor intent (#5383): "KubeCon
+ * alternative", "alternatives to KubeCon", "ArgoCon vs KubeCon", "competitor", "instead of". Someone
+ * searching them is shopping away from an event, and for a Linux Foundation event the event named is
+ * usually the foundation's own. Shapes rather than bare words, so a topic keyword that merely holds
+ * one is kept: "alternative energy summit" (an adjective before its noun) and "vs code conference".
+ */
+export const COMPETITOR_KEYWORD_PATTERN =
+  /\S\s+alternatives?\b|\balternatives?\s+(?:to|for)\b|\S\s+(?:vs\.?|versus)\s+(?!code\b)\S|\bcompetitors?\b|\binstead of\b/iu;
+
+/**
  * The Google creative text fields campaign-service bounds by RUNE count rather than by display width:
  * the call to action (`maxDemandGenCallToActionRunes`, `maxDisplayCallToActionRunes`), the Performance
  * Max asset group name (`maxAssetGroupNameRunes`) and its display paths (`maxDisplayPathRunes`). Every

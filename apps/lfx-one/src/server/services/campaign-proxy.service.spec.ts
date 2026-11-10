@@ -2870,7 +2870,9 @@ describe('CampaignProxyService generated copy and keywords', () => {
     it.each([
       'KubeCon alternative Barcelona',
       'ArgoCon alternatives',
+      'alternatives to KubeCon',
       'ArgoCon vs KubeCon',
+      'ArgoCon vs. KubeCon',
       'Argo versus Flux',
       'ArgoCon competitor',
       'GitOps event instead of KubeCon',
@@ -2878,8 +2880,15 @@ describe('CampaignProxyService generated copy and keywords', () => {
       expect(filterGeneratedKeywords([kw(term)], '2027', false)).toEqual([]);
     });
 
-    it('keeps terms that only contain those letters inside another word', () => {
-      const terms = ['vsphere conference', 'alternatively argo', 'argocon barcelona'];
+    it('keeps topic terms that hold those words outside a comparison shape', () => {
+      const terms = [
+        'vsphere conference',
+        'alternatively argo',
+        'argocon barcelona',
+        'alternative energy summit',
+        'vs code conference',
+        'learn vs code summit',
+      ];
       expect(filterGeneratedKeywords(terms.map(kw), '2027', false).map((k) => k.term)).toEqual(terms);
     });
 

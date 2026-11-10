@@ -2,18 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_DELIVERY_TYPES,
+  COMPETITOR_KEYWORD_PATTERN,
+  GENERATED_GOOGLE_COPY_WIDTHS,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
-  GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_DISPLAY_CALLS_TO_ACTION,
-  GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
@@ -52,7 +51,6 @@ import type {
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
-  GoogleCreativeFieldSpec,
   HubSpotUtmLookupResult,
   KeywordActionResponse,
   LinkedInCampaignCreateResult,
@@ -587,28 +585,6 @@ Generate high-quality, conversion-focused ad copy for the Linux Foundation's tra
 
 function getCopySystemPromptBase(programType?: CampaignProgramType): string {
   return programType === 'education' ? COPY_SYSTEM_PROMPT_EDUCATION : COPY_SYSTEM_PROMPT_EVENTS;
-}
-
-/**
- * The widths the brief writes Google copy to, read from the catalogue the Implement tab validates
- * against so the generator cannot ask for copy the seed then drops. Demand Gen headlines are the
- * IMAGE ad's 30 (#5384, campaign-service `maxHeadlineWeight`): it is the only Demand Gen ad the brief
- * seeds, and the video ad's 40 would hand it headlines it cannot use.
- */
-const GENERATED_GOOGLE_COPY_WIDTHS = {
-  searchHeadline: CAMPAIGN_CHAR_LIMITS.searchHeadline,
-  searchDescription: CAMPAIGN_CHAR_LIMITS.searchDescription,
-  demandGenHeadline: demandGenFieldWidth('headlines'),
-  demandGenDescription: demandGenFieldWidth('descriptions'),
-  businessName: demandGenFieldWidth('businessName'),
-  shortDescription: GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
-} as const;
-
-/** The Demand Gen image ad's catalogue width for one field (`GOOGLE_CREATIVE_FIELD_SPECS`). */
-function demandGenFieldWidth(control: string): number {
-  const width = (GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] as readonly GoogleCreativeFieldSpec[]).find((field) => field.control === control)?.width;
-  if (width === undefined) throw new Error(`GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] has no width for ${control}`);
-  return width;
 }
 
 const COPY_GOOGLE_SECTION = `
@@ -2774,7 +2750,7 @@ export function truncateAdCopy(obj: Record<string, unknown>): void {
 
 /**
  * Make sure the brief's Google copy holds at least one description of
- * {@link GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH} or fewer by Google's display width (#5494),
+ * `GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH` or fewer by Google's display width (#5494),
  * so the Performance Max seed has one to pick for Google's short slot and an untouched brief creates.
  *
  * The prompt asks for one; this is the net for when the model does not write it. When neither the
@@ -3171,13 +3147,6 @@ CRITICAL RULES:
 const KEYWORD_EVENT_TARGETING_RULES = `- Never target another event. Do not name the host event this event is co-located with (e.g. KubeCon for a co-located event), its other co-located events, or any other Linux Foundation, CNCF or open source foundation event, and never pair an open source project's name with "conference", "summit" or "con" unless this event is about that project.
 - Never write competitor or comparison terms: no "alternative", "vs", "versus", "competitor" or "instead of".`;
 
-/**
- * Words that mark a keyword as competitor or comparison intent (#5383): someone searching "KubeCon
- * alternative" is shopping AWAY from an event, and for a Linux Foundation event the event named is
- * usually the foundation's own. Whole words only, so "alternatively" or "vsphere" are not caught.
- */
-const COMPETITOR_KEYWORD_PATTERN = /\b(alternatives?|vs|versus|competitors?|instead of)\b/iu;
-
 /** The event's year as the keyword prompt states it, or `null` when its dates name none. */
 function eventYearFromDates(dates: unknown): string | null {
   return typeof dates === 'string' ? (dates.match(/20\d{2}/)?.[0] ?? null) : null;
@@ -3185,7 +3154,7 @@ function eventYearFromDates(dates: unknown): string | null {
 
 /**
  * Drop the generated EVENT keywords the prompt forbids but the model can still write (#5383): a
- * competitor or comparison term ({@link COMPETITOR_KEYWORD_PATTERN}) and, when the event's dates name
+ * competitor or comparison term (`COMPETITOR_KEYWORD_PATTERN`) and, when the event's dates name
  * its year, a term naming any other year. Education keywords pass through, since
  * their prompt asks for alternative certifications and states no year rule.
  *
