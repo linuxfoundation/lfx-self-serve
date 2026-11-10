@@ -264,7 +264,13 @@
                 <p class="text-xs text-gray-500">
                   {{ row.action.engagement_tier }}
                   @if (row.action.days_to_renewal !== null) {
-                    · renews in {{ row.action.days_to_renewal }} {{ row.action.days_to_renewal === 1 ? 'day' : 'days' }}
+                    @if (row.action.days_to_renewal < 0) {
+                      · {{ -row.action.days_to_renewal }} {{ row.action.days_to_renewal === -1 ? 'day' : 'days' }} overdue
+                    } @else if (row.action.days_to_renewal === 0) {
+                      · renews today
+                    } @else {
+                      · renews in {{ row.action.days_to_renewal }} {{ row.action.days_to_renewal === 1 ? 'day' : 'days' }}
+                    }
                   }
                 </p>
               </li>

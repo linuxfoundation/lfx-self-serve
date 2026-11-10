@@ -26,6 +26,18 @@ const priorityRank = (priority: Action['priority']): number => {
   return index === -1 ? MEMBER_360_PRIORITY_ORDER.length : index;
 };
 
+/**
+ * A deadline as a sortable instant: an ISO day is UTC midnight; any other text the agent wrote counts when `Date.parse`
+ * reads it ("2 Dec 2026"); the rest, and a missing deadline, sort last.
+ */
+export function member360DeadlineKey(deadline: string | null): number {
+  if (deadline === null) return Number.POSITIVE_INFINITY;
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(deadline);
+  if (day) return Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
+  const parsed = Date.parse(deadline);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
 /** Actions by team in renewal order (Sales, Marketing, Member Success): High first, then nearest deadline, then name. */
 export function member360ActionTeams(actions: readonly Action[]): Member360ActionTeam[] {
   return MEMBER_360_ACTION_TEAM_ORDER.map((owner) => {
@@ -34,15 +46,20 @@ export function member360ActionTeams(actions: readonly Action[]): Member360Actio
       .sort(
         (a, b) =>
           priorityRank(a.priority) - priorityRank(b.priority) ||
-          (a.suggested_deadline ?? '9999-12-31').localeCompare(b.suggested_deadline ?? '9999-12-31') ||
+          member360DeadlineKey(a.suggested_deadline) - member360DeadlineKey(b.suggested_deadline) ||
+          (a.suggested_deadline ?? '\uffff').localeCompare(b.suggested_deadline ?? '\uffff') ||
           a.member_organization.localeCompare(b.member_organization)
       );
     const priorityCounts = MEMBER_360_PRIORITY_ORDER.map((priority) => ({
       priority,
       count: own.filter((action) => action.priority === priority).length,
     })).filter((entry) => entry.count > 0);
-    const deadlines = own.map((action) => action.suggested_deadline).filter((date): date is string => date !== null);
-    return { key: owner.toLowerCase().replace(/ /g, '-'), owner, actions: own, priorityCounts, nextDue: deadlines.length ? [...deadlines].sort()[0] : null };
+    // The earliest parseable deadline, as written; none when no deadline parses.
+    const nextDue = own
+      .map((action) => action.suggested_deadline)
+      .filter((deadline): deadline is string => deadline !== null && Number.isFinite(member360DeadlineKey(deadline)))
+      .sort((a, b) => member360DeadlineKey(a) - member360DeadlineKey(b))[0];
+    return { key: owner.toLowerCase().replace(/ /g, '-'), owner, actions: own, priorityCounts, nextDue: nextDue ?? null };
   });
 }
 

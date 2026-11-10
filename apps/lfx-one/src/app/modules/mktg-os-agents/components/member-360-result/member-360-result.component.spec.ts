@@ -459,6 +459,26 @@ describe('Member360ResultComponent', () => {
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
   });
+  it('reads a negative renewal offset as overdue, zero as today and one as a single day', () => {
+    const envelope = member360Fixture();
+    const template = envelope.tabs.actions_by_team[0];
+    envelope.tabs.actions_by_team = [-7, 0, 1].map((days, index) => ({
+      ...template,
+      owner: 'Marketing',
+      priority: 'High' as typeof template.priority,
+      member_organization: `Org ${index}`,
+      days_to_renewal: days,
+    }));
+    const view = render(envelope);
+    const rows = Array.from(view.query('member-360-team-marketing').querySelectorAll('[data-testid="member-360-action-row"]')).map((row) =>
+      row.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.find((row) => row?.includes('Org 0'))).toContain('7 days overdue');
+    expect(rows.find((row) => row?.includes('Org 1'))).toContain('renews today');
+    expect(rows.find((row) => row?.includes('Org 2'))).toContain('renews in 1 day');
+    expect(rows.join(' ')).not.toContain('renews in -');
+  });
   it('orders each team High first, folds it to three rows and drops the repeated team label', () => {
     const envelope = member360Fixture();
     const template = envelope.tabs.actions_by_team[0];

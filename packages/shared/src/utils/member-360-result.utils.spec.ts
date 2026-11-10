@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Member360Envelope } from '../interfaces/member-360.interface';
 import {
   member360ActionTeams,
+  member360DeadlineKey,
   member360ActionText,
   member360EvidenceGroups,
   member360EvidenceSource,
@@ -73,6 +74,23 @@ describe('member360ActionTeams', () => {
     expect(marketing.nextDue).toBe('2026-11-20');
     expect(sales.priorityCounts).toEqual([{ priority: 'High', count: 1 }]);
     expect(success).toMatchObject({ key: 'member-success', actions: [], priorityCounts: [], nextDue: null });
+  });
+
+  it('compares deadlines by date, not text: ISO days, then any parseable text, unparseable last and stable, none at the end', () => {
+    const mixed = [
+      action({ owner: 'Sales', priority: 'High', member_organization: 'E', suggested_deadline: '30 Nov 2026' }),
+      action({ owner: 'Sales', priority: 'High', member_organization: 'F', suggested_deadline: '2 Dec 2026' }),
+      action({ owner: 'Sales', priority: 'High', member_organization: 'G', suggested_deadline: '2026-11-20' }),
+      action({ owner: 'Sales', priority: 'High', member_organization: 'H', suggested_deadline: null }),
+      action({ owner: 'Sales', priority: 'High', member_organization: 'I', suggested_deadline: 'when the board meets' }),
+    ];
+    const [sales] = member360ActionTeams(mixed);
+    expect(sales.actions.map((row) => row.suggested_deadline)).toEqual(['2026-11-20', '30 Nov 2026', '2 Dec 2026', 'when the board meets', null]);
+    expect(sales.nextDue).toBe('2026-11-20');
+    expect(member360ActionTeams([mixed[4]])[0].nextDue).toBeNull();
+    expect(member360DeadlineKey('2026-11-20')).toBe(Date.UTC(2026, 10, 20));
+    expect(member360DeadlineKey('when the board meets')).toBe(Number.POSITIVE_INFINITY);
+    expect(member360DeadlineKey(null)).toBe(Number.POSITIVE_INFINITY);
   });
 });
 
