@@ -713,7 +713,7 @@
             placeholder="https://events.linuxfoundation.org/..."
             dataTest="planning-registration-url-input" />
           @if (paidEditError(); as editError) {
-            <p class="text-xs text-red-700" role="alert" data-testid="planning-registration-url-error">{{ editError }}</p>
+            <p #paidEditErrorMessage class="text-xs text-red-700" role="alert" data-testid="planning-registration-url-error">{{ editError }}</p>
           }
         </div>
       }

@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location, NgClass } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  OnInit,
+  output,
+  PLATFORM_ID,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -16,6 +30,7 @@ import {
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS,
+  isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import {
   campaignSurveySourceTextLength,
@@ -97,10 +112,12 @@ const isDefiniteRefusal = (status: number): boolean => status === 400 || status 
  * `https:example.com` and `https:///example.com` as having a host while Go's `url.Parse`, which the
  * platforms validate with, finds none in either. A public host on
  * a default port, via `canonicalHttpUrl`; and no user name or password, which every platform's
- * validator refuses (the BFF's `describeDestinationUrl` mirrors them).
+ * validator refuses (the BFF's `describeDestinationUrl` mirrors them). Last, the Google destination
+ * rule campaign-service applies (`isGoogleAdsServableUrl`): it refuses what Go's parser rejects, such
+ * as a `;` in the query, a malformed percent escape, or an empty `@` userinfo.
  */
 function isHttpsRegistrationUrl(value: string): boolean {
-  if (!/^https:\/\/[^/\\]/i.test(value) || canonicalHttpUrl(value) === '') return false;
+  if (!/^https:\/\/[^/\\]/i.test(value) || canonicalHttpUrl(value) === '' || !isGoogleAdsServableUrl(value)) return false;
   const parsed = new URL(value);
   return parsed.username === '' && parsed.password === '';
 }
@@ -119,6 +136,7 @@ export class PlanningTabComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly fb = inject(FormBuilder);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
@@ -375,6 +393,8 @@ export class PlanningTabComponent implements OnInit {
 
   /** Why the paid brief edit could not be saved: the Registration URL was changed to something that is not a full https:// address. */
   protected readonly paidEditError = signal<string>('');
+  /** The Registration URL refusal, scrolled into view by `revealPaidEditError` since Save & Proceed sits below the copy editor. */
+  private readonly paidEditErrorMessage = viewChild<ElementRef<HTMLElement>>('paidEditErrorMessage');
   protected readonly copyBuffer = signal('');
   protected readonly structuredCopy = signal<Record<string, unknown> | null>(null);
   protected readonly hsUtm = signal<string | null>(null);
@@ -1837,9 +1857,11 @@ export class PlanningTabComponent implements OnInit {
     // Judged first, so a refusal leaves every edit unapplied and the editor open with its message.
     const details = this.eventDetails();
     const editedUrl = (this.paidEditForm.controls.registrationUrl.value ?? '').trim();
-    const urlChanged = details !== null && editedUrl !== details.registrationUrl.trim();
+    // `?? ''`: an older or partial brief carries no `registrationUrl`, as `enterEditMode` allows.
+    const urlChanged = details !== null && editedUrl !== (details.registrationUrl ?? '').trim();
     if (urlChanged && !isHttpsRegistrationUrl(editedUrl)) {
       this.paidEditError.set('Enter the full registration link, starting with https://.');
+      this.revealPaidEditError();
       return;
     }
     this.paidEditError.set('');
@@ -2941,6 +2963,11 @@ export class PlanningTabComponent implements OnInit {
         this.step.set('review');
         break;
     }
+  }
+
+  /** Bring the Registration URL refusal into view once it renders: Save & Proceed sits below the long copy editor. */
+  private revealPaidEditError(): void {
+    afterNextRender(() => this.paidEditErrorMessage()?.nativeElement.scrollIntoView({ block: 'center' }), { injector: this.injector });
   }
 
   private safeNumber(value: unknown): number {

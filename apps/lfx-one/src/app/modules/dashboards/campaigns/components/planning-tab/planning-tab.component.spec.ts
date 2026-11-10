@@ -1281,6 +1281,9 @@ describe('PlanningTabComponent editing an existing brief', () => {
       ['a third slash after https://, which Go also reads as having no host', 'https:///events.example.com/register'],
       ['a private host', 'https://localhost/register'],
       ['a user name and password', 'https://user:secret@events.example.com/register'],
+      ['a semicolon in the query, which Go refuses', 'https://events.example.com/register?ref=a;b'],
+      ['a malformed percent escape', 'https://events.example.com/register%zz'],
+      ['an empty @ userinfo', 'https://@events.example.com/register'],
       ['an emptied field', '   '],
     ])('refuses %s: the editor stays open with its message, and nothing is applied or emitted', async (_label, value) => {
       await openInEditor();
@@ -1298,6 +1301,41 @@ describe('PlanningTabComponent editing an existing brief', () => {
       expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026');
       // Refused before anything was applied, so the copy edit is not half-saved either.
       expect((fixture.componentInstance as unknown as { getSearchCopy(): { headlines: string[] } }).getSearchCopy().headlines).toEqual(['Stored headline']);
+    });
+
+    it('scrolls the refusal into view, since Save & Proceed sits below the copy editor', async () => {
+      const scrolled: Element[] = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this);
+      };
+      try {
+        await openInEditor();
+        typeUrl('http://events.example.com/register');
+
+        urlInternals().onProceedToImplementation();
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(scrolled.map((node) => node.getAttribute('data-testid'))).toEqual(['planning-registration-url-error']);
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+
+    it('saves a URL onto a stored brief that carries no registrationUrl at all, instead of throwing', async () => {
+      const withoutUrl: Partial<CampaignEventDetails> = { ...storedBrief.eventDetails };
+      delete withoutUrl.registrationUrl;
+      const legacy = { ...storedBrief, eventDetails: withoutUrl } as unknown as CampaignBriefOutput;
+      fixture.componentRef.setInput('editRequest', { brief: legacy, requestId: 13 });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      typeUrl('https://events.example.com/kubecon-eu-2026/register/');
+      urlInternals().saveEdits();
+
+      expect(urlInternals().isEditing()).toBe(false);
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
     });
 
     it('does not judge a URL the operator left unchanged, so an http one already on the brief does not block a copy edit', async () => {
