@@ -256,6 +256,16 @@ describe('MeetingRsvpControlsComponent', () => {
     });
   });
 
+  it('lays the answer buttons out in three full-width columns with fullWidth', async () => {
+    const fixture = TestBed.createComponent(MeetingRsvpControlsComponent);
+    fixture.componentRef.setInput('row', buildRow(buildMeeting(), { myRsvp: null }));
+    fixture.componentRef.setInput('fullWidth', true);
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meetings-home-rsvp')?.classList).toContain('grid-cols-3');
+    expect(query(fixture, 'meetings-home-rsvp-accepted')?.classList).toContain('block');
+  });
+
   describe('answered', () => {
     it('shows the answer as a badge without the dates it covers', async () => {
       const rsvp = buildRsvp({ response_type: 'maybe', scope: 'single', occurrence_id: OCCURRENCE_ID });
@@ -278,6 +288,18 @@ describe('MeetingRsvpControlsComponent', () => {
       const trigger = fixture.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
 
       expect(trigger.menuPosition[0]).toEqual({ originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' });
+    });
+
+    it('spans a full-width badge across the container and opens its menu from the start edge', async () => {
+      const fixture = TestBed.createComponent(MeetingRsvpControlsComponent);
+      fixture.componentRef.setInput('row', buildRow(buildMeeting(), { myRsvp: buildRsvp() }));
+      fixture.componentRef.setInput('fullWidth', true);
+      await fixture.whenStable();
+      const trigger = fixture.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+
+      expect(query(fixture, 'meetings-home-rsvp')?.classList).toContain('w-full');
+      expect(query(fixture, 'meetings-home-rsvp-status')?.querySelector('lfx-ui-badge')?.classList).toContain('w-full');
+      expect(trigger.menuPosition[0]).toEqual({ originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' });
     });
 
     it('lets a recurring answer be picked again to change the dates it covers', async () => {

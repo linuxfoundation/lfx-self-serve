@@ -53,6 +53,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_ALREADY_CONNECTED_MESSAGE: 'already connected',
   EMAIL_ALREADY_CONNECTED_STATUS: 'already_connected',
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS: 'already_linked',
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: 'retry_required',
   EMAIL_CALLBACK_STATUS_PARAM: 'email_status',
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,

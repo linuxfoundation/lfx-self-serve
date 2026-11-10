@@ -21,6 +21,7 @@ import {
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
   googleAdGroupDemographicExclusionsRefusal,
+  googleDemandGenDemographicsMalformed,
   googleDemandGenDemographicsRefusal,
   googleDisplayDemographicsCarried,
   googleDisplayDemographicsRefusal,
@@ -2332,7 +2333,9 @@ export class CampaignController {
       // (briefId, projectSlug, platforms, configEnvelope, campaignTypes), and campaign-service
       // reads the destination exclusively from the brief it already stores — `decodeBriefFields`
       // takes `brief.url` and falls back to the nested `event_details.registrationUrl`
-      // (`internal/dispatch/reddit.go`). Only the PLANNING tab ever persists that field.
+      // (`internal/dispatch/reddit.go`). Only the PLANNING tab ever persists that field: the paid
+      // brief editor's Registration URL (#5490), reached from the Implement tab by Edit brief, which
+      // is the remedy each message below names.
       //
       // Refuse here instead, naming the field. This is a READ and a refusal, deliberately: the
       // brief is NOT patched from `body.registrationUrl`, because replacing a brief moves its
@@ -2372,8 +2375,8 @@ export class CampaignController {
               ServiceValidationError.forField(
                 'registrationUrl',
                 shape === 'empty'
-                  ? 'the saved brief has no registration URL, so the ad platforms have no destination for the paid traffic. Set Registration URL on the Planning tab and save the brief, then create again.'
-                  : "the saved brief's registration URL is not a complete web address, so the ad platforms will refuse it. Set Registration URL on the Planning tab to a full https:// address and save the brief, then create again.",
+                  ? 'the saved brief has no registration URL, so the ad platforms have no destination for the paid traffic. Select Edit brief, enter the Registration URL, then Save & Proceed to Implement and create again.'
+                  : "the saved brief's registration URL is not a complete web address, so the ad platforms will refuse it. Select Edit brief, enter a full https:// Registration URL, then Save & Proceed and create again.",
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )
             );
@@ -2389,7 +2392,7 @@ export class CampaignController {
             next(
               ServiceValidationError.forField(
                 'registrationUrl',
-                "Meta Ads only accepts an https:// destination, and the saved brief's registration URL uses http://. Update Registration URL on the Planning tab to https:// and save the brief, then create again.",
+                "Meta Ads only accepts an https:// destination, and the saved brief's registration URL uses http://. Select Edit brief, change the Registration URL to https://, then Save & Proceed and create again.",
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )
             );
@@ -6314,8 +6317,10 @@ export class CampaignController {
    * The first of `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` a Google create carries while this deployment
    * cannot honour it (see `createCampaign`), else `null`.
    *
-   * The bidding plan and creative entries (`normalized`) count only when the cutover's own
-   * normalizers would send them (see the constant). For every other entry, only a NON-EMPTY value
+   * The bidding plan and creative entries (`normalized`) count when the cutover's own normalizers
+   * would send them (see the constant), or when the raw value is one the cutover's refusals name on
+   * the raw body though the normalizers drop it (a malformed Demand Gen demographics object, or a
+   * Demand Gen or Display ad group or ad list that is not a list). For every other entry, only a NON-EMPTY value
    * counts: absent, `null`, an empty string, `false` and an empty list ask for nothing, and the
    * legacy creator serves those
    * requests exactly as asked, so refusing one would be over-refusal. Any other present value — a
@@ -6339,10 +6344,22 @@ export class CampaignController {
     }
     // The Display audiences (#5262) under their request key, whenever the builder would send a list.
     if (Object.keys(this.googleDisplayAudiences(body)).length > 0) sent[GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY] = true;
+    // A raw value the normalizers drop but the cutover's own refusals name on the RAW body counts too: a
+    // `demandGenDemographics` that is malformed or names user lists, and a split or ad list that is not a
+    // list (`googleDemandGenAdGroupsRefusal`, `googleDemandGenAdsRefusal`, `googleDisplayAdGroupsRefusal`).
+    // Read only from what would be sent, each would vanish here and the legacy creator would create
+    // without what was asked for. The Demand Gen audience and the Display audiences are refused on their
+    // raw shape before this runs, whatever the cutover.
     // An empty string asks for nothing too: the display paths are the only string fields here. So
     // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
     const asked = (value: unknown): boolean =>
       value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
+    // Each on `asked`'s terms first, so an empty list or string still asks for nothing here.
+    const demographics = raw[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY];
+    if (asked(demographics) && googleDemandGenDemographicsMalformed(demographics)) sent[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY] = true;
+    for (const key of [GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY]) {
+      if (asked(raw[key]) && !Array.isArray(raw[key])) sent[key] = true;
+    }
     return (
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
         if ('normalized' in entry) return entry.field in sent;

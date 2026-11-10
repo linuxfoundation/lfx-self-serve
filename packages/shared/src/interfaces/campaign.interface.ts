@@ -1482,6 +1482,12 @@ export interface CampaignImplementationDraft {
    */
   displayAudiences?: GoogleDisplayCampaignAudiences;
   /**
+   * The name each Display audience was picked under, by resource name (#5262), so a restored pick is shown by
+   * name though the picker's current list (an interest search, or the first 500 by name) no longer holds it.
+   * Display only, never sent. Absent leaves the names the tab holds alone.
+   */
+  displayAudienceNames?: Record<string, string>;
+  /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
    * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
@@ -1643,6 +1649,12 @@ export interface CampaignImplementationDraft {
    * {@link googleStructuredSnippets}, so it shares their shorter lifetime.
    */
   googleAudienceSegments?: string[];
+  /**
+   * The name each audience segment was added under, by resource name (#5493), so a restored segment is shown
+   * by name though the user list read is loading, unavailable or no longer lists it. Never sent. Absent
+   * leaves the names the tab holds alone.
+   */
+  googleAudienceSegmentNames?: Record<string, string>;
   /**
    * Google's call, promotion and price extensions, as the operator added them.
    *

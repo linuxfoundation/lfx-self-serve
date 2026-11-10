@@ -42,10 +42,12 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
- * Dark-launch gate for the Mailing List Sync Settings section (#4024) — the ON/OFF toggle,
- * direction selector, and "Sync Now" entry point on the mailing list view page
- * (mailing-list-view.component.html). Default false: an unflagged evaluation hides the section
- * entirely so the feature ships dark ahead of #4022's full rollout.
+ * Dark-launch gate for the committee ↔ mailing-list sync UI across #4022's frontend surfaces:
+ * the ON/OFF toggle and direction selector on the mailing list view page (#4024) and the
+ * **Sync Now** entry point on the committee Settings tab (#4027). Default false: an unflagged
+ * evaluation hides all of them so the feature ships dark ahead of #4022's full rollout. A new
+ * consumer (e.g. #4025's committee Auto Sync drawer) reads this same constant rather than
+ * defining a duplicate.
  *
  * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through
  * `FeatureFlagService.getBooleanFlag`, which never runs server-side, so it cannot gate an Express
@@ -196,6 +198,16 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.
  */
 export const MEETING_V2_ENABLED_DEFAULT = false;
+/**
+ * Lets a user start new newsletters in the block composer, on top of the project gate in
+ * `NEWSLETTER_BLOCKS_PROJECT_SLUGS`. Off keeps the basic editor. A draft that already has a layout
+ * stays in the composer either way, because the basic editor can't edit it safely.
+ *
+ * **UI-only** — it does not gate the BFF or any endpoint.
+ */
+export const NEWSLETTER_ENHANCED_EDITOR_FLAG = 'newsletter-enhanced-editor';
+/** What {@link NEWSLETTER_ENHANCED_EDITOR_FLAG} reads as when LaunchDarkly has not answered. */
+export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
 /**
  * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
  * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat

@@ -29,6 +29,13 @@ export class IntercomService {
 
   private scriptElement: HTMLScriptElement | null = null;
 
+  // Whether a surface has asked for the default launcher bubble to be hidden (see setLauncherHidden).
+  private launcherHidden = false;
+
+  // The launcher choice boot() made — an explicit `hide_default_launcher` or the phone replacement —
+  // which setLauncherHidden(false) restores rather than forcing the bubble back.
+  private bootHidesLauncher = false;
+
   // Identity for an on-demand boot when the startup boot was skipped — the invite landing skips it
   // to keep first paint off Intercom, but its "Contact support" CTA must still reach support as the
   // signed-in user (GH-2290). Only AppComponent sets this, and never while impersonating: the
@@ -65,9 +72,13 @@ export class IntercomService {
     // actions and sticky bars (#4865). Desktop boots exactly as before.
     const launcherSettings = this.launcherSettings();
     this.customLauncherActive.set(Object.keys(launcherSettings).length > 0);
+    this.bootHidesLauncher = options.hide_default_launcher === true || this.customLauncherActive();
+    // A boot that lands while a surface has the bubble hidden must not bring it back (#5416).
+    const bootLauncherSettings: IntercomSettings =
+      this.launcherHidden && !this.customLauncherActive() ? { ...launcherSettings, hide_default_launcher: true } : launcherSettings;
 
-    this.loadIntercomScript(options.app_id, options.api_base, launcherSettings);
-    window.Intercom!('boot', { ...options, ...launcherSettings });
+    this.loadIntercomScript(options.app_id, options.api_base, bootLauncherSettings);
+    window.Intercom!('boot', { ...options, ...bootLauncherSettings });
     this.isBootRequested = true;
     console.info('Intercom: boot command dispatched to widget');
   }
@@ -87,6 +98,31 @@ export class IntercomService {
       return;
     }
     this.reattachAndUpdate(window.Intercom);
+  }
+
+  // Hides or restores the default launcher bubble for a surface whose bottom-right controls it would
+  // cover, like the meeting composer drawer's footer (#5416). Uses Intercom's own
+  // `hide_default_launcher` setting rather than CSS on the widget's internal markup. Restoring goes
+  // back to the boot-time choice, so a boot that hid the bubble explicitly keeps it hidden.
+  // Phones are left alone entirely: a phone boot already swaps the bubble for the compact shell
+  // launcher (#4865), so no Intercom command is sent there.
+  // The value is mirrored on `intercomSettings` because update() replays those settings, and before
+  // boot it is only recorded for boot() to apply.
+  public setLauncherHidden(hidden: boolean): void {
+    if (typeof window === 'undefined' || this.launcherHidden === hidden) {
+      return;
+    }
+    this.launcherHidden = hidden;
+    if (this.customLauncherActive()) {
+      return;
+    }
+    const hideDefaultLauncher = hidden || this.bootHidesLauncher;
+    if (window.intercomSettings) {
+      window.intercomSettings.hide_default_launcher = hideDefaultLauncher;
+    }
+    if (window.Intercom && this.isBootRequested) {
+      window.Intercom('update', { hide_default_launcher: hideDefaultLauncher });
+    }
   }
 
   // Records who a later on-demand boot should identify as, without loading the widget.
@@ -118,6 +154,7 @@ export class IntercomService {
     // there is no widget to shut down.
     this.identity = null;
     this.customLauncherActive.set(false);
+    this.bootHidesLauncher = false;
     if (typeof window === 'undefined') {
       return;
     }

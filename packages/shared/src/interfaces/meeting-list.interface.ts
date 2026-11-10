@@ -182,6 +182,15 @@ export interface MeetingSummaryDialogData {
   showPending?: boolean;
 }
 
+/** What the meetings home transcript dialog opens with. */
+export interface MeetingTranscriptDialogData {
+  row: MeetingHomeRow;
+  /** The past meeting whose transcript file is read. */
+  pastMeetingId: string;
+  /** Defaults to `page`. */
+  origin?: MeetingDialogOrigin;
+}
+
 /** What the meetings home edit scope dialog opens with. */
 export interface MeetingEditScopeDialogData {
   row: MeetingHomeRow;
@@ -453,12 +462,6 @@ export interface MeetingGuestViewer {
   email: string | null;
 }
 
-/** Heading and total of the guest list, such as "Meeting Guests" and "12 guests". */
-export interface MeetingGuestSummary {
-  title: string;
-  subtitle: string;
-}
-
 /** Load state of the meeting details drawer's guest list. */
 export interface MeetingGuestsLoad {
   status: 'loading' | 'ready' | 'error';
@@ -485,4 +488,13 @@ export interface MeetingRegisterDialogData {
   meetingTitle: string;
   /** The signed-in user, whose profile fills the form. */
   user: User | null;
+}
+
+/** What the Reconcile Attendance dialog opens with. */
+export interface MeetingReconcileDialogData {
+  row: MeetingHomeRow;
+  /** Resource id of the past meeting being reconciled. */
+  pastMeetingId: string;
+  /** Called after attendee records change, so the opener reloads its participants. */
+  onChange: () => void;
 }

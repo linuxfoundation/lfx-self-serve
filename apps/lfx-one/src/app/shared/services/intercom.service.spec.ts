@@ -169,6 +169,68 @@ describe('IntercomService', () => {
     expect(onLoadError).toHaveBeenCalledTimes(1);
   });
 
+  describe('setLauncherHidden (#5416)', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('should hide and restore the default launcher once booted', () => {
+      service.boot({ app_id: 'test-app-id' });
+
+      service.setLauncherHidden(true);
+      service.setLauncherHidden(false);
+
+      expect(queuedCommands().slice(1)).toEqual([
+        ['update', { hide_default_launcher: true }],
+        ['update', { hide_default_launcher: false }],
+      ]);
+      expect(window.intercomSettings?.hide_default_launcher).toBe(false);
+    });
+
+    it('should not repeat an update for an unchanged request', () => {
+      service.boot({ app_id: 'test-app-id' });
+
+      service.setLauncherHidden(true);
+      service.setLauncherHidden(true);
+
+      expect(queuedCommands().slice(1)).toEqual([['update', { hide_default_launcher: true }]]);
+    });
+
+    it('should only record the request before boot, and boot with the launcher hidden', () => {
+      service.setLauncherHidden(true);
+      expect(window.Intercom).toBeUndefined();
+
+      service.boot({ app_id: 'test-app-id' });
+
+      expect(queuedCommands()[0]).toEqual(['boot', { app_id: 'test-app-id', hide_default_launcher: true }]);
+      expect(window.intercomSettings?.hide_default_launcher).toBe(true);
+    });
+
+    it('should leave a phone boot untouched, since the compact launcher (#4865) already replaces the bubble', () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query }));
+      service.boot({ app_id: 'test-app-id' });
+      const settingsAfterBoot = { ...window.intercomSettings };
+
+      service.setLauncherHidden(true);
+      service.setLauncherHidden(false);
+
+      expect(queuedCommands().slice(1)).toEqual([]);
+      expect(window.intercomSettings).toEqual(settingsAfterBoot);
+    });
+
+    it('should keep the default launcher hidden on restore when the boot hid it explicitly', () => {
+      service.boot({ app_id: 'test-app-id', hide_default_launcher: true });
+
+      service.setLauncherHidden(true);
+      service.setLauncherHidden(false);
+
+      expect(queuedCommands().slice(1)).toEqual([
+        ['update', { hide_default_launcher: true }],
+        ['update', { hide_default_launcher: true }],
+      ]);
+    });
+  });
+
   describe('compact launcher (#4865)', () => {
     const stubMatchMedia = (matches: boolean): void => {
       vi.stubGlobal('matchMedia', (query: string) => ({ matches, media: query }));

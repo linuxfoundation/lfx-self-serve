@@ -3,6 +3,8 @@
 
 import { MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT, MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import type { MktgLastKnownAuthorName, MktgRevisionAuthor } from '@lfx-one/shared/interfaces';
+// Deep import: the `@lfx-one/shared/utils` barrel pulls in `@angular/forms` (see ssr-display-name.helper.ts).
+import { buildDisplayName } from '@lfx-one/shared/utils/display-name.utils';
 import type { Request } from 'express';
 import { AuthenticationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
@@ -74,7 +76,10 @@ export class MktgDocumentAuthorService {
           // success:false is any upstream error of the directory (lfx-v2-auth-service message_handler.go:299-304:
           // M2M token failure, Auth0 429/5xx), not only a miss — served stale like a thrown failure.
           if (!response.success) return this.staleOrNone(req, userId, operation, message);
-          return this.remember(userId, response.data?.name || null);
+          // The directory often carries the person's first and last name without a full `name` (as the profile
+          // page and the navbar read it): join them the same way. Never a username (#3773).
+          const data = response.data;
+          return this.remember(userId, data?.name?.trim() || buildDisplayName(data?.given_name, data?.family_name) || null);
         } catch (err) {
           // getUserInfo wraps timeouts/503s in ResourceNotFoundError (user.service.ts:158-164) — served stale too.
           return this.staleOrNone(req, userId, operation, message, err);

@@ -380,6 +380,16 @@ export interface GroupEligibility {
 }
 
 /**
+ * Navigation state a Me lens list passes when linking to a group details page, so the page can
+ * return to that list (see `COMMITTEE_BACK_PATHS`) and restore the Me lens.
+ */
+export interface GroupLinkState {
+  backLabel: string;
+  backPath: string;
+  fromMeLens: boolean;
+}
+
+/**
  * Lightweight committee reference for cross-module use
  * @description Minimal committee data with voting status eligibility
  */
@@ -390,6 +400,20 @@ export interface CommitteeReference {
   name?: string;
   /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
   allowed_voting_statuses?: CommitteeMemberVotingStatus[];
+  /**
+   * Automatic membership sync direction between this committee and the mailing list it's attached
+   * to (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.SyncMode`). The backend
+   * stores this per-committee-entry, not on the mailing list resource itself, so a mailing list
+   * linked to multiple committees can carry a different direction for each.
+   */
+  sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member roles that gate which members are synced to the mailing list for this
+   * committee's C→ML direction, in addition to `allowed_voting_statuses`
+   * (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.CommitteeRoleFilters`).
+   * Plain string match against the member's role; there is no fixed role taxonomy.
+   */
+  committee_role_filters?: string[];
 }
 
 /**
@@ -1227,6 +1251,40 @@ export interface MailingListPickerDialogResult {
    * than treating an empty map as "reset everything to manual".
    */
   syncModes: Map<string, MailingListSyncMode>;
+  /**
+   * Chosen committee voting-status filter per mailing list uid (#4026 criterion 3), keyed for every
+   * list in the dialog's candidate set. Only meaningful for a list whose syncModes entry is
+   * `auto_c_to_ml`; empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeFilters: Map<string, CommitteeMemberVotingStatus[]>;
+  /**
+   * Chosen committee role filter per mailing list uid (#4026 criterion 3), keyed for every list in
+   * the dialog's candidate set. Only meaningful for a list whose syncModes entry is `auto_c_to_ml`;
+   * empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeRoleFilters: Map<string, string[]>;
+}
+
+export interface MailingListSyncPreviewDialogData {
+  mailingListUid: string;
+  mailingListName: string;
+  committeeUid: string;
+}
+
+export interface MailingListSyncPreviewDialogResult {
+  applied: boolean;
+  committeeChanged: boolean;
+}
+
+/**
+ * An associated mailing list plus its per-row Settings-tab derived state, precomputed so the
+ * template doesn't branch on `ml.writer`/`ml.sync_mode` or nest ternaries for button state/tooltips.
+ */
+export interface CommitteeAssociatedMailingListRow extends GroupsIOMailingList {
+  removable: boolean;
+  syncModeSupported: boolean;
+  syncTooltip: string;
+  removeTooltip: string;
 }
 
 export interface DescriptionDialogData {

@@ -115,3 +115,30 @@ export interface Member360DisplayRow {
   rationale: string;
   evidence: Member360Tabs['evidence'];
 }
+
+/** One team's actions on the document page: ordered, counted by priority, with the next due date. */
+export interface Member360ActionTeam {
+  key: string;
+  owner: Member360Tabs['actions_by_team'][number]['owner'];
+  actions: Member360Tabs['actions_by_team'];
+  priorityCounts: { priority: Member360Tabs['actions_by_team'][number]['priority']; count: number }[];
+  nextDue: string | null;
+}
+
+/** One evidence category on the document page: its label and rows. */
+export interface Member360EvidenceGroup {
+  key: Member360Category;
+  label: string;
+  rows: Member360Tabs['evidence'];
+}
+
+/** One scoring category's weight on the document page, or why it had no data. */
+export interface Member360WeightRow {
+  key: Member360Category;
+  label: string;
+  used: number;
+  /** The used weight as a whole percent; the shown percents add up to the rounded total (largest remainder). */
+  shownPercent: number;
+  default: number;
+  noDataReason: string | null;
+}

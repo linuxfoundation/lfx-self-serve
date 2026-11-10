@@ -280,11 +280,12 @@ export class DocumentService {
 
     logger.info(req, 'get_my_documents', 'Fetched groupsio artifacts', { tags, artifact_count: artifacts.length });
 
-    const mailingListNameMap = await this.fetchMailingListNames(req, artifacts);
+    const mailingListByGroupId = await this.fetchMailingLists(req, artifacts);
 
     return artifacts.map((a): MyDocumentItem => {
       const url = a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url);
-      const mailingListName = a.group_id ? mailingListNameMap.get(a.group_id) : undefined;
+      const mailingList = a.group_id ? mailingListByGroupId.get(a.group_id) : undefined;
+      const mailingListName = mailingList?.title;
       return {
         id: `groupsio_artifact:${a.artifact_id}`,
         name: a.filename || a.link_url || mailingListName || a.artifact_id,
@@ -296,6 +297,7 @@ export class DocumentService {
         date: a.last_posted_at || a.created_at || '',
         url,
         mailingListId: a.group_id ? String(a.group_id) : undefined,
+        mailingListUid: mailingList?.uid,
         fileType: a.media_type,
       };
     });
@@ -306,7 +308,7 @@ export class DocumentService {
    * groupsio_mailing_list lookups using project_uid tags, then matching on the
    * numeric group_id field. Returns a map of group_id (number) → mailing list title.
    */
-  private async fetchMailingListNames(req: Request, artifacts: GroupsIOArtifactQueryResult[]): Promise<Map<number, string>> {
+  private async fetchMailingLists(req: Request, artifacts: GroupsIOArtifactQueryResult[]): Promise<Map<number, { title: string; uid: string }>> {
     const projectUids = [...new Set(artifacts.map((a) => a.project_uid).filter(Boolean) as string[])];
     if (projectUids.length === 0) return new Map();
 
@@ -332,12 +334,12 @@ export class DocumentService {
       )
     );
 
-    const nameMap = new Map<number, string>();
+    const listByGroupId = new Map<number, { title: string; uid: string }>();
     for (const [i, result] of batchResults.entries()) {
       if (result.status === 'fulfilled') {
         for (const ml of result.value) {
           if (ml.group_id != null && ml.title) {
-            nameMap.set(ml.group_id, ml.title);
+            listByGroupId.set(ml.group_id, { title: ml.title, uid: ml.uid });
           }
         }
       } else {
@@ -347,7 +349,7 @@ export class DocumentService {
         });
       }
     }
-    return nameMap;
+    return listByGroupId;
   }
 
   // ─── Foundation Name Resolution ─────────────────────────────────────────────

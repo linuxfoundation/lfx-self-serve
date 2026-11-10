@@ -279,6 +279,10 @@ export class MeetingComposerFormService {
    */
   public readonly committeeContextUnresolved = computed<boolean>(() => this.committeeContextLoading() || this.committeeContextFailed());
   public readonly originalStartTime = signal<string | null>(null);
+  // The same start date hydration patches into the startDate control, kept alongside it so
+  // composer-date-schedule's minDate() can let a past-dated meeting's own start date stay
+  // selectable (GH-4944) without re-deriving it from the raw timestamp.
+  public readonly originalStartDate = signal<Date | null>(null);
 
   /**
    * Owner hydrated from the loaded meeting, and the baseline the save diffs the picker against.
@@ -418,6 +422,7 @@ export class MeetingComposerFormService {
     this.savedSnapshot.set(null);
     this.meeting.set(null);
     this.originalStartTime.set(null);
+    this.originalStartDate.set(null);
     this.attachments.set([]);
     this.pendingAttachmentDeletions.set([]);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
@@ -1809,13 +1814,15 @@ export class MeetingComposerFormService {
 
     this.occurrence.set(occurrence);
     this.originalStartTime.set(occurrence.start_time);
+    // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
+    // zone's own DST gap, reopening the untouched form on the wrong calendar day.
+    const occurrenceStartDate = toZonedDateCarrier(start, timezone);
+    this.originalStartDate.set(occurrenceStartDate);
 
     form.patchValue({
       title: occurrence.title || meeting.title,
       description,
-      // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
-      // zone's own DST gap, reopening the untouched form on the wrong calendar day.
-      startDate: toZonedDateCarrier(start, timezone),
+      startDate: occurrenceStartDate,
       startTime: formatTo12HourInTimezone(start, timezone),
     });
     this.setDuration(this.occurrenceBaselineDuration(occurrence, meeting));
@@ -1984,6 +1991,7 @@ export class MeetingComposerFormService {
       const utcDate = new Date(meeting.start_time);
       const meetingTimezone = meeting.timezone || getUserTimezone();
       startDate = toZonedTime(utcDate, meetingTimezone);
+      this.originalStartDate.set(startDate);
       startTime = formatTo12HourInTimezone(utcDate, meetingTimezone);
     }
 

@@ -4001,6 +4001,44 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'demandGenAds' });
     });
 
+    // PR #5390 review: the normalizers drop these raw values, but the cutover's own refusals name them on the
+    // raw body, so with the cutover dark they must be named here too rather than vanish before the legacy create.
+    it.each([
+      ['demandGenDemographics', 'a string', 'FEMALE'],
+      ['demandGenDemographics', 'a list of values', ['FEMALE']],
+      ['demandGenDemographics', 'an object whose list is not a list', { genders: 'FEMALE' }],
+      ['demandGenDemographics', 'an object whose list holds a non-string', { genders: [7] }],
+      ['demandGenDemographics', 'audience segments alone', { audienceSegments: ['customers/1234567890/userLists/5'] }],
+      ['demandGenDemographics', 'custom audiences beside a value', { genders: ['FEMALE'], customAudiences: ['customers/1234567890/customAudiences/7'] }],
+      ['demandGenAdGroups', 'an object, not a list', { name: 'Retargeting' }],
+      ['demandGenAds', 'a string, not a list', 'Teaser'],
+      ['displayAdGroups', 'an object, not a list', { name: 'Retargeting' }],
+    ] as const)('refuses %s holding %s by name while the cutover is dark', async (field, _label, value) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ [field]: value } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(legacyCreate).not.toHaveBeenCalled();
+      expect(refusalFrom()).toMatchObject({ statusCode: 400, field });
+    });
+
+    it.each([
+      ['an empty object', {}],
+      ['an object whose every list is empty or null', { genders: [], ageRanges: null }],
+      ['empty segment lists', { audienceSegments: [], customAudiences: null }],
+      ['an empty string', ''],
+    ])('still serves Demand Gen demographics holding %s on the legacy road', async (_label, value) => {
+      isServerFeatureEnabled.mockReturnValue(false);
+      legacyServes();
+
+      await controller.createCampaign(buildReq(googleBody({ demandGenDemographics: value } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(legacyCreate).toHaveBeenCalledTimes(1);
+    });
+
     // Over-refusal is the failure mode to avoid: an empty or null list asks for nothing, and the
     // legacy creator serves that request exactly as asked.
     it.each(CASES)('still serves an empty or null %s on the legacy road', async (field) => {
@@ -9498,6 +9536,10 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('registrationUrl');
     expect(error.message).toContain(expectedText);
+    // The remedy has to be one the UI offers (#5490): the paid brief editor's Registration URL,
+    // reached from the Implement tab by Edit brief and saved by Save & Proceed.
+    expect(error.message).toContain('Select Edit brief');
+    expect(error.message).toContain('Save & Proceed');
   });
 
   it('dispatches a plain-http brief URL when Meta is not one of the selected platforms', async () => {
@@ -9522,6 +9564,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('registrationUrl');
     expect(error.message).toContain('https://');
+    expect(error.message).toContain('Select Edit brief');
   });
 
   it('dispatches when the brief could not be read, because an unreadable brief is not an operator error', async () => {

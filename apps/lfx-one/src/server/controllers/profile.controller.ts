@@ -12,6 +12,7 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
   EMAIL_REGEX,
@@ -1933,7 +1934,8 @@ export class ProfileController {
         token_type: tokenResponse.token_type,
         scope: tokenResponse.scope,
         expires_in: tokenResponse.expires_in,
-        pending_verification_completed: !!pending && emailStatus !== EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+        pending_verification_completed:
+          !!pending && emailStatus !== EMAIL_CALLBACK_RETRY_REQUIRED_STATUS && emailStatus !== EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
         pending_email_status: emailStatus,
       });
 
@@ -2262,7 +2264,10 @@ export class ProfileController {
       const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp, userManagementToken);
 
       if (!otpResponse.success) {
-        logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+        const isLinkedConflict = isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message);
+        if (!isLinkedConflict) {
+          logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+        }
 
         if (otpResponse.error === 'Service temporarily unavailable') {
           res.status(503).json({
@@ -2273,10 +2278,17 @@ export class ProfileController {
           return;
         }
 
-        if (isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message)) {
+        // auth-service validates the code before any ownership lookup, so a conflict here means the
+        // caller proved the inbox. Reply with fixed copy — never the upstream text, which could name
+        // the owning account — and keep the same floor as generic 400 failures (outages return above).
+        if (isLinkedConflict) {
           this.logLinkedEmailConflict(req, 'verify_and_link_email');
         }
         await this.holdUntilFloor(otpStartedAt);
+        if (isLinkedConflict) {
+          res.status(409).json({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
+          return;
+        }
         res.status(400).json({ success: false, error: EMAIL_VERIFICATION_FAILED_ERROR, message: EMAIL_VERIFICATION_FAILED_MESSAGE });
         return;
       }
@@ -2311,14 +2323,7 @@ export class ProfileController {
 
       if (!linkResponse.success) {
         if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
-          // Resolve the owning account for support/debugging only — never returned to the client.
-          const linkedTo =
-            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
-
-          logger.warning(req, 'verify_and_link_email', 'Email already linked to another account', {
-            email,
-            linked_to: linkedTo,
-          });
+          this.logLinkedEmailConflict(req, 'verify_and_link_email');
 
           // Never forward the upstream message here — it could name the owning account.
           res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
@@ -2513,7 +2518,7 @@ export class ProfileController {
     );
   }
 
-  /** Hold indistinguishable responses until the shared upstream-to-response floor. */
+  /** Hold upstream send-code replies and non-outage OTP failures until the shared upstream-to-response floor. */
   private async holdUntilFloor(startedAt: number): Promise<void> {
     const remainingMs = EMAIL_VERIFICATION_MIN_RESPONSE_MS - (Date.now() - startedAt);
     if (remainingMs > 0) {
@@ -2521,7 +2526,7 @@ export class ProfileController {
     }
   }
 
-  /** Keep pre-proof conflict details request-correlated without logging another account's identity. */
+  /** Keep linked-address conflicts request-correlated without resolving or logging another account's identity. */
   private logLinkedEmailConflict(req: Request, operation: string): void {
     logger.warning(req, operation, 'Email already linked to another account');
   }
@@ -2538,8 +2543,9 @@ export class ProfileController {
   /**
    * Replays a pending email verification during the Flow C callback, after the caller has already
    * removed it from the session. Returns the outcome to surface on the redirect: `already_connected`,
-   * `retry_required` for any attempt that did not finish, or undefined when a new address was linked.
-   * Never throws — the authorization itself has already succeeded.
+   * `already_linked` when the proven address is linked to an LFX account (at OTP verification or at
+   * link time — no follow-up writes run), `retry_required` for any other attempt that did not finish,
+   * or undefined when a new address was linked. Never throws — the authorization has already succeeded.
    */
   private async completePendingEmailVerification(req: Request, pending: { email: string; otp: string }): Promise<EmailVerificationCallbackStatus | undefined> {
     // Resolve the freshly stored user token before replaying the code, so its absence never consumes it.
@@ -2557,6 +2563,12 @@ export class ProfileController {
         return EMAIL_ALREADY_CONNECTED_STATUS;
       }
 
+      // The code was validated before the ownership lookup, so the conflict is proven — no new code helps.
+      if (!otpResponse.success && isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message)) {
+        this.logLinkedEmailConflict(req, 'profile_auth_callback');
+        return EMAIL_CALLBACK_ALREADY_LINKED_STATUS;
+      }
+
       if (!otpResponse.success || !otpResponse.data?.id_token) {
         logger.warning(req, 'profile_auth_callback', 'Pending OTP verification failed (may have expired)', {
           error: otpResponse.error,
@@ -2567,6 +2579,10 @@ export class ProfileController {
 
       const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
       if (!linkResponse.success) {
+        if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
+          this.logLinkedEmailConflict(req, 'profile_auth_callback');
+          return EMAIL_CALLBACK_ALREADY_LINKED_STATUS;
+        }
         logger.warning(req, 'profile_auth_callback', 'Pending verification link failed', {
           error: linkResponse.error,
         });

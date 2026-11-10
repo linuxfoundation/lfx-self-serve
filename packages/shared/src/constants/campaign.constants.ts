@@ -3700,6 +3700,14 @@ export const CREATIVE_ASSET_QUEUE_RETRIES = 3;
 export const CREATIVE_ASSET_QUEUE_RETRY_BASE_MS = 1000;
 
 /**
+ * How many more times the creative-asset library and plan reads are sent after a transient failure
+ * (a 503, a dropped connection) before the read is reported as failed (#5385). Both are re-read after
+ * every stored file, so an upload run is exactly when one meets a busy service. Safe to re-send: both
+ * are reads. Each wait is {@link CREATIVE_ASSET_QUEUE_RETRY_BASE_MS} doubled per retry (1 s, then 2 s).
+ */
+export const CREATIVE_ASSET_READ_RETRIES = 2;
+
+/**
  * Each library upload outcome as it reads, and its badge classes. One table, so the label and the
  * colour cannot disagree.
  */
@@ -4897,7 +4905,9 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
   // every field trims to nothing. A value campaign-service would never receive is not a request
-  // the legacy creator fails, so refusing it would be over-refusal.
+  // the legacy creator fails, so refusing it would be over-refusal. The exception is a raw value the
+  // cutover's own refusals name though the normalizers drop it (a malformed `demandGenDemographics`, or
+  // an ad group or ad list that is not a list): that one counts (`unservedGoogleCriteriaField`).
   { field: 'biddingStrategy', label: 'bidding strategy', normalized: true },
   { field: 'cpcBid', label: 'max CPC bid', normalized: true },
   { field: 'targetCpa', label: 'target CPA', normalized: true },
@@ -5840,6 +5850,42 @@ export const GOOGLE_CREATIVE_GROUPS: readonly GoogleCreativeGroup[] = [
  * {@link GOOGLE_CREATIVE_FIELD_SPECS}). The prefill picks one that fits when the brief has one (#4784).
  */
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
+
+/**
+ * The widths the brief generator writes Google copy to (the BFF's copy prompt and `truncateAdCopy`),
+ * read from the catalogues the Implement tab validates against so the generator cannot ask for copy
+ * the seed then drops. Demand Gen headlines are the IMAGE ad's 30 (#5384, campaign-service
+ * `maxHeadlineWeight`): it is the only Demand Gen ad the brief seeds, and the video ad's 40 would hand
+ * it headlines it cannot use. `shortDescription` is the one description every brief writes for
+ * Performance Max's short slot (#5494).
+ */
+export const GENERATED_GOOGLE_COPY_WIDTHS = {
+  searchHeadline: CAMPAIGN_CHAR_LIMITS.searchHeadline,
+  searchDescription: CAMPAIGN_CHAR_LIMITS.searchDescription,
+  demandGenHeadline: demandGenFieldWidth('headlines'),
+  demandGenDescription: demandGenFieldWidth('descriptions'),
+  businessName: demandGenFieldWidth('businessName'),
+  shortDescription: GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+} as const;
+
+/** The Demand Gen image ad's catalogue width for one field, failing loudly if the catalogue loses it. */
+function demandGenFieldWidth(control: string): number {
+  const width = (GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] as readonly GoogleCreativeFieldSpec[]).find((field) => field.control === control)?.width;
+  if (width === undefined) throw new Error(`GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] has no width for ${control}`);
+  return width;
+}
+
+/**
+ * The comparison shapes that mark a generated EVENT keyword as competitor intent (#5383): "KubeCon
+ * alternative", "alternatives to KubeCon", "ArgoCon vs KubeCon", "competitor", "instead of". Someone
+ * searching them is shopping away from an event, and for a Linux Foundation event the event named is
+ * usually the foundation's own. Shapes rather than bare words, so a topic keyword that merely holds
+ * one is kept: "alternative energy summit" (an adjective before its noun) and "vs code conference".
+ * "X alternative" also skips an alternative-topic noun after it ("energy", "fuels", "medicine"), so
+ * "open source alternative energy summit" stays a topic keyword wherever the phrase falls in the term.
+ */
+export const COMPETITOR_KEYWORD_PATTERN =
+  /\S\s+alternatives?\b(?!\s+(?:energy|fuels?|medicine|investments?|assets?|proteins?|data|music|rock|credit|dispute)\b)|\balternatives?\s+(?:to|for)\b|\S\s+(?:vs\.?|versus)\s+(?!code\b)\S|\bcompetitors?\b|\binstead of\b/iu;
 
 /**
  * The Google creative text fields campaign-service bounds by RUNE count rather than by display width:

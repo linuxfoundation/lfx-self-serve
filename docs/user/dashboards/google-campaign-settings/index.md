@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab, and set the brief's registration URL.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -35,8 +35,9 @@ tags:
     business name,
     audience signals,
     implement,
+    registration url,
   ]
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 intercom_collection: Dashboards
 ---
 
@@ -214,6 +215,18 @@ Paste one `https://` image link per line, or pick or upload images from the brie
 
 Each image's size and shape are checked before anything is created. The images, logo and business name are then added to the campaign after it is created, all together or not at all. They are added before the campaign's ads, so if Google Ads refuses them, the campaign has already been created without them and without its ads and keywords. Finish it in Google Ads, or create it again here with images, a logo and a business name Google Ads accepts. That is why nothing in this section is filled in from the brief, not even the business name the other campaign types start with: they are sent only when you add them.
 
+## Registration URL
+
+Every campaign sends people to the brief's **Registration URL**, and a campaign can't be created while the saved brief has none. When the event page has no registration link yet, the brief is generated without one, and the **Plan** tab says so under the event name.
+
+To set or correct it:
+
+1. On the **Implement** tab, select **Edit brief**. The brief opens on the **Plan** tab. If its editor is not open, select **Edit Brief**.
+2. Under **Registration URL**, enter the full address, starting with `https://`.
+3. Select **Save & Proceed to Implement**. The brief is saved with the new address and approved again.
+
+Typing an address into **Registration URL** on the **Implement** tab does not change the saved brief, so it does not fix a brief that has none.
+
 ## Copy, dates and budget filled in from the brief
 
 When you open the **Implement** tab for a brief, some fields start with values from the brief. You can change any of them.
@@ -226,7 +239,7 @@ When you open the **Implement** tab for a brief, some fields start with values f
 
 - **Demand Gen Creative** (image ad): headlines, descriptions and the business name. Headlines come from the brief's Demand Gen copy first, keeping only those of 30 characters or fewer, and then from its Search headlines. A longer headline is left out, not shortened.
 - **Display Creative**: headlines, descriptions and the business name, chosen the same way, plus a **Long headline**: the first Demand Gen headline the headlines did not use, or else the first Search description the descriptions did not use. A call to action from the brief is kept only if it is one Google accepts (see below).
-- **Performance Max Creative**: headlines, long headlines, descriptions and the business name.
+- **Performance Max Creative**: headlines, long headlines, descriptions and the business name. The descriptions include one of 60 characters or fewer when the brief has one (see [Performance Max descriptions](#performance-max-descriptions)).
 
 A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. The **Search Creative** section is never filled in from the brief (see [Images, logo and business name](#images-logo-and-business-name-search-only)). Copy you typed before you left the tab is kept when you come back.
 
@@ -248,7 +261,7 @@ For Google Ads, **Image slot coverage** lists the image slots of the campaign ty
 
 Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or fewer**. Chinese, Japanese, Korean and full-width characters count double.
 
-The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
+A newly generated brief includes a description that short, and the **Performance Max Creative** section is filled in with it. An older brief may have none. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
 
 ## Performance Max search themes
 
@@ -345,6 +358,7 @@ A Demand Gen ad group can be narrowed by age, gender, household income and paren
 - An ad group takes one Audience. While an ad group has an Audience picked, its **Demographics** are replaced by a note, and while it has demographics ticked, its **Audience** picker is replaced by a note. Remove one to set the other.
 - While the campaign is split, the single ad group's demographics are kept but not sent, and a note under **Split into named ad groups** says so. An ad group's demographics are likewise kept but not sent while the checkbox is unticked.
 - If demographics would be refused by Google Ads, for example beside an Audience on a saved campaign, a message at the end of the **Demand Gen Creative** section says why and **Create Campaign** stays unavailable until you fix it.
+- While an ad group has demographics ticked, **Clear demographics** under its boxes unticks them all at once. Use it when a saved campaign holds a value that has no box, which cannot be unticked one by one.
 - If a saved campaign holds demographics that cannot be sent, a notice under the targeting settings says why and lists the ad groups when the **Demand Gen Creative** section is not shown. **Create Campaign** stays unavailable until they are sent or cleared. The notice says that Demand Gen demographics are not available on this deployment, that the check is still running, that it can be made once the brief is saved, or that it could not be made, with **Retry**. Choose **Clear demographics** to create without them.
 
 Tick nothing and the campaign is created exactly as before, with no demographic Audience.
@@ -378,6 +392,8 @@ A Display ad group can target existing audiences from the Google Ads account: us
 Leave the pickers alone and the campaign is created exactly as before, with no audiences.
 
 ## If something is wrong
+
+While **Create Campaign** is unavailable, a line under it says what is holding it, such as an empty **Registration URL** or a section to fix. If a create is refused, the reason appears beside the button.
 
 If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description, search theme or audience signal would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 

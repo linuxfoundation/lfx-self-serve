@@ -1,9 +1,18 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-card styleClass="[&_.p-card-body]:!px-5">
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+  <!-- Status Pills (Public / Private with counts), above the search like other list views -->
+  <lfx-card-tabs-bar
+    [options]="statusFilterOptions()"
+    [selectedFilter]="selectedStatus()"
+    (filterChange)="onStatusChange($event)"
+    role="group"
+    aria-label="Filter by visibility"
+    data-testid="mailing-list-status-filter" />
+
   <!-- Filter Bar Inside Card -->
-  <div class="pb-2 mb-2">
+  <div class="px-5 pt-4 pb-3">
     <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
       <!-- Search Input -->
       <div class="flex-1">
@@ -57,19 +66,6 @@
           [showClear]="true"
           styleClass="w-full"
           data-testid="mailing-list-committee-filter"></lfx-select>
-      </div>
-
-      <!-- Status Filter Dropdown -->
-      <div class="w-full sm:w-48">
-        <lfx-select
-          [form]="searchForm()"
-          control="status"
-          size="small"
-          [options]="statusFilterOptions()"
-          placeholder="Select Status"
-          [showClear]="true"
-          styleClass="w-full"
-          data-testid="mailing-list-status-filter"></lfx-select>
       </div>
     </div>
   </div>
@@ -143,7 +139,7 @@
                     [href]="mailingList.groupsIoUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="text-blue-600 hover:text-blue-800"
+                    class="!text-gray-600 !no-underline transition-colors hover:!text-blue-600"
                     aria-label="Open on Groups.io"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
@@ -247,7 +243,7 @@
                     [href]="mailingList.groupsIoUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-gray-900"
+                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-blue-600"
                     aria-label="Open on Groups.io"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">
@@ -283,10 +279,23 @@
 
           <!-- Linked Groups Column -->
           <td>
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
               @if (mailingList.committees?.length) {
-                @for (committee of mailingList.committees | sliceLinkedGroups: maxVisibleGroups; track committee.uid) {
-                  <lfx-tag [value]="committee.name" styleClass="tag-neutral"> </lfx-tag>
+                @for (group of mailingList.groupLinks; track $index) {
+                  @if (group.commands) {
+                    <a
+                      [routerLink]="group.commands"
+                      [queryParams]="mailingList.linkQueryParams"
+                      [state]="groupLinkState"
+                      class="lfx-table-name-link text-sm"
+                      [attr.data-testid]="'mailing-list-group-link-' + mailingList.uid + '-' + group.uid">
+                      {{ group.name || '-' }}
+                    </a>
+                  } @else {
+                    <span class="text-sm text-gray-700" [attr.data-testid]="'mailing-list-group-text-' + mailingList.uid + '-' + $index">{{
+                      group.name || '-'
+                    }}</span>
+                  }
                 }
                 @if (mailingList.committees.length > maxVisibleGroups) {
                   <span
@@ -341,7 +350,7 @@
                     [href]="mailingList.groupsIoUrl"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-gray-900"
+                    class="ml-1.5 inline-block align-middle !text-gray-600 !no-underline transition-colors hover:!text-blue-600"
                     aria-label="Open on Groups.io"
                     (click)="$event.stopPropagation()"
                     [attr.data-testid]="'mailing-list-groups-io-link-' + mailingList.uid">

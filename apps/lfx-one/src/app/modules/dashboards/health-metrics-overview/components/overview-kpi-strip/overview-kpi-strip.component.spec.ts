@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { OverviewKpiStripComponent } from './overview-kpi-strip.component';
 
-import type { HealthMetricsOverviewKpiStripVariant, HealthMetricsOverviewKpiView } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsOverviewKpiView } from '@lfx-one/shared/interfaces';
 
 const kpi = (key: string): HealthMetricsOverviewKpiView => ({ key, label: key, value: '1', delta: null, note: '' });
 
@@ -30,13 +30,12 @@ class FakeResizeObserver {
 describe('OverviewKpiStripComponent', () => {
   let fixture: ComponentFixture<OverviewKpiStripComponent>;
 
-  async function render(items: number | HealthMetricsOverviewKpiView[], variant?: HealthMetricsOverviewKpiStripVariant): Promise<void> {
+  async function render(items: number | HealthMetricsOverviewKpiView[]): Promise<void> {
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
     await TestBed.configureTestingModule({ imports: [OverviewKpiStripComponent] }).compileComponents();
     fixture = TestBed.createComponent(OverviewKpiStripComponent);
     fixture.componentRef.setInput('kpis', typeof items === 'number' ? Array.from({ length: items }, (_, index) => kpi(`k${index}`)) : items);
     fixture.componentRef.setInput('testId', 'strip');
-    if (variant) fixture.componentRef.setInput('variant', variant);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -83,14 +82,14 @@ describe('OverviewKpiStripComponent', () => {
     expect(item('k3')).toContain('border-l');
   });
 
-  it.each(['card', 'section'] as const)('draws a %s change as the design does: an arrow and deeper shades on a card only', async (variant) => {
-    await render([kpi('k0'), { ...kpi('k1'), delta: { label: '−14%', direction: 'down', good: false } }], variant);
+  it('draws a change as the design does: an arrow, the deeper shade and the screen-reader direction', async () => {
+    await render([kpi('k0'), { ...kpi('k1'), delta: { label: '−14%', direction: 'down', good: false } }]);
     const delta: HTMLElement = fixture.nativeElement.querySelector('[data-testid="strip-k1-delta"]');
 
     expect(delta.textContent?.replace(/\s+/g, ' ').trim()).toBe('Down−14%');
-    expect(delta.querySelector('i') !== null).toBe(variant === 'card');
-    expect(delta.className).toContain(variant === 'card' ? 'text-red-700' : 'text-red-600');
-    expect(item('k1')).toContain(variant === 'card' ? 'gap-[2px]' : 'gap-[8px]');
-    expect(item('k1')).toContain(variant === 'card' ? 'pl-[20px]' : 'pl-[24px]');
+    expect(delta.querySelector('i.fa-arrow-down')).not.toBeNull();
+    expect(delta.className).toContain('text-red-700');
+    expect(item('k1')).toContain('gap-[2px]');
+    expect(item('k1')).toContain('pl-[20px]');
   });
 });
