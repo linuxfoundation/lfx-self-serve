@@ -135,7 +135,7 @@ describe('FormationPipelineService.getPipeline', () => {
   it('joins settings by uid and sets has_checklist from the formation read', async () => {
     mockUpstream({
       projects: [project({ uid: 'a', name: 'A' }), project({ uid: 'b', name: 'B' })],
-      settings: [{ uid: 'a', announcement_date: '2026-12-01T00:00:00Z', executive_director: { name: 'Ed', email: 'ed@x.org', avatar: 'secret.png' } }],
+      settings: [{ uid: 'a', announcement_date: '2026-12-01T00:00:00Z', executive_director: { name: 'Ed', email: 'ed@example.com', avatar: 'secret.png' } }],
       checklistUids: ['b'],
     });
 
@@ -143,7 +143,7 @@ describe('FormationPipelineService.getPipeline', () => {
     const a = rows.find((row) => row.uid === 'a');
     const b = rows.find((row) => row.uid === 'b');
 
-    expect(a).toMatchObject({ announcement_date: '2026-12-01T00:00:00Z', executive_director: { name: 'Ed', email: 'ed@x.org' }, has_checklist: false });
+    expect(a).toMatchObject({ announcement_date: '2026-12-01T00:00:00Z', executive_director: { name: 'Ed', email: 'ed@example.com' }, has_checklist: false });
     expect(a?.executive_director).not.toHaveProperty('avatar');
     expect(b).toMatchObject({ announcement_date: null, executive_director: null, program_manager: null, opportunity_owner: null, has_checklist: true });
   });
