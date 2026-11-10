@@ -4,7 +4,7 @@ description: How to find meetings, filter by your RSVP, and subscribe to a proje
 audience: [all]
 product_area: Meetings
 tags: [meetings, dashboard, filters, rsvp, calendar, subscribe, upcoming, past]
-last_updated: 2026-10-28
+last_updated: 2026-11-09
 intercom_collection: Meetings
 ---
 
@@ -74,6 +74,7 @@ Declining doesn't remove a meeting from **All meetings**. To hide meetings you d
 
 Each meeting appears as a card with its date, time, and details.
 
+- **Group.** When the meeting belongs to one or more groups, their names appear under the title. Select a group's name to open its details page. On a group's own **Meetings** tab, that group's name is plain text.
 - **Respond.** When a meeting collects RSVPs, the card shows **Yes**, **Maybe**, and **No** controls. For a recurring meeting, you choose whether your answer applies to **This date only**, **All dates**, or **This date and all following dates**. See [Join a Meeting](../join-meeting/).
 - **Materials.** The card lists the meeting's files and links. Organizers see **Edit materials**. See [Meeting Materials](../meeting-materials/).
 - **People Invited.** Organizers see the RSVP summary and up to five faces, with **View all** to open the full guest list and **Invite people** to add someone. See [Manage Participants](../manage-participants/).

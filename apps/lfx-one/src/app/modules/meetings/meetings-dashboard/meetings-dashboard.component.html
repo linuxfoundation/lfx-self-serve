@@ -375,6 +375,7 @@
                 (meetingUpdated)="refreshMeetings()"
                 (meetingDeleted)="refreshMeetings()"
                 [pastMeeting]="timeFilter() === 'past'"
+                [groupLinkState]="groupLinkState()"
                 [showBorder]="true"></lfx-meeting-card>
             } @placeholder {
               <div class="bg-white border border-gray-200 rounded-lg p-6 animate-pulse min-h-[200px]"></div>
