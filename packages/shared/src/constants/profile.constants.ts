@@ -188,10 +188,10 @@ export const IDENTITY_PROVIDER_LABELS: Record<IdentityProvider, string> = {
 export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
 
 /**
- * Generic, non-identifying message returned when a post-proof link reports the email is already
- * linked. Intentionally never names the owning account — surfacing the owning LFID would enable
- * account enumeration — and never asserts "another account", since the upstream conflict alone
- * does not prove that. Keeps the "already linked" marker the dialogs' support-link classifier
+ * Generic, non-identifying message returned when, after a correct code, OTP verification or the
+ * identity link reports the email is already linked. Intentionally never names the owning
+ * account — surfacing the owning LFID would enable account enumeration — and never asserts
+ * "another account", since the upstream conflict alone does not prove that. Keeps the "already linked" marker the dialogs' support-link classifier
  * (`isIdentityAlreadyLinkedError`) matches.
  */
 export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to an LFX account. Contact support if you need help.';
@@ -230,6 +230,9 @@ export const EMAIL_CALLBACK_STATUS_PARAM = 'email_status';
 /** Flow C callback outcome: a replayed pending email verification did not finish. */
 export const EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: EmailVerificationCallbackStatus = 'retry_required';
 
+/** Flow C callback outcome: the replayed code was correct, but the address is already linked to an LFX account. */
+export const EMAIL_CALLBACK_ALREADY_LINKED_STATUS: EmailVerificationCallbackStatus = 'already_linked';
+
 /** Fixed guidance for a pending email verification that did not finish during the Flow C callback. */
 export const EMAIL_CALLBACK_RETRY_MESSAGE =
   'Email verification did not finish. Return to Email Settings or Identities and request a new verification code to try again.';
@@ -255,13 +258,13 @@ export const EMAIL_RESEND_SUPPORT_MESSAGE = "If it hasn't arrived, contact suppo
 /** Retryable, non-identifying error shown when a resend request fails. */
 export const EMAIL_RESEND_FAILED_MESSAGE = "We couldn't request another code. Please try again.";
 
-/** Generic error code for every non-service-unavailable OTP verification failure. */
+/** Generic error code for wrong, expired or otherwise failed OTP verification (not outages or proven conflicts). */
 export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';
 
-/** Non-identifying guidance for wrong, expired or already-linked OTP verification failures. */
+/** Non-identifying guidance for wrong, expired or otherwise failed OTP verification; proven conflicts use EMAIL_ALREADY_LINKED_MESSAGE. */
 export const EMAIL_VERIFICATION_FAILED_MESSAGE = 'Verification failed. Please try again or request a new code.';
 
-/** Minimum upstream-to-response duration for send-code and unsuccessful OTP verification. */
+/** Minimum upstream-to-response duration for send-code replies and non-outage OTP failures. */
 export const EMAIL_VERIFICATION_MIN_RESPONSE_MS = 1500;
 
 /** Send-code rate-limit window shared by the per-user and per-target limiters. */

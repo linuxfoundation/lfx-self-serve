@@ -9,6 +9,8 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_MESSAGE,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
@@ -410,7 +412,8 @@ export class ProfileLayoutComponent {
   /**
    * Surface the outcome of an email verification the Flow C callback replayed after authorization.
    * The marker is presentation-only (no email, code, or token), so unknown values are ignored and
-   * neither outcome changes identity state locally — already-connected re-fetches the canonical list.
+   * no outcome changes identity state locally — already-connected re-fetches the canonical list, while
+   * already-linked and retry outcomes leave identities untouched.
    */
   private handleEmailCallbackStatus(status: unknown): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -420,6 +423,8 @@ export class ProfileLayoutComponent {
     if (status === EMAIL_ALREADY_CONNECTED_STATUS) {
       this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
       this.userService.refreshUserIdentities();
+    } else if (status === EMAIL_CALLBACK_ALREADY_LINKED_STATUS) {
+      this.messageService.add({ severity: 'warn', summary: 'Email already linked', detail: EMAIL_ALREADY_LINKED_MESSAGE });
     } else if (status === EMAIL_CALLBACK_RETRY_REQUIRED_STATUS) {
       this.messageService.add({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
     }
