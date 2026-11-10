@@ -345,7 +345,7 @@
       data-testid="implementation-edit-brief-btn" />
     <span class="text-xs text-gray-500" data-testid="implementation-edit-brief-hint">
       @if (canEditBrief()) {
-        Opens this brief in the Plan tab to change its copy and keywords. Changes made on this tab are not carried over.
+        Opens this brief in the Plan tab to change its copy, keywords and Registration URL. Changes made on this tab are not carried over.
       } @else {
         Available once campaign creation finishes.
       }
@@ -5607,18 +5607,26 @@
         </div>
       }
 
-      <!-- Submit -->
-      <div class="flex items-center gap-3">
-        <lfx-button
-          label="Create Campaign"
-          icon="fa-light fa-rocket"
-          severity="primary"
-          [disabled]="!canSubmit()"
-          (onClick)="submit()"
-          ariaLabel="Create campaign"
-          data-testid="implementation-submit-btn" />
-        @if (errors().length > 0) {
-          <p class="text-sm text-red-600">{{ errors()[0] }}</p>
+      <!-- Submit. Beside the button: the last create's refusal, and while the button is disabled, what
+           blocks it (#5491) — a disabled button alone says nothing. -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-3">
+          <lfx-button
+            label="Create Campaign"
+            icon="fa-light fa-rocket"
+            severity="primary"
+            [disabled]="!canSubmit()"
+            (onClick)="submit()"
+            ariaLabel="Create campaign"
+            data-testid="implementation-submit-btn" />
+          @if (errors().length > 0) {
+            <p #createMessage role="alert" class="text-sm text-red-600" data-testid="implementation-submit-error">{{ errors()[0] }}</p>
+          }
+        </div>
+        @if (createBlockedReason(); as reason) {
+          <p class="text-xs text-gray-600" data-testid="implementation-submit-blocked-reason">
+            <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>Create Campaign is unavailable: {{ reason }}
+          </p>
         }
       </div>
     </form>

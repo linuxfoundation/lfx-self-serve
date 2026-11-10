@@ -9536,6 +9536,10 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('registrationUrl');
     expect(error.message).toContain(expectedText);
+    // The remedy has to be one the UI offers (#5490): the paid brief editor's Registration URL,
+    // reached from the Implement tab by Edit brief and saved by Save & Proceed.
+    expect(error.message).toContain('Select Edit brief');
+    expect(error.message).toContain('Save & Proceed');
   });
 
   it('dispatches a plain-http brief URL when Meta is not one of the selected platforms', async () => {
@@ -9560,6 +9564,7 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(error.statusCode).toBe(400);
     expect(error.field).toBe('registrationUrl');
     expect(error.message).toContain('https://');
+    expect(error.message).toContain('Select Edit brief');
   });
 
   it('dispatches when the brief could not be read, because an unreadable brief is not an operator error', async () => {
