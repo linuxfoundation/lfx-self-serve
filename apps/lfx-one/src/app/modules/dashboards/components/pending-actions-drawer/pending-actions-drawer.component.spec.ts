@@ -740,6 +740,26 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
       expect(hiddenActions.dismissAction).toHaveBeenCalledWith(expect.objectContaining({ text: 'RSVP ready' }));
     });
 
+    it('skips a row dismissed on its own while the confirm is open, so nothing is dismissed twice', async () => {
+      await render([row('Survey', 'Survey A', { buttonLink: 'https://example.test/a' }), row('Survey', 'Survey B', { buttonLink: 'https://example.test/b' })]);
+
+      (byTestId(dismissAllId('surveys')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      // Dismiss the first survey individually while the confirm is still showing.
+      (byTestId('pending-actions-drawer-section-surveys')?.querySelector('[data-testid="pending-actions-drawer-dismiss-Survey"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+
+      const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+      accept?.click();
+      fixture.detectChanges();
+
+      // One individual dismissal plus one bulk dismissal of the remaining row — never three.
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(2);
+      expect(hiddenActions.dismissAction).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'Survey B' }));
+    });
+
     it('with a single dismissible section shows Dismiss all without repeating the section title or count', async () => {
       await render([row('Survey', 'Survey A')]);
 

@@ -167,14 +167,21 @@ export class PendingActionsDrawerComponent {
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm',
       accept: () => {
-        for (const row of rows) {
+        // The confirm can sit open while the feed refreshes or a row is dismissed on its own: dismiss only the rows the user
+        // confirmed that are still dismissible now, so none is dismissed twice and the toast counts what actually happened.
+        const confirmedKeys = new Set(rows.map((row) => row.rowKey));
+        const liveRows = (this.sectionedRows().find((section) => section.section === group.section)?.dismissibleRows ?? []).filter((row) =>
+          confirmedKeys.has(row.rowKey)
+        );
+        if (liveRows.length === 0) return;
+        for (const row of liveRows) {
           this.hiddenActionsService.dismissAction(row);
           this.startCompletion(row, true);
         }
         this.messageService.add({
           severity: 'info',
           summary: 'Actions dismissed',
-          detail: `Dismissed ${rows.length} ${noun} from ${group.label}.`,
+          detail: `Dismissed ${liveRows.length} ${liveRows.length === 1 ? 'item' : 'items'} from ${group.label}.`,
         });
       },
     });
