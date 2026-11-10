@@ -31,8 +31,8 @@ export interface OrgKeyContactAssignment {
   foundationName: string | null;
   avatarUrl?: string | null;
   /**
-   * LFID username, the drawer's only address-lookup key; never resolve the person from `email`.
-   * Null means this lookup key is missing, not "no company address".
+   * LFID username, one of the drawer's address-lookup keys alongside this record's `contactUid`; never resolve the
+   * person from `email`. Null means this lookup key is missing, not "no company address".
    */
   username?: string | null;
 }

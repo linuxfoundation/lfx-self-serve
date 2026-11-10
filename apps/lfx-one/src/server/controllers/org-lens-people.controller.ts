@@ -15,6 +15,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeesResponse, OrgEmploymentFilter, OrgLensTimeRange, OrgProjectScope, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
 import {
+  agreedUsername,
   isFilterSafeIdentifier,
   isFilterSafeUsername,
   isKeyContactRecordId,
@@ -268,10 +269,12 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * GET /api/orgs/:orgUid/lens/people/by-key-contact/company-emails?ids=<record ids>[&username=] — company addresses for
-   * a key contact the drawer opens without a person key: the addresses on their corporate key-contact records (`ids`:
-   * 1–50 comma-separated Salesforce record ids), merged with `username`'s when the opener has one. Never keyed on an
-   * address. An invalid or empty id list, or an invalid username, is a 400.
+   * GET /api/orgs/:orgUid/lens/people/by-key-contact/company-emails?ids=<record ids> — company addresses for a key
+   * contact the drawer opens without a person key: the addresses on their corporate key-contact records (`ids`: 1–50
+   * comma-separated Salesforce record ids), merged with their LF username's. The username is derived here, never taken
+   * from the client (the request logger records the query string): the one username the org's key-contact assignments
+   * with these record ids agree on. When that read fails the lookup continues on the records alone. Never keyed on an
+   * address. An invalid or empty id list is a 400; any other query param is ignored.
    */
   public async getCompanyEmailsByKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -280,16 +283,14 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, operation);
       const keyContactIds = parseKeyContactIds(getStringQueryParam(req, 'ids'), operation);
-      const username = getStringQueryParam(req, 'username') || null;
-      if (username !== null) {
-        this.assertUsername(username, operation);
-      }
-      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, key_contact_count: keyContactIds.length, with_username: username !== null });
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, key_contact_count: keyContactIds.length });
 
+      const username = await this.resolveKeyContactUsername(req, orgUid, keyContactIds, operation);
       const result = await this.service.getCompanyEmailsByKeyContacts(req, orgUid, keyContactIds, username);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
+        with_username: username !== null,
         company_email_count: result.companyEmails.length,
         record_only_email_count: result.keyContactRecordEmails?.length ?? 0,
         company_emails_status: result.companyEmailsStatus,
@@ -694,6 +695,26 @@ export class OrgLensPeopleController {
     return eventAttendeesTotal === null
       ? { ...response, eventAttendeesTotal }
       : { ...response, eventAttendeesTotal, stats: { ...response.stats, eventAttendees: eventAttendeesTotal } };
+  }
+
+  /**
+   * The LF username the org's key-contact assignments with these record ids agree on (the per-caller cached read the
+   * Key Contacts tab has already warmed), or `null` when they agree on none or the read fails (logged, counts only).
+   */
+  private async resolveKeyContactUsername(req: Request, orgUid: string, keyContactIds: readonly string[], operation: string): Promise<string | null> {
+    try {
+      const ids = new Set(keyContactIds);
+      const { assignments } = await this.keyContactsService.getKeyContacts(req, orgUid);
+      const held = assignments.filter((assignment) => ids.has(assignment.contactUid));
+      return agreedUsername(held.map((assignment) => assignment.username));
+    } catch (error) {
+      logger.warning(req, operation, 'key contacts read failed; looking up the record addresses only', {
+        org_uid: orgUid,
+        key_contact_count: keyContactIds.length,
+        err: error,
+      });
+      return null;
+    }
   }
 
   private assertPersonKey(personKey: string | undefined, operation: string): asserts personKey is string {

@@ -111,13 +111,15 @@
               </button>
             </span>
           } @else if (companyEmailsUnconfirmed()) {
-            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-unconfirmed">
-              We couldn't confirm a {{ drawer.companyName() }} email
+            <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-unconfirmed">
+              We couldn't confirm a company email at {{ drawer.companyName() }}
             </span>
           } @else if (companyEmailsNoIdentity()) {
             <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-no-identity"> Emails aren't shown on this page </span>
           } @else if (companyEmailsNoneOnFile()) {
-            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-none"> No {{ drawer.companyName() }} email on file </span>
+            <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-none">
+              No {{ drawer.companyName() }} email on file
+            </span>
           }
         </span>
       </div>

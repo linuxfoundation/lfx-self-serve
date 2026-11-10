@@ -16,6 +16,7 @@ const {
   getEmployeeDetail,
   getEmployeeDetailByUsername,
   getKeyContactsForPerson,
+  getOrgKeyContacts,
   resolveUsernameByPersonKey,
   getTrainees,
   readEventAttendeesSummary,
@@ -33,6 +34,7 @@ const {
   getEmployeeDetail: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   getKeyContactsForPerson: vi.fn(),
+  getOrgKeyContacts: vi.fn(),
   resolveUsernameByPersonKey: vi.fn(),
   getTrainees: vi.fn(),
   readEventAttendeesSummary: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-scope.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-key-contact.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
@@ -85,6 +88,7 @@ vi.mock('../services/org-people-event-attendees.service', () => ({
 vi.mock('../services/org-people-key-contacts.service', () => ({
   OrgPeopleKeyContactsService: class {
     public getKeyContactsForPerson = getKeyContactsForPerson;
+    public getKeyContacts = getOrgKeyContacts;
   },
 }));
 vi.mock('../services/org-people-trainees.service', () => ({
@@ -435,6 +439,13 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getCompanyEmailsByKeyContacts.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' });
+    getOrgKeyContacts.mockResolvedValue({
+      assignments: [
+        { contactUid: ID_ONE, username: 'JDoe' },
+        { contactUid: ID_TWO, username: 'jdoe' },
+        { contactUid: 'a0F000000000009AAA', username: 'someone-else' },
+      ],
+    });
   });
 
   it.each([
@@ -443,7 +454,6 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
     ['a 15-character id', { ids: 'a0F000000000001' }],
     ['a non-alphanumeric id', { ids: `${ID_ONE},a0F00000000000'AAA` }],
     ['more than 50 ids', { ids: Array.from({ length: 51 }, (_, index) => `a0F${String(index).padStart(15, '0')}`).join(',') }],
-    ['an unsafe username', { ids: ID_ONE, username: 'a/b' }],
   ])('answers 400 for %s, before any lookup', async (_label, query) => {
     const next = vi.fn();
 
@@ -453,15 +463,46 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
     expect(getCompanyEmailsByKeyContacts).not.toHaveBeenCalled();
   });
 
-  it('passes the deduplicated ids and the optional username through', async () => {
+  it('passes the deduplicated ids and the username their assignments agree on, ignoring a client-supplied username', async () => {
     const res = buildRes();
 
-    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO},${ID_ONE}`, username: 'jdoe' }), res, vi.fn());
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO},${ID_ONE}`, username: 'a/b' }), res, vi.fn());
+
+    expect(getOrgKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID);
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], 'JDoe');
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  it('looks up the records alone when their assignments agree on no username', async () => {
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: null }] });
+
     await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), buildRes(), vi.fn());
 
-    expect(getCompanyEmailsByKeyContacts).toHaveBeenNthCalledWith(1, expect.anything(), ORG_UID, [ID_ONE, ID_TWO], 'jdoe');
-    expect(getCompanyEmailsByKeyContacts).toHaveBeenNthCalledWith(2, expect.anything(), ORG_UID, [ID_ONE], null);
-    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null);
+  });
+
+  it.each([
+    [
+      'resolved when a record email exists',
+      { companyEmails: ['record@company.example'], primaryEmail: null, keyContactRecordEmails: ['record@company.example'], companyEmailsStatus: 'resolved' },
+    ],
+    ['unconfirmed otherwise', { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' }],
+  ])('continues on the records alone when the key contacts read fails: %s', async (_label, result) => {
+    getOrgKeyContacts.mockRejectedValue(new Error('upstream down'));
+    getCompanyEmailsByKeyContacts.mockResolvedValue(result);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null);
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'get_org_lens_people_company_emails_by_key_contact', expect.any(String), {
+      org_uid: ORG_UID,
+      key_contact_count: 1,
+      err: expect.any(Error),
+    });
+    expect(res.json).toHaveBeenCalledWith(result);
   });
 });
 
@@ -474,7 +515,7 @@ describe('OrgLensPeopleController All Employees company email status', () => {
       row('person-has', null),
       row('person-by-username', 'Known'),
       row('person-none', 'nobody'),
-      row('cdp:member-has', 'known'),
+      row('cdp:member-has-username', 'known'),
       row('cdp:member-unconfirmed', null),
       row('live-has', 'known'),
       row('live-unconfirmed', 'stranger'),
@@ -508,8 +549,8 @@ describe('OrgLensPeopleController All Employees company email status', () => {
       'person-has': 'has',
       'person-by-username': 'has',
       'person-none': 'none',
-      'cdp:member-has': 'has',
-      // A cdp: row is read by username only, so its key in the keys does not count.
+      // The drawer answers a cdp: row without any lookup, so neither its key nor its username in the keys counts.
+      'cdp:member-has-username': 'unconfirmed',
       'cdp:member-unconfirmed': 'unconfirmed',
       'live-has': 'has',
       'live-unconfirmed': 'unconfirmed',

@@ -40,15 +40,14 @@ function personPath(orgUid: string, context: PersonDrawerContext | null): string
 }
 
 /**
- * The company-address request for the opener's identity: the person key's, else the key-contact records' (with the
- * username, when the opener has one), else the username's; `null` when the opener supplied none of them.
+ * The company-address request for the opener's identity: the person key's, else the key-contact records' (the server
+ * derives their LF username from the org's assignments, so none travels in the URL), else the username's; `null` when
+ * the opener supplied none of them.
  */
 function companyEmailsRequest(orgUid: string, context: PersonDrawerContext | null): { url: string; params?: Record<string, string> } | null {
   const keyContactIds = context?.personKey ? [] : keyContactEmailLookupIds(context?.keyContactIds);
   if (keyContactIds.length) {
-    const params: Record<string, string> = { ids: keyContactIds.join(',') };
-    if (context?.username) params['username'] = context.username;
-    return { url: `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/by-key-contact/company-emails`, params };
+    return { url: `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/by-key-contact/company-emails`, params: { ids: keyContactIds.join(',') } };
   }
   const path = personPath(orgUid, context);
   if (!path) {

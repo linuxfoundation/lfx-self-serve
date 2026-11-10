@@ -171,7 +171,7 @@ function buildOrgsRouter(): Router {
     orgLensPeopleController.getCompanyEmailsByUsername(req, res, next)
   );
   // Company addresses for a key contact opened without a person key: the addresses on their key-contact records
-  // (`?ids=`), plus their LF username's (`?username=`). Same guard rationale as above ('by-key-contact' is not a personKey).
+  // (`?ids=`), plus those of the LF username the server derives from them. Same guard rationale as above ('by-key-contact' is not a personKey).
   router.get('/:orgUid/lens/people/by-key-contact/company-emails', (req, res, next) => orgLensPeopleController.getCompanyEmailsByKeyContacts(req, res, next));
   // The key contact roles one person holds, for the drawer's Key Contacts tab. Registered before the
   // `:personKey` routes for the same reason as the reads above — 'by-username' must not be consumed as a personKey.

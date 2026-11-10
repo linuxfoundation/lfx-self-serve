@@ -17,6 +17,7 @@ import type {
   OrgAllEmployeesRaw,
   OrgCommitFilters,
   OrgCompanyEmailKeys,
+  OrgCompanyEmailsUnavailableReason,
   OrgPeopleCompanyEmailKeyRow,
   OrgPeopleAllRowRaw,
   OrgPeopleFoundationOptionRow,
@@ -454,7 +455,7 @@ export class OrgLensPeopleService {
   /**
    * Company-affiliated emails for a key contact opened without a person key: the company addresses recorded on the
    * person's corporate key-contact records (`keyContactIds`, Salesforce record ids), merged with the `username` lookup
-   * when the opener has one (an address also known from an LF account is not record-only). `resolved` when any address
+   * when the caller derived one from the org's assignments (an address also known from an LF account is not record-only). `resolved` when any address
    * is found or the username lookup resolved; otherwise `unavailable` (`unconfirmed`). Failures answer `failed` and are
    * never cached. Keyed on identity only: no address is ever an input.
    */
@@ -1487,7 +1488,7 @@ function responseRows(response: OrgPersonCompanyEmailsResponse | null): OrgPerso
   }));
 }
 
-const COMPANY_EMAILS_REASONS: readonly unknown[] = ['no_identity', 'unlinked_identity', 'unconfirmed'];
+const COMPANY_EMAILS_REASONS: readonly OrgCompanyEmailsUnavailableReason[] = ['no_identity', 'unlinked_identity', 'unconfirmed'];
 
 /** Reject legacy/failed cache entries; unavailable identities cannot carry addresses, and record-only addresses are listed ones. */
 function isCompanyEmailsResponse(value: unknown): boolean {
@@ -1502,7 +1503,10 @@ function isCompanyEmailsResponse(value: unknown): boolean {
     (response.keyContactRecordEmails === undefined ||
       (Array.isArray(response.keyContactRecordEmails) && response.keyContactRecordEmails.every((email) => listed.has(email)))) &&
     ((response.companyEmailsStatus === 'resolved' && response.companyEmailsReason === undefined) ||
-      (response.companyEmailsStatus === 'unavailable' && response.companyEmails.length === 0 && COMPANY_EMAILS_REASONS.includes(response.companyEmailsReason)))
+      (response.companyEmailsStatus === 'unavailable' &&
+        response.companyEmails.length === 0 &&
+        response.companyEmailsReason !== undefined &&
+        COMPANY_EMAILS_REASONS.includes(response.companyEmailsReason)))
   );
 }
 

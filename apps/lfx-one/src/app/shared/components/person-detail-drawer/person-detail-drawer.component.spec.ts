@@ -768,7 +768,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     reply(`${BY_PERSON_KEY}/company-emails`).next({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: reason });
     await render();
 
-    expect(emailState('unconfirmed')?.textContent?.trim()).toBe("We couldn't confirm a Acme Corp email");
+    expect(emailState('unconfirmed')?.textContent?.trim()).toBe("We couldn't confirm a company email at Acme Corp");
     expect(emailState('none')).toBeNull();
   });
 
@@ -817,7 +817,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('0')?.textContent?.trim()).toBe('first@example.org');
   });
 
-  it("reads a key contact's record addresses, with the username, while activity stays on the username", async () => {
+  it("reads a key contact's record addresses, never sending the username, while activity stays on the username", async () => {
     const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
     drawer.open({ name: 'First person', username: 'first-person', keyContactIds: [...ids, ids[0], 'not-an-id'] });
     await render();
@@ -825,7 +825,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     const keyContactUrl = `${PEOPLE}/by-key-contact/company-emails`;
     expect(requested().sort()).toEqual([keyContactUrl, `${BY_USERNAME}/detail`]);
     expect((httpGet.mock.calls as unknown[][]).find(([url]) => url === keyContactUrl)?.[1]).toEqual({
-      params: { ids: ids.join(','), username: 'first-person' },
+      params: { ids: ids.join(',') },
     });
     reply(keyContactUrl).next(emails(['record@example.org']));
     await render();
