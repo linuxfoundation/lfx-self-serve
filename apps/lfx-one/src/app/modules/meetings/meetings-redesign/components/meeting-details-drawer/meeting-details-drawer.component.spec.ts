@@ -24,11 +24,15 @@ import { MeetingsHomeEditService } from '../../services/meetings-home-edit.servi
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsDrawerComponent } from './meeting-details-drawer.component';
 import { MeetingDetailsContext } from './meeting-details.context';
+import { MeetingDetailsOccurrenceNavComponent } from './occurrence-nav/meeting-details-occurrence-nav.component';
 import { MeetingDetailsScheduleComponent } from './schedule/meeting-details-schedule.component';
 
-// The schedule section has its own spec; the shell only places it.
+// The schedule section and occurrence nav have their own specs; the shell only places them.
 @Component({ selector: 'lfx-meeting-details-schedule', template: '' })
 class ScheduleStubComponent {}
+
+@Component({ selector: 'lfx-meeting-details-occurrence-nav', template: '' })
+class OccurrenceNavStubComponent {}
 
 const MEETING = {
   id: 'synthetic-meeting',
@@ -163,8 +167,8 @@ describe('MeetingDetailsDrawerComponent', () => {
       ],
     });
     TestBed.overrideComponent(MeetingDetailsDrawerComponent, {
-      remove: { imports: [MeetingDetailsScheduleComponent] },
-      add: { imports: [ScheduleStubComponent] },
+      remove: { imports: [MeetingDetailsScheduleComponent, MeetingDetailsOccurrenceNavComponent] },
+      add: { imports: [ScheduleStubComponent, OccurrenceNavStubComponent] },
     });
   });
 

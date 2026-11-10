@@ -462,12 +462,6 @@ export interface MeetingGuestViewer {
   email: string | null;
 }
 
-/** Heading and total of the guest list, such as "Meeting Guests" and "12 guests". */
-export interface MeetingGuestSummary {
-  title: string;
-  subtitle: string;
-}
-
 /** Load state of the meeting details drawer's guest list. */
 export interface MeetingGuestsLoad {
   status: 'loading' | 'ready' | 'error';

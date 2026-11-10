@@ -130,10 +130,13 @@
       <div
         class="col-start-1 row-start-2 flex min-w-0 flex-col gap-[12px] @[720px]:sticky @[720px]:top-[calc(var(--md-head)+20px)] @[720px]:z-[3] @[720px]:col-start-2 @[720px]:row-span-2 @[720px]:row-start-1 @[720px]:self-start"
         data-testid="meeting-details-side">
-        <!-- Schedule slot: occurrence, date, RSVP and join. -->
-        <div class="flex flex-col gap-[12px] empty:hidden" data-testid="meeting-details-schedule"><lfx-meeting-details-schedule /></div>
-        <!-- Tools slot: host controls, attendance, artifacts and the viewer's own actions. -->
-        <lfx-meeting-details-tools data-testid="meeting-details-tools" />
+        <lfx-meeting-details-occurrence-nav />
+        <div class="flex flex-col gap-[16px] rounded-ui-md bg-white p-[20px] shadow-small ring-1 ring-gray-200" data-testid="meeting-details-schedule-card">
+          <!-- Schedule slot: date, RSVP and join. -->
+          <lfx-meeting-details-schedule />
+          <!-- Tools slot: host controls, attendance and artifacts. -->
+          <lfx-meeting-details-tools data-testid="meeting-details-tools" />
+        </div>
         <lfx-meeting-details-own-actions />
       </div>
 
