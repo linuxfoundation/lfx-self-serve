@@ -1370,9 +1370,9 @@ export class ProfileController {
         this.resolveIdentitiesPrimaryEmail(req, lfid),
       ]);
 
-      logger.debug(req, 'get_identities', 'Raw identity data before reconciliation', {
-        cdp_identities: cdpIdentities,
-        auth_service_identities: auth0Identities,
+      logger.debug(req, 'get_identities', 'Identity counts before reconciliation', {
+        cdp_count: cdpIdentities.length,
+        auth_service_count: auth0Identities.length,
       });
 
       // Reconcile CDP identities with auth-service identities and filter to the
@@ -1519,7 +1519,7 @@ export class ProfileController {
             if (!unlinkResult.success) {
               logger.warning(req, 'reject_identity', 'Auth0 unlink failed — identity was not removed', {
                 provider,
-                auth0_user_id: auth0UserId,
+                has_auth0_user_id: true,
                 error: unlinkResult.error,
                 message: unlinkResult.message,
               });
@@ -1531,12 +1531,12 @@ export class ProfileController {
             }
             logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
               provider,
-              auth0_user_id: auth0UserId,
+              has_auth0_user_id: true,
             });
           } else {
             logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
               provider,
-              auth0_user_id: auth0UserId,
+              has_auth0_user_id: true,
             });
             if (!this.profileAuthService.isProfileAuthConfigured()) {
               res.status(501).json({
@@ -1960,7 +1960,7 @@ export class ProfileController {
   }
 
   /**
-   * GET /api/profile/identities/social/connect?provider=github|google|linkedin&returnTo=/path
+   * GET /api/profile/identities/social/connect?provider=github|gitlab|google|linkedin&returnTo=/path
    * Initiates the social identity verification OAuth flow.
    * If no management token exists, chains through Flow C first.
    *

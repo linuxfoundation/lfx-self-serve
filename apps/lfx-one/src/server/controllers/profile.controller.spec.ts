@@ -3338,6 +3338,10 @@ describe('ProfileController GitLab identities (#4190)', () => {
 
   it('shows a linked GitLab account as verified with its username and syncs it to CDP', async () => {
     const rows = await fetchIdentities([linkedGitlab]);
+    expect(logger.debug).toHaveBeenCalledWith(expect.anything(), 'get_identities', 'Identity counts before reconciliation', {
+      cdp_count: 0,
+      auth_service_count: 1,
+    });
 
     expect(gitlabRows(rows)).toEqual([
       expect.objectContaining({
@@ -3449,6 +3453,24 @@ describe('ProfileController GitLab identities (#4190)', () => {
       await removeIdentity({ provider: 'gitlab', auth0UserId: 'gitlab|1000001' });
 
       expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'oauth2', 'gitlab|1000001');
+      expect(logger.debug).toHaveBeenCalledWith(expect.anything(), 'reject_identity', 'Auth0 identity unlinked successfully', {
+        provider: 'gitlab',
+        has_auth0_user_id: true,
+      });
+    });
+
+    it('does not log the linked account ID when management authorization is unavailable', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+      profileAuthSvc.isProfileAuthConfigured.mockReturnValue(false);
+
+      const res = await removeIdentity({ provider: 'gitlab', auth0UserId: linkedGitlab.user_id });
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(501);
+      expect(emailVerificationSvc.unlinkIdentity).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'reject_identity', 'No management token — cannot unlink from Auth0', {
+        provider: 'gitlab',
+        has_auth0_user_id: true,
+      });
     });
 
     describe.each(['auth0:linked-1', 'cdp-gitlab'])('unlink outcome for %s', (identityId) => {
@@ -3463,6 +3485,12 @@ describe('ProfileController GitLab identities (#4190)', () => {
         expect(res.status).toHaveBeenCalledExactlyOnceWith(502);
         expect(res.json).toHaveBeenCalledExactlyOnceWith({ error: 'identity_unlink_failed', message: 'Failed to remove identity. Please try again.' });
         expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'reject_identity', 'Auth0 unlink failed — identity was not removed', {
+          provider: 'gitlab',
+          has_auth0_user_id: true,
+          error: unlinkResult.error,
+          message: unlinkResult.message,
+        });
       });
 
       it('removes a successfully unlinked GitLab identity on the next GET even if CDP retains the row', async () => {
