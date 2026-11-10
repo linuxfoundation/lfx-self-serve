@@ -9,7 +9,7 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
@@ -52,7 +52,7 @@ import { TooltipModule } from 'primeng/tooltip';
     RemainingGroupsTooltipPipe,
     StripHtmlPipe,
     EmptyStateComponent,
-    FilterPillsComponent,
+    CardTabsBarComponent,
     ConfirmDialogModule,
   ],
   templateUrl: './mailing-list-table.component.html',
