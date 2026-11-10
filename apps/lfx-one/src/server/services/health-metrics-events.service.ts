@@ -1504,10 +1504,11 @@ function joinForecastToToday(series: HealthMetricsEventsForecastCurveSeries): vo
   today.forecastHigh = today.actual;
 }
 
-/** The model counts days left from yesterday, negative before the event; the UI shows the count from today. */
+/** The model counts days left from yesterday, negative before the event; the UI counts from today and, once a running event is past its start day, shows none. */
 function toDaysLeft(value: unknown): number | null {
   const daysLeft = toNullableNumber(value);
-  return daysLeft === null ? null : Math.max(0, Math.abs(daysLeft) - 1);
+  if (daysLeft === null || daysLeft >= 0) return null;
+  return -daysLeft - 1;
 }
 
 /** A row without a year cannot be placed on the chart, so it is dropped rather than guessed. */

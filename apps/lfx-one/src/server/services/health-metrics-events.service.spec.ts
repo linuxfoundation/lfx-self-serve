@@ -165,6 +165,16 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     expect(events.map((event) => event.daysLeft)).toEqual([0, null]);
   });
 
+  it('shows no days left once a running event is past its start day, rather than counting the elapsed days up', async () => {
+    execute.mockResolvedValue({
+      rows: [eventRow({ EVENT_ID: 'day-2', DAYS_LEFT: 0 }), eventRow({ EVENT_ID: 'day-4', DAYS_LEFT: 2 }), eventRow({ EVENT_ID: 'ahead', DAYS_LEFT: -41 })],
+    });
+
+    const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    expect(events.map((event) => event.daysLeft)).toEqual([null, null, 40]);
+  });
+
   it('keeps nulls as unmeasured and drops an event with no id', async () => {
     execute.mockResolvedValue({ rows: [eventRow({ GOAL: null, FORECAST_AVG: null, EVENT_NAME: null, IS_NEW_EVENT: null }), eventRow({ EVENT_ID: null })] });
 
