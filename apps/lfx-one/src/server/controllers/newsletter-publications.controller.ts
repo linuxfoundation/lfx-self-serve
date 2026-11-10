@@ -2,20 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  NEWSLETTER_BODY_LAYOUT_MAX_BYTES,
-  NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_MAX_COMMITTEES,
   NEWSLETTER_PUBLICATION_FROM_NAME_MAX_LENGTH,
   NEWSLETTER_PUBLICATION_NAME_MAX_LENGTH,
-  NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH,
   NEWSLETTER_STATUSES,
-  NEWSLETTER_SUBJECT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
-import { CreateNewsletterRequest, NewsletterListParams, NewsletterPublicationRequest, NewsletterStatus } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { NewsletterCreateFields, NewsletterListParams, NewsletterPublicationRequest, NewsletterStatus } from '@lfx-one/shared/interfaces';
+import { isNewsletterReplyToAddress, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { validateNewsletterEditionPayload } from '../helpers/newsletter-edition-payload.helper';
 import { parseNewsletterIfMatch } from '../helpers/newsletter-if-match.helper';
 import { logger } from '../services/logger.service';
 import { NewsletterMemberBenefitService } from '../services/newsletter-member-benefit.service';
@@ -112,17 +109,14 @@ export class NewsletterPublicationsController {
       const projectUid = this.requireProjectUid(req);
       const publicationUid = this.requirePublicationUid(req);
       const startTime = logger.startOperation(req, 'newsletter_edition_create', { project_uid: projectUid, publication_id: publicationUid });
-      const payload = req.body as Partial<CreateNewsletterRequest> | null;
+      const payload = req.body as (Partial<NewsletterCreateFields> & { publication_uid?: string }) | null;
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         throw ServiceValidationError.forField('body', 'Request body must be a JSON object', this.errorContext(req, 'newsletter_edition_create'));
       }
       if (payload.publication_uid !== undefined && payload.publication_uid !== publicationUid) {
         throw ServiceValidationError.forField('publication_uid', 'publication_uid must match the path', this.errorContext(req, 'newsletter_edition_create'));
       }
-      // Every field is optional here because an edition inherits from its publication. The service
-      // owns the full rules; these apply the newsletter create route's shape and size checks to any
-      // field that is sent.
-      this.validateEditionPayload(req, payload);
+      validateNewsletterEditionPayload(payload, this.errorContext(req, 'newsletter_edition_create'));
       const edition = await this.publicationsService.createEdition(req, projectUid, publicationUid, payload);
       logger.success(req, 'newsletter_edition_create', startTime, { newsletter_id: edition.id, version: edition.version });
       res.status(201).json(edition);
@@ -185,13 +179,11 @@ export class NewsletterPublicationsController {
     ) {
       fieldErrors['from_name'] = `from_name must be a string of ${NEWSLETTER_PUBLICATION_FROM_NAME_MAX_LENGTH} characters or fewer`;
     }
-    if (
-      payload.reply_to_email !== undefined &&
-      (typeof payload.reply_to_email !== 'string' ||
-        payload.reply_to_email.length > NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH ||
-        !payload.reply_to_email.includes('@'))
-    ) {
-      fieldErrors['reply_to_email'] = 'reply_to_email must be a valid email address';
+    // The service trims reply_to_email and stores a blank one as no override, so only a nonblank
+    // value is checked.
+    const replyTo: unknown = payload.reply_to_email;
+    if (replyTo !== undefined && (typeof replyTo !== 'string' || (replyTo.trim() !== '' && !isNewsletterReplyToAddress(replyTo.trim())))) {
+      fieldErrors['reply_to_email'] = 'reply_to_email must be a plain ASCII email address with at most 64 characters before the @';
     }
     const committeeError = this.committeeUidsError(payload.committee_uids);
     if (committeeError) {
@@ -204,44 +196,9 @@ export class NewsletterPublicationsController {
     return payload;
   }
 
-  private validateEditionPayload(req: Request, payload: Partial<CreateNewsletterRequest>): void {
-    const fieldErrors: Record<string, string> = {};
-    if (payload.subject !== undefined && (typeof payload.subject !== 'string' || payload.subject.length > NEWSLETTER_SUBJECT_MAX_LENGTH)) {
-      fieldErrors['subject'] = `subject must be a string of ${NEWSLETTER_SUBJECT_MAX_LENGTH} characters or fewer`;
-    }
-    const committeeError = this.committeeUidsError(payload.committee_uids);
-    if (committeeError) {
-      fieldErrors['committee_uids'] = committeeError;
-    }
-    const layoutPresent = payload.body_layout !== undefined && payload.body_layout !== null;
-    if (layoutPresent && (typeof payload.body_layout !== 'object' || !Array.isArray(payload.body_layout!.blocks))) {
-      fieldErrors['body_layout'] = 'A block layout must have a blocks array';
-    } else if (layoutPresent && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
-      fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
-    }
-    // As on newsletter create, body_html is capped only on the html path; with a layout the service re-renders it.
-    if (payload.body_html !== undefined && typeof payload.body_html !== 'string') {
-      fieldErrors['body_html'] = 'body_html must be a string';
-    } else if (!layoutPresent && typeof payload.body_html === 'string' && payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
-      fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
-    }
-    if (payload.ed_reply_email !== undefined && (typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@'))) {
-      fieldErrors['ed_reply_email'] = 'ed_reply_email must be a valid email address';
-    }
-    if (payload.scheduled_at !== undefined && payload.scheduled_at !== null) {
-      const at = typeof payload.scheduled_at === 'string' ? new Date(payload.scheduled_at).getTime() : NaN;
-      if (!Number.isFinite(at) || at <= Date.now()) {
-        fieldErrors['scheduled_at'] = 'scheduled_at must be a future timestamp';
-      }
-    }
-    if (Object.keys(fieldErrors).length > 0) {
-      throw ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', this.errorContext(req, 'newsletter_edition_create'));
-    }
-  }
-
   private committeeUidsError(value: unknown): string | null {
     if (value === undefined) return null;
-    if (!Array.isArray(value) || value.length > NEWSLETTER_MAX_COMMITTEES || !value.every((uid) => typeof uid === 'string' && uid.length > 0)) {
+    if (!Array.isArray(value) || value.length > NEWSLETTER_MAX_COMMITTEES || !value.every((uid) => typeof uid === 'string' && uid.trim().length > 0)) {
       return `committee_uids must be an array of at most ${NEWSLETTER_MAX_COMMITTEES} non-empty strings`;
     }
     return null;

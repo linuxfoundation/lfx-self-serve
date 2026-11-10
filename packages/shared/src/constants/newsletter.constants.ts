@@ -84,6 +84,8 @@ export const NEWSLETTER_DEFAULT_TEMPLATE_KEY = 'aaif-member';
 export const NEWSLETTER_PUBLICATION_NAME_MAX_LENGTH = 200;
 export const NEWSLETTER_PUBLICATION_FROM_NAME_MAX_LENGTH = 100;
 export const NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH = 254;
+// email-service refuses a reply-to with more than this many bytes before the @.
+export const NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH = 64;
 // The service lists 20 publications a page. A project has a handful, so this cap only stops a loop.
 export const NEWSLETTER_PUBLICATION_MAX_PAGES = 25;
 // The most committees one newsletter or publication audience can name.

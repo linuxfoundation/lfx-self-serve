@@ -28,6 +28,7 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { validateNewsletterEditionPayload } from '../helpers/newsletter-edition-payload.helper';
 import { parseNewsletterIfMatch } from '../helpers/newsletter-if-match.helper';
 import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
@@ -220,10 +221,16 @@ export class NewsletterController {
 
     try {
       const payload = req.body as CreateNewsletterRequest;
-      this.validateCommonPayload(payload, req.path, 'newsletter_create', false);
-      this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
-      this.validateScheduledAt(payload, req.path, 'newsletter_create');
       this.validatePublicationUid(payload, req.path, 'newsletter_create');
+      if (payload?.publication_uid !== undefined) {
+        // The service fills in the publication's defaults before it validates, so only the fields
+        // that are sent are checked (#4349).
+        validateNewsletterEditionPayload(payload, { operation: 'newsletter_create', service: 'newsletter_controller', path: req.path });
+      } else {
+        this.validateCommonPayload(payload, req.path, 'newsletter_create', false);
+        this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
+        this.validateScheduledAt(payload, req.path, 'newsletter_create');
+      }
 
       const newsletter = await this.newsletterService.createNewsletter(req, projectUid, payload);
       logger.success(req, 'newsletter_create', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
@@ -871,7 +878,7 @@ export class NewsletterController {
 
   /** `publication_uid` is optional on create (#4349). When sent, it has to be a publication id. */
   private validatePublicationUid(payload: CreateNewsletterRequest, path: string, operation: string): void {
-    if (payload.publication_uid === undefined) return;
+    if (payload?.publication_uid === undefined) return;
     if (typeof payload.publication_uid !== 'string' || !isUuid(payload.publication_uid)) {
       throw ServiceValidationError.forField('publication_uid', 'publication_uid must be a UUID', { operation, service: 'newsletter_controller', path });
     }

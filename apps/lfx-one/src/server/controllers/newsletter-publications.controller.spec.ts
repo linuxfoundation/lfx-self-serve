@@ -27,7 +27,10 @@ vi.mock('../services/newsletter-member-benefit.service', () => ({
     public assertPublisherRead = assertPublisherRead;
   },
 }));
-vi.mock('@lfx-one/shared/utils', () => ({ isUuid: (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v) }));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await vi.importActual<object>('@lfx-one/shared/utils/newsletter.utils')),
+  isUuid: (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v),
+}));
 vi.mock('../services/logger.service', () => ({ logger: { startOperation: () => 0, success: vi.fn() } }));
 
 import { NewsletterPublicationsController } from './newsletter-publications.controller';
@@ -84,6 +87,11 @@ describe('NewsletterPublicationsController (#4349)', () => {
   it.each([
     ['missing name', {}, 'name'],
     ['bad reply-to', { name: 'Weekly', reply_to_email: 'not-an-email' }, 'reply_to_email'],
+    ['non-ASCII reply-to', { name: 'Weekly', reply_to_email: 'rédacteur@example.com' }, 'reply_to_email'],
+    ['reply-to with a long local part', { name: 'Weekly', reply_to_email: `${'a'.repeat(65)}@example.com` }, 'reply_to_email'],
+    ['reply-to that needs quoting', { name: 'Weekly', reply_to_email: 'first last@example.com' }, 'reply_to_email'],
+    ['non-string reply-to', { name: 'Weekly', reply_to_email: 42 }, 'reply_to_email'],
+    ['blank committee uid', { name: 'Weekly', committee_uids: [' '] }, 'committee_uids'],
     ['bad committee list', { name: 'Weekly', committee_uids: 'c-1' }, 'committee_uids'],
     ['non-object body', null, 'body'],
   ])('rejects %s without calling the service', async (_label, body, field) => {
@@ -144,22 +152,26 @@ describe('NewsletterPublicationsController (#4349)', () => {
 
   it.each([
     ['bad committee list', { committee_uids: [''] }],
+    ['blank committee uid', { committee_uids: ['  '] }],
+    ['explicit empty committee list', { committee_uids: [] }],
     ['past schedule', { scheduled_at: '2020-01-01T00:00:00Z' }],
     ['long subject', { subject: 'x'.repeat(201) }],
+    ['missing subject', { subject: undefined }],
     ['layout with no blocks array', { body_layout: { template_key: 'set-a' } }],
     ['layout over the byte cap', { body_layout: { blocks: [{ text: 'x'.repeat(800_001) }] } }],
     ['html body over the cap', { body_html: 'x'.repeat(100_001) }],
     ['non-string html body', { body_html: 42 }],
     ['bad reply email', { ed_reply_email: 'not-an-email' }],
+    ['non-string reply email', { ed_reply_email: 42 }],
   ])('rejects an edition with a %s', async (_label, body) => {
-    await controller.createEdition(request({ body: body as Request['body'] }), response(), next);
+    await controller.createEdition(request({ body: { subject: 'Hello', ...body } as Request['body'] }), response(), next);
     expect(service.createEdition).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledOnce();
   });
 
   it('accepts an edition with a layout and an echoed html body over the html cap', async () => {
     service.createEdition.mockResolvedValue({ id: 'n-1', version: 1 });
-    const body = { body_layout: { blocks: [] }, body_html: 'x'.repeat(100_001), ed_reply_email: 'editor@example.com' };
+    const body = { subject: 'Hello', body_layout: { blocks: [] }, body_html: 'x'.repeat(100_001), ed_reply_email: 'editor@example.com' };
     await controller.createEdition(request({ body }), response(), next);
     expect(service.createEdition).toHaveBeenCalledOnce();
     expect(next).not.toHaveBeenCalled();
@@ -185,5 +197,24 @@ describe('NewsletterPublicationsController (#4349)', () => {
     await controller.createEdition(request({ body: { publication_uid: '22222222-2222-4222-8222-222222222222' } }), response(), next);
     expect(service.createEdition).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledOnce();
+  });
+  it.each([[''], ['   ']])('lets a blank reply-to %j through, since the service treats it as clearing the override', async (replyTo) => {
+    service.createPublication.mockResolvedValue(PUBLICATION);
+    await controller.createPublication(request({ body: { name: 'Weekly', reply_to_email: replyTo } }), response(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(service.createPublication).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a padded reply-to that is valid once trimmed', async () => {
+    service.createPublication.mockResolvedValue(PUBLICATION);
+    await controller.createPublication(request({ body: { name: 'Weekly', reply_to_email: ' editor@example.com ' } }), response(), next);
+    expect(service.createPublication).toHaveBeenCalledOnce();
+  });
+
+  it.each([[''], ['   ']])('lets a blank edition reply email %j through so it inherits the publication reply-to', async (replyEmail) => {
+    service.createEdition.mockResolvedValue({ id: 'n-1', version: 1 });
+    await controller.createEdition(request({ body: { subject: 'Hello', ed_reply_email: replyEmail } }), response(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(service.createEdition).toHaveBeenCalledOnce();
   });
 });

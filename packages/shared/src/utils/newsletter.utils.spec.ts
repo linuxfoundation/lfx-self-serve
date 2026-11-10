@@ -13,6 +13,7 @@ import {
   visibleShareCount,
   withNewsletterPreviewDate,
   getNewsletterPublicationErrorMessage,
+  isNewsletterReplyToAddress,
 } from './newsletter.utils';
 
 describe('newsletterIssuePath', () => {
@@ -146,5 +147,27 @@ describe('getNewsletterPublicationErrorMessage (#4349)', () => {
 
   it('returns null for an unrelated message', () => {
     expect(getNewsletterPublicationErrorMessage('invalid_request: subject is required')).toBeNull();
+  });
+});
+
+describe('isNewsletterReplyToAddress (#4349)', () => {
+  it.each([['editor@example.com'], ['first.last+news@mail.example.com'], [`${'a'.repeat(64)}@example.com`]])('accepts %s', (address) => {
+    expect(isNewsletterReplyToAddress(address)).toBe(true);
+  });
+
+  it.each([
+    ['no at sign', 'editor.example.com'],
+    ['nothing before the at sign', '@example.com'],
+    ['nothing after the at sign', 'editor@'],
+    ['a local part over 64 bytes', `${'a'.repeat(65)}@example.com`],
+    ['a non-ASCII local part', 'rédacteur@example.com'],
+    ['a non-ASCII domain', 'editor@exämple.com'],
+    ['a local part that needs quoting', 'first last@example.com'],
+    ['a leading dot', '.editor@example.com'],
+    ['a double dot', 'first..last@example.com'],
+    ['a display name', 'Editor <editor@example.com>'],
+    ['an address over 254 characters', `editor@${'d'.repeat(250)}.com`],
+  ])('rejects %s', (_label, address) => {
+    expect(isNewsletterReplyToAddress(address)).toBe(false);
   });
 });

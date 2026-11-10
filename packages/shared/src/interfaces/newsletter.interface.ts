@@ -490,9 +490,8 @@ export interface NewsletterInviteLandingState {
   result?: NewsletterJoinResult;
 }
 
-export interface CreateNewsletterRequest {
-  /** Makes the draft an edition of this publication. Omitted, the service creates an implicit publication. */
-  publication_uid?: string;
+/** The fields of a newsletter create. */
+export interface NewsletterCreateFields {
   subject: string;
   body_html: string;
   body_layout?: NewsletterLayout | null;
@@ -505,6 +504,23 @@ export interface CreateNewsletterRequest {
    */
   scheduled_at?: string | null;
 }
+
+/** A create with no publication. The service creates an implicit publication, so every field is required. */
+export interface StandaloneCreateNewsletterRequest extends NewsletterCreateFields {
+  publication_uid?: undefined;
+}
+
+/**
+ * A create as an edition of a publication (#4349). The publication can supply the audience, reply-to
+ * and template set, so only the subject is required. A blank `ed_reply_email` takes the publication's
+ * reply-to, and only an omitted `committee_uids` takes its audience.
+ */
+export interface PublicationCreateNewsletterRequest extends Partial<NewsletterCreateFields> {
+  publication_uid: string;
+  subject: string;
+}
+
+export type CreateNewsletterRequest = StandaloneCreateNewsletterRequest | PublicationCreateNewsletterRequest;
 
 /** The recurring parent of newsletter editions (lfx-v2-newsletter-service `Publication`). */
 export interface NewsletterPublication {

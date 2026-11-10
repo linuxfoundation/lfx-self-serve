@@ -5,8 +5,11 @@ import {
   NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED,
   NEWSLETTER_BLOCKS_PROJECT_SLUGS,
   NEWSLETTER_DATE_TIME_ZONE,
+  NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH,
+  NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH,
   NEWSLETTER_SEND_DATE_PLACEHOLDER,
 } from '../constants/newsletter.constants';
+import { EMAIL_DOT_ATOM_REGEX } from '../constants/regex.constants';
 import { NewsletterShareTally } from '../interfaces/newsletter.interface';
 import { SocialShareChannel } from '../interfaces/social-share.interface';
 
@@ -118,4 +121,16 @@ export function getNewsletterPublicationErrorMessage(upstreamMessage: string): s
     return 'This publication was created automatically for a single newsletter, so it cannot be changed or take new editions.';
   }
   return null;
+}
+
+/**
+ * True when a trimmed, nonblank reply-to is an address the newsletter service will store (#4349): a
+ * bare ASCII address, at most 64 bytes before the @, with nothing that needs RFC 5322 quoting. These
+ * are the rules email-service applies at send. The allowed-domain check stays with the service.
+ */
+export function isNewsletterReplyToAddress(address: string): boolean {
+  if (address.length > NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH) return false;
+  const at = address.lastIndexOf('@');
+  if (at <= 0 || at > NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH || at === address.length - 1) return false;
+  return EMAIL_DOT_ATOM_REGEX.test(address.slice(0, at)) && EMAIL_DOT_ATOM_REGEX.test(address.slice(at + 1));
 }
