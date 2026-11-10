@@ -308,11 +308,22 @@ describe('MeetingDetailsAgendaComponent', () => {
     expect(scopes).toEqual(['All occurrences', 'This occurrence']);
   });
 
-  it('shows the legacy empty line for a section with nothing in it', async () => {
+  it('hides an empty sub-section whole', async () => {
     getMeetingAttachments.mockReturnValue(of([LINK]));
     await render();
 
-    expect(query('meeting-details-materials-primary')?.textContent).toContain('No primary materials available.');
+    expect(query('meeting-details-materials-primary')).toBeNull();
+    expect(query('meeting-details-materials-supporting')).not.toBeNull();
+    expect(query('meeting-details-materials-empty')).toBeNull();
+  });
+
+  it('titles a link saved without a name with its URL and hides the host', async () => {
+    getMeetingAttachments.mockReturnValue(of([{ ...LINK, name: '' }]));
+    await render();
+
+    const link = query('meeting-details-materials-link');
+    expect(link?.textContent).toContain('https://www.docs.example/notes');
+    expect(query('meeting-details-materials-host')).toBeNull();
   });
 
   it('lets an organizer edit the agenda in the composer, closing the drawer', async () => {

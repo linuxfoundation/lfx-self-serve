@@ -4,7 +4,7 @@
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <div class="flex min-w-0 items-start gap-[12px]" data-testid="meeting-details-schedule-when">
   <lfx-meeting-date-tile [date]="row().startTime" [past]="context.state() === 'ended'" testIdPrefix="meeting-details-schedule" />
-  <span class="flex min-w-0 flex-col gap-[2px]">
+  <span class="flex min-w-0 flex-col gap-[4px]">
     <span class="text-[14px] font-semibold leading-[20px] text-gray-900" data-testid="meeting-details-schedule-long-date">{{ longDate() }}</span>
     <span class="text-[12px] leading-[16px] text-gray-500" data-testid="meeting-details-schedule-time">{{ time() }}</span>
     @if (recurrence(); as recurrence) {
