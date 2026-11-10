@@ -62,6 +62,8 @@ To verify an email identity, use its own **Verify** action and enter the code se
 1. Open the actions menu on a verified identity and select **Remove**.
 2. In **Remove verified identity**, check _I understand that removing this verified identity may affect my contribution attribution_, then select **Remove identity**.
 
+If LFX cannot unlink the account, it shows _Failed to remove identity. Please try again._ The identity stays connected; try removing it again later.
+
 To reject an unverified identity instead, use **This is not me** on its row (see [Verify an unverified identity](#verify-an-unverified-identity)). Your primary email itself can't be removed. If a Google or email login uses your primary address, you can remove that login to unlink it. The primary email stays listed.
 
 > **Note:** Removing an identity can't be undone. As the removal dialog notes, identity information may be retained to help improve our services and support project insights — see the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for what data is kept and why.
