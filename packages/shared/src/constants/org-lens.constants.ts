@@ -57,6 +57,13 @@ export const ORG_CONTRIBUTORS_MONTHLY_VIEW = 'ORG_CONTRIBUTORS_MONTHLY';
 /** The warehouse's per-person rows behind ORG_CONTRIBUTORS_MONTHLY, one per (account, person, month), so a family trend counts a person once (lfx-self-serve#5402). */
 export const ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW = 'ORG_CONTRIBUTORS_MONTHLY_PEOPLE';
 
+/**
+ * Column every model a family roll-up reads carries: the account's Salesforce family (its top parent account), decided in
+ * the warehouse. A family read keeps the rows of the roll-up's family only, so the warehouse decides which companies are
+ * in it and the caller only narrows to the ones the viewer may see (lfx-self-serve#4129).
+ */
+export const ORG_LENS_FAMILY_ACCOUNT_ID_COLUMN = 'FAMILY_ACCOUNT_ID';
+
 /** ORG_CONTRIBUTORS_MONTHLY's monthly count without CDP team members, read under the default Team members = Exclude (lfx-self-serve#4685). */
 export const ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN = 'UNIQUE_CONTRIBUTORS_EXCLUDING_TEAM_MEMBERS';
 

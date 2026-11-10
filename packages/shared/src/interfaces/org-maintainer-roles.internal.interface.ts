@@ -20,7 +20,6 @@ export type OrgMaintainerRolesTable =
   | 'ORG_MAINTAINER_ROLES'
   | 'ORG_MAINTAINER_ROLES_MONTHLY'
   | 'ORG_MAINTAINER_ROLE_MONTHS'
-  | 'ORG_MAINTAINER_ROLES_RECENT'
   | 'PROJECT_MAINTAINER_ROLES';
 
 /** A count of distinct maintainer roles. */

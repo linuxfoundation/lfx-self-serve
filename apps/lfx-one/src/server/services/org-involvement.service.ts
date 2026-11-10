@@ -21,12 +21,20 @@ import {
   ORG_EVENT_ATTENDANCE_METRIC_COLUMNS,
   ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN,
   ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_FAMILY_ACCOUNT_ID_COLUMN,
   ORG_LENS_TIME_RANGE_DAYS,
   ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN,
   ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import type { OrgEventAttendanceMonthlyRow, OrgFamilyEventAttendanceMonthlyRow, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
+import type {
+  OrgEventAttendanceMonthlyRow,
+  OrgFamilyEventAttendanceMonthlyRow,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
+  SnowflakeQueryOptions,
+} from '@lfx-one/shared/interfaces';
+import { orgRollUpRootUid } from '@lfx-one/shared/utils/org-lens-url.utils';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
@@ -38,6 +46,13 @@ import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
 const formatMonthLabel = (date: Date): string => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+// A family read filters on the warehouse's family column, which a model only carries once lf-dbt has built it: until
+// then Snowflake rejects it as an invalid identifier, an expected rollout error that must not trip the circuit breaker.
+const withFamilyColumnExpected = (options?: SnowflakeQueryOptions): SnowflakeQueryOptions => ({
+  ...options,
+  expectInvalidIdentifier: [ORG_LENS_FAMILY_ACCOUNT_ID_COLUMN, ...[options?.expectInvalidIdentifier ?? []].flat()],
+});
 
 interface FoundationCoverageRow {
   ACCOUNT_ID: string;
@@ -107,7 +122,8 @@ export class OrgInvolvementService {
 
   public async getFamilyContributorsMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementContributorsMonthlyResponse> {
     const companies = [...new Set(accountIds)].sort();
-    if (companies.length === 0) {
+    const familyAccountId = orgRollUpRootUid(rollUpKey);
+    if (companies.length === 0 || familyAccountId === null) {
       return { accountId: rollUpKey, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] };
     }
     const scopes = await Promise.all(companies.map((accountId) => resolveOrgScope(this.snowflakeService, accountId, DEFAULT_ORG_SCOPE)));
@@ -117,16 +133,16 @@ export class OrgInvolvementService {
       .update(JSON.stringify([insightsCompanies, allCompanies]))
       .digest('hex')
       .slice(0, 16);
-    // `contributors-family:v2`: the trend reads the warehouse's per-person monthly rows instead of rebuilding the months from the
-    // daily table. Set by the fetcher, read by `storable`: a card read while that view or the team-member flag is missing
+    // `contributors-family:v3`: both reads keep only the rows of the warehouse's family, and the trend reads its per-person
+    // monthly rows. Set by the fetcher, read by `storable`: a card read while that view or the team-member flag is missing
     // is served, never stored.
     let degraded = false;
     return withOrgCache(
       rollUpKey,
-      `contributors-family:v2:${digest}`,
+      `contributors-family:v3:${digest}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        const fetched = await this.fetchFamilyContributorsMonthly(rollUpKey, companies, insightsCompanies, allCompanies);
+        const fetched = await this.fetchFamilyContributorsMonthly(rollUpKey, familyAccountId, companies, insightsCompanies, allCompanies);
         degraded = fetched.trendMissing || fetched.teamMembersUnavailable;
         return fetched.response;
       },
@@ -158,17 +174,20 @@ export class OrgInvolvementService {
 
   public async getFamilyMaintainersMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementMaintainersMonthlyResponse> {
     const companies = [...new Set(accountIds)].sort();
-    if (companies.length === 0) {
+    const familyAccountId = orgRollUpRootUid(rollUpKey);
+    if (companies.length === 0 || familyAccountId === null) {
       return { accountId: rollUpKey, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] };
     }
     const digest = createHash('sha256').update(JSON.stringify(companies)).digest('hex').slice(0, 16);
+    // `maintainer-roles-family:v3`: a role is a person and a project, read from the roles table and the role-months view
+    // over the warehouse's family only.
     let degraded = false;
     return withOrgCache(
       rollUpKey,
-      `maintainer-roles-family:v2:${digest}`,
+      `maintainer-roles-family:v3:${digest}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        const fetched = await this.fetchFamilyMaintainersMonthly(rollUpKey, companies);
+        const fetched = await this.fetchFamilyMaintainersMonthly(rollUpKey, familyAccountId, companies);
         degraded = fetched.rolesMissing;
         return fetched.response;
       },
@@ -191,7 +210,8 @@ export class OrgInvolvementService {
 
   public async getFamilyEventAttendanceMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const companies = [...new Set(accountIds)].sort();
-    if (companies.length === 0) {
+    const familyAccountId = orgRollUpRootUid(rollUpKey);
+    if (companies.length === 0 || familyAccountId === null) {
       return {
         accountId: rollUpKey,
         accountName: '',
@@ -203,13 +223,13 @@ export class OrgInvolvementService {
       };
     }
     const digest = createHash('sha256').update(JSON.stringify(companies)).digest('hex').slice(0, 16);
-    // `events-family:v2`: the months are the companies' months in ORG_EVENT_PARTICIPATION_MONTHLY, and no per-company
-    // fallback count is served.
+    // `events-family:v3`: the people are the participation rows of the warehouse's family only, the months are the
+    // companies' months in ORG_EVENT_PARTICIPATION_MONTHLY, and no per-company fallback count is served.
     return withOrgCache(
       rollUpKey,
-      `events-family:v2:${digest}`,
+      `events-family:v3:${digest}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFamilyEventAttendanceMonthly(rollUpKey, companies),
+      () => this.fetchFamilyEventAttendanceMonthly(rollUpKey, familyAccountId, companies),
       OrgInvolvementService.hasAccountId
     );
   }
@@ -318,7 +338,8 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Active Contributors card for a family, each company under its own organization scope. The headline is
+   * Overview Active Contributors card for a family, each company under its own organization scope. Both reads keep only
+   * the rows of the warehouse's family (FAMILY_ACCOUNT_ID), narrowed to the companies the viewer may see. The headline is
    * counted live from the daily table with the single-company headline rule, over every company at once, so a person
    * credited to two companies counts once. The trend is the warehouse's ORG_CONTRIBUTORS_MONTHLY_PEOPLE rows (one per company,
    * person and month) counted distinct per month across the companies, over the months ORG_CONTRIBUTORS_MONTHLY lists
@@ -327,6 +348,7 @@ export class OrgInvolvementService {
    */
   private async fetchFamilyContributorsMonthly(
     rollUpKey: string,
+    familyAccountId: string,
     companies: readonly string[],
     insightsCompanies: readonly string[],
     allCompanies: readonly string[]
@@ -351,6 +373,7 @@ export class OrgInvolvementService {
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
         ${orgTeamMembersPredicate(teamMembers)}
         ${scopePredicate('insights_daily_code_activities > 0')}
+        AND family_account_id = ?
     `;
     const trendQuery = `
       WITH months AS (
@@ -364,6 +387,7 @@ export class OrgInvolvementService {
         WHERE account_id IN (${placeholders(companies)})
           ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS)}
           ${scopePredicate('is_insights_scope')}
+          AND family_account_id = ?
       )
       SELECT m.MONTH_START_DATE, COUNT(DISTINCT p.person_key) AS UNIQUE_CONTRIBUTORS
       FROM months AS m
@@ -376,12 +400,16 @@ export class OrgInvolvementService {
       readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_contributors', (teamMembers) =>
         this.snowflakeService.execute<{ ACTIVE_CONTRIBUTORS: number | null }>(
           headlineQuery(teamMembers),
-          [...companies, ...scopeBinds],
-          orgTeamMembersQueryOptions(teamMembers)
+          [...companies, ...scopeBinds, familyAccountId],
+          withFamilyColumnExpected(orgTeamMembersQueryOptions(teamMembers))
         )
       ),
       this.snowflakeService
-        .execute<ContributorsMonthlyRow>(trendQuery, [...companies, ...companies, ...scopeBinds], { expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW })
+        .execute<ContributorsMonthlyRow>(
+          trendQuery,
+          [...companies, ...companies, ...scopeBinds, familyAccountId],
+          withFamilyColumnExpected({ expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW })
+        )
         .then((result) => result.rows)
         .catch((error: unknown) => {
           if (isMissingObjectError(error, ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW)) return null;
@@ -463,19 +491,30 @@ export class OrgInvolvementService {
     };
   }
 
+  /**
+   * Overview Maintainers card for a family. A role is one person (PERSON_KEY, the same under every company) on one project
+   * (SEGMENT_ID), so a role credited to two companies of the family counts once. Both reads keep only the rows of the
+   * warehouse's family (FAMILY_ACCOUNT_ID), narrowed to the companies the viewer may see. The headline counts the roles
+   * table with the single-company headline's overlap rule (the last 2 years to today); the trend counts lf-dbt's
+   * ORG_MAINTAINER_ROLE_MONTHS rows, the same window and overlap rule ORG_MAINTAINER_ROLES_MONTHLY counts, over the months
+   * that view lists for the companies. CDP team members' roles are left out of both.
+   */
   private async fetchFamilyMaintainersMonthly(
     rollUpKey: string,
+    familyAccountId: string,
     companies: readonly string[]
   ): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
     const accountList = companies.map(() => '?').join(', ');
-    // Both views carry IS_CDP_TEAM_MEMBER from the roles table, so only the view itself can be missing.
+    const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
+    // IS_CDP_TEAM_MEMBER is already in both, so only the family column or the role-months view itself can be missing.
     const headlineQuery = `
-      SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_RECENT
+      SELECT COUNT(DISTINCT PERSON_KEY, SEGMENT_ID) AS MAINTAINER_ROLES
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
       WHERE ACCOUNT_ID IN (${accountList})
-        AND IS_ACTIVE_LAST_TWO_YEARS
+        AND ${overlap.sql}
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
         ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS, 'IS_CDP_TEAM_MEMBER')}
+        AND FAMILY_ACCOUNT_ID = ?
     `;
     const trendQuery = `
       WITH months AS (
@@ -483,20 +522,33 @@ export class OrgInvolvementService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
         WHERE ACCOUNT_ID IN (${accountList})
       )
-      SELECT m.METRIC_MONTH, COUNT(DISTINCT r.MEMBER_ID, r.SEGMENT_ID) AS ACTIVE_ROLES
+      SELECT m.METRIC_MONTH, COUNT(DISTINCT r.PERSON_KEY, r.SEGMENT_ID) AS ACTIVE_ROLES
       FROM months AS m
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r
         ON r.METRIC_MONTH = m.METRIC_MONTH
         AND r.ACCOUNT_ID IN (${accountList})
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
         ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS, 'IS_CDP_TEAM_MEMBER')}
+        AND r.FAMILY_ACCOUNT_ID = ?
       GROUP BY m.METRIC_MONTH
       ORDER BY m.METRIC_MONTH ASC
     `;
 
     const [headline, trend] = await Promise.all([
-      readMaintainerRoles<OrgMaintainerRolesCountRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES_RECENT', headlineQuery, [...companies]),
-      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLE_MONTHS', trendQuery, [...companies, ...companies]),
+      readMaintainerRoles<OrgMaintainerRolesCountRow>(
+        this.snowflakeService,
+        'ORG_MAINTAINER_ROLES',
+        headlineQuery,
+        [...companies, ...overlap.binds, familyAccountId],
+        withFamilyColumnExpected()
+      ),
+      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(
+        this.snowflakeService,
+        'ORG_MAINTAINER_ROLE_MONTHS',
+        trendQuery,
+        [...companies, ...companies, familyAccountId],
+        withFamilyColumnExpected()
+      ),
     ]);
 
     return {
@@ -559,10 +611,15 @@ export class OrgInvolvementService {
    * attended, ended events in the last 2 years) over every company of the family at once. The months are the ones
    * ORG_EVENT_PARTICIPATION_MONTHLY lists for those companies, so a family of one has that company's own series; the
    * people are counted distinct per month and over the window from the person-level participation table through the
-   * participant number every company shares, so a person credited to two companies counts once. Until that column is in
-   * the warehouse the read fails rather than serve per-company counts that would count such a person twice.
+   * participant number every company shares, so a person credited to two companies counts once. The people are the rows
+   * of the warehouse's family (FAMILY_ACCOUNT_ID) only, narrowed to the companies the viewer may see. Until those columns
+   * are in the warehouse the read fails rather than serve per-company counts that would count such a person twice.
    */
-  private async fetchFamilyEventAttendanceMonthly(rollUpKey: string, companies: readonly string[]): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
+  private async fetchFamilyEventAttendanceMonthly(
+    rollUpKey: string,
+    familyAccountId: string,
+    companies: readonly string[]
+  ): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const accountList = companies.map(() => '?').join(', ');
     const query = `
       WITH months AS (
@@ -580,6 +637,7 @@ export class OrgInvolvementService {
         WHERE account_id IN (${accountList})
           AND event_date < CURRENT_DATE()
           AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())
+          AND family_account_id = ?
       )
       SELECT
         m.MONTH_START_DATE,
@@ -593,11 +651,11 @@ export class OrgInvolvementService {
       ORDER BY m.MONTH_START_DATE ASC
     `;
 
-    // The column is expected to be missing until it is built, so its absence does not count toward the circuit breaker.
+    // The columns are expected to be missing until they are built, so their absence does not count toward the circuit breaker.
     const { rows } = await this.snowflakeService.execute<OrgFamilyEventAttendanceMonthlyRow>(
       query,
-      [...companies, ...companies, ORG_LENS_TIME_RANGE_DAYS['730d']],
-      { expectInvalidIdentifier: ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN }
+      [...companies, ...companies, ORG_LENS_TIME_RANGE_DAYS['730d'], familyAccountId],
+      withFamilyColumnExpected({ expectInvalidIdentifier: ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN })
     );
 
     return {
