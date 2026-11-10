@@ -220,15 +220,14 @@
                   </span>
                 } @else {
                   <div class="flex flex-wrap items-center gap-2">
-                    @if (isInviteExpired(row.data)) {
+                    @let expiry = inviteExpiryByUid().get(row.data.uid);
+                    @if (expiry?.expired) {
                       <lfx-tag value="Invitation expired" severity="danger" data-testid="invite-expired-tag" />
                     } @else {
                       <lfx-tag value="Pending invitation" severity="warn" />
                     }
-                    @if (inviteExpiryLabel(row.data); as expiry) {
-                      <span class="text-xs text-gray-500" data-testid="invite-expiry"
-                        >{{ isInviteExpired(row.data) ? 'Expired' : 'Expires' }} {{ expiry }}</span
-                      >
+                    @if (expiry?.label) {
+                      <span class="text-xs text-gray-500" data-testid="invite-expiry">{{ expiry?.expired ? 'Expired' : 'Expires' }} {{ expiry?.label }}</span>
                     }
                   </div>
                 }

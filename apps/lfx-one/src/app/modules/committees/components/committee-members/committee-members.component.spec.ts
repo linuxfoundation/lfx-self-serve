@@ -511,6 +511,16 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(refreshes).toBe(refreshesBefore);
     });
 
+    it('disables Revoke while a resend is in flight', async () => {
+      await openPending([EXPIRED]);
+      committeeService.createCommitteeInvite.mockReturnValue(new Subject());
+
+      component.resendInvite(EXPIRED);
+      menuLabels(EXPIRED);
+
+      expect(component.inviteActionMenuItems.find((item) => item.label === 'Revoke invitation')?.disabled).toBe(true);
+    });
+
     it('ignores a second resend while one is in flight', async () => {
       await openPending([EXPIRED]);
       committeeService.createCommitteeInvite.mockReturnValue(new Subject());

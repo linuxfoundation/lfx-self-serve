@@ -206,6 +206,14 @@ export class CommitteeMembersComponent implements OnInit {
   // `writer from project`). No separate inherited check is needed here — a foundation-level
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
+
+  /** Expiry state per invite uid, computed once per change instead of by template method calls. */
+  public readonly inviteExpiryByUid = computed(
+    () =>
+      new Map(
+        this.invites().map((invite) => [invite.uid, { expired: isInviteExpired(invite.expires_at), label: formatInviteExpiry(invite.expires_at) }] as const)
+      )
+  );
   public readonly joinMode = computed(() => this.committee()?.join_mode as JoinMode | undefined);
   public readonly showPendingInvites = computed(() => this.canManageMembers() && (this.invitesLoading() || this.invites().length > 0));
   public readonly tabOptions = computed<FilterPillOption[]>(() => {
@@ -580,14 +588,6 @@ export class CommitteeMembersComponent implements OnInit {
     });
   }
 
-  public isInviteExpired(invite: CommitteeInvite): boolean {
-    return isInviteExpired(invite.expires_at);
-  }
-
-  public inviteExpiryLabel(invite: CommitteeInvite): string | null {
-    return formatInviteExpiry(invite.expires_at);
-  }
-
   /**
    * Re-issues an expired invitation. A create with only the email reinstates the stored invite
    * (fresh expiry and email) and keeps its role and organization, so nothing else is sent.
@@ -597,30 +597,33 @@ export class CommitteeMembersComponent implements OnInit {
     if (!committee?.uid || this.resendingInviteUid() || this.revokingInviteUid()) return;
 
     this.resendingInviteUid.set(invite.uid);
-    this.committeeService.createCommitteeInvite(committee.uid, { invitee_email: invite.invitee_email }).subscribe({
-      next: () => {
-        this.resendingInviteUid.set(null);
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Invitation Sent',
-          detail: `A new invitation has been sent to ${invite.invitee_email}.`,
-        });
-        this.pollUntilInviteRenewed(invite.uid);
-      },
-      error: (err: HttpErrorResponse) => {
-        this.resendingInviteUid.set(null);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Unable to Resend',
-          detail: getHttpErrorDetail(err, 'Failed to resend the invitation. Please try again.'),
-        });
-      },
-    });
+    this.committeeService
+      .createCommitteeInvite(committee.uid, { invitee_email: invite.invitee_email })
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.resendingInviteUid.set(null);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Invitation Sent',
+            detail: `A new invitation has been sent to ${invite.invitee_email}.`,
+          });
+          this.pollUntilInviteRenewed(invite.uid);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.resendingInviteUid.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Resend',
+            detail: getHttpErrorDetail(err, 'Failed to resend the invitation. Please try again.'),
+          });
+        },
+      });
   }
 
   public revokeInvite(invite: CommitteeInvite): void {
     const committee = this.committee();
-    if (!committee?.uid || this.revokingInviteUid()) return;
+    if (!committee?.uid || this.revokingInviteUid() || this.resendingInviteUid()) return;
 
     this.confirmationService.confirm({
       message: `Revoke the pending invitation for ${invite.invitee_email}?`,
@@ -1291,7 +1294,7 @@ export class CommitteeMembersComponent implements OnInit {
         label: 'Revoke invitation',
         icon: 'fa-light fa-ban',
         styleClass: 'text-red-500',
-        disabled: !!this.revokingInviteUid(),
+        disabled: !!this.revokingInviteUid() || !!this.resendingInviteUid(),
         command: () => {
           const target = invite ?? this.selectedInvite();
           if (target) {
