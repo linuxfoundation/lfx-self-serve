@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { TagSeverity } from './components.interface';
 import type { ProjectApplicationTab } from './project-application.interface';
 import type { UserInfo } from './project.interface';
 
@@ -100,3 +101,24 @@ export interface UpstreamPipelineSettings {
 
 /** Page tabs of the LF-root Formations page: the pipeline, plus the existing formations and proposals tabs. */
 export type FormationsQueuePageTab = 'pipeline' | ProjectApplicationTab;
+
+/** Where a pipeline row opens: the formation checklist when it has one, else the project's own dashboard. */
+export interface FormationPipelineRowLink {
+  commands: string[];
+  /** Query params to set; `null` keeps the current ones (`queryParamsHandling="preserve"`). */
+  queryParams: Record<string, string> | null;
+}
+
+/** A {@link FormationPipelineRow} with its display strings resolved once, for the table and the phone card list. */
+export interface FormationPipelineTableRow extends FormationPipelineRow {
+  stageLabel: string;
+  stageSeverity: TagSeverity;
+  launch: FormationPipelineLaunch;
+  formationDateLabel: string;
+  legalEntityLabel: string;
+  edLine: string;
+  pmLine: string;
+  ownerLabel: string;
+  updatedLabel: string;
+  link: FormationPipelineRowLink;
+}

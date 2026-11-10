@@ -14,6 +14,8 @@ import {
   getPipelineCsvFilename,
   getPipelineEdPmLines,
   getPipelineLaunch,
+  getPipelineRowLink,
+  toPipelineTableRow,
   getPipelineStageKey,
   matchesPipelineSearch,
   sortPipelineRows,
@@ -164,5 +166,28 @@ describe('chunkArray', () => {
   it('splits into batches of at most size', () => {
     expect(chunkArray([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(chunkArray([], 2)).toEqual([]);
+  });
+});
+
+describe('row link and table row', () => {
+  it('links to the checklist only when one exists, otherwise to the project dashboard', () => {
+    expect(getPipelineRowLink({ slug: 'a', has_checklist: true })).toEqual({ commands: ['/foundation/formations', 'a'], queryParams: null });
+    expect(getPipelineRowLink({ slug: 'a', has_checklist: false })).toEqual({ commands: ['/project/overview'], queryParams: { project: 'a' } });
+  });
+
+  it('resolves display strings', () => {
+    const view = toPipelineTableRow(
+      row({ stage: 'prospect', announcement_date: '2026-11-18T00:00:00Z', formation_date: '2026-01-05T00:00:00Z', legal_entity_name: ' Acme LLC ' }),
+      NOW
+    );
+    expect(view).toMatchObject({
+      stageLabel: 'Draft',
+      stageSeverity: 'secondary',
+      formationDateLabel: 'Jan 5, 2026',
+      legalEntityLabel: 'Acme LLC',
+      edLine: 'Not assigned',
+      pmLine: 'No PM yet',
+    });
+    expect(view.launch.relativeLabel).toBe('In 8 days');
   });
 });

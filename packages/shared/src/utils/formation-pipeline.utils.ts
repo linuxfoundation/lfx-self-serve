@@ -7,6 +7,7 @@ import {
   FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES,
   FORMATION_PIPELINE_LAUNCH_SOON_DAYS,
   FORMATION_PIPELINE_STAGE_LABELS,
+  FORMATION_PIPELINE_STAGE_SEVERITY,
   FORMATION_PIPELINE_STAGE_UPSTREAM,
   FORMATION_PIPELINE_STAGES,
   FORMATION_PIPELINE_STAT_CAPTIONS,
@@ -19,6 +20,8 @@ import type {
   FormationPipelineLaunch,
   FormationPipelinePerson,
   FormationPipelineRow,
+  FormationPipelineRowLink,
+  FormationPipelineTableRow,
   FormationPipelineSort,
   FormationPipelineStage,
   FormationPipelineStageFilter,
@@ -198,6 +201,32 @@ export function buildPipelineStatCards(
     action: stage,
     selected: selected === stage,
   }));
+}
+
+/** The formation checklist (keeping the foundation context) when the project has one; otherwise the project's own dashboard. */
+export function getPipelineRowLink(row: Pick<FormationPipelineRow, 'slug' | 'has_checklist'>): FormationPipelineRowLink {
+  return row.has_checklist
+    ? { commands: ['/foundation/formations', row.slug], queryParams: null }
+    : { commands: ['/project/overview'], queryParams: { project: row.slug } };
+}
+
+/** Resolves every display string of a row once. */
+export function toPipelineTableRow(row: FormationPipelineRow, now: Date = new Date()): FormationPipelineTableRow {
+  const { ed, pm } = getPipelineEdPmLines(row);
+  const formationDay = row.formation_date?.slice(0, 10);
+  return {
+    ...row,
+    stageLabel: FORMATION_PIPELINE_STAGE_LABELS[row.stage],
+    stageSeverity: FORMATION_PIPELINE_STAGE_SEVERITY[row.stage],
+    launch: getPipelineLaunch(row.announcement_date, now),
+    formationDateLabel: formationDay ? formatIsoDateLabel(formationDay) : '',
+    legalEntityLabel: row.legal_entity_name?.trim() ?? '',
+    edLine: ed,
+    pmLine: pm,
+    ownerLabel: getPipelineOpportunityOwner(row),
+    updatedLabel: getPipelineUpdatedLabel(row.updated_at),
+    link: getPipelineRowLink(row),
+  };
 }
 
 /** Relative "Updated" text, or `''` when there is no timestamp. */
