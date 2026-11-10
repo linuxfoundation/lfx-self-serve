@@ -226,7 +226,7 @@ When you open the **Implement** tab for a brief, some fields start with values f
 
 - **Demand Gen Creative** (image ad): headlines, descriptions and the business name. Headlines come from the brief's Demand Gen copy first, keeping only those of 30 characters or fewer, and then from its Search headlines. A longer headline is left out, not shortened.
 - **Display Creative**: headlines, descriptions and the business name, chosen the same way, plus a **Long headline**: the first Demand Gen headline the headlines did not use, or else the first Search description the descriptions did not use. A call to action from the brief is kept only if it is one Google accepts (see below).
-- **Performance Max Creative**: headlines, long headlines, descriptions and the business name.
+- **Performance Max Creative**: headlines, long headlines, descriptions and the business name. The descriptions include one of 60 characters or fewer when the brief has one (see [Performance Max descriptions](#performance-max-descriptions)).
 
 A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. The **Search Creative** section is never filled in from the brief (see [Images, logo and business name](#images-logo-and-business-name-search-only)). Copy you typed before you left the tab is kept when you come back.
 
@@ -248,7 +248,7 @@ For Google Ads, **Image slot coverage** lists the image slots of the campaign ty
 
 Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or fewer**. Chinese, Japanese, Korean and full-width characters count double.
 
-The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
+A newly generated brief includes a description that short, and the **Performance Max Creative** section is filled in with it. An older brief may have none. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
 
 ## Performance Max search themes
 

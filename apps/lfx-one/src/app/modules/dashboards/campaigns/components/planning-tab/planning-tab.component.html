@@ -784,7 +784,7 @@
           <div class="flex flex-col gap-4">
             <div>
               <div class="mb-2 flex items-center justify-between">
-                <h4 class="text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+                <h4 class="text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
                 <button type="button" (click)="addEditItem(editDisplayHeadlines)" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
                   <i class="fa-light fa-plus" aria-hidden="true"></i> Add
                 </button>
@@ -798,14 +798,14 @@
                         [value]="h"
                         (input)="editDisplayHeadlines.set(updateEditItem(editDisplayHeadlines(), $index, $any($event.target).value))"
                         [class]="
-                          h.length > 40
+                          h.length > 30
                             ? 'w-full rounded-md border border-red-300 bg-red-50 px-3 py-1.5 pr-16 text-xs text-red-800 focus:outline-none focus:ring-1 focus:ring-red-500'
                             : 'w-full rounded-md border border-gray-300 px-3 py-1.5 pr-16 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
                         " />
                       <span
                         class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs"
-                        [class]="h.length > 40 ? 'text-red-500' : 'text-gray-400'">
-                        {{ h.length }}/40
+                        [class]="h.length > 30 ? 'text-red-500' : 'text-gray-400'">
+                        {{ h.length }}/30
                       </span>
                     </div>
                     <button
@@ -1033,14 +1033,14 @@
 
           <div class="flex flex-col gap-4">
             <div>
-              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
               <div class="flex flex-wrap gap-1.5">
                 @for (h of asStringArray(display['headlines']); track $index) {
                   <span
                     class="rounded-md border px-2.5 py-1 text-xs"
-                    [class]="h.length > 40 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
+                    [class]="h.length > 30 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
                     {{ h }}
-                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/40</span>
+                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/30</span>
                   </span>
                 }
               </div>

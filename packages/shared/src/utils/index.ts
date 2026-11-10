@@ -150,6 +150,7 @@ export * from './campaign-google-user-lists.utils';
 export * from './campaign-google-criteria.utils';
 export * from './campaign-google-demographics.utils';
 export * from './campaign-google-search-ads.utils';
+export * from './campaign-ad-copy.utils';
 export * from './campaign-google-creative.utils';
 export * from './campaign-google-demand-gen-video.utils';
 export * from './campaign-google-demand-gen-ad-groups.utils';
