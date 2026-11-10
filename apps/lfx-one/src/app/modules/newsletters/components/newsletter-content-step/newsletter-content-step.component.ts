@@ -260,9 +260,10 @@ export class NewsletterContentStepComponent implements OnInit {
       // wrapper_key as soon as a block is added (mirrors its own 'default'
       // fallback in toLayout()).
       if (this.form().get('bodyLayout')?.value == null) {
-        // It carries the new-draft default key, because the composer treats a
-        // keyless layout as one saved before keys existed.
-        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', template_key: NEWSLETTER_DEFAULT_TEMPLATE_KEY, blocks: [] };
+        // It carries a template key, because the composer treats a keyless layout
+        // as one saved before keys existed. A publication's locked template wins
+        // over the new-draft default, or the next save is rejected.
+        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', template_key: this.composerTemplateKey(), blocks: [] };
         this.form().get('bodyLayout')?.setValue(emptyLayout);
       }
     }

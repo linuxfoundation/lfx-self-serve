@@ -199,6 +199,20 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     expect(q('newsletter-content-composer')).toBeNull();
   });
 
+  it('seeds the publication template, not the default, when a saved Basic edition switches to Blocks', async () => {
+    stubMatchMedia(false);
+    const form = makeForm(null);
+    form.get('bodyHtml')?.setValue('<p>Saved</p>');
+    await createWith(form, { lockedTemplateKey: 'aaif-weekly-agentic', basicAllowed: true });
+
+    (q('newsletter-content-editor-blocks') as HTMLButtonElement).click();
+    confirmSpy.mock.calls.at(-1)?.[0].accept?.();
+    fixture.detectChanges();
+
+    expect(form.get('bodyLayout')?.value).toEqual({ wrapper_key: 'default', template_key: 'aaif-weekly-agentic', blocks: [] });
+    expect(StubBlockComposerComponent.seededWith?.template_key).toBe('aaif-weekly-agentic');
+  });
+
   it('keeps a draft with an authored body on the basic editor', async () => {
     stubMatchMedia(false);
     const form = makeForm(null);
