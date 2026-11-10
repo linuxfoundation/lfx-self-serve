@@ -10,6 +10,7 @@ import { fromEvent, Observable, Subscription } from 'rxjs';
 import { CREDENTIAL_REDACTION_MARKER } from '@lfx-one/shared/constants';
 import { redactGatewazeProxyCredentials, redactInviteToken, redactMeetingPassword, redactMeetingPasswordInText } from '@lfx-one/shared/utils';
 
+import { TranscendService } from '../services/transcend.service';
 import { getRuntimeConfig } from './runtime-config.provider';
 
 /**
@@ -170,6 +171,13 @@ export function redactRumEvent(event: object, origin: string): void {
 async function initializeDataDogRum(): Promise<void> {
   // Skip on server - DataDog RUM is browser-only
   if (typeof window === 'undefined') {
+    return;
+  }
+
+  // Inside a frame Transcend shows no notice and no Cookie settings, so RUM (an Analytics purpose)
+  // never starts there: a visitor in an opt-out regime would be recorded with no way to say no
+  // (lfx-self-serve-ops#1438).
+  if (!inject(TranscendService).preferencesAvailable) {
     return;
   }
 

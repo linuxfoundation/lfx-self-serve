@@ -26,9 +26,9 @@ export class TranscendService {
    * which cannot know whether the page will be framed: bind it to a class, not `@if`, so the
    * server-rendered and hydrated DOM stay the same.
    *
-   * Trade-off, pending privacy sign-off on #1438: a framed page shows no banner and no Cookie settings
-   * link in any regime, so where purposes default on (`'Auto'`, opt-out regimes) tracking in the frame
-   * runs without a notice or an opt-out there.
+   * Analytics follow the same flag: Segment, Plausible and Datadog RUM never start while it is false, so
+   * a framed visitor in an opt-out regime is never tracked without a notice or an opt-out (privacy
+   * decision on lfx-self-serve-ops#1438).
    */
   public readonly preferencesAvailable: boolean = this.initPreferencesAvailable();
 
