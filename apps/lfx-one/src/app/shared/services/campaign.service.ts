@@ -13,6 +13,7 @@ import {
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_PRESENT_MESSAGE,
   CREATIVE_ASSET_QUEUE_RETRIES,
+  CREATIVE_ASSET_READ_RETRIES,
   CREATIVE_ASSET_QUEUE_RETRY_BASE_MS,
   CREATIVE_ASSET_QUOTA_MESSAGE,
   CREATIVE_ASSET_REFUSED_FALLBACK_MESSAGE,
@@ -145,6 +146,7 @@ import {
   finalize,
   last,
   map,
+  MonoTypeOperatorFunction,
   Observable,
   of,
   ReplaySubject,
@@ -552,6 +554,7 @@ export class CampaignService {
     return this.http
       .get<CreativeAssetLibrary>('/api/campaigns/brief/creative-assets', { params: new HttpParams().set('project', projectSlug).set('brief_id', briefId) })
       .pipe(
+        this.retryCreativeAssetRead(),
         catchError((error: unknown) => {
           console.error('Failed to load the creative asset library:', error);
           return throwError(() => error);
@@ -583,6 +586,7 @@ export class CampaignService {
     // library reads, so a defaulted empty plan would state the opposite of what happened. The
     // caller renders the failure as such (frontend-checklist §13).
     return this.http.get<CreativeAssetPlan>('/api/campaigns/brief/creative-assets/plan', { params }).pipe(
+      this.retryCreativeAssetRead(),
       catchError((error: unknown) => {
         console.error('Failed to load the creative asset plan:', error);
         return throwError(() => error);
@@ -1337,6 +1341,20 @@ export class CampaignService {
    */
   private monitorAccountSource(source: MonitorAccountSource | null): Record<string, string> {
     return source ? { [MONITOR_ACCOUNT_SOURCE_PARAM]: source === 'connection' ? MONITOR_ACCOUNT_SOURCE_CONNECTION : MONITOR_ACCOUNT_SOURCE_LEGACY } : {};
+  }
+
+  /**
+   * Re-send a creative-asset read after a transient failure, backed off as the upload queue's re-sends are
+   * (#5385). The library and the plan are re-read after every stored file, so a multi-file upload is when
+   * a read meets a busy service; the caller keeps showing its loading state through the retries. Any other
+   * failure is passed straight through, and so is the last transient one.
+   */
+  private retryCreativeAssetRead<T>(): MonoTypeOperatorFunction<T> {
+    return retry({
+      count: CREATIVE_ASSET_READ_RETRIES,
+      delay: (error: unknown, retryCount: number) =>
+        isTransientHttpError(error) ? timer(CREATIVE_ASSET_QUEUE_RETRY_BASE_MS * 2 ** (retryCount - 1)) : throwError(() => error),
+    });
   }
 
   /** The upload request both paths share: the file's raw bytes, typed with its own MIME type. */
