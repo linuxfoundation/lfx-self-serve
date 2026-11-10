@@ -26,9 +26,11 @@
     <!-- Transcend consent manager. Synchronous on purpose: airgap.js must run before any other
          script so it can regulate them (lfx-self-serve-ops#513).
          data-ui-allow-in-embeds="off": public pages (the project calendar) are embedded in iframes on
-         project sites, so the consent UI shows only on top-level visits; airgap.js still regulates
-         trackers inside a frame, and TranscendService.preferencesAvailable hides the "Cookie settings"
-         entry points there (lfx-self-serve-ops#1438). -->
+         project sites, so the consent UI shows only on top-level visits and
+         TranscendService.preferencesAvailable hides the "Cookie settings" entry points in a frame.
+         airgap.js still applies the regime's defaults there, so where purposes default on (opt-out
+         regimes) a framed visitor gets no notice or opt-out; privacy sign-off is pending on
+         lfx-self-serve-ops#1438. -->
     <script
       src="https://transcend-cdn.com/cm/f484e2d0-ad2e-43a9-9d64-d07f6fa20966/airgap.js"
       data-cfasync="false"

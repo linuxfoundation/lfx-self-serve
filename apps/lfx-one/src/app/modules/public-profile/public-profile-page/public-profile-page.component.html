@@ -112,7 +112,8 @@
               type="button"
               (click)="manageCookies()"
               class="cursor-pointer border-0 bg-transparent p-0 text-xs text-gray-700 hover:underline"
-              [class.hidden]="!cookieSettingsAvailable">
+              [class.hidden]="!cookieSettingsAvailable"
+              data-testid="public-profile-footer-cookie-settings">
               Manage cookie preferences.
             </button>
           </footer>
