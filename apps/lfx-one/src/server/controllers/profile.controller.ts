@@ -1517,18 +1517,22 @@ export class ProfileController {
           if (mgmtToken) {
             const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
             if (!unlinkResult.success) {
-              logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
+              logger.warning(req, 'reject_identity', 'Auth0 unlink failed — identity was not removed', {
                 provider,
                 auth0_user_id: auth0UserId,
                 error: unlinkResult.error,
                 message: unlinkResult.message,
               });
-            } else {
-              logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
-                provider,
-                auth0_user_id: auth0UserId,
+              res.status(502).json({
+                error: 'identity_unlink_failed',
+                message: 'Failed to remove identity. Please try again.',
               });
+              return 'responded';
             }
+            logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
+              provider,
+              auth0_user_id: auth0UserId,
+            });
           } else {
             logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
               provider,
@@ -1999,7 +2003,8 @@ export class ProfileController {
 
   /**
    * GET /social/callback - Handle Auth0 callback from social OAuth flow.
-   * Exchanges code for id_token, links identity via NATS, verifies in CDP.
+   * Exchanges code for id_token, links identity via NATS, and redirects to the initiating page.
+   * CDP verification is deferred to ownership-matched reconciliation on the next identities GET.
    */
   public async handleSocialCallback(req: Request, res: Response): Promise<void> {
     // Set by startSocialConnect; re-validated here because a session can outlive a page rename.
@@ -2092,30 +2097,8 @@ export class ProfileController {
         return;
       }
 
-      // Fire-and-forget CDP identity verification
-      const lfid = getEffectiveUsername(req);
-
-      if (lfid) {
-        this.cdpService
-          .getIdentitiesForUser(req, lfid)
-          .then((identities) => {
-            // Find the newly linked social identity — look for unverified identities on this platform
-            const unverifiedSocial = identities.filter((id) => !id.verified);
-            for (const identity of unverifiedSocial) {
-              this.cdpService.verifyIdentityForUser(req, lfid, identity.id).catch((err: unknown) => {
-                logger.warning(req, 'social_auth_callback', 'CDP verify failed (non-blocking)', {
-                  identity_id: identity.id,
-                  err,
-                });
-              });
-            }
-          })
-          .catch((err: unknown) => {
-            logger.warning(req, 'social_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-              err,
-            });
-          });
-      }
+      // The next identities GET reconciles CDP against linked platform/type/value ownership.
+      // A successful social link is not proof of ownership of other unverified CDP identities.
 
       logger.success(req, 'social_auth_callback', startTime, {
         has_id_token: true,

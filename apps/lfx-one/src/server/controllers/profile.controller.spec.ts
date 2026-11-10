@@ -3364,6 +3364,47 @@ describe('ProfileController GitLab identities (#4190)', () => {
     expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
+  it('leaves mixed CDP identities untouched in the social callback and verifies only the owned GitLab row on GET', async () => {
+    const mixedIdentities = [
+      cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example' }),
+      cdpRow({ id: 'unrelated-gitlab', platform: 'gitlab', type: 'username', value: 'other-gitlab-user' }),
+      cdpRow({ id: 'unrelated-email', platform: 'email', type: 'email', value: 'other@example.com' }),
+      cdpRow({ id: 'unrelated-github', platform: 'github', type: 'username', value: 'other-github-user' }),
+    ];
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue('/profile/identities');
+    socialVerificationSvc.validateState.mockReturnValue(true);
+    socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: 'synthetic-id-token' });
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue(mixedIdentities);
+    cdpSvc.verifyIdentityForUser.mockResolvedValue(undefined);
+    const res = buildRes();
+
+    await controller.handleSocialCallback(
+      buildReq({ path: '/social/callback', query: { code: 'synthetic-code', state: 'synthetic-state' }, oidc: { user: { sub: 'auth0|dev-user' } } }),
+      res
+    );
+    // Flush any callback continuation before asserting that it did not mutate CDP.
+    await Promise.resolve();
+    expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'synthetic-id-token');
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?success=identity_linked');
+    expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+
+    const rows = await fetchIdentities([linkedGitlab], mixedIdentities);
+
+    expect(gitlabRows(rows)).toEqual([expect.objectContaining({ id: 'cdp-gitlab', displayState: 'verified', inAuth0: true })]);
+    expect(rows.filter((row) => row.id === 'unrelated-email' || row.id === 'unrelated-github')).toEqual([
+      expect.objectContaining({ id: 'unrelated-email', displayState: 'unverified', inAuth0: false }),
+      expect.objectContaining({ id: 'unrelated-github', displayState: 'unverified', inAuth0: false }),
+    ]);
+    expect(cdpSvc.verifyIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, 'cdp-gitlab', lfid);
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
   it('hides an unverified CDP-only GitLab row when no GitLab account is linked', async () => {
     const rows = await fetchIdentities([], [cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example' })]);
 
@@ -3387,15 +3428,16 @@ describe('ProfileController GitLab identities (#4190)', () => {
   });
 
   describe('rejectIdentity', () => {
-    async function removeIdentity(body: Record<string, unknown>): Promise<void> {
+    async function removeIdentity(body: Record<string, unknown>, identityId = 'auth0:linked-1'): Promise<any> {
       const res = buildRes();
       const next = vi.fn();
       await controller.rejectIdentity(
-        buildReq({ params: { identityId: 'auth0:linked-1' }, body, path: '/api/profile/identities/auth0:linked-1', apiGatewayToken: 'v1-token' }),
+        buildReq({ params: { identityId }, body, path: `/api/profile/identities/${identityId}`, apiGatewayToken: 'v1-token' }),
         res,
         next
       );
       expect(next).not.toHaveBeenCalled();
+      return res;
     }
 
     beforeEach(() => {
@@ -3407,6 +3449,41 @@ describe('ProfileController GitLab identities (#4190)', () => {
       await removeIdentity({ provider: 'gitlab', auth0UserId: 'gitlab|1000001' });
 
       expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'oauth2', 'gitlab|1000001');
+    });
+
+    describe.each(['auth0:linked-1', 'cdp-gitlab'])('unlink outcome for %s', (identityId) => {
+      it.each([
+        { success: false, error: 'Internal server error', message: 'synthetic upstream failure' },
+        { success: false, error: 'Service temporarily unavailable', message: 'Unable to reach the identity unlinking service. Please try again later.' },
+      ])('reports $error without rejecting CDP or claiming success', async (unlinkResult) => {
+        emailVerificationSvc.unlinkIdentity.mockResolvedValue(unlinkResult);
+
+        const res = await removeIdentity({ provider: 'gitlab', auth0UserId: linkedGitlab.user_id }, identityId);
+
+        expect(res.status).toHaveBeenCalledExactlyOnceWith(502);
+        expect(res.json).toHaveBeenCalledExactlyOnceWith({ error: 'identity_unlink_failed', message: 'Failed to remove identity. Please try again.' });
+        expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+      });
+
+      it('removes a successfully unlinked GitLab identity on the next GET even if CDP retains the row', async () => {
+        const retainedCdp = cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example', verified: true, verifiedBy: lfid });
+        expect(gitlabRows(await fetchIdentities([linkedGitlab], [retainedCdp]))).toHaveLength(1);
+        cdpSvc.rejectIdentityForUser.mockResolvedValue(undefined);
+
+        const res = await removeIdentity({ provider: 'gitlab', auth0UserId: linkedGitlab.user_id }, identityId);
+
+        expect(res.status).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true });
+        expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'oauth2', linkedGitlab.user_id);
+        if (identityId.startsWith('auth0:')) {
+          expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+        } else {
+          expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledExactlyOnceWith(expect.anything(), lfid, identityId);
+        }
+        expect(gitlabRows(await fetchIdentities([], [retainedCdp]))).toEqual([]);
+        expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+        expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+      });
     });
 
     it('still unlinks GitHub with the github provider', async () => {

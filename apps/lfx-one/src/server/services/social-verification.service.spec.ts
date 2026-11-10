@@ -1,14 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
+
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-// The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config, so the
-// constants the service reads are mocked directly (mirrors profile.controller.spec.ts).
-vi.mock('@lfx-one/shared/constants', () => ({
-  CDP_TO_AUTH0_PROVIDER_MAP: { github: 'github', gitlab: 'gitlab', google: 'google-oauth2', linkedin: 'linkedin' },
-}));
 
 vi.mock('./logger.service', () => ({
   logger: {
