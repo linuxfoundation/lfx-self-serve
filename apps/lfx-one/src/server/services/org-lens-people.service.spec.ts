@@ -3,7 +3,13 @@
 
 import { createRequire } from 'node:module';
 
-import type { CompactOrgAllEmployeesRawCache, OrgCommitFilters, OrgLensTimeRange, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CompactOrgAllEmployeesRawCache,
+  OrgAllEmployeesResponse,
+  OrgCommitFilters,
+  OrgLensTimeRange,
+  OrgPersonCompanyEmailsResponse,
+} from '@lfx-one/shared/interfaces';
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -89,6 +95,7 @@ import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.
 import { logger } from './logger.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
+import { withCompanyEmailStatus } from './org-people-wire.mapper';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
@@ -108,7 +115,12 @@ const REQ = {} as never;
 const FILTERS: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
 const LIVE_PERSON = 'live-access-mixeduser';
 const GOVERNANCE_USERNAME = agreedUsername([' MixedUser ', 'mixeduser'])!;
-const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
+const UNCONFIRMED: OrgPersonCompanyEmailsResponse = {
+  companyEmails: [],
+  primaryEmail: null,
+  companyEmailsStatus: 'unavailable',
+  companyEmailsReason: 'unconfirmed',
+};
 const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 /** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
 const SQLITE_ENROLLED_WINDOW = `date(LAST_ENROLLED_TS) >= date('now', '-12 months') AND date(LAST_ENROLLED_TS) < date('now')`;
@@ -125,6 +137,23 @@ function addPerson(account: string, personKey: string, username: string | null, 
   for (const [index, email] of emails.entries()) {
     insertEmail.run(account, personKey, username, email, index === 0 ? 1 : 0);
   }
+}
+
+/** One ORG_PEOPLE_EXTENDED_COMPANY_EMAILS row: a former employee's LF-account address, or the address on a key-contact record. */
+function addExtendedEmail(
+  account: string,
+  row: {
+    personKey: string;
+    email: string;
+    source: 'lf_account' | 'key_contact_record';
+    username?: string | null;
+    keyContactId?: string | null;
+    isPrimary?: boolean;
+  }
+): void {
+  database
+    .prepare('INSERT INTO ORG_PEOPLE_EXTENDED_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(account, row.personKey, row.username ?? null, row.keyContactId ?? null, row.email, row.source, row.isPrimary ? 1 : 0);
 }
 
 /** `YYYY-MM-DD`, `days` before today (UTC, as SQLite's `date('now')`). */
@@ -254,6 +283,10 @@ beforeEach(() => {
   ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
   database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+  database.exec(
+    'CREATE TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, KEY_CONTACT_ID TEXT, EMAIL TEXT, ADDRESS_SOURCE TEXT, IS_PRIMARY INTEGER)'
+  );
+  database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAIL_KEYS (ACCOUNT_ID TEXT, KEY_TYPE TEXT, KEY_VALUE TEXT)');
   // Unranged roster (the reassign pickers' read, and the username → person-key lookup).
   database.exec(`
     CREATE TABLE ORG_PEOPLE_ALL (
@@ -360,7 +393,7 @@ describe('OrgLensPeopleService username company emails', () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     getLive.mockResolvedValue({ rows: [{ personKey: 'person-one', lfUsername: 'mixeduser' }] });
 
-    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(UNAVAILABLE);
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(UNCONFIRMED);
     expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([['30d', 'lf']]);
   });
 
@@ -398,7 +431,7 @@ describe('OrgLensPeopleService username company emails', () => {
   it('reports a known identity without qualifying addresses as unavailable, never as none on record', async () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser');
 
-    await expectBothPaths(UNAVAILABLE);
+    await expectBothPaths(UNCONFIRMED);
   });
 
   it('reports a failed lookup when the address table is unavailable', async () => {
@@ -412,13 +445,13 @@ describe('OrgLensPeopleService username company emails', () => {
     addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
     addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
 
-    await expectBothPaths(UNAVAILABLE);
+    await expectBothPaths(UNCONFIRMED);
   });
 
   it('does not treat identities that exist only at another account as resolved', async () => {
     addPerson('other-account', 'person-one', 'MixedUser', ['other@other.example']);
 
-    await expectBothPaths(UNAVAILABLE);
+    await expectBothPaths(UNCONFIRMED);
   });
 
   it('reads the address table only, never the identity spine view', async () => {
@@ -434,7 +467,7 @@ describe('OrgLensPeopleService username company emails', () => {
   it('does not resolve blank usernames to blank warehouse identities', async () => {
     addPerson(ACCOUNT, 'person-one', ' ', ['someone@company.example']);
 
-    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' ')).toEqual(UNAVAILABLE);
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' ')).toEqual(UNCONFIRMED);
   });
 
   it('reuses a normalized username result without rerunning the warehouse read and keeps other accounts separate', async () => {
@@ -458,8 +491,8 @@ describe('OrgLensPeopleService username company emails', () => {
       companyEmailsStatus: 'resolved',
     });
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
-    // Per account: person-key lookup, former check, and the address result (both reads cache their answer).
-    expect(cacheValues.size).toBe(6);
+    // Per account: the person-key lookup and the address result (both reads cache their answer).
+    expect(cacheValues.size).toBe(4);
     for (const key of cacheValues.keys()) {
       expect(key.toLowerCase()).not.toContain('mixeduser');
     }
@@ -482,9 +515,9 @@ describe('OrgLensPeopleService username company emails', () => {
   });
 
   it('reuses a stable unavailable result without turning it into another state', async () => {
-    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual(UNAVAILABLE);
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual(UNCONFIRMED);
     database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'MIXEDUSER')).toEqual(UNAVAILABLE);
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'MIXEDUSER')).toEqual(UNCONFIRMED);
   });
 
   it('rejects a cached failed or status-less response instead of replaying it', async () => {
@@ -656,7 +689,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
     addPerson(ACCOUNT, 'cdp:member-one', 'MixedUser', ['first@company.example']);
 
-    expect(await service.getCompanyEmails({} as never, ACCOUNT, 'cdp:member-one')).toEqual(UNAVAILABLE);
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, 'cdp:member-one')).toEqual({ ...UNCONFIRMED, companyEmailsReason: 'unlinked_identity' });
   });
 
   it('returns activity without reading the address view', async () => {
@@ -796,8 +829,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 
   it('keeps the flagged primary first when another address has no IS_PRIMARY value', async () => {
-    // Snowflake sorts NULL above non-NULL on DESC, so without NULLS LAST the unflagged address leads
-    // and `companyEmails[0]` stops being the primary the contract promises.
+    // Ordered in the app, after both views are folded together, so Snowflake's NULLs-first DESC sort cannot lead with an unflagged address.
     database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(ACCOUNT, personKey, 'MixedUser', 'a-unflagged@company.example', null);
     database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(ACCOUNT, personKey, 'MixedUser', 'z-primary@company.example', 1);
 
@@ -806,25 +838,186 @@ describe('OrgLensPeopleService person-key company emails', () => {
       primaryEmail: 'z-primary@company.example',
       companyEmailsStatus: 'resolved',
     });
-
-    // The row assertion above cannot catch this on its own: SQLite already sorts NULLs last on DESC,
-    // so it passes either way. Snowflake does the opposite, so the clause itself is what is pinned.
-    const addressQueries = (execute.mock.calls as [string][]).map(([query]) => query).filter((query) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
-    expect(addressQueries.length).toBeGreaterThan(0);
-    for (const query of addressQueries) {
-      expect(query).toMatch(/ORDER BY\s+(?:\w+\.)?IS_PRIMARY DESC NULLS LAST/);
-    }
   });
 
-  it('pins NULLS LAST on the username-keyed address query too', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
+  it('folds both views into one address list: deduplicated, primary when any row is, record-only addresses named', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['b-current@company.example']);
+    addExtendedEmail(ACCOUNT, { personKey, email: 'B-Current@company.example', source: 'lf_account', isPrimary: true });
+    addExtendedEmail(ACCOUNT, { personKey, email: 'c-record@company.example', source: 'key_contact_record', keyContactId: 'a0F000000000001AAA' });
+    addExtendedEmail(ACCOUNT, { personKey, email: 'a-account@company.example', source: 'lf_account' });
 
-    // Two people collide on the folded username, so this falls through to the username-keyed query.
-    await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'MixedUser');
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
+      companyEmails: ['b-current@company.example', 'a-account@company.example', 'c-record@company.example'],
+      primaryEmail: 'b-current@company.example',
+      keyContactRecordEmails: ['c-record@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
 
-    const usernameQuery = (execute.mock.calls as [string][]).map(([query]) => query).find((query) => /resolved_person/.test(query));
-    expect(usernameQuery).toMatch(/ORDER BY\s+emails\.IS_PRIMARY DESC NULLS LAST/);
+  it('resolves a username on the extended view, ignoring key-contact record rows keyed on another identity', async () => {
+    addExtendedEmail(ACCOUNT, { personKey: 'lf-user-one', email: 'left@company.example', source: 'lf_account', username: 'MixedUser' });
+    addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'record@company.example', source: 'key_contact_record', username: 'mixeduser' });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['left@company.example'],
+      primaryEmail: null,
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  describe('key-contact record addresses', () => {
+    const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
+    // The contact emails the org's assignments show for these records now.
+    const current = new Set(['first@company.example', 'second@company.example', 'shared@company.example', 'record@company.example']);
+
+    it('reads the addresses on the given records only, every one record-only, binding each id', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'second@company.example', source: 'key_contact_record', keyContactId: ids[1] });
+      addExtendedEmail(ACCOUNT, {
+        personKey: '003000000000009AAA',
+        email: 'other@company.example',
+        source: 'key_contact_record',
+        keyContactId: 'a0F000000000009AAA',
+      });
+      addExtendedEmail('other-account', {
+        personKey: '003000000000001AAA',
+        email: 'elsewhere@other.example',
+        source: 'key_contact_record',
+        keyContactId: ids[0],
+      });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual({
+        companyEmails: ['first@company.example', 'second@company.example'],
+        primaryEmail: null,
+        keyContactRecordEmails: ['first@company.example', 'second@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+      const [query, binds] = (execute.mock.calls as [string, string[]][]).find(([sql]) => /KEY_CONTACT_ID IN/.test(sql))!;
+      expect(query).toMatch(/KEY_CONTACT_ID IN \(\?, \?\)/);
+      expect(binds).toEqual([ACCOUNT, ...ids]);
+    });
+
+    it('answers unconfirmed when neither the records nor the username find an address', async () => {
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current)).toEqual(UNCONFIRMED);
+    });
+
+    it("merges the username's addresses, which win over the record-only mark", async () => {
+      addRosterRow(ACCOUNT, personKey, 'MixedUser');
+      addPerson(ACCOUNT, personKey, 'MixedUser', ['shared@company.example']);
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'shared@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'record@company.example', source: 'key_contact_record', keyContactId: ids[1] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'MixedUser', current)).toEqual({
+        companyEmails: ['shared@company.example', 'record@company.example'],
+        primaryEmail: 'shared@company.example',
+        keyContactRecordEmails: ['record@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('answers resolved empty when the username resolves to a roster person with none on file', async () => {
+      addRosterRow(ACCOUNT, personKey, 'MixedUser');
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current)).toEqual({
+        companyEmails: [],
+        primaryEmail: null,
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('keeps the addresses of one leg when the other fails', async () => {
+      addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+      vi.spyOn(
+        service as unknown as { readKeyContactRecordEmails: () => Promise<OrgPersonCompanyEmailsResponse> },
+        'readKeyContactRecordEmails'
+      ).mockResolvedValue(FAILED);
+
+      const result = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current);
+
+      expect(result.companyEmailsStatus).toBe('resolved');
+      expect(result.companyEmails).toEqual(['first@company.example']);
+    });
+
+    it('answers failed without caching it, and recovers', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      database.exec('ALTER TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS RENAME TO SAVED_EXTENDED');
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual(FAILED);
+      expect([...cacheValues.keys()].some((key) => key.includes('people-key-contact-emails'))).toBe(false);
+
+      database.exec('ALTER TABLE SAVED_EXTENDED RENAME TO ORG_PEOPLE_EXTENDED_COMPANY_EMAILS');
+      expect((await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).companyEmails).toEqual(['first@company.example']);
+    });
+
+    // A role reassigned from A to B keeps its record id, so a record row (or a cached read) can still carry A's address.
+    it("shows only the record address of the role's current holder after a reassignment under the same id", async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'a.previous@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000002AAA', email: 'B.Current@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, [ids[0]], null, new Set(['b.current@company.example']))).toEqual({
+        companyEmails: ['B.Current@company.example'],
+        primaryEmail: null,
+        keyContactRecordEmails: ['B.Current@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('shows no record address when there are no current contact emails (the assignments read failed)', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, new Set())).toEqual(UNCONFIRMED);
+    });
+  });
+
+  describe('company-email keys', () => {
+    it("splits the account's keys by type and keeps the warehouse's username keys verbatim", async () => {
+      const insert = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAIL_KEYS VALUES (?, ?, ?)');
+      insert.run(ACCOUNT, 'person_key', personKey);
+      insert.run(ACCOUNT, 'lf_username', 'mixeduser');
+      insert.run(ACCOUNT, 'lf_username_none', '\tpadded');
+      insert.run('other-account', 'person_key', 'person-elsewhere');
+
+      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toEqual({ personKeys: [personKey], usernames: ['mixeduser'], noneUsernames: ['\tpadded'] });
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-company-email-keys:v3')!)).toBe(true);
+    });
+
+    it('tags a live row exactly as the drawer answers it, a tab-padded stored username included', async () => {
+      // The warehouse keys compare LOWER(TRIM()) of the stored username, as the drawer's SQL does: a stored "\tpadded"
+      // stays padded, so neither the drawer nor the filter resolves the row's JavaScript-trimmed "padded".
+      addRosterRow(ACCOUNT, 'padded-person', '\tpadded');
+      addRosterRow(ACCOUNT, 'known-person', 'known');
+      const insert = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAIL_KEYS VALUES (?, ?, ?)');
+      insert.run(ACCOUNT, 'lf_username_none', '\tpadded');
+      insert.run(ACCOUNT, 'lf_username_none', 'known');
+
+      const keys = await service.getCompanyEmailKeys(REQ, ACCOUNT);
+      const liveRow = (key: string, lfUsername: string) => ({ personKey: key, lfUsername }) as unknown as OrgAllEmployeesResponse['rows'][number];
+      const tagged = withCompanyEmailStatus(
+        { accountId: ACCOUNT, rows: [liveRow('live-padded', 'padded'), liveRow('live-known', ' Known ')] } as OrgAllEmployeesResponse,
+        keys
+      );
+
+      expect(tagged.rows.map((row) => row.companyEmailStatus)).toEqual(['unconfirmed', 'none']);
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'padded')).toMatchObject({
+        companyEmailsStatus: 'unavailable',
+        companyEmailsReason: 'unconfirmed',
+      });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' Known ')).toMatchObject({ companyEmailsStatus: 'resolved', companyEmails: [] });
+    });
+
+    it('answers null and warns, storing nothing, when the keys read fails', async () => {
+      database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAIL_KEYS');
+
+      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toBeNull();
+      expect(logger.warning).toHaveBeenCalledWith(
+        REQ,
+        'get_org_lens_people_company_email_keys',
+        expect.any(String),
+        expect.objectContaining({ org_uid: ACCOUNT })
+      );
+      expect([...cacheValues.keys()].some((key) => key.includes('people-company-email-keys'))).toBe(false);
+    });
   });
 
   it('retries a failed email lookup instead of replaying the failure from cache', async () => {
@@ -909,21 +1102,22 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(formerRead?.[0]).not.toMatch(/\bTITLE\b|\bEMAIL\b/);
     });
 
-    it('answers unavailable for a former employee by person key and by LF username, even when addresses are on record', async () => {
-      addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
+    it("reads a former employee's LF-account addresses by person key and by LF username, with no former-employee short-circuit", async () => {
+      addExtendedEmail(ACCOUNT, { personKey: formerKey, email: 'left@company.example', source: 'lf_account', username: 'LeftUser', isPrimary: true });
+      const resolved = { companyEmails: ['left@company.example'], primaryEmail: 'left@company.example', companyEmailsStatus: 'resolved' };
 
-      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
-      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'LeftUser')).toEqual(UNAVAILABLE);
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(resolved);
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'leftuser')).toEqual(resolved);
+      expect((execute.mock.calls as [string][]).some(([query]) => /IS_FORMER = TRUE/.test(query) && /LIMIT 1/.test(query))).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-company-emails:v2:${formerKey}`)!)).toBe(true);
     });
 
-    it('checks the all-time former population across all projects, whatever range and scope are on screen', async () => {
-      database.exec(`DELETE FROM ORG_PEOPLE_ALL_RANGES WHERE TIME_RANGE <> 'all'`);
-      addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
-
-      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
-      const formerCheck = (execute.mock.calls as [string][]).find(([query]) => /SELECT 1 AS IS_FORMER/.test(query));
-      expect(formerCheck?.[0]).toMatch(/TIME_RANGE = 'all' AND PROJECT_SCOPE = 'all' AND IS_FORMER = TRUE/);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-former-check:v3:${formerKey}`)!)).toBe(true);
+    it('answers a former employee with no address on file as resolved empty by person key', async () => {
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual({
+        companyEmails: [],
+        primaryEmail: null,
+        companyEmailsStatus: 'resolved',
+      });
     });
 
     it('reads the former rows of the requested project scope, with the foundations of their code in that scope', async () => {
@@ -938,41 +1132,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
         { foundationId: 'foundation-x', foundationName: 'Foundation X' },
       ]);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v4:365d:non_lf')!)).toBe(true);
-    });
-
-    it('fails closed on a failed former check, even over addresses cached while the person was current, and does not remember it', async () => {
-      addPerson(ACCOUNT, formerKey, 'leftuser', ['left@company.example']);
-      database.exec(`DELETE FROM ORG_PEOPLE_ALL_RANGES WHERE PERSON_KEY = '${formerKey}'`);
-      // While current, both address reads resolve and are cached.
-      expect((await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).companyEmailsStatus).toBe('resolved');
-      expect((await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'leftuser')).companyEmailsStatus).toBe('resolved');
-      // They leave; the cached "current" answers expire and the next check fails.
-      addRangeRow(ACCOUNT, formerKey, 'all', true, 'leftuser', '[[Unknown]]', null, 4);
-      for (const key of [...cacheValues.keys()].filter((cacheKey) => cacheKey.includes('people-former-check'))) {
-        cacheValues.delete(key);
-      }
-      database.exec('ALTER TABLE ORG_PEOPLE_ALL_RANGES RENAME TO SAVED_RANGES');
-      const readsBefore = execute.mock.calls.length;
-
-      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(FAILED);
-      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'LeftUser')).toEqual(FAILED);
-      const addressReads = (execute.mock.calls.slice(readsBefore) as [string][]).filter(([query]) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
-      expect(addressReads).toEqual([]);
-
-      database.exec('ALTER TABLE SAVED_RANGES RENAME TO ORG_PEOPLE_ALL_RANGES');
-      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(UNAVAILABLE);
-      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'LeftUser')).toEqual(UNAVAILABLE);
-    });
-
-    it('warns with the request when the former check fails', async () => {
-      database.exec('ALTER TABLE ORG_PEOPLE_ALL_RANGES RENAME TO SAVED_RANGES');
-
-      expect(await service.getCompanyEmails(REQ, ACCOUNT, formerKey)).toEqual(FAILED);
-      expect(logger.warning).toHaveBeenCalledWith(REQ, 'get_org_lens_people_former_lookup', 'former employee lookup failed', {
-        err: expect.any(Error),
-      });
-      expect(logger.info).not.toHaveBeenCalledWith(undefined, 'get_org_lens_people_former_lookup', expect.anything(), expect.anything());
-      database.exec('ALTER TABLE SAVED_RANGES RENAME TO ORG_PEOPLE_ALL_RANGES');
     });
 
     it('fails the read, storing nothing, when the live code read fails, and recovers on the next request', async () => {

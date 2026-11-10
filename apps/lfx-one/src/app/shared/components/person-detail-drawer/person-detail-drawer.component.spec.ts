@@ -38,7 +38,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
   let drawer: PersonDetailDrawerService;
   let responses: Map<string, Subject<unknown>>;
   let httpGet: Mock<(url: string) => Observable<unknown>>;
-  const selectedAccount = signal({ uid: 'org-1' });
+  const selectedAccount = signal<{ uid: string; accountName?: string }>({ uid: 'org-1' });
   const person: PersonDrawerContext = { name: 'First person', username: 'first-person' };
   const detail = (personKey = 'first-person'): OrgAllEmployeeDetail => ({
     personKey,
@@ -165,9 +165,9 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
   it.each([
     { status: 'failed', state: 'failed' },
-    { status: 'unavailable', state: 'not-available' },
+    { status: 'unavailable', state: 'unconfirmed' },
     { status: undefined, state: 'failed' },
-  ])('does not turn a $status result into addresses or none on record, or retain it for another person', async ({ status, state }) => {
+  ])('does not turn a $status result into addresses or none on file, or retain it for another person', async ({ status, state }) => {
     drawer.open(person);
     await render();
     reply(`${BY_USERNAME}/company-emails`).next({ companyEmails: ['old@example.org'], companyEmailsStatus: status });
@@ -178,7 +178,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
 
     drawer.open({ name: 'Second person', username: 'second-person' });
     expect(drawer.emailError()).toBe(false);
-    expect(drawer.identityUnavailable()).toBe(false);
+    expect(drawer.companyEmailsUnavailableReason()).toBeNull();
     expect(drawer.companyEmailsResolved()).toBe(false);
     await render();
     expect(emailState(state)).toBeNull();
@@ -290,7 +290,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     drawer.open({ name: 'Name only' });
     await render();
     expect(httpGet).not.toHaveBeenCalled();
-    expect(emailState('not-available')).not.toBeNull();
+    expect(emailState('no-identity')).not.toBeNull();
     expect(emailState('none')).toBeNull();
 
     drawer.open({ name: 'First person', personKey: 'first-person' });
@@ -741,14 +741,103 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('0')?.getAttribute('href')).toBe('mailto:first@example.org');
   });
 
-  it('says none on record rather than nothing when the lookup resolves empty', async () => {
+  it('says none on file, naming the organization, rather than nothing when the lookup resolves empty', async () => {
+    selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
     drawer.open({ name: 'First person', personKey: 'first-person' });
     await render();
     reply(`${BY_PERSON_KEY}/company-emails`).next(emails());
     await render();
 
-    expect(emailState('none')).not.toBeNull();
+    expect(emailState('none')?.textContent?.trim()).toBe('No Acme Corp email on file');
     expect(emailState('0')).toBeNull();
+  });
+
+  it('falls back to "company" when the selected organization has no display name', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails());
+    await render();
+
+    expect(emailState('none')?.textContent?.trim()).toBe('No company email on file');
+  });
+
+  it.each(['unlinked_identity', 'unconfirmed', undefined])('says the address could not be confirmed for an unavailable %s answer', async (reason) => {
+    selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: reason });
+    await render();
+
+    expect(emailState('unconfirmed')?.textContent?.trim()).toBe("We couldn't confirm a company email at Acme Corp");
+    expect(emailState('none')).toBeNull();
+  });
+
+  it('says emails are not shown on this page when the opener supplied nothing to look up', async () => {
+    drawer.open({ name: 'Name only' });
+    await render();
+
+    expect(httpGet).not.toHaveBeenCalled();
+    expect(drawer.companyEmailsUnavailableReason()).toBe('no_identity');
+    expect(emailState('no-identity')?.textContent?.trim()).toBe("Emails aren't shown on this page");
+  });
+
+  it('hints an address known only from a key contact record', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next({
+      ...emails(['first@example.org', 'record@example.org'], 'first@example.org'),
+      keyContactRecordEmails: ['record@example.org'],
+    });
+    await render();
+
+    const hints = document.querySelectorAll('[data-testid="person-detail-drawer-email-record-hint"]');
+    expect(hints).toHaveLength(1);
+    expect(hints[0]?.parentElement?.textContent).toContain('record@example.org');
+    expect(hints[0]?.textContent?.trim()).toBe('from key contact record');
+  });
+
+  it('re-issues only the address request from the failed state', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/detail`).next(detail());
+    reply(`${BY_PERSON_KEY}/company-emails`).error(new HttpErrorResponse({ status: 500 }));
+    await render();
+    expect(emailState('failed')?.textContent).toContain("Couldn't load emails.");
+    responses.delete(`${BY_PERSON_KEY}/company-emails`);
+    httpGet.mockClear();
+
+    (byTestId('person-detail-drawer-email-retry') as HTMLButtonElement).click();
+    await render();
+
+    expect(requested()).toEqual([`${BY_PERSON_KEY}/company-emails`]);
+    expect(emailState('loading')).not.toBeNull();
+    expect(document.body.textContent).toContain('Member Summit');
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org']));
+    await render();
+    expect(emailState('0')?.textContent?.trim()).toBe('first@example.org');
+  });
+
+  it("reads a key contact's record addresses, never sending the username, while activity stays on the username", async () => {
+    const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
+    drawer.open({ name: 'First person', username: 'first-person', keyContactIds: [...ids, ids[0], 'not-an-id'] });
+    await render();
+
+    const keyContactUrl = `${PEOPLE}/by-key-contact/company-emails`;
+    expect(requested().sort()).toEqual([keyContactUrl, `${BY_USERNAME}/detail`]);
+    expect((httpGet.mock.calls as unknown[][]).find(([url]) => url === keyContactUrl)?.[1]).toEqual({
+      params: { ids: ids.join(',') },
+    });
+    reply(keyContactUrl).next(emails(['record@example.org']));
+    await render();
+    expect(emailState('0')?.textContent?.trim()).toBe('record@example.org');
+  });
+
+  it('reads by person key, not the key-contact records, when the opener has both', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person', keyContactIds: ['a0F000000000001AAA'] });
+    await render();
+
+    expect(requested()).toContain(`${BY_PERSON_KEY}/company-emails`);
+    expect(requested()).not.toContain(`${PEOPLE}/by-key-contact/company-emails`);
   });
 
   it("sends the opener's range with the activity read only, and no range when the opener has none (lfx-self-serve#4482)", async () => {
