@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -63,6 +64,7 @@ describe('MeetingsRedesignComponent', () => {
   let impersonating: ReturnType<typeof signal<boolean>>;
   let personaLoaded: ReturnType<typeof signal<boolean>>;
   let desktop: boolean;
+  let phone: boolean;
   let upcoming$: Subject<Meeting[]>;
   let past$: Subject<PastMeeting[]>;
   let latestPast$: Subject<PastMeeting[]>;
@@ -97,6 +99,7 @@ describe('MeetingsRedesignComponent', () => {
 
   beforeEach(() => {
     desktop = true;
+    phone = false;
     impersonating = signal(false);
     personaLoaded = signal(true);
     upcoming$ = new Subject();
@@ -153,6 +156,7 @@ describe('MeetingsRedesignComponent', () => {
             refreshUserPastMeetings,
           },
         },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: phone, breakpoints: {} }) } },
         { provide: CreateArtifactDialogService, useValue: { open: openCreateDialog } },
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         {
@@ -252,6 +256,20 @@ describe('MeetingsRedesignComponent', () => {
       button?.click();
 
       expect(openCreateDialog).toHaveBeenCalledWith('meeting');
+    });
+
+    it('is an icon button with a name and tooltip on phones', async () => {
+      phone = true;
+      const fixture = render();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const create = fixture.debugElement.query(By.css('[data-testid="meetings-home-create"]')).componentInstance;
+      expect(create.iconOnly()).toBe(true);
+      expect(create.variant()).toBe('secondary-accent');
+      expect(create.tooltip()).toBe('Create Meeting');
+      expect(query(fixture, 'meetings-home-create')?.querySelector('button')?.getAttribute('aria-label')).toBe('Create Meeting');
+      expect(query(fixture, 'meetings-redesign-folded-rail')?.className).toContain('max-sm:hidden');
     });
 
     it('is waited for while the persona loads, and the header actions hide with nothing pending', async () => {

@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, Signal, signal, viewChild } from '@angular/core';
-import { MEETING_TYPE_OPTIONS, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_RSVP_FILTER_OPTIONS } from '@lfx-one/shared/constants';
+import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input, model, Signal, signal, viewChild } from '@angular/core';
+import { MEETING_TYPE_OPTIONS, MEETINGS_HOME_DEFAULT_FILTERS, MEETINGS_HOME_RSVP_FILTER_OPTIONS, PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
 import { FilterOption, MeetingDashboardView, MeetingHomeRow, MeetingsHomeFilters, UiFocusable } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { PersonaService } from '@services/persona.service';
@@ -14,6 +14,7 @@ import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectSlotDirective } from '@shared/uikit/select/select-slot.directive';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiToggleComponent } from '@shared/uikit/toggle/toggle.component';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 
 /**
  * Filters button of the meetings home page, with the applied-filter count, and its popover.
@@ -40,7 +41,9 @@ import { UiToggleComponent } from '@shared/uikit/toggle/toggle.component';
 })
 export class MeetingsFiltersComponent implements UiFocusable {
   private readonly personaService = inject(PersonaService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly button = viewChild(UiButtonComponent);
+  private readonly phone = injectIsMobileViewport(PHONE_MEDIA_QUERY);
 
   public readonly tab = input.required<MeetingDashboardView>();
   /** The tab's rows before search and filters. */
@@ -53,6 +56,8 @@ export class MeetingsFiltersComponent implements UiFocusable {
   protected readonly rsvpOptions = MEETINGS_HOME_RSVP_FILTER_OPTIONS;
   protected readonly typeOptions: FilterOption<string>[] = MEETING_TYPE_OPTIONS.map(({ label, value }) => ({ label, value }));
   protected readonly projectQuery = signal('');
+  /** 344px, or the full width of the control on phones. */
+  protected readonly panelWidth = signal(344);
 
   protected readonly appliedCount: Signal<number> = computed(() => countAppliedMeetingFilters(this.filters()));
   protected readonly buttonLabel: Signal<string> = computed(() => (this.appliedCount() ? `Filters, ${this.appliedCount()} applied` : ''));
@@ -71,6 +76,7 @@ export class MeetingsFiltersComponent implements UiFocusable {
   /** Every open and close of the popover starts from the applied filters, so a closed draft is discarded. */
   protected resetDraft(): void {
     this.draft.set(this.filters());
+    this.panelWidth.set(this.phone() ? this.host.nativeElement.offsetWidth : 344);
   }
 
   /** Clears the drafted project when it is not a child of the new foundation. */
