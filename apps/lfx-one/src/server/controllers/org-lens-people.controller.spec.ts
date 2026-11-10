@@ -194,8 +194,8 @@ describe('OrgLensPeopleController All Employees Event Attendees tile (lfx-self-s
     const stored = await respond({ range: '90d' });
     const live = await respond({ live: 'true', range: '730d' });
 
-    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(1, ORG_UID, '90d', 'verified', 'all');
-    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(2, ORG_UID, '730d', 'verified', 'all');
+    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(1, ORG_UID, '90d', 'all');
+    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(2, ORG_UID, '730d', 'all');
     expect(stored).toMatchObject({ eventAttendeesTotal: 486, stats: { eventAttendees: 486, activeInOss: 3 } });
     expect(live.eventAttendeesTotal).toBe(486);
   });

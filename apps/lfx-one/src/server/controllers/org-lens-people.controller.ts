@@ -3,7 +3,6 @@
 
 import {
   DEFAULT_ORG_EMPLOYMENT,
-  DEFAULT_ORG_EVENTS_ATTRIBUTION,
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   EMAIL_REGEX,
   ORG_EMPLOYMENT_OPTIONS,
@@ -544,7 +543,7 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/event-attendees?range&attribution&participation — person × event rows + summary + filter options for the Event Attendees tab (LFXV2-1875, lfx-self-serve#4598). */
+  /** GET /api/orgs/:orgUid/lens/people/event-attendees?range&participation — person × event rows + summary + filter options for the Event Attendees tab (LFXV2-1875, lfx-self-serve#4598). */
   public async getEventAttendees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'get_org_lens_people_event_attendees', {
@@ -554,8 +553,8 @@ export class OrgLensPeopleController {
     try {
       assertOrgUid(orgUid, 'get_org_lens_people_event_attendees');
 
-      const { range, attribution, participation } = parseOrgEventsFilters(req, 'get_org_lens_people_event_attendees');
-      const response = await this.eventAttendeesService.getEventAttendees(orgUid, { range, attribution, participation });
+      const { range, participation } = parseOrgEventsFilters(req, 'get_org_lens_people_event_attendees');
+      const response = await this.eventAttendeesService.getEventAttendees(orgUid, { range, participation });
 
       logger.success(req, 'get_org_lens_people_event_attendees', startTime, {
         org_uid: orgUid,
@@ -630,7 +629,7 @@ export class OrgLensPeopleController {
       return undefined;
     }
     try {
-      const { attendeesCount } = await this.eventAttendeesService.readSummary(orgUid, range, DEFAULT_ORG_EVENTS_ATTRIBUTION, DEFAULT_ORG_EVENTS_PARTICIPATION);
+      const { attendeesCount } = await this.eventAttendeesService.readSummary(orgUid, range, DEFAULT_ORG_EVENTS_PARTICIPATION);
       return attendeesCount;
     } catch (error) {
       logger.warning(req, 'get_org_lens_people_all', 'Event attendee summary read failed, the tile is marked unavailable', {

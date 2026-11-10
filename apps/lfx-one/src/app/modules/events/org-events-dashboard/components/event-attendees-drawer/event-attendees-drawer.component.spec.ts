@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import type { OrgEventsAttribution, OrgEventsParticipation } from '@lfx-one/shared/interfaces';
+import type { OrgEventsParticipation } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
 import { of, throwError } from 'rxjs';
@@ -14,8 +14,7 @@ import { EventAttendeesDrawerComponent } from './event-attendees-drawer.componen
 
 async function open(
   participation: OrgEventsParticipation,
-  failing = false,
-  attribution?: OrgEventsAttribution
+  failing = false
 ): Promise<{ fixture: ComponentFixture<EventAttendeesDrawerComponent>; getEventAttendees: Mock }> {
   const getEventAttendees = vi.fn(() =>
     failing
@@ -43,7 +42,6 @@ async function open(
   fixture.componentRef.setInput('eventId', 'event-1');
   fixture.componentRef.setInput('eventName', 'Event One');
   fixture.componentRef.setInput('participation', participation);
-  if (attribution) fixture.componentRef.setInput('attribution', attribution);
   fixture.componentRef.setInput('attendeeCount', 7);
   fixture.detectChanges();
   fixture.componentRef.setInput('visible', true);
@@ -98,12 +96,6 @@ describe('EventAttendeesDrawerComponent', () => {
     ]);
     expect(document.body.querySelector('[data-testid="event-attendees-not-listed"]')).toBeNull();
     expect(document.body.textContent ?? '').not.toContain('not listed');
-  });
-
-  it('requests the per-event Self-reported only rows when Counted by is Self-reported only', async () => {
-    const { getEventAttendees } = await open('all', false, 'self_reported');
-
-    expect(getEventAttendees).toHaveBeenCalledWith('acc-1', 'event-1', { attribution: 'self_reported', participation: 'all' });
   });
 
   it('keeps the opener count and says the load failed, never "0 counted", when the read fails', async () => {
