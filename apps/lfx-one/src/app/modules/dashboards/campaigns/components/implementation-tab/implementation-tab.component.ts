@@ -4107,6 +4107,15 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleUserListPickerOptions: Signal<GoogleUserListPickerOption[]> = computed(() =>
     googleUnpickedUserLists(this.googleUserListPicker().lists, this.googleAudienceSegments())
   );
+  /**
+   * Every listed or added audience segment's name by resource name (#5493), so a chip shows the list's name
+   * rather than its resource name, after a restore too. A segment with no known name shows its resource name.
+   */
+  protected readonly googleAudienceSegmentNames: Signal<ReadonlyMap<string, string>> = computed(() => {
+    const names = new Map(this.googleAudienceSegmentAddedNames());
+    for (const list of this.googleUserListPicker().lists) names.set(list.resourceName, list.name);
+    return names;
+  });
   /** The picker's loading line, reason, empty or partial-list note, for its always-mounted live region; `''` otherwise. */
   protected readonly googleUserListPickerAnnouncement: Signal<string> = this.initGoogleUserListPickerAnnouncement();
   /**
@@ -4341,6 +4350,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly displayAudiencesBlockMessage = computed(() => this.displayAudiencesBlock()?.message ?? '');
   /** The note when picked Display audiences are kept but not sent because of the split; `''` otherwise. */
   protected readonly displayAudiencesHeldMessage: Signal<string> = this.initDisplayAudiencesHeldMessage();
+  /**
+   * Names recorded when a segment is added (#5493), so a restored segment keeps its name while the user list
+   * read is loading, unavailable or no longer lists it.
+   */
+  private readonly googleAudienceSegmentAddedNames = signal<ReadonlyMap<string, string>>(new Map());
   /** Names recorded at pick time, so a pick from an earlier interest search keeps its name. */
   private readonly displayAudiencePickedNames = signal<ReadonlyMap<string, string>>(new Map());
   /**
@@ -5675,6 +5689,9 @@ export class ImplementationTabComponent implements OnInit {
     const trimmed = googleAdsTrimSpace(text);
     if (googleCampaignAudienceSegmentFault(trimmed) !== null) return false;
     if (this.googleAudienceSegments().includes(trimmed)) return false;
+    // The name first, as the Display pickers record theirs: the list's change emits the draft, which carries it.
+    const name = this.googleUserListPicker().lists.find((list) => list.resourceName === trimmed)?.name;
+    if (name !== undefined) this.googleAudienceSegmentAddedNames.update((names) => new Map(names).set(trimmed, name));
     this.googleAudienceSegments.update((segments) => [...segments, trimmed]);
     this.emitDraft();
     return true;
@@ -8055,6 +8072,11 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleAudienceSegments !== undefined) {
       this.googleAudienceSegments.set([...draft.googleAudienceSegments]);
     }
+    // The names the segments were added under (#5493), string pairs only, as the Display names restore.
+    if (draft.googleAudienceSegmentNames !== null && typeof draft.googleAudienceSegmentNames === 'object') {
+      const names = Object.entries(draft.googleAudienceSegmentNames).filter((entry): entry is [string, string] => typeof entry[1] === 'string');
+      this.googleAudienceSegmentAddedNames.set(new Map(names));
+    }
     // Copied on the same rule, and restored WHATEVER channel the draft was saved under: the section
     // and the payload both gate on the dispatched channel, so a list restored under Performance Max
     // is held rather than sent, and is still there if the operator switches back to Search.
@@ -8615,6 +8637,7 @@ export class ImplementationTabComponent implements OnInit {
       googleNegativeKeywordsText: this.googleNegativeKeywordsText(),
       googleNegativeKeywordMatchType: this.googleNegativeKeywordMatchType(),
       googleAudienceSegments: [...this.googleAudienceSegments()],
+      googleAudienceSegmentNames: Object.fromEntries(this.googleAudienceSegmentAddedNames()),
       googleCallouts: [...this.googleCallouts()],
       // Entries copied too, for the reason the restore above gives in the other direction.
       googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
@@ -9122,6 +9145,7 @@ export class ImplementationTabComponent implements OnInit {
     this.googleNegativeKeywordsText.set('');
     this.googleNegativeKeywordMatchType.set(CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES['google-ads'].defaultMatchType);
     this.googleAudienceSegments.set([]);
+    this.googleAudienceSegmentAddedNames.set(new Map());
     this.googleCallouts.set([]);
     this.googleSitelinks.set([]);
     this.googleStructuredSnippets.set([]);

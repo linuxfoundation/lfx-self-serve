@@ -10691,6 +10691,72 @@ describe('ImplementationTabComponent google user list picker', () => {
     expect(c['googleAudienceSegments']()).toEqual([]);
   });
 
+  /** #5493: a chip shows the list's name, as the Display pickers do, and its Remove button says which list it removes. */
+  it("shows a picked list's chip by its name, and a list the read does not hold by its resource name", async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+    const OTHER = 'customers/8666746580/userLists/333';
+
+    c['onGoogleUserListPicked'](LIST_A);
+    c['addGoogleAudienceSegment'](OTHER);
+    fixture.detectChanges();
+
+    expect(query('implementation-google-audience-segment-0')?.textContent?.trim()).toBe('KubeCon NA 2025 registrants');
+    expect(query('implementation-google-audience-segment-remove-0')?.getAttribute('aria-label')).toBe('Remove KubeCon NA 2025 registrants');
+    expect(query('implementation-google-audience-segment-1')?.textContent?.trim()).toBe(OTHER);
+    expect(query('implementation-google-audience-segment-remove-1')?.getAttribute('aria-label')).toBe(`Remove ${OTHER}`);
+  });
+
+  it('carries the name a list was added under in the draft, from the add itself', async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+    let draft: Record<string, any> = {};
+    fixture.componentInstance.draftChange.subscribe((d) => (draft = d as Record<string, any>));
+
+    c['onGoogleUserListPicked'](LIST_B);
+    expect(draft['googleAudienceSegments']).toEqual([LIST_B]);
+    expect(draft['googleAudienceSegmentNames']).toEqual({ [LIST_B]: 'KubeCon site visitors' });
+
+    // A typed list the read holds is named too: the name comes from the list, not from the picker's event.
+    c['removeGoogleAudienceSegment'](0);
+    c['addGoogleAudienceSegment'](LIST_A);
+    expect(draft['googleAudienceSegmentNames']).toEqual({ [LIST_B]: 'KubeCon site visitors', [LIST_A]: 'KubeCon NA 2025 registrants' });
+  });
+
+  it('restores a segment by the name in the draft when the user list read is unavailable, keeping strings only', async () => {
+    await setup(() => throwError(() => new HttpErrorResponse({ status: 503 })));
+    const c = seedSearch();
+    restoreGoogleDraft(fixture, c, {
+      includeSearch: true,
+      googleAudienceSegments: [LIST_A, LIST_B],
+      googleAudienceSegmentNames: { [LIST_A]: 'KubeCon NA 2025 registrants', [LIST_B]: 7 },
+    });
+
+    expect([...c['googleAudienceSegmentAddedNames']().entries()]).toEqual([[LIST_A, 'KubeCon NA 2025 registrants']]);
+    expect(query('implementation-google-audience-segment-0')?.textContent?.trim()).toBe('KubeCon NA 2025 registrants');
+    expect(query('implementation-google-audience-segment-1')?.textContent?.trim()).toBe(LIST_B);
+  });
+
+  it("restores a segment by the read's name when the draft carries no name for it", async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+    restoreGoogleDraft(fixture, c, { includeSearch: true, googleAudienceSegments: [LIST_B] });
+
+    expect(c['googleAudienceSegmentAddedNames']().size).toBe(0);
+    expect(query('implementation-google-audience-segment-0')?.textContent?.trim()).toBe('KubeCon site visitors');
+  });
+
+  it('forgets the added names when the form resets for a new brief', async () => {
+    await setup(() => of(LISTS));
+    const c = seedSearch();
+    c['onGoogleUserListPicked'](LIST_A);
+    expect(c['googleAudienceSegmentAddedNames']().size).toBe(1);
+
+    // A new brief object re-runs the seed, which resets the Google fields first.
+    seedSearch();
+    expect(c['googleAudienceSegmentAddedNames']().size).toBe(0);
+  });
+
   it('hides the picker at the cap, as it hides the typed box', async () => {
     await setup(() => of(LISTS));
     const c = seedSearch();
