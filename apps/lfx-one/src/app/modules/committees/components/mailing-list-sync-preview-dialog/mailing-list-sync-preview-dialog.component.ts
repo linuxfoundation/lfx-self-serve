@@ -22,9 +22,10 @@ import {
 import { MailingListService } from '@services/mailing-list.service';
 import { UserService } from '@services/user.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, exhaustMap, finalize, interval, of, Subscription, takeUntil, takeWhile, tap, timer } from 'rxjs';
+import { catchError, EMPTY, exhaustMap, finalize, interval, of, Subscription, takeUntil, takeWhile, tap, throwError, timer } from 'rxjs';
 import { UiProgressComponent } from '@shared/uikit/progress/progress.component';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
+import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
 
 type PreviewTab = 'adds' | 'removes' | 'conflicts';
 
@@ -237,11 +238,17 @@ export class MailingListSyncPreviewDialogComponent {
         // transient failure (a dropped connection, a 502) is skipped and polling continues on the
         // next tick, instead of catchError replacing the whole subscription and ending the poll for
         // good (lfx-one, #5489 review).
-        // A transient per-tick failure is swallowed (returns null, skipped below) rather than
-        // surfaced, so a stale error message can't linger once loadingDiff() goes false and hide a
-        // diff that a later, successful tick did load — only the finalize() deadline fallback below
-        // sets a user-facing error if the job never reaches a terminal state.
-        exhaustMap(() => this.mailingListService.getSyncDiffStatus(this.mailingListUid, jobId).pipe(catchError(() => of(null)))),
+        // A transient per-tick failure (isTransientHttpError — 0/408/429/5xx) is swallowed (returns
+        // null, skipped below) so a stale error message can't linger once loadingDiff() goes false
+        // and hide a diff that a later, successful tick did load. A permanent refusal (401 session
+        // expiry, 403/404/409 conflict) is rethrown instead of swallowed, so it reaches the outer
+        // catchError below and stops polling immediately rather than retrying for the full deadline
+        // (greptile-apps, cursor/Bugbot, copilot, #5489 review).
+        exhaustMap(() =>
+          this.mailingListService
+            .getSyncDiffStatus(this.mailingListUid, jobId)
+            .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of(null) : throwError(() => error))))
+        ),
         tap((status) => {
           if (!status) return;
           this.diffProcessedCount.set(status.processed_count);
@@ -249,6 +256,11 @@ export class MailingListSyncPreviewDialogComponent {
         }),
         takeWhile((status: SyncDiffJobStatus | null) => status === null || status.status === 'pending' || status.status === 'ongoing', true),
         takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
+        catchError((error: unknown) => {
+          reachedTerminalState = true;
+          this.loadError.set(extractErrorMessage(error, 'Could not load the sync preview. Please try again.'));
+          return EMPTY;
+        }),
         finalize(() => {
           ticker.unsubscribe();
           this.loadingDiff.set(false);
@@ -321,11 +333,19 @@ export class MailingListSyncPreviewDialogComponent {
         // transient failure (a dropped connection, a 502) is skipped and polling continues on the
         // next tick, instead of catchError replacing the whole subscription and ending the poll for
         // good (lfx-one, #5489 review).
-        // A transient per-tick failure is swallowed (returns null, skipped below) rather than
-        // surfaced, so a stale error message can't linger once applying() goes false and hide a
-        // result that a later, successful tick did load — only the finalize() deadline fallback
-        // below sets a user-facing error if the job never reaches a terminal state.
-        exhaustMap(() => this.mailingListService.getSyncApplyStatus(this.mailingListUid, jobId).pipe(catchError(() => of(null)))),
+        // A transient per-tick failure (isTransientHttpError — 0/408/429/5xx) is swallowed (returns
+        // null, skipped below) so a stale error message can't linger once applying() goes false and
+        // hide a result that a later, successful tick did load. A permanent refusal (401 session
+        // expiry, 403/404/409 conflict) is rethrown instead of swallowed, so it reaches the outer
+        // catchError below and stops polling immediately rather than retrying for the full deadline
+        // (greptile-apps, cursor/Bugbot, copilot, #5489 review). applyAttempted was already set to
+        // true in apply() before this poll started, so closing the dialog on a permanent error still
+        // triggers a membership refresh — it isn't reset here.
+        exhaustMap(() =>
+          this.mailingListService
+            .getSyncApplyStatus(this.mailingListUid, jobId)
+            .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of(null) : throwError(() => error))))
+        ),
         tap((status) => {
           if (!status) return;
           this.applyProcessedCount.set(status.processed_count);
@@ -333,6 +353,11 @@ export class MailingListSyncPreviewDialogComponent {
         }),
         takeWhile((status: SyncApplyJobStatus | null) => status === null || status.status === 'pending' || status.status === 'ongoing', true),
         takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
+        catchError((error: unknown) => {
+          reachedTerminalState = true;
+          this.applyError.set(extractErrorMessage(error, 'Applying changes failed. Please try again.'));
+          return EMPTY;
+        }),
         finalize(() => {
           ticker.unsubscribe();
           this.applying.set(false);
