@@ -27,7 +27,7 @@ import { RecurringDonationsListComponent } from './components/recurring-donation
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
-import { finalize, map, scan, switchMap, tap } from 'rxjs/operators';
+import { finalize, map, scan, switchMap, take, tap } from 'rxjs/operators';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
@@ -249,6 +249,7 @@ export class MyDonationsComponent {
 
     request
       .pipe(
+        take(1),
         finalize(() =>
           this.anonymityPending.update((pending) => {
             const next = new Set(pending);

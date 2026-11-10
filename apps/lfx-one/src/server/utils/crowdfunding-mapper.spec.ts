@@ -97,6 +97,35 @@ describe('crowdfunding mapper donor anonymity (lfx-crowdfunding#466)', () => {
     expect(mapOrgDonation({ ...row, anonymous: undefined, donor_name: 'Synthetic Donor' }).anonymous).toBe(false);
   });
 
+  it('strips the donor identity from an anonymous org row even if CF sends it', () => {
+    const leaked: BackendOrgDonation = {
+      id: 'o2',
+      type: 'one_time',
+      donor_name: 'Synthetic Donor',
+      donor_email: 'donor@example.com',
+      anonymous: true,
+      amount_cents: 100,
+      status: 'succeeded',
+      created_on: '2026-10-01T00:00:00Z',
+    };
+    expect(mapOrgDonation(leaked)).toMatchObject({ donorName: 'Anonymous', donorEmail: '' });
+    expect(mapOrgDonation({ ...leaked, anonymous: false })).toMatchObject({ donorName: 'Synthetic Donor', donorEmail: 'donor@example.com' });
+  });
+
+  it('drops the donor username from an anonymous transaction row even if CF sends it', () => {
+    const tx: BackendTransaction = {
+      id: 't2',
+      type: 'donations',
+      amount_cents: 100,
+      date: '2026-10-01',
+      donor_name: 'Anonymous',
+      donor_username: 'synthetic-user',
+      anonymous: true,
+    };
+    expect(mapToTransaction(tx).donorUsername).toBeUndefined();
+    expect(mapToTransaction({ ...tx, anonymous: false }).donorUsername).toBe('synthetic-user');
+  });
+
   it('passes the anonymous flag through on initiative transaction rows', () => {
     const tx: BackendTransaction = { id: 't1', type: 'donations', amount_cents: 100, date: '2026-10-01', donor_name: 'Anonymous', anonymous: true };
     expect(mapToTransaction(tx)).toMatchObject({ donorName: 'Anonymous', anonymous: true });

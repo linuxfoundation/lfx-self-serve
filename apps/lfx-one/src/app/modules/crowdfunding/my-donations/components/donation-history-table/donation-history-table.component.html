@@ -65,7 +65,13 @@
                     [ariaLabel]="'More options for donation to ' + (item.initiativeName ?? 'initiative')"
                     ariaHaspopup="menu"
                     [attr.data-testid]="'donation-row-menu-' + item.id"
-                    (onClick)="onRowMenuToggle($event, item)" />
+                    (onClick)="rowMenu.toggle($event)" />
+                  <lfx-menu
+                    #rowMenu
+                    [model]="rowMenuItems().get(item.id)"
+                    [popup]="true"
+                    appendTo="body"
+                    [attr.data-testid]="'donation-row-menu-panel-' + item.id" />
                 }
               </td>
             </tr>
@@ -73,8 +79,6 @@
         </tbody>
       </table>
     </div>
-
-    <lfx-menu [model]="rowMenuItems()" [popup]="true" appendTo="body" data-testid="donation-row-menu" />
 
     @if (hasMore()) {
       <div class="flex justify-center pt-3" data-testid="donation-history-load-more">

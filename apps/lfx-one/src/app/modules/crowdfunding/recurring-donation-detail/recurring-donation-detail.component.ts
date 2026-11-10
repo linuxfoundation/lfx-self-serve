@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, sig
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
-import { concatMap, filter, finalize, map, scan, startWith, switchMap, tap } from 'rxjs/operators';
+import { concatMap, filter, finalize, map, scan, startWith, switchMap, take, tap } from 'rxjs/operators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
@@ -92,7 +92,10 @@ export class RecurringDonationDetailComponent {
     this.anonymitySaving.set(true);
     this.crowdfundingService
       .updateSubscriptionAnonymity(donation.id, !donation.anonymous)
-      .pipe(finalize(() => this.anonymitySaving.set(false)))
+      .pipe(
+        take(1),
+        finalize(() => this.anonymitySaving.set(false))
+      )
       .subscribe({
         next: (result) => {
           this.donation.update((current) => (current && current.id === donation.id ? { ...current, anonymous: result.anonymous } : current));
@@ -135,7 +138,8 @@ export class RecurringDonationDetailComponent {
 
   private initChargeHistory(): Signal<{ items: CrowdfundingTransaction[]; hasMore: boolean }> {
     return toSignal(
-      toObservable(this.donation).pipe(
+      // Keyed on the fetched donation: a name-visibility toggle must not reset the loaded pages.
+      toObservable(this.fetchedDonation).pipe(
         filter((d): d is RecurringDonation => d !== undefined),
         map((d) => d.initiativeSlug),
         switchMap((slug) =>

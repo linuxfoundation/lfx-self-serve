@@ -50,26 +50,23 @@ describe('DonationHistoryTableComponent donor anonymity (lfx-crowdfunding#466)',
     expect(r3?.querySelector('[data-testid="donation-row-menu-r3"]')).toBeNull();
   });
 
-  it('labels the menu action for the row and emits the row when chosen', async () => {
+  it('gives each row its own menu, labelled for that row, that emits the row when chosen', async () => {
     const hidden = row({ id: 'r1', anonymous: true, donationId: 'synthetic-donation-1' });
     const shown = row({ id: 'r2', subscriptionId: 'synthetic-subscription-1' });
     fixture.componentRef.setInput('items', [hidden, shown]);
     await fixture.whenStable();
 
+    expect(root().querySelector('[data-testid="donation-row-menu-panel-r1"]')).not.toBeNull();
+    expect(root().querySelector('[data-testid="donation-row-menu-panel-r2"]')).not.toBeNull();
+
     const emitted: MyDonation[] = [];
     fixture.componentInstance.toggleAnonymity.subscribe((d) => emitted.push(d));
-    const component = fixture.componentInstance as unknown as {
-      onRowMenuToggle(event: Event, item: MyDonation): void;
-      rowMenuItems(): { label?: string; command?: () => void }[];
-    };
+    const menus = (fixture.componentInstance as unknown as { rowMenuItems(): Map<string, { label?: string; command?: () => void }[]> }).rowMenuItems();
 
-    component.onRowMenuToggle(new MouseEvent('click'), hidden);
-    expect(component.rowMenuItems()[0].label).toBe('Show my name');
-    component.rowMenuItems()[0].command?.();
-
-    component.onRowMenuToggle(new MouseEvent('click'), shown);
-    expect(component.rowMenuItems()[0].label).toBe('Hide my name');
-    component.rowMenuItems()[0].command?.();
+    expect(menus.get('r1')?.[0].label).toBe('Show my name');
+    expect(menus.get('r2')?.[0].label).toBe('Hide my name');
+    menus.get('r1')?.[0].command?.();
+    menus.get('r2')?.[0].command?.();
 
     expect(emitted).toEqual([hidden, shown]);
   });
