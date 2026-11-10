@@ -13,6 +13,7 @@ import { MailingListMemberDeliveryMode } from '@lfx-one/shared/enums';
 import {
   CommitteeReference,
   FilterOption,
+  FilterPillOption,
   GroupsIOMailingList,
   GroupsIOService,
   MailingListTableRowVm,
@@ -98,7 +99,7 @@ export class MailingListDashboardComponent {
   public readonly myMailingLists: Signal<MyMailingList[]> = this.initMyMailingLists();
   public readonly myMailingListUids: Signal<Set<string>> = computed(() => new Set(this.myMailingLists().map((ml) => ml.uid)));
   public readonly committeeOptions: Signal<FilterOption[]> = this.initCommitteeOptions();
-  public readonly statusOptions: Signal<FilterOption[]> = this.initStatusOptions();
+  public readonly statusOptions: Signal<FilterPillOption[]> = this.initStatusOptions();
   public readonly filteredMailingLists: Signal<GroupsIOMailingList[]> = this.initFilteredMailingLists();
   protected readonly isFiltered = computed(
     () => !!this.searchTerm() || !!this.committeeFilter() || !!this.statusFilter() || !!this.foundationFilter() || !!this.projectFilter()
@@ -248,7 +249,7 @@ export class MailingListDashboardComponent {
     });
   }
 
-  private initStatusOptions(): Signal<FilterOption[]> {
+  private initStatusOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const mailingListsData = this.isMeLens() ? this.myMailingLists() : this.mailingLists();
 
@@ -257,9 +258,8 @@ export class MailingListDashboardComponent {
       const privateCount = mailingListsData.filter((ml) => !ml.public).length;
 
       return [
-        { label: 'All Status', value: null },
-        { label: `Public (${publicCount})`, value: 'public' },
-        { label: `Private (${privateCount})`, value: 'private' },
+        { id: 'public', label: `Public (${publicCount})`, color: 'green' },
+        { id: 'private', label: `Private (${privateCount})`, color: 'purple' },
       ];
     });
   }

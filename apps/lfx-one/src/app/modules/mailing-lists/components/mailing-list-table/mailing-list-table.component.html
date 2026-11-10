@@ -59,17 +59,13 @@
           data-testid="mailing-list-committee-filter"></lfx-select>
       </div>
 
-      <!-- Status Filter Dropdown -->
-      <div class="w-full sm:w-48">
-        <lfx-select
-          [form]="searchForm()"
-          control="status"
-          size="small"
+      <!-- Status Filter Pills (Public / Private with counts) -->
+      <div data-testid="mailing-list-status-filter">
+        <lfx-filter-pills
           [options]="statusFilterOptions()"
-          placeholder="Select Status"
-          [showClear]="true"
-          styleClass="w-full"
-          data-testid="mailing-list-status-filter"></lfx-select>
+          [selectedFilter]="selectedStatus()"
+          ariaLabel="Filter by visibility"
+          (filterChange)="onStatusChange($event)" />
       </div>
     </div>
   </div>

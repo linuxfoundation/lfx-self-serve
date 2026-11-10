@@ -9,6 +9,7 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
@@ -21,7 +22,7 @@ import {
   MAILING_LIST_MAX_VISIBLE_GROUPS,
 } from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
-import { FilterOption, GroupLinkState, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
+import { FilterOption, FilterPillOption, GroupLinkState, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
 import { getMailingListCommands, getMailingListGroupLinks, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
@@ -51,6 +52,7 @@ import { TooltipModule } from 'primeng/tooltip';
     RemainingGroupsTooltipPipe,
     StripHtmlPipe,
     EmptyStateComponent,
+    FilterPillsComponent,
     ConfirmDialogModule,
   ],
   templateUrl: './mailing-list-table.component.html',
@@ -72,7 +74,7 @@ export class MailingListTableComponent {
   public mailingListLabel = input<string>(MAILING_LIST_LABEL.singular);
   public searchForm = input.required<FormGroup>();
   public committeeFilterOptions = input.required<FilterOption[]>();
-  public statusFilterOptions = input.required<FilterOption[]>();
+  public statusFilterOptions = input.required<FilterPillOption[]>();
   public foundationOptions = input<{ label: string; value: string | null }[]>([]);
   public projectOptions = input<{ label: string; value: string | null }[]>([]);
   public showFoundationFilter = input<boolean>(false);
@@ -102,6 +104,9 @@ export class MailingListTableComponent {
     initialValue: {} as Record<string, unknown>,
   });
 
+  /** The selected Public/Private pill, or '' when neither is on. */
+  protected readonly selectedStatus = computed(() => (this.formValue()['status'] as string | null) || '');
+
   protected readonly isFiltered = computed(() => {
     const v = this.formValue();
     return !!v['search'] || !!v['committee'] || !!v['status'] || !!v['foundationFilter'] || !!v['projectFilter'];
@@ -115,6 +120,11 @@ export class MailingListTableComponent {
   // Event Handlers
   protected onRowSelect(event: { data: MailingListTableRowVm }): void {
     this.rowClick.emit(event.data);
+  }
+
+  /** Selecting the active pill again clears the status filter. */
+  protected onStatusChange(status: string): void {
+    this.searchForm().patchValue({ status: this.selectedStatus() === status ? null : status });
   }
 
   protected resetFilters(): void {
