@@ -316,10 +316,10 @@ export class Member360ResultComponent {
       toggleLabel: open ? 'Show fewer' : showAllLabel,
     };
   }
-  /** "20 Nov" for an ISO day; any other deadline the agent wrote is shown as written. */
+  /** "20 Nov" for an ISO day, read as UTC midnight and shown in UTC so every viewer sees the written day; any other deadline the agent wrote is shown as written. */
   private dayText(day: string | null): string | null {
     if (day === null) return null;
-    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? formatDate(day, 'd MMM', 'en-US') : day;
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? formatDate(`${day}T00:00:00Z`, 'd MMM', 'en-US', 'UTC') : day;
   }
   private priorityClass(priority: string): string {
     if (priority === 'High') return 'bg-red-50 text-red-800';

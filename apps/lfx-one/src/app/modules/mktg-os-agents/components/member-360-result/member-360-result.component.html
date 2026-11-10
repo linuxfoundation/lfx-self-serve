@@ -321,7 +321,7 @@
                       <tr class="border-b border-gray-100 align-top">
                         <td class="py-1.5 pr-3 font-semibold">{{ evidence.member_organization }}</td>
                         <td class="break-words py-1.5 pr-3">{{ evidence.description }}</td>
-                        <td class="whitespace-nowrap py-1.5 pr-3 tabular-nums">{{ evidence.date | date: 'd MMM y' }}</td>
+                        <td class="whitespace-nowrap py-1.5 pr-3 tabular-nums">{{ evidence.date + 'T00:00:00Z' | date: 'd MMM y' : 'UTC' }}</td>
                         <td class="py-1.5 text-gray-500">{{ evidence.sourceText }}</td>
                       </tr>
                     }
@@ -352,8 +352,8 @@
             and routing rules for owner and priority. Also the Method tab of the workbook.
           </p>
           <p class="tabular-nums text-gray-700" data-testid="member-360-method-window">
-            Window {{ method().analysis_window.start | date: 'd MMM y' }} – {{ method().analysis_window.end | date: 'd MMM y' }} · focus
-            {{ method().focus_quarter }} · recency {{ decayText() }}
+            Window {{ method().analysis_window.start + 'T00:00:00Z' | date: 'd MMM y' : 'UTC' }} –
+            {{ method().analysis_window.end + 'T00:00:00Z' | date: 'd MMM y' : 'UTC' }} · focus {{ method().focus_quarter }} · recency {{ decayText() }}
           </p>
           <div class="flex flex-col gap-2 border-t border-gray-200 pt-3">
             <b>What the score is made of</b>

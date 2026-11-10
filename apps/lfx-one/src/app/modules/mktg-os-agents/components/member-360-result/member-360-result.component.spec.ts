@@ -249,6 +249,18 @@ describe('Member360ResultComponent', () => {
     envelope.run_date = envelope.period.window_start = envelope.period.window_end = '2026-10-01';
     expect(render(envelope).query('member-360-result-header').textContent).toContain('Run 1 Oct 2026 · window Oct 2026 to');
   });
+  it('shows the written calendar day for evidence dates, the method window and due days in every time zone', () => {
+    const envelope = member360Fixture();
+    envelope.tabs.evidence[0].date = '2026-10-01';
+    envelope.tabs.method.analysis_window = { start: '2025-10-01', end: '2026-10-01' };
+    envelope.tabs.actions_by_team[0].suggested_deadline = '2026-11-01';
+    const view = render(envelope);
+    // Pinned through the same UTC branch as the header: 1 Oct never becomes 30 Sep west of UTC.
+    expect(view.query('member-360-method-window').textContent?.replace(/\s+/g, ' ')).toContain('Window 1 Oct 2025 – 1 Oct 2026');
+    expect(view.query('member-360-evidence').textContent).toContain('1 Oct 2026');
+    expect(view.query('member-360-actions').textContent).toContain('1 Nov');
+    expect(view.query('member-360-actions').textContent).not.toContain('31 Oct');
+  });
   it('defaults to descending score and sorts by score, priority and tier', () => {
     const view = render();
     expect(view.names()).toEqual([SYNTHETIC_SECOND_ORG_LEGAL_NAME, SYNTHETIC_ORG_NAME]);
