@@ -204,8 +204,7 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-rsvp-grid')?.querySelectorAll('lfx-ui-avatar').length).toBe(3);
 
       await click('meeting-details-invite');
-      expect(closeDialog).toHaveBeenCalled();
-      expect(edit).toHaveBeenCalledWith(expect.objectContaining({ key: 'synthetic-meeting' }));
+      expect(edit).toHaveBeenCalledWith(expect.objectContaining({ key: 'synthetic-meeting' }), undefined, expect.anything());
     });
 
     it('shows no counts when the roster fails, and logs it', async () => {

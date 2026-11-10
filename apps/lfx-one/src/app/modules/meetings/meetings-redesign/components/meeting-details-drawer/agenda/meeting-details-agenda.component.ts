@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DialogRef } from '@angular/cdk/dialog';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, linkedSignal, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AttachmentScope,
   MeetingAttachment,
-  MeetingComposerSectionId,
   MaterialsChangedEvent,
   MeetingMaterialLink,
   MeetingMaterialsDrawerData,
@@ -17,7 +17,6 @@ import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
   applyPastMeetingAttachmentChanges,
-  canScopeAttachmentToOccurrence,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
   isPastMeetingCalendarRow,
@@ -30,7 +29,6 @@ import { MeetingService } from '@services/meeting.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
-import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiShowMoreComponent } from '@shared/uikit/show-more/show-more.component';
@@ -46,7 +44,7 @@ import { MeetingMaterialsDrawerComponent } from './materials-drawer/meeting-mate
 /**
  * Agenda & Materials tab of the meeting details drawer.
  * @description The agenda is the shown date's description, else the meeting's. Files are the primary materials and
- * links the supporting ones. Organizers edit the agenda in the composer and materials in Manage Materials.
+ * links the supporting ones. Organizers edit them in the composer, and a past record's materials in Manage Materials.
  */
 @Component({
   selector: 'lfx-meeting-details-agenda',
@@ -70,7 +68,7 @@ export class MeetingDetailsAgendaComponent {
   private readonly context = inject(MeetingDetailsContext);
   private readonly meetingService = inject(MeetingService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly drawer = inject(UiDrawerContext, { optional: true });
+  private readonly dialogRef = inject(DialogRef, { optional: true });
   private readonly drawerService = inject(UiDrawerService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -133,10 +131,10 @@ export class MeetingDetailsAgendaComponent {
   }
 
   protected edit(): void {
-    this.openComposer('agenda-resources');
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.dialogRef);
   }
 
-  /** Opens Manage Materials over this drawer, on the past record of an ended date or else on the series. */
+  /** Opens the series in the composer, or Manage Materials over this drawer for an ended date's past record. */
   protected editMaterials(): void {
     const pastMeetingId = this.context.pastMeetingId();
     if (pastMeetingId) {
@@ -147,13 +145,7 @@ export class MeetingDetailsAgendaComponent {
       this.openMaterialsDrawer({ pastMeetingId, pastChanges: this.pastChanges(), occurrence: null, canScopeToOccurrence: false, onChanged });
       return;
     }
-    // A series lists and scopes materials for the shown date, as the meeting page does.
-    const occurrence = this.showScopes() ? this.context.occurrence() : null;
-    this.openMaterialsDrawer({
-      meetingId: this.seriesId(),
-      occurrence,
-      canScopeToOccurrence: canScopeAttachmentToOccurrence(this.context.meeting(), occurrence),
-    });
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.dialogRef, true);
   }
 
   protected download(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -217,13 +209,6 @@ export class MeetingDetailsAgendaComponent {
           return { uid: attachment.uid, name: attachment.name, url, host: url ? new URL(url).hostname.replace(/^www\./, '') : '' };
         })
     );
-  }
-
-  private openComposer(section: MeetingComposerSectionId): void {
-    // The composer opens over the page, so the drawer closes first.
-    const row = this.context.shownRow();
-    this.drawer?.requestClose();
-    this.editService.edit(row, section);
   }
 
   private loadAttachments(): Observable<(MeetingAttachment | PastMeetingAttachment)[]> {
