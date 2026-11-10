@@ -12,6 +12,8 @@ import {
   shareButtonAriaLabel,
   visibleShareCount,
   withNewsletterPreviewDate,
+  getNewsletterPublicationErrorMessage,
+  isNewsletterReplyToAddress,
 } from './newsletter.utils';
 
 describe('newsletterIssuePath', () => {
@@ -127,5 +129,45 @@ describe('isNewsletterLiveSendLocked', () => {
 
   it('keeps live send off by default for the editor-only release', () => {
     expect(isNewsletterLiveSendLocked(true)).toBe(true);
+  });
+});
+
+describe('getNewsletterPublicationErrorMessage (#4349)', () => {
+  it.each([
+    ['invalid_request: reply_to_email domain "x.example" is not an allowed reply-to domain', 'approved domain'],
+    ['invalid_request: reply_to_email is not a valid email address', 'valid reply-to'],
+    ['invalid_request: body_layout template_key "a" does not match the publication\'s template_key "b"', "publication's template set"],
+    ['invalid_request: publication uses template_key "b", supply body_layout instead of body_html', 'block editor'],
+    ['invalid_request: body_layout cannot be cleared on an edition of a publication with a template set', 'block editor'],
+    ['invalid_request: unknown template_key "z"', 'no longer available'],
+    ['invalid_request: an implicit publication cannot be updated', 'created automatically'],
+  ])('maps %s', (upstream, expected) => {
+    expect(getNewsletterPublicationErrorMessage(upstream)).toContain(expected);
+  });
+
+  it('returns null for an unrelated message', () => {
+    expect(getNewsletterPublicationErrorMessage('invalid_request: subject is required')).toBeNull();
+  });
+});
+
+describe('isNewsletterReplyToAddress (#4349)', () => {
+  it.each([['editor@example.com'], ['first.last+news@mail.example.com'], [`${'a'.repeat(64)}@example.com`]])('accepts %s', (address) => {
+    expect(isNewsletterReplyToAddress(address)).toBe(true);
+  });
+
+  it.each([
+    ['no at sign', 'editor.example.com'],
+    ['nothing before the at sign', '@example.com'],
+    ['nothing after the at sign', 'editor@'],
+    ['a local part over 64 bytes', `${'a'.repeat(65)}@example.com`],
+    ['a non-ASCII local part', 'rédacteur@example.com'],
+    ['a non-ASCII domain', 'editor@exämple.com'],
+    ['a local part that needs quoting', 'first last@example.com'],
+    ['a leading dot', '.editor@example.com'],
+    ['a double dot', 'first..last@example.com'],
+    ['a display name', 'Editor <editor@example.com>'],
+    ['an address over 254 characters', `editor@${'d'.repeat(250)}.com`],
+  ])('rejects %s', (_label, address) => {
+    expect(isNewsletterReplyToAddress(address)).toBe(false);
   });
 });

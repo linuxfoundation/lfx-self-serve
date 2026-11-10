@@ -5,8 +5,11 @@ import {
   NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED,
   NEWSLETTER_BLOCKS_PROJECT_SLUGS,
   NEWSLETTER_DATE_TIME_ZONE,
+  NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH,
+  NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH,
   NEWSLETTER_SEND_DATE_PLACEHOLDER,
 } from '../constants/newsletter.constants';
+import { EMAIL_DOT_ATOM_REGEX } from '../constants/regex.constants';
 import { NewsletterShareTally } from '../interfaces/newsletter.interface';
 import { SocialShareChannel } from '../interfaces/social-share.interface';
 
@@ -91,4 +94,43 @@ export function isNewsletterBlocksEnabled(options: { hasLayout: boolean; flagEna
  */
 export function isNewsletterLiveSendLocked(hasLayout: boolean, liveSendEnabled: boolean = NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED): boolean {
   return hasLayout && !liveSendEnabled;
+}
+
+/**
+ * A readable message for the 400s the publication rules produce (#4349), which the service only
+ * tells apart by their text. Returns null for anything else, so the caller keeps its own message.
+ */
+export function getNewsletterPublicationErrorMessage(upstreamMessage: string): string | null {
+  const text = upstreamMessage.toLowerCase();
+  if (text.includes('allowed reply-to domain')) {
+    return 'That reply-to address is on a domain we cannot send replies to. Use an address on an approved domain.';
+  }
+  if (text.includes('reply_to_email')) {
+    return 'Enter a valid reply-to email address.';
+  }
+  if (text.includes('does not match the publication')) {
+    return "This edition has to use its publication's template set. Reload the page to pick up the template set, then try again.";
+  }
+  if (text.includes('supply body_layout') || text.includes('cannot be cleared on an edition')) {
+    return 'This publication uses a template set, so its editions have to be built with the block editor.';
+  }
+  if (text.includes('unknown template_key')) {
+    return 'That template set is no longer available. Choose a different one.';
+  }
+  if (text.includes('implicit publication')) {
+    return 'This publication was created automatically for a single newsletter, so it cannot be changed or take new editions.';
+  }
+  return null;
+}
+
+/**
+ * True when a trimmed, nonblank reply-to is an address the newsletter service will store (#4349): a
+ * bare ASCII address, at most 64 bytes before the @, with nothing that needs RFC 5322 quoting. These
+ * are the rules email-service applies at send. The allowed-domain check stays with the service.
+ */
+export function isNewsletterReplyToAddress(address: string): boolean {
+  if (address.length > NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH) return false;
+  const at = address.lastIndexOf('@');
+  if (at <= 0 || at > NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH || at === address.length - 1) return false;
+  return EMAIL_DOT_ATOM_REGEX.test(address.slice(0, at)) && EMAIL_DOT_ATOM_REGEX.test(address.slice(at + 1));
 }

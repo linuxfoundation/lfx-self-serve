@@ -3,6 +3,7 @@
 
 import {
   NEWSLETTER_BODY_LAYOUT_MAX_BYTES,
+  NEWSLETTER_MAX_COMMITTEES,
   NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES,
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
@@ -27,13 +28,15 @@ import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { validateNewsletterEditionPayload } from '../helpers/newsletter-edition-payload.helper';
+import { parseNewsletterIfMatch } from '../helpers/newsletter-if-match.helper';
 import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterMemberBenefitService } from '../services/newsletter-member-benefit.service';
 import { NewsletterService } from '../services/newsletter.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
 
-const COMMITTEE_LIMIT = 50;
+const COMMITTEE_LIMIT = NEWSLETTER_MAX_COMMITTEES;
 const CONTEXT_NAME_MAX_LENGTH = 200;
 
 /**
@@ -218,9 +221,16 @@ export class NewsletterController {
 
     try {
       const payload = req.body as CreateNewsletterRequest;
-      this.validateCommonPayload(payload, req.path, 'newsletter_create', false);
-      this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
-      this.validateScheduledAt(payload, req.path, 'newsletter_create');
+      this.validatePublicationUid(payload, req.path, 'newsletter_create');
+      if (payload?.publication_uid !== undefined) {
+        // The service fills in the publication's defaults before it validates, so only the fields
+        // that are sent are checked (#4349).
+        validateNewsletterEditionPayload(payload, { operation: 'newsletter_create', service: 'newsletter_controller', path: req.path });
+      } else {
+        this.validateCommonPayload(payload, req.path, 'newsletter_create', false);
+        this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
+        this.validateScheduledAt(payload, req.path, 'newsletter_create');
+      }
 
       const newsletter = await this.newsletterService.createNewsletter(req, projectUid, payload);
       logger.success(req, 'newsletter_create', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
@@ -866,6 +876,14 @@ export class NewsletterController {
     }
   }
 
+  /** `publication_uid` is optional on create (#4349). When sent, it has to be a publication id. */
+  private validatePublicationUid(payload: CreateNewsletterRequest, path: string, operation: string): void {
+    if (payload?.publication_uid === undefined) return;
+    if (typeof payload.publication_uid !== 'string' || !isUuid(payload.publication_uid)) {
+      throw ServiceValidationError.forField('publication_uid', 'publication_uid must be a UUID', { operation, service: 'newsletter_controller', path });
+    }
+  }
+
   /**
    * Save-time validation for `scheduled_at` on create/update — lenient,
    * future-only. Explicit `null` is allowed and means "clear the saved
@@ -966,27 +984,6 @@ export class NewsletterController {
   }
 }
 
-/**
- * Parse the If-Match header into a version integer. Used by update/send routes
- * for optimistic concurrency control.
- */
 function parseIfMatch(req: Request): number {
-  const raw = (req.header('If-Match') || '').trim();
-  if (!raw) {
-    throw ServiceValidationError.forField('If-Match', 'If-Match header is required', {
-      operation: 'newsletter_if_match',
-      service: 'newsletter_controller',
-      path: req.path,
-    });
-  }
-  const cleaned = raw.replace(/^W\//i, '').replace(/^"|"$/g, '');
-  const version = Number(cleaned);
-  if (!Number.isFinite(version) || !Number.isInteger(version) || version < 1) {
-    throw ServiceValidationError.forField('If-Match', 'If-Match must be a positive integer version', {
-      operation: 'newsletter_if_match',
-      service: 'newsletter_controller',
-      path: req.path,
-    });
-  }
-  return version;
+  return parseNewsletterIfMatch(req, 'newsletter_if_match', 'newsletter_controller');
 }

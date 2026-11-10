@@ -48,6 +48,7 @@ const {
 vi.mock('@lfx-one/shared/constants', () => ({
   NEWSLETTER_BODY_MAX_LENGTH: 50_000,
   NEWSLETTER_BODY_LAYOUT_MAX_BYTES: 5_000,
+  NEWSLETTER_MAX_COMMITTEES: 50,
   NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES: 200,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH: 10_000,
   NEWSLETTER_SUBJECT_MAX_LENGTH: 200,
@@ -311,6 +312,106 @@ describe('NewsletterController create/update — validateScheduledAt', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
+});
+
+describe('NewsletterController create — publication_uid (#4349)', () => {
+  const PUBLICATION_UID = '11111111-1111-4111-8111-111111111111';
+
+  it('forwards a UUID publication_uid unchanged', async () => {
+    createNewsletter.mockResolvedValue({ id: 'n1', version: 1 });
+    const next = vi.fn();
+    const payload = { ...validPayload, publication_uid: PUBLICATION_UID };
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: payload, path: '/x' } as any, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createNewsletter).toHaveBeenCalledWith(expect.anything(), 'p1', payload);
+  });
+
+  it('leaves a payload with no publication_uid without one', async () => {
+    createNewsletter.mockResolvedValue({ id: 'n1', version: 1 });
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: validPayload, path: '/x' } as any, buildRes(), vi.fn());
+
+    expect('publication_uid' in createNewsletter.mock.calls[0][2]).toBe(false);
+  });
+
+  it('accepts a create with only a subject when a publication supplies the rest', async () => {
+    createNewsletter.mockResolvedValue({ id: 'n1', version: 1 });
+    const next = vi.fn();
+    const payload = { publication_uid: PUBLICATION_UID, subject: 'Hello', ed_reply_email: '  ' };
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: payload, path: '/x' } as any, buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createNewsletter).toHaveBeenCalledWith(expect.anything(), 'p1', payload);
+  });
+
+  it.each([
+    ['no subject', { body_html: '<p>Hi</p>' }, 'subject'],
+    ['an explicit empty audience', { subject: 'Hello', committee_uids: [] }, 'committee_uids'],
+    ['a bad reply email', { subject: 'Hello', ed_reply_email: 'not-an-email' }, 'ed_reply_email'],
+    ['a past schedule', { subject: 'Hello', scheduled_at: '2020-01-01T00:00:00Z' }, 'scheduled_at'],
+  ])('still checks a supplied field on a publication create: %s', async (_label, body, field) => {
+    const next = vi.fn();
+
+    await new NewsletterController().createNewsletter(
+      { params: { projectUid: 'p1' }, body: { publication_uid: PUBLICATION_UID, ...body }, path: '/x' } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(JSON.stringify(next.mock.calls[0][0])).toContain(field);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['no ed_reply_email', { ed_reply_email: undefined }, 'ed_reply_email'],
+    ['a blank ed_reply_email', { ed_reply_email: '  ' }, 'ed_reply_email'],
+    ['no committee_uids', { committee_uids: undefined }, 'committee_uids'],
+    ['an empty committee_uids', { committee_uids: [] }, 'committee_uids'],
+  ])('still requires every field on a create without a publication: %s', async (_label, overrides, field) => {
+    const next = vi.fn();
+
+    await new NewsletterController().createNewsletter(
+      { params: { projectUid: 'p1' }, body: { ...validPayload, ...overrides }, path: '/x' } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(JSON.stringify(next.mock.calls[0][0])).toContain(field);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
+
+  it('lets a null audience through on a publication create, since the service reads it as omitted', async () => {
+    createNewsletter.mockResolvedValue({ id: 'n1', version: 1 });
+    const next = vi.fn();
+
+    await new NewsletterController().createNewsletter(
+      { params: { projectUid: 'p1' }, body: { publication_uid: PUBLICATION_UID, subject: 'Hello', committee_uids: null }, path: '/x' } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each([['not-a-uuid'], [''], [null], [42]])('rejects publication_uid %j without calling the service', async (publicationUid) => {
+    const next = vi.fn();
+
+    await new NewsletterController().createNewsletter(
+      { params: { projectUid: 'p1' }, body: { ...validPayload, publication_uid: publicationUid }, path: '/x' } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(JSON.stringify(next.mock.calls[0][0])).toContain('publication_uid');
     expect(createNewsletter).not.toHaveBeenCalled();
   });
 });
