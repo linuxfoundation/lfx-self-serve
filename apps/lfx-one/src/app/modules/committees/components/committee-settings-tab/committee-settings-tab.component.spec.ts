@@ -2149,4 +2149,198 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     await createFixture({ associatedMailingLists: [makeMl({ uid: 'ml-1', writer: false }), makeMl({ uid: 'ml-2', writer: false })] });
     expect(component.showAutoSyncButton()).toBe(false);
   });
+
+  it('drops a config-only override when its uid disappears from the fetch entirely, not just when sync_mode is confirmed (dealako #4899 review)', async () => {
+    await createFixture({ associatedMailingLists: [makeMl({ uid: 'ml-1', sync_mode: undefined })] });
+    const mlService = TestBed.inject(MailingListService) as unknown as { getMailingListsByCommittee: ReturnType<typeof vi.fn> };
+
+    // This override is a config-only change (not a pending add — onSyncSettingsUpdated never calls
+    // markPendingAddMl), so it gets no pendingAddMlUids exemption from the prune loop.
+    component.onSyncSettingsUpdated(makeMl({ uid: 'ml-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
+    expect((component as any).associatedMlOverrides().size).toBe(1);
+
+    // The next committee refetch comes back without ml-1 at all (unlinked outside this component) —
+    // distinct from the "drops the override once a refetch confirms the same sync_mode" case above,
+    // which returns the uid with a matching sync_mode rather than omitting it.
+    mlService.getMailingListsByCommittee.mockReturnValue(of([]));
+    component.retryMlRefresh();
+    await fixture.whenStable();
+
+    // A single miss is not enough — the prune loop requires two consecutive misses before deleting a
+    // non-pending override, since one absence alone isn't proof of an external unlink rather than a
+    // transient index false-negative (dealako #4899 review).
+    expect((component as any).associatedMlOverrides().size).toBe(1);
+    expect(component.associatedMailingLists().map((m) => m.uid)).toContain('ml-1');
+
+    component.retryMlRefresh();
+    await fixture.whenStable();
+
+    expect((component as any).associatedMlOverrides().size).toBe(0);
+    expect(component.associatedMailingLists()).toEqual([]);
+  });
+
+  it('exempts a pending-add override from the prune loop while pruning a sibling config-only override missing from the same fetch (dealako #4899 review)', async () => {
+    const CONFIG_ML = makeMl({ uid: 'ml-config', sync_mode: undefined });
+    const NEW_ML = makeMl({ uid: 'ml-new', committees: [] });
+    const getMailingListsByCommittee = vi.fn().mockReturnValue(of([CONFIG_ML]));
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee,
+            getMailingListsByProject: vi.fn(() => of([NEW_ML])),
+            getMailingList: vi.fn(() => of(NEW_ML)),
+            updateMailingList: vi.fn(() => of(NEW_ML)),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // ml-config gets a config-only override (no pending-add marking).
+    component.onSyncSettingsUpdated(makeMl({ uid: 'ml-config', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
+    await fixture.whenStable();
+    // ml-new is a genuine pending add, which does mark pendingAddMlUids.
+    (component as any).saveMailingListAssociation(new Set(['ml-new']), new Set(), new Map([['ml-new', MailingListSyncMode.MANUAL]]));
+    await fixture.whenStable();
+
+    expect((component as any).associatedMlOverrides().size).toBe(2);
+
+    // The next committee refetch omits both uids — index lag for the pending add, external unlink
+    // for the config-only override. Only the pending add is exempt from pruning. The config-only
+    // override needs a second consecutive miss before it's actually pruned (dealako #4899 review).
+    getMailingListsByCommittee.mockReturnValue(of([]));
+    component.retryMlRefresh();
+    await fixture.whenStable();
+    component.retryMlRefresh();
+    await fixture.whenStable();
+
+    const uids = component.associatedMailingLists().map((m) => m.uid);
+    expect(uids).toContain('ml-new');
+    expect(uids).not.toContain('ml-config');
+  });
+
+  it('renders the stale-data copy (not the no-data copy) when rows still exist during a failed refresh (dealako #4899 review)', async () => {
+    const ML = makeMl({ uid: 'ml-1' });
+    const getMailingListsByCommittee = vi
+      .fn()
+      .mockReturnValueOnce(of([ML]))
+      .mockReturnValue(throwError(() => new Error('network error')));
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee,
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The refresh fails, but rows from the earlier successful fetch (ml-1) are still present.
+    component.retryMlRefresh();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.mlRefreshFailed()).toBe(true);
+    expect(component.associatedMailingLists().length).toBeGreaterThan(0);
+    const notice = fixture.nativeElement.querySelector('[data-testid="settings-ml-refresh-failed-notice"]');
+    expect(notice.textContent).toContain('may be out of date');
+    expect(notice.textContent).not.toContain("Couldn't load mailing lists");
+  });
+
+  it('renders the no-data copy (not the stale-data copy) when no rows exist during a failed refresh (dealako #4899 review)', async () => {
+    const getMailingListsByCommittee = vi
+      .fn()
+      .mockReturnValueOnce(of([]))
+      .mockReturnValue(throwError(() => new Error('network error')));
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee,
+            getMailingListsByProject: vi.fn(() => of([])),
+            updateMailingList: vi.fn(() => of({})),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // No row has ever existed, so the committee fetch that fails never had anything to keep stale.
+    component.retryMlRefresh();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.mlRefreshFailed()).toBe(true);
+    expect(component.associatedMailingLists().length).toBe(0);
+    const notice = fixture.nativeElement.querySelector('[data-testid="settings-ml-refresh-failed-notice"]');
+    expect(notice.textContent).toContain("Couldn't load mailing lists for this group.");
+    expect(notice.textContent).not.toContain('may be out of date');
+  });
 });

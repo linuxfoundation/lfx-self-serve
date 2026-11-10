@@ -183,6 +183,15 @@ export class CommitteeSettingsTabComponent {
   // tap), or on committee change (see the constructor).
   private readonly pendingAddMlUids = signal<ReadonlySet<string>>(new Set());
 
+  // Per-uid consecutive-miss counter for the prune loop below: a non-pending override whose uid is
+  // absent from a fetch is not deleted on its first miss, only once this reaches 2. A single absence
+  // could be a transient false-negative from the committee-fetch's underlying index rather than proof
+  // the list was actually unlinked (dealako #4899 review — no guarantee was found that a sync_mode-only
+  // PUT can't momentarily drop a still-linked list from the index). Reset for a uid the moment it
+  // reappears in a fetch (see the refresh pipeline's tap below), or on committee change (see the
+  // constructor).
+  private readonly overrideMissCounts = signal<ReadonlyMap<string, number>>(new Map());
+
   // Form
   public form = new FormGroup({
     // pattern(/\S/) rejects a whitespace-only name, which `required` alone accepts and persistSettings would then silently drop.
@@ -470,6 +479,10 @@ export class CommitteeSettingsTabComponent {
           // Same leak as both overrides above — a pending-add marking from a different committee must
           // not treat an unrelated mailing list of the same uid on this one as still pending (#4899 review).
           this.pendingAddMlUids.set(new Set());
+          // Same leak as the state above — a miss count accrued against a uid on the previous
+          // committee must not prune an unrelated mailing list of the same uid on this one (dealako
+          // #4899 review).
+          this.overrideMissCounts.set(new Map());
           // Force-close any drawer left open from the previous committee — see autoSyncDrawerRef's
           // doc comment (cursor #4899 review). Bypasses canClose deliberately: a card's in-flight PUT
           // is fire-and-forget (see MailingListSyncSettingsComponent.save) and still completes against
@@ -1051,43 +1064,51 @@ export class CommitteeSettingsTabComponent {
         next: (results) => {
           const failed = results.filter((r) => !r.success).length;
           const succeeded = results.filter((r) => r.success).length;
-          // Same override-invalidation reasoning as removeMailingList() above — a disassociation
-          // made through the picker dialog must not leave a stale pending direction behind either
-          // (#4899 review).
-          const removedUids = new Set(removed);
-          for (const r of results) {
-            if (r.success && removedUids.has(r.uid)) {
-              this.clearMlOverride(r.uid);
-              this.pruneLastGoodAssociatedList(r.uid);
-              this.suppressUnlinkedMl(r.uid);
+          // The committee can switch mid-flight (route navigation reusing this component instance)
+          // while this save's HTTP calls are still in flight — the constructor's committee-switch
+          // effect already resets associatedMlOverrides/unlinkedMlUids/pendingAddMlUids for the new
+          // committee, so writing into those maps here afterwards would resurrect state for a
+          // committee the user has already navigated away from (dealako #4899 review).
+          const stillSameCommittee = this.committee()?.uid === committee.uid;
+          if (stillSameCommittee) {
+            // Same override-invalidation reasoning as removeMailingList() above — a disassociation
+            // made through the picker dialog must not leave a stale pending direction behind either
+            // (#4899 review).
+            const removedUids = new Set(removed);
+            for (const r of results) {
+              if (r.success && removedUids.has(r.uid)) {
+                this.clearMlOverride(r.uid);
+                this.pruneLastGoodAssociatedList(r.uid);
+                this.suppressUnlinkedMl(r.uid);
+              }
             }
-          }
-          // An intentional relink (via this same picker) must not stay hidden behind a leftover
-          // suppression from an earlier unlink in this session (#4899 review — see
-          // clearUnlinkedMlSuppression's doc comment).
-          const addedUids = new Set(added);
-          for (const r of results) {
-            if (r.success && addedUids.has(r.uid)) {
-              this.clearUnlinkedMlSuppression(r.uid);
+            // An intentional relink (via this same picker) must not stay hidden behind a leftover
+            // suppression from an earlier unlink in this session (#4899 review — see
+            // clearUnlinkedMlSuppression's doc comment).
+            const addedUids = new Set(added);
+            for (const r of results) {
+              if (r.success && addedUids.has(r.uid)) {
+                this.clearUnlinkedMlSuppression(r.uid);
+              }
             }
-          }
-          // Replace (not just clear) the override for a successful direction change — leaving it
-          // cleared would fall straight back through to the pre-save fetched value until the next
-          // refresh resolves, flashing the old mode (Greptile #4899 review: "Drawer keeps an old mode").
-          // Covers both a config-only change and a brand-new add with an explicit direction — see
-          // addedMlByUid's doc comment above (cursor/copilot #4899 review).
-          for (const r of results) {
-            if (!r.success) continue;
-            const ml = configChangedMlByUid.get(r.uid) ?? addedMlByUid.get(r.uid);
-            const desired = ml ? syncModes.get(r.uid) : undefined;
-            if (ml && desired !== undefined) {
-              const overrides = new Map(this.associatedMlOverrides());
-              overrides.set(r.uid, { ...ml, sync_mode: desired });
-              this.associatedMlOverrides.set(overrides);
-              // Only an add-path override is a genuinely pending row — see pendingAddMlUids' doc
-              // comment (dealako #4899 review).
-              if (addedMlByUid.has(r.uid)) {
-                this.markPendingAddMl(r.uid);
+            // Replace (not just clear) the override for a successful direction change — leaving it
+            // cleared would fall straight back through to the pre-save fetched value until the next
+            // refresh resolves, flashing the old mode (Greptile #4899 review: "Drawer keeps an old mode").
+            // Covers both a config-only change and a brand-new add with an explicit direction — see
+            // addedMlByUid's doc comment above (cursor/copilot #4899 review).
+            for (const r of results) {
+              if (!r.success) continue;
+              const ml = configChangedMlByUid.get(r.uid) ?? addedMlByUid.get(r.uid);
+              const desired = ml ? syncModes.get(r.uid) : undefined;
+              if (ml && desired !== undefined) {
+                const overrides = new Map(this.associatedMlOverrides());
+                overrides.set(r.uid, { ...ml, sync_mode: desired });
+                this.associatedMlOverrides.set(overrides);
+                // Only an add-path override is a genuinely pending row — see pendingAddMlUids' doc
+                // comment (dealako #4899 review).
+                if (addedMlByUid.has(r.uid)) {
+                  this.markPendingAddMl(r.uid);
+                }
               }
             }
           }
@@ -1321,11 +1342,41 @@ export class CommitteeSettingsTabComponent {
                 // return at all means the list was unlinked outside this component — keeping it would
                 // let it resurrect via associatedMailingLists' pendingRows. A genuinely pending add is
                 // exempt: its uid is expected to be briefly missing until the query index catches up
-                // (dealako #4899 review).
+                // (dealako #4899 review). Pruning only happens on a uid's SECOND consecutive miss, not
+                // its first — absent a confirmable guarantee that this fetch can't transiently omit a
+                // still-linked list (e.g. delete+reindex semantics on a sync_mode-only PUT), one miss
+                // alone isn't proof of an external unlink (dealako #4899 review).
+                const missCounts = new Map(this.overrideMissCounts());
+                let missCountsChanged = false;
                 for (const uid of next.keys()) {
-                  if (!fetchedUids.has(uid) && !pendingAdds.has(uid)) {
-                    next.delete(uid);
+                  if (pendingAdds.has(uid)) {
+                    continue;
                   }
+                  if (fetchedUids.has(uid)) {
+                    if (missCounts.delete(uid)) {
+                      missCountsChanged = true;
+                    }
+                    continue;
+                  }
+                  const misses = (missCounts.get(uid) ?? 0) + 1;
+                  if (misses >= 2) {
+                    next.delete(uid);
+                    missCounts.delete(uid);
+                  } else {
+                    missCounts.set(uid, misses);
+                  }
+                  missCountsChanged = true;
+                }
+                // Drop any miss count no longer backed by a tracked override (confirmed above, or
+                // pruned on this pass) so a stale count can't resurface against a later re-add.
+                for (const uid of missCounts.keys()) {
+                  if (!next.has(uid)) {
+                    missCounts.delete(uid);
+                    missCountsChanged = true;
+                  }
+                }
+                if (missCountsChanged) {
+                  this.overrideMissCounts.set(missCounts);
                 }
                 if (next.size !== overrides.size) {
                   this.associatedMlOverrides.set(next);
