@@ -168,12 +168,12 @@ export class MentorProgramDetailComponent {
    * whatever the outcome: a 409 means the task is no longer awaiting review, and a 403 or 404 that the row is stale.
    */
   protected onTaskReviewRequested(request: MentorshipMentorTaskReviewRequest): void {
-    const { taskId, status } = request;
+    const { taskId, status, reason } = request;
     if (this.reviewingTaskIds().includes(taskId)) return;
     const programId = this.programId();
     this.reviewingTaskIds.update((taskIds) => [...taskIds, taskId]);
     const settle = (): void => this.reviewingTaskIds.update((taskIds) => taskIds.filter((id) => id !== taskId));
-    this.taskReviewService.review(taskId, status).subscribe(() => this.refreshDetail(programId, settle));
+    this.taskReviewService.review(taskId, status, reason).subscribe(() => this.refreshDetail(programId, settle));
   }
 
   /** Not tied to the page: a save, and its toast, finish even if the mentor leaves first. */

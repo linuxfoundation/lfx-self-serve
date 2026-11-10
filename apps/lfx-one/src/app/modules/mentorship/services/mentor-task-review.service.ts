@@ -18,7 +18,7 @@ import { MessageService } from 'primeng/api';
 import { catchError, map, Observable, of } from 'rxjs';
 
 /**
- * Approves a mentee's submitted task or requests changes on it, and toasts the outcome, for the mentor program
+ * Approves a mentee's submitted task or requests changes on it with a reason, and toasts the outcome, for the mentor program
  * detail. The caller handles no error: `review` emits `true` once the decision is saved and `false` when it was
  * not, after showing why. A 403 (no longer a mentor of the program), a 404 (the task is gone) and a 409 (the task
  * is no longer awaiting review) get their own copy; the impersonation guard's 403 shows the server's message.
@@ -28,8 +28,8 @@ export class MentorTaskReviewService {
   private readonly mentorService = inject(MentorshipMentorService);
   private readonly messageService = inject(MessageService);
 
-  public review(taskId: string, status: MentorshipMentorTaskReviewDecision): Observable<boolean> {
-    return this.mentorService.reviewMenteeTask(taskId, status).pipe(
+  public review(taskId: string, status: MentorshipMentorTaskReviewDecision, reason?: string): Observable<boolean> {
+    return this.mentorService.reviewMenteeTask(taskId, status, reason).pipe(
       map(() => {
         this.messageService.add({
           severity: 'success',
