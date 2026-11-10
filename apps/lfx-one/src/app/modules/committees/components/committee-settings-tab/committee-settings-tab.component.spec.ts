@@ -1813,6 +1813,58 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     expect(projectMl.committees.find((c: { uid: string }) => c.uid === 'committee-1').sync_mode).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
   });
 
+  it("appends this committee's entry to committees[] when an override is pending but the fetched list has none yet, instead of silently dropping it (#4899 review, cursor bugbot)", async () => {
+    const ML = makeMl({
+      uid: 'ml-1',
+      writer: true,
+      sync_mode: undefined,
+      committees: [],
+    });
+    await TestBed.configureTestingModule({
+      imports: [CommitteeSettingsTabComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: CommitteeService,
+          useValue: { updateCommittee: vi.fn(() => of(COMMITTEE)), getCommittee: vi.fn(() => of(COMMITTEE)), getCommitteesByProject: vi.fn(() => of([])) },
+        },
+        { provide: PersonaService, useValue: { currentPersona: signal('board-member') } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(true)) } },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        {
+          provide: MailingListService,
+          useValue: {
+            getMailingListsByCommittee: vi.fn(() => of([ML])),
+            getMailingListsByProject: vi.fn(() => of([ML])),
+            getMailingList: vi.fn(() => of(ML)),
+            updateMailingList: vi.fn(() => of(ML)),
+          },
+        },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        ConfirmationService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CommitteeSettingsTabComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('committee', COMMITTEE);
+    fixture.componentRef.setInput('canEdit', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.onSyncSettingsUpdated(makeMl({ uid: 'ml-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST, committees: [] }));
+    await fixture.whenStable();
+
+    const associatedMl = component.associatedMailingLists().find((m) => m.uid === 'ml-1');
+    expect(associatedMl?.committees?.find((c) => c.uid === COMMITTEE.uid)?.sync_mode).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+
+    const projectMl = (component as any).projectMailingLists().find((m: GroupsIOMailingList) => m.uid === 'ml-1');
+    expect(projectMl.committees.find((c: { uid: string }) => c.uid === COMMITTEE.uid).sync_mode).toBe(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+  });
+
   it('resets savingMlUids to empty once the drawer closes, and gates canClose on drawerSavingCount (#4899 review)', async () => {
     const closed = new Subject<void>();
     const openSpy = vi.fn(() => ({ closed }));

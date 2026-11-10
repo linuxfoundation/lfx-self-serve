@@ -1070,12 +1070,23 @@ export class CommitteeSettingsTabComponent {
   // only touched the top-level field left the picker seeded from the stale pre-save direction, since
   // the indexed read model never populates that field and every other reader resolves through
   // `committees[]` instead (#4899 review).
+  //
+  // Appends a new entry when this committee has none yet, rather than only remapping an existing
+  // one — a just-added list's fetched `committees[]` can still be missing this committee's row until
+  // the indexed read catches up with the association, and a plain `.map` would silently drop the
+  // override on the floor in that case, leaving `getMailingListCommitteeSync` resolving undefined
+  // and the picker treating the auto-sync slot as free indefinitely if a later refetch never lands
+  // the row either (cursor bugbot #4899 review).
   private patchCommitteeSyncMode(ml: GroupsIOMailingList, mode: MailingListSyncMode | undefined): GroupsIOMailingList {
     const committeeUid = this.committee().uid;
+    const committees = ml.committees ?? [];
+    const hasEntry = committees.some((c) => c.uid === committeeUid);
     return {
       ...ml,
       sync_mode: mode,
-      committees: ml.committees?.map((c) => (c.uid === committeeUid ? { ...c, sync_mode: mode } : c)),
+      committees: hasEntry
+        ? committees.map((c) => (c.uid === committeeUid ? { ...c, sync_mode: mode } : c))
+        : [...committees, { uid: committeeUid, sync_mode: mode }],
     };
   }
 
