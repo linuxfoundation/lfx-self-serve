@@ -551,20 +551,35 @@ describe('AddAccountDialogComponent — provider list (#4190)', () => {
     expect(button).not.toBeNull();
     expect(button?.disabled).toBe(true);
     button?.click();
+    root.querySelector<HTMLElement>('[data-testid="provider-action-hint-gitlab"]')?.click();
 
     expect(selectProvider).not.toHaveBeenCalled();
     expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')?.textContent).toBe('Coming soon');
   });
 
-  it('explains GitLab availability on hover and keyboard focus', async () => {
+  it.each([
+    { showEvent: 'focus', hideEvent: 'blur' },
+    { showEvent: 'mouseenter', hideEvent: 'mouseleave' },
+  ])('shows the GitLab tooltip on $showEvent and hides it on $hideEvent', async ({ showEvent, hideEvent }) => {
     setup();
     await fixture.whenStable();
     const hint = fixture.debugElement.query(By.css('[data-testid="provider-action-hint-gitlab"]'));
+    const target = hint.nativeElement as HTMLElement;
 
-    expect(hint.nativeElement.getAttribute('tabindex')).toBe('0');
-    expect(hint.nativeElement.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
-    expect(hint.injector.get(Tooltip, null)?.content).toBe('Coming soon');
-    expect(hint.injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
+    expect(target.getAttribute('tabindex')).toBe('0');
+    expect(target.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
+    expect(target.querySelector('.p-component')).toBeNull();
+    expect(hint.injector.get(Tooltip).tooltipEvent).toBe('both');
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+
+    // Dispatch to the actual focus/hover target, not directly to the directive's show method.
+    target.dispatchEvent(new Event(showEvent));
+    const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+    expect(tooltip?.textContent).toBe('Coming soon');
+    expect(tooltip?.style.display).toBe('inline-block');
+
+    target.dispatchEvent(new Event(hideEvent));
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('keeps the existing providers enabled and the email flow usable', async () => {
@@ -576,7 +591,7 @@ describe('AddAccountDialogComponent — provider list (#4190)', () => {
       const button = root.querySelector<HTMLButtonElement>(`[data-testid="provider-action-${provider}"] button`);
       expect(button).not.toBeNull();
       expect(button?.disabled).toBe(false);
-      expect(root.querySelector(`[data-testid="provider-action-hint-${provider}"]`)?.hasAttribute('tabindex')).toBe(false);
+      expect(root.querySelector(`[data-testid="provider-action-hint-${provider}"]`)).toBeNull();
     }
 
     root.querySelector<HTMLButtonElement>('[data-testid="provider-action-email"] button')?.click();

@@ -28,15 +28,7 @@
             <span class="text-[13px] leading-snug text-slate-500">{{ provider.description }}</span>
           </div>
           <!-- Keep GitLab unavailable until the #4151 rollout is verified; enable it in a follow-up PR. -->
-          <span
-            class="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-            [attr.tabindex]="provider.id === 'gitlab' ? 0 : null"
-            [attr.role]="provider.id === 'gitlab' ? 'group' : null"
-            [attr.aria-label]="provider.id === 'gitlab' ? 'GitLab account linking: Coming soon' : null"
-            [pTooltip]="provider.id === 'gitlab' ? 'Coming soon' : undefined"
-            tooltipPosition="top"
-            tooltipEvent="both"
-            [attr.data-testid]="'provider-action-hint-' + provider.id">
+          <span class="relative inline-flex">
             <lfx-button
               [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
               severity="secondary"
@@ -46,6 +38,18 @@
               [class.pointer-events-none]="provider.id === 'gitlab'"
               (onClick)="onSelectProvider(provider)"
               [attr.data-testid]="'provider-action-' + provider.id" />
+            @if (provider.id === 'gitlab') {
+              <!-- A child-free tooltip target keeps PrimeNG's focus listener off the disabled .p-component button. -->
+              <span
+                class="absolute inset-0 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                tabindex="0"
+                role="group"
+                aria-label="GitLab account linking: Coming soon"
+                pTooltip="Coming soon"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                data-testid="provider-action-hint-gitlab"></span>
+            }
           </span>
         </div>
       }
