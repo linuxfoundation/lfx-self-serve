@@ -75,6 +75,7 @@ import {
   map,
   merge,
   of,
+  pairwise,
   Subject,
   switchMap,
   take,
@@ -2019,20 +2020,21 @@ export class NewsletterManageComponent {
   }
 
   /**
-   * When the publications gate closes before a new draft's first save, the save would quietly make
-   * a one-off newsletter. Clear the picked publication and tell the author instead. A gate that has
-   * never opened is skipped, so a slow flag load does not clear a ?publication= preselect.
+   * When the enhanced-editor flag turns off before a new draft's first save, the save would quietly
+   * make a one-off newsletter. Clear the picked publication and tell the author instead. Only the
+   * flag is watched: a project switch also closes the gate, but the picker already clears the
+   * selection then. pairwise() skips a flag that has never been on, so a slow flag load does not
+   * clear a ?publication= preselect. Repo convention forbids effect() for imperative side effects
+   * (see initSchedulePastGuard), so the signal is bridged to an observable.
    */
   private initPublicationGateClose(): void {
-    let gateWasOpen = false;
-    effect(() => {
-      const enabled = this.publicationsEnabled();
-      untracked(() => {
-        if (enabled) {
-          gateWasOpen = true;
-          return;
-        }
-        if (!gateWasOpen || this.isEditMode() || this.selectedPublication() === null) return;
+    toObservable(this.enhancedEditorEnabled)
+      .pipe(
+        pairwise(),
+        filter(([was, now]) => was && !now && !this.isEditMode() && this.selectedPublication() !== null),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
         this.selectedPublication.set(null);
         this.messageService.add({
           severity: 'warn',
@@ -2040,7 +2042,6 @@ export class NewsletterManageComponent {
           detail: 'Publications are turned off, so this draft will be saved as a one-off newsletter.',
         });
       });
-    });
   }
 
   private notifyDraftSaved(): void {

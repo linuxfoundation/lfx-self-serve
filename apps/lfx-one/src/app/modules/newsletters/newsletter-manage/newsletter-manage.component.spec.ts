@@ -51,6 +51,7 @@ interface ManageApi {
 
 describe('NewsletterManageComponent publications (#4349)', () => {
   let flag: WritableSignal<boolean>;
+  let context: WritableSignal<typeof CONTEXT>;
   let newsletterService: {
     createNewsletter: ReturnType<typeof vi.fn>;
     getNewsletter: ReturnType<typeof vi.fn>;
@@ -76,6 +77,7 @@ describe('NewsletterManageComponent publications (#4349)', () => {
 
   beforeEach(() => {
     flag = signal(true);
+    context = signal(CONTEXT);
     newsletterService = {
       createNewsletter: vi.fn(() => of({ id: 'n-1', version: 1, body_html: '<p>Body</p>' } as Newsletter)),
       getNewsletter: vi.fn(),
@@ -92,7 +94,7 @@ describe('NewsletterManageComponent publications (#4349)', () => {
         { provide: NewsletterService, useValue: newsletterService },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => flag } },
         { provide: CommitteeService, useValue: { getCommitteesByProjectOrThrow: () => of(committees) } },
-        { provide: ProjectContextService, useValue: { activeContext: signal(CONTEXT), activeContextUid: signal('p-1') } },
+        { provide: ProjectContextService, useValue: { activeContext: context, activeContextUid: signal('p-1') } },
         { provide: ProjectService, useValue: { getProjectStrict: () => of(null) } },
         { provide: UserService, useValue: { user: signal({ name: 'Test Editor', email: 'editor@example.com' }) } },
         { provide: MessageService, useValue: { add: messageAdd } },
@@ -453,6 +455,19 @@ describe('NewsletterManageComponent publications (#4349)', () => {
     TestBed.tick();
 
     expect(api.selectedPublication()?.id).toBe(PUBLICATION.id);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Publications unavailable' }));
+  });
+
+  it('does not warn about publications when a project switch closes the gate', () => {
+    const { api } = newComponent();
+    TestBed.tick();
+    api.onPublicationChange({ ...PUBLICATION, template_key: undefined });
+    TestBed.tick();
+
+    context.set({ ...CONTEXT, slug: 'not-a-pilot-project' });
+    TestBed.tick();
+
+    expect(api.showPublicationPicker()).toBe(false);
     expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Publications unavailable' }));
   });
 });
