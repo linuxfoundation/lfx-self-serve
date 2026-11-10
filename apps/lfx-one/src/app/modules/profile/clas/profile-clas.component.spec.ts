@@ -60,11 +60,15 @@ describe('ProfileClasComponent', () => {
   /** The list's own manager flags come from the row, so this stays uncalled unless the dialog opens. */
   let getClaManagersSpy: ReturnType<typeof vi.fn>;
 
-  async function render(agreements: MyClaAgreement[], options: { impersonating?: boolean } = {}): Promise<void> {
+  async function render(
+    agreements: MyClaAgreement[],
+    options: { impersonating?: boolean; githubLinked?: boolean; myClas$?: Observable<MyClasResponse> } = {}
+  ): Promise<void> {
     const response: MyClasResponse = {
       agreements,
-      identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
+      identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: options.githubLinked ?? true },
     };
+    const myClas$ = options.myClas$ ?? of(response);
     const getClaManagers = vi.fn((id: string) => of<ClaManagerList>({ signatureId: id, managers: [], resultCount: 0 }));
     getClaManagersSpy = getClaManagers;
 
@@ -74,7 +78,7 @@ describe('ProfileClasComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn(), getClaManagers } },
+        { provide: MyClasService, useValue: { getMyClas: () => myClas$, getPdfUrl: vi.fn(), getClaManagers } },
         // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
         // service would drag HttpClient into a TestBed that has no reason to make requests.
         { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
@@ -155,6 +159,51 @@ describe('ProfileClasComponent', () => {
     const urlTree = ctaButton.injector.get(RouterLink).urlTree;
     if (!urlTree) throw new Error('empty state CTA resolved no urlTree');
     expect(TestBed.inject(Router).serializeUrl(urlTree)).toBe('/docs/account/my-clas');
+  });
+
+  describe('account-linking banner (#4191)', () => {
+    const LINK_TEXT = 'Link your Email, GitHub or GitLab accounts →';
+
+    /** The banner's Identities link, or null when no banner rendered. */
+    function bannerLink(): { text: string; url: string } | null {
+      const banner = fixture.debugElement.query(By.css('[data-testid="my-clas-info-banner"]'));
+      if (!banner) return null;
+      const link = banner.query(By.directive(RouterLink));
+      if (!link) throw new Error('banner rendered no router link');
+      const urlTree = link.injector.get(RouterLink).urlTree;
+      if (!urlTree) throw new Error('banner link resolved no urlTree');
+      return { text: (link.nativeElement as HTMLElement).textContent?.trim() ?? '', url: TestBed.inject(Router).serializeUrl(urlTree) };
+    }
+
+    it('names Email, GitHub and GitLab and still opens Identities', async () => {
+      await render([agreement()]);
+
+      expect(bannerLink()).toEqual({ text: LINK_TEXT, url: '/profile/identities' });
+    });
+
+    it('stays visible for a caller without a linked GitHub account, alongside GitLab-signed agreements', async () => {
+      await render([agreement({ id: 's-gl', signedVia: 'gitlab', signedAs: 'tanuki-dev' })], { githubLinked: false });
+
+      expect(bannerLink()).toEqual({ text: LINK_TEXT, url: '/profile/identities' });
+      expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-gl"]')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-testid="agreement-signed-as-s-gl"]')?.textContent?.trim()).toBe('Signed as tanuki-dev (GitLab)');
+    });
+
+    it('shows above the empty state and while the list is still loading', async () => {
+      await render([], { githubLinked: false });
+      expect(bannerLink()?.text).toBe(LINK_TEXT);
+      expect(fixture.nativeElement.querySelector('[data-testid="my-clas-empty-state"]')).toBeTruthy();
+
+      await render([], { myClas$: NEVER });
+      expect(bannerLink()?.text).toBe(LINK_TEXT);
+    });
+
+    it('gives way to the error state when the list fails to load', async () => {
+      await render([], { myClas$: throwError(() => new Error('boom')) });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="my-clas-error"]')).toBeTruthy();
+      expect(bannerLink()).toBeNull();
+    });
   });
 
   it('shows the mockup sentence only for a completed Approved List miss', async () => {

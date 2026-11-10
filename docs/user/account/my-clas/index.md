@@ -4,7 +4,7 @@ description: View your signed Individual CLAs and your Corporate CLA coverage in
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ccla, identities, signing]
-last_updated: 2026-11-05
+last_updated: 2026-11-10
 intercom_collection: Account
 ---
 
@@ -22,7 +22,7 @@ For broader EasyCLA concepts (what a CLA is, project and corporate consoles, tro
 2. Select [**Profile & Account**](/profile) from the left navigation sidebar.
 3. Open the **CLAs** tab, or go directly to `/profile/clas`.
 
-Agreements are matched from your signed-in session and your linked [Email and GitHub identities](/profile/identities). You never search or type a project name to see your existing agreements.
+Agreements are matched from your signed-in session and your linked [Email, GitHub and GitLab identities](/profile/identities). You never search or type a project name to see your existing agreements.
 
 ## What is the difference between ICLA and CCLA?
 
@@ -35,7 +35,7 @@ An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself. A **CCLA**
 
 ## What does the CLAs list show?
 
-An info banner at the top of the tab reads: _Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities. Missing one? Link your Email or GitHub accounts →_. The link opens [Identities](/profile/identities).
+An info banner at the top of the tab reads: _Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities. Missing one? Link your Email, GitHub or GitLab accounts →_. The link opens [Identities](/profile/identities).
 
 When agreements are found, the CLAs tab shows a table with these columns:
 
@@ -183,17 +183,17 @@ A recorded request or message is not a failure on your part and does not need re
 
 ## Why don't my signed CLAs show up?
 
-The CLAs tab only finds agreements that match an identity linked to your LFX account. Matching today uses your LF username, verified emails, and linked GitHub accounts. A CLA can be missing from the list when:
+The CLAs tab only finds agreements that match an identity linked to your LFX account. Matching today uses your LF username, verified emails, and linked GitHub and GitLab accounts. A CLA can be missing from the list when:
 
-- The **email** or **GitHub** account you used when signing is **not linked** to this LFX profile
+- The **email**, **GitHub** or **GitLab** account you used when signing is **not linked** to this LFX profile
 - You signed under a **work or secondary email** that is not among your verified / linked emails
-- You signed with a **GitHub username** that is not connected under Identities
+- You signed with a **GitHub** or **GitLab username** that is not connected under Identities
 
 **What to do:**
 
 1. Open [Identities](/profile/identities).
-2. Link the Email or GitHub accounts you used when signing.
-3. Return to **CLAs** — newly linked Email/GitHub identities are included on the next load.
+2. Link the Email or GitHub accounts you used when signing. A GitLab account already connected to your profile is matched too; connecting a new GitLab account from Identities is coming soon.
+3. Return to **CLAs** — newly linked Email, GitHub and GitLab identities are included on the next load.
 
 If an agreement is still missing after that, see [EasyCLA troubleshooting](https://docs.linuxfoundation.org/lfx/easycla/v2-current/getting-started/easycla-troubleshooting).
 
@@ -215,6 +215,6 @@ The CLAs tab shows your agreements and starts requests about them. It never:
 
 - [Account overview](../) — all account areas and navigation
 - [Account FAQ](../faq/) — short answers to common account questions, including CLAs
-- [Identities](../identities/) — link the Email and GitHub accounts your CLAs are matched against
+- [Identities](../identities/) — link the Email and GitHub accounts your CLAs are matched against; connected GitLab accounts are matched too
 - [Edit your profile](../../profile/edit-profile/) — name, photo, About Me, primary email, and location
 - [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts, consoles, and troubleshooting outside Self Serve
