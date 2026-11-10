@@ -34,8 +34,9 @@
         [recipientCountLoading]="recipientCountLoading()"
         [savedLabel]="savedLabel()"
         [displayName]="displayName()"
-        [edName]="edName()"
+        [edName]="senderName()"
         [edEmail]="edEmail()"
+        [replyToEmail]="replyToEmail()"
         [canSend]="canSend()"
         [liveSendLocked]="liveSendLocked()"
         [canSendTest]="canSendTest()"
@@ -178,6 +179,20 @@
             <div class="p-6 md:p-8">
               <p-step-panel [value]="1" data-testid="newsletter-manage-panel-1">
                 <ng-template #content>
+                  @if (showPublicationPicker()) {
+                    <lfx-newsletter-publication-picker
+                      class="mb-6 block"
+                      [projectUid]="projectUid()"
+                      [selected]="activePublication()"
+                      [preselectUid]="preselectPublicationUid()"
+                      [readOnly]="isEditMode()"
+                      [hasContent]="bodyFilled()"
+                      [layoutTemplateKey]="form.controls.bodyLayout.value?.template_key ?? null"
+                      [returnToNewsletterUid]="newsletterId()"
+                      [unsavedChanges]="publicationFormLosesWork()"
+                      (publicationChange)="onPublicationChange($event)">
+                    </lfx-newsletter-publication-picker>
+                  }
                   <lfx-newsletter-audience-step
                     [form]="form"
                     [projectUid]="projectUid()"
@@ -203,6 +218,7 @@
                     [savedLabel]="savedLabel()"
                     [blocksEnabled]="blocksEnabled()"
                     [newDraft]="!isEditMode()"
+                    [lockedTemplateKey]="lockedTemplateKey()"
                     [projectUid]="projectUid()"
                     (generated)="onGenerated($event)">
                   </lfx-newsletter-content-step>
@@ -216,9 +232,9 @@
                     [subject]="form.controls.subject.value"
                     [recipientCount]="recipientCount()"
                     [committeeCount]="form.controls.committeeUids.value.length"
-                    [edName]="edName()"
+                    [edName]="senderName()"
                     [displayName]="displayName()"
-                    [edReplyEmail]="edEmail()"
+                    [edReplyEmail]="replyToEmail()"
                     [edEmail]="edEmail()"
                     [canSend]="canSend()"
                     [liveSendLocked]="liveSendLocked()"

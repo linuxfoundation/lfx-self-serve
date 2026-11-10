@@ -1,0 +1,60 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4" data-testid="newsletter-publication-picker">
+  @if (readOnly()) {
+    <div class="flex items-center justify-between gap-3">
+      <div class="text-sm text-gray-700" data-testid="newsletter-publication-picker-readonly">
+        Edition of <span class="font-medium text-gray-900">{{ selected()?.name }}</span>
+      </div>
+      @if (selected(); as publication) {
+        <button
+          type="button"
+          class="text-xs font-medium text-blue-600 hover:text-blue-800"
+          data-testid="newsletter-publication-picker-edit"
+          (click)="openPublicationForm([publication.id, 'edit'])">
+          Edit publication
+        </button>
+      }
+    </div>
+  } @else {
+    <div class="flex items-center justify-between gap-3">
+      <label id="newsletter-publication-picker-label" class="text-sm font-medium text-gray-700">Publication</label>
+      <div class="flex items-center gap-4">
+        @if (selected(); as publication) {
+          <button
+            type="button"
+            class="text-xs font-medium text-blue-600 hover:text-blue-800"
+            data-testid="newsletter-publication-picker-edit"
+            (click)="openPublicationForm([publication.id, 'edit'])">
+            Edit publication
+          </button>
+        }
+        <button
+          type="button"
+          class="text-xs font-medium text-blue-600 hover:text-blue-800"
+          data-testid="newsletter-publication-picker-new"
+          (click)="openPublicationForm(['create'])">
+          New publication
+        </button>
+      </div>
+    </div>
+    <lfx-select
+      [form]="form"
+      control="publication"
+      [options]="options()"
+      [loading]="loading()"
+      ariaLabelledBy="newsletter-publication-picker-label"
+      styleClass="w-full"
+      dataTest="newsletter-publication-picker-select">
+    </lfx-select>
+    <p class="text-xs text-gray-500">An edition inherits the publication's template set, sender name and reply-to. It cannot be moved after the first save.</p>
+    @if (loadFailed()) {
+      <p class="text-xs text-red-600" data-testid="newsletter-publication-picker-error">
+        Publications could not be loaded. You can still create a one-off newsletter.
+      </p>
+    }
+  }
+</div>
+
+<p-confirmDialog key="newsletter-publication-picker" data-testid="newsletter-publication-picker-confirm"></p-confirmDialog>

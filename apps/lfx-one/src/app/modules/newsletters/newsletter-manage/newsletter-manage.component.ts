@@ -27,6 +27,7 @@ import {
   NewsletterAudienceEmailAdd,
   NewsletterCancelScheduleResult,
   NewsletterManageViewMode,
+  NewsletterPublication,
   NewsletterScheduleResult,
   NewsletterScheduleWindowError,
   NewsletterSendResult,
@@ -39,6 +40,7 @@ import {
   formatRelativeTime,
   formatTo12HourInTimezone,
   getTimezoneUtcOffsetString,
+  getNewsletterPublicationErrorMessage,
   getUserTimezone,
   isNewsletterBlocksEnabled,
   isNewsletterLiveSendLocked,
@@ -82,6 +84,7 @@ import {
 import { NewsletterAudienceStepComponent } from '../components/newsletter-audience-step/newsletter-audience-step.component';
 import { NewsletterContentStepComponent } from '../components/newsletter-content-step/newsletter-content-step.component';
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
+import { NewsletterPublicationPickerComponent } from '../components/newsletter-publication-picker/newsletter-publication-picker.component';
 import { NewsletterReviewComponent } from '../components/newsletter-review/newsletter-review.component';
 import { NewsletterSendStepComponent } from '../components/newsletter-send-step/newsletter-send-step.component';
 
@@ -98,6 +101,7 @@ import { NewsletterSendStepComponent } from '../components/newsletter-send-step/
     NewsletterContentStepComponent,
     NewsletterSendStepComponent,
     NewsletterPreviewDrawerComponent,
+    NewsletterPublicationPickerComponent,
     NewsletterReviewComponent,
   ],
   providers: [ConfirmationService],
@@ -225,12 +229,59 @@ export class NewsletterManageComponent {
   });
   public readonly hasContext: Signal<boolean> = computed(() => this.projectUid().length > 0);
 
+  // === Publications (#4349) ===
+  // Publications need the block composer: an edition of a publication with a template set has to
+  // be a layout, so they follow the same flag and pilot-project gate. With the flag off the picker
+  // is hidden and create requests are unchanged; an opened edition still shows its publication's
+  // sender details and template set, because the service applies them either way.
+  public readonly publicationsEnabled: Signal<boolean> = computed(() => this.enhancedEditorEnabled() && this.blocksEnabled());
+  // The publication chosen in the create flow. Null means a one-off newsletter (an implicit publication).
+  protected readonly selectedPublication = signal<NewsletterPublication | null>(null);
+  // The publication of a loaded draft. Read whatever the flag says, because the service applies its
+  // sender details and template set to every edition.
+  private readonly draftPublicationUid = signal<string | null>(null);
+  private readonly draftPublication = signal<NewsletterPublication | null>(null);
+  private readonly draftPublicationReadFailed = signal<boolean>(false);
+  // The audience a publication filled in, so switching publication replaces it rather than keeping it.
+  private readonly audienceFromPublication = signal<string[] | null>(null);
+  // Carries a publication just created or edited from the form back to the create flow, via ?publication=.
+  protected readonly preselectPublicationUid = signal<string | null>(this.route.snapshot.queryParamMap.get('publication'));
+  // A picked publication only exists with the flag on (the picker is hidden otherwise); an opened
+  // edition's publication applies with the flag off too.
+  public readonly activePublication: Signal<NewsletterPublication | null> = computed(() => {
+    const publication = this.selectedPublication() ?? this.draftPublication();
+    return publication && !publication.implicit ? publication : null;
+  });
+  public readonly showPublicationPicker: Signal<boolean> = computed(
+    () => this.publicationsEnabled() && (!this.isEditMode() || this.activePublication() !== null)
+  );
+  // Opening the publication form leaves this page. A new draft loses anything typed, and a saved
+  // one loses edits the autosave has not sent yet.
+  public readonly publicationFormLosesWork: Signal<boolean> = computed(() =>
+    this.isEditMode() ? this.isDirty() : this.audienceFilled() || this.subjectFilled() || this.bodyFilled()
+  );
+  // When an edition's publication cannot be read, the edition stays on its own template set rather
+  // than unlocking an editor the service would refuse to save.
+  public readonly lockedTemplateKey: Signal<string | null> = computed(() => {
+    const publicationKey = this.activePublication()?.template_key;
+    if (publicationKey) return publicationKey;
+    return this.draftPublicationReadFailed() ? (this.bodyLayoutValue()?.template_key ?? null) : null;
+  });
+
   // === Auth-derived ===
   public readonly edName: Signal<string> = computed(() => {
     const user = this.userService.user();
     return user?.name || user?.given_name || user?.nickname || 'Executive Director';
   });
   public readonly edEmail: Signal<string> = computed(() => this.userService.user()?.email ?? '');
+  // What the review and send cards show. A publication's sender name and reply-to replace the sender's at send.
+  public readonly senderName: Signal<string> = computed(() => this.activePublication()?.from_name || this.edName());
+  // When an edition's publication cannot be read its reply-to is unknown, so none is shown rather than the sender's own.
+  public readonly replyToEmail: Signal<string> = computed(() => {
+    const publication = this.activePublication();
+    if (publication?.reply_to_email) return publication.reply_to_email;
+    return this.draftPublicationReadFailed() ? '' : this.edEmail();
+  });
 
   // === Form mirrors ===
   // Public: the audience step consumes this directly rather than re-deriving its own
@@ -540,6 +591,30 @@ export class NewsletterManageComponent {
     this.initScheduleClock();
     this.initSchedulePastGuard();
     this.initScheduleFieldLock();
+    this.initDraftPublication();
+  }
+
+  /**
+   * The picker has already confirmed any content loss. An edition on a template set has to use that
+   * set, so a body from another set (or the basic editor) is cleared rather than failing with a 400
+   * on the next save. An empty audience takes the publication's default, and an audience a previous
+   * publication filled in is replaced.
+   */
+  protected onPublicationChange(publication: NewsletterPublication | null): void {
+    this.preselectPublicationUid.set(null);
+    const templateKey = publication?.template_key;
+    if (templateKey && this.form.controls.bodyLayout.value?.template_key !== templateKey) {
+      this.form.patchValue({ bodyLayout: null, bodyHtml: '' });
+    }
+    const current = this.form.controls.committeeUids.value;
+    const filled = this.audienceFromPublication();
+    const untouched = current.length === 0 || (filled !== null && filled.length === current.length && filled.every((uid, i) => uid === current[i]));
+    if (untouched) {
+      const next = [...(publication?.committee_uids ?? [])];
+      this.form.controls.committeeUids.setValue(next);
+      this.audienceFromPublication.set(next.length > 0 ? next : null);
+    }
+    this.selectedPublication.set(publication);
   }
 
   protected goToStep(step: number | undefined): void {
@@ -1612,6 +1687,28 @@ export class NewsletterManageComponent {
       });
   }
 
+  // Loads the publication of an opened edition to learn its template set and sender details. This is
+  // a read, so it runs with the flag off too: the service applies both to the edition either way. A
+  // failed read hides the picker and keeps the edition on its own template set (see lockedTemplateKey).
+  private initDraftPublication(): void {
+    toObservable(this.draftPublicationUid)
+      .pipe(
+        switchMap((uid) => {
+          this.draftPublicationReadFailed.set(false);
+          if (!uid) return of(null);
+          return this.newsletterService.getPublication(this.projectUid(), uid).pipe(
+            catchError((error: unknown) => {
+              console.error('[NewsletterManage] Failed to load the draft publication', error);
+              this.draftPublicationReadFailed.set(true);
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((publication) => this.draftPublication.set(publication));
+  }
+
   private populateFormFromDraft(draft: Newsletter): void {
     this.version.set(draft.version);
     this.newsletterStatus.set(draft.status);
@@ -1619,6 +1716,7 @@ export class NewsletterManageComponent {
     const subject = draft.subject ?? '';
     const bodyHtml = draft.body_html ?? '';
     const bodyLayout = draft.body_layout ?? null;
+    this.draftPublicationUid.set(draft.publication_uid ?? null);
 
     // scheduled_at hydration mirrors populateFormWithMeetingData in
     // the meeting composer form service: convert the saved UTC instant into the
@@ -1843,7 +1941,10 @@ export class NewsletterManageComponent {
       );
     }
 
-    const create: CreateNewsletterRequest = basePayload;
+    // publication_uid is added only for a publication picked with the flag on, so with the flag
+    // off the request is exactly what it was before publications existed.
+    const publicationUid = this.publicationsEnabled() ? this.selectedPublication()?.id : undefined;
+    const create: CreateNewsletterRequest = publicationUid ? { ...basePayload, publication_uid: publicationUid } : basePayload;
     return this.newsletterService.createNewsletter(projectUid, create).pipe(
       take(1),
       finalize(clearSavingFlags),
@@ -1884,6 +1985,12 @@ export class NewsletterManageComponent {
     });
   }
 
+  /** A clear message for the 400s a publication's rules produce, or null for any other failure. */
+  private publicationSaveError(err: HttpErrorResponse): string | null {
+    if (err?.status !== 400) return null;
+    return getNewsletterPublicationErrorMessage(extractErrorMessage(err, ''));
+  }
+
   private handleSaveError(err: HttpErrorResponse, isManual: boolean) {
     if (err.status === 409) {
       this.messageService.add({
@@ -1896,7 +2003,7 @@ export class NewsletterManageComponent {
       this.messageService.add({
         severity: 'error',
         summary: isManual ? 'Save failed' : 'Autosave failed',
-        detail: err?.error?.message || err?.message || 'Could not save draft. Your changes are unsaved.',
+        detail: this.publicationSaveError(err) ?? (err?.error?.message || err?.message || 'Could not save draft. Your changes are unsaved.'),
         life: 8000,
       });
     }

@@ -38,17 +38,19 @@
         <div class="flex min-w-0 flex-1 flex-col gap-3 p-3" data-testid="newsletter-composer-panel">
           <!-- Blocks tab: the palette (searchable, categorized, draggable). ------- -->
           @if (activeTab() === 'blocks') {
-            <div class="flex flex-col gap-1.5" data-testid="newsletter-composer-template">
-              <label id="newsletter-composer-template-label" class="text-sm font-semibold text-gray-700">Template</label>
-              <lfx-select
-                [form]="templateForm"
-                control="template"
-                [options]="templateOptions()"
-                ariaLabelledBy="newsletter-composer-template-label"
-                styleClass="w-full"
-                dataTest="newsletter-composer-template-select">
-              </lfx-select>
-            </div>
+            @if (!templateLocked()) {
+              <div class="flex flex-col gap-1.5" data-testid="newsletter-composer-template">
+                <label id="newsletter-composer-template-label" class="text-sm font-semibold text-gray-700">Template</label>
+                <lfx-select
+                  [form]="templateForm"
+                  control="template"
+                  [options]="templateOptions()"
+                  ariaLabelledBy="newsletter-composer-template-label"
+                  styleClass="w-full"
+                  dataTest="newsletter-composer-template-select">
+                </lfx-select>
+              </div>
+            }
 
             <h3 class="text-sm font-semibold text-gray-700">Blocks</h3>
 

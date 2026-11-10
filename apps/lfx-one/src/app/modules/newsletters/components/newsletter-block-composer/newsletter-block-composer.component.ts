@@ -119,6 +119,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // A saved layout's own `template_key` takes precedence, and a saved keyless
   // layout uses the service's fallback set (resolved in ngOnInit).
   public readonly templateKey = input<string>(NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+  // True for an edition of a publication with a template set: the picker is hidden and the
+  // publication's set applies, so a save cannot move the edition off it (#4349).
+  public readonly templateLocked = input<boolean>(false);
   // The newsletter's OWNING project UID, used to scope the render-preview call.
   // Edit routes carry a `:projectUid` that can differ from the ambient lens
   // context (`activeContextUid`), so the owning UID must be threaded from the

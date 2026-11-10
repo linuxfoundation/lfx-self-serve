@@ -68,6 +68,9 @@ export class NewsletterContentStepComponent implements OnInit {
   // render-preview call is scoped to the newsletter's project (which an edit
   // route can carry distinct from the ambient lens context), not the active lens.
   public readonly projectUid = input<string | null>(null);
+  // The template set of the publication this edition belongs to, when it has one (#4349). The
+  // service then requires a block layout on that set, so Basic and the template picker are hidden.
+  public readonly lockedTemplateKey = input<string | null>(null);
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();
@@ -92,6 +95,9 @@ export class NewsletterContentStepComponent implements OnInit {
   // notice instead of the composer. Defaults false so SSR renders the desktop
   // shape; the browser reseeds it from matchMedia on init (see ngOnInit).
   protected readonly isMobile = signal<boolean>(false);
+
+  protected readonly templateLocked = computed(() => this.lockedTemplateKey() !== null);
+  protected readonly composerTemplateKey = computed(() => this.lockedTemplateKey() ?? NEWSLETTER_DEFAULT_TEMPLATE_KEY);
 
   // === Reactive form mirrors ===
   protected readonly subjectValue: Signal<string> = this.initControlValue('subject');
@@ -147,6 +153,10 @@ export class NewsletterContentStepComponent implements OnInit {
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
     if (layout !== null) {
       this.editorMode.set('blocks');
+    } else if (this.templateLocked()) {
+      // An edition on a template set has no basic editor, even on mobile, which shows the desktop notice.
+      this.editorMode.set('blocks');
+      this.seedStarterBlocks.set(this.newDraft() && !this.isMobile());
     } else if (this.newDraft() && !this.isMobile() && stripHtml(this.form().get('bodyHtml')?.value ?? '').length === 0) {
       this.seedStarterBlocks.set(true);
       this.editorMode.set('blocks');
@@ -169,6 +179,8 @@ export class NewsletterContentStepComponent implements OnInit {
     // Blocks is unavailable when the composer is gated off for this project, and
     // on mobile where the desktop drag-and-drop composer cannot be used.
     if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile())) return;
+    // An edition on a template set has to stay in blocks.
+    if (this.templateLocked()) return;
     if (mode === this.editorMode()) return;
     const leavingBlocks = this.editorMode() === 'blocks';
     // Read the LIVE control, not the memoized signal, so in-session blocks count.

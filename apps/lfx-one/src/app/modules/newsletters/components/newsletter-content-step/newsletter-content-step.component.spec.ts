@@ -81,7 +81,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
 
   // Build the fixture after matchMedia is stubbed so ngOnInit reads the intended
   // viewport. blocksEnabled is on (the composer's pilot gate) for every case here.
-  async function createWith(form: FormGroup, opts: { newDraft?: boolean } = {}): Promise<void> {
+  async function createWith(form: FormGroup, opts: { newDraft?: boolean; lockedTemplateKey?: string } = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [NewsletterContentStepComponent],
       providers: [provideNoopAnimations(), ConfirmationService, { provide: PLATFORM_ID, useValue: 'browser' }],
@@ -101,6 +101,7 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
     fixture.componentRef.setInput('form', form);
     fixture.componentRef.setInput('blocksEnabled', true);
     fixture.componentRef.setInput('newDraft', opts.newDraft ?? false);
+    fixture.componentRef.setInput('lockedTemplateKey', opts.lockedTemplateKey ?? null);
     await fixture.whenStable();
     fixture.detectChanges();
   }
@@ -147,6 +148,31 @@ describe('NewsletterContentStepComponent — mobile gating', () => {
 
     expect(q('newsletter-content-composer')).not.toBeNull();
     expect(StubBlockComposerComponent.seedStarters).toBe(true);
+  });
+
+  it('locks an edition on a template set to blocks and hides the editor toggle', async () => {
+    stubMatchMedia(false);
+    StubBlockComposerComponent.seedStarters = false;
+    await createWith(makeForm(null), { newDraft: true, lockedTemplateKey: 'aaif-weekly-agentic' });
+
+    expect(q('newsletter-content-editor-toggle')).toBeNull();
+    expect(q('newsletter-content-composer')).not.toBeNull();
+    expect(StubBlockComposerComponent.seedStarters).toBe(true);
+  });
+
+  it('keeps the editor toggle for an edition without a template set', async () => {
+    stubMatchMedia(false);
+    await createWith(makeForm(null), { newDraft: true });
+
+    expect(q('newsletter-content-editor-toggle')).not.toBeNull();
+  });
+
+  it('does not offer the Basic editor on mobile for an edition on a template set', async () => {
+    stubMatchMedia(true);
+    await createWith(makeForm(null), { newDraft: true, lockedTemplateKey: 'aaif-weekly-agentic' });
+
+    expect(q('newsletter-content-composer-mobile-notice')).not.toBeNull();
+    expect(q('newsletter-content-composer-mobile-switch')).toBeNull();
   });
 
   it('keeps a draft with an authored body on the basic editor', async () => {

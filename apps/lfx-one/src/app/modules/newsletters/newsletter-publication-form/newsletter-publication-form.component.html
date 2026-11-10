@@ -1,0 +1,104 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container px-8" data-testid="newsletter-publication-form">
+  <div class="mb-4">
+    <a
+      [routerLink]="backLink()"
+      [relativeTo]="route.parent"
+      [queryParams]="{ returnTo: null }"
+      queryParamsHandling="merge"
+      class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors"
+      data-testid="newsletter-publication-form-back">
+      <i class="fa-light fa-arrow-left mr-2" aria-hidden="true"></i>
+      Back to newsletter
+    </a>
+  </div>
+
+  <h1 class="mb-6" data-testid="newsletter-publication-form-title">{{ isEditMode() ? 'Edit publication' : 'New publication' }}</h1>
+
+  @if (loading()) {
+    <div class="flex flex-col gap-4" data-testid="newsletter-publication-form-loading">
+      <p-skeleton width="100%" height="2.5rem"></p-skeleton>
+      <p-skeleton width="100%" height="2.5rem"></p-skeleton>
+      <p-skeleton width="100%" height="2.5rem"></p-skeleton>
+    </div>
+  } @else {
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex max-w-2xl flex-col gap-5 rounded-lg border border-gray-200 bg-white p-6 shadow-sm" novalidate>
+      @if (errorMessage(); as message) {
+        <lfx-message severity="error" [text]="message" data-testid="newsletter-publication-form-error"></lfx-message>
+      }
+
+      <div class="flex flex-col gap-2">
+        <label for="newsletter-publication-name" class="text-sm font-medium text-gray-700">Name</label>
+        <lfx-input-text
+          id="newsletter-publication-name"
+          [form]="form"
+          control="name"
+          placeholder="For example, Weekly update"
+          styleClass="w-full"
+          data-testid="newsletter-publication-form-name">
+        </lfx-input-text>
+        @if (form.controls.name.touched && form.controls.name.invalid) {
+          <p class="text-xs text-red-600" data-testid="newsletter-publication-form-name-error">Enter a name of 200 characters or fewer.</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <label id="newsletter-publication-template-label" class="text-sm font-medium text-gray-700">Template set</label>
+        <lfx-select
+          [form]="form"
+          control="templateKey"
+          [options]="templateOptions()"
+          ariaLabelledBy="newsletter-publication-template-label"
+          styleClass="w-full"
+          dataTest="newsletter-publication-form-template">
+        </lfx-select>
+        <p class="text-xs text-gray-500">New editions use this template set. Changing it does not move editions already created.</p>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <label for="newsletter-publication-from-name" class="text-sm font-medium text-gray-700">Sender name (optional)</label>
+        <lfx-input-text
+          id="newsletter-publication-from-name"
+          [form]="form"
+          control="fromName"
+          placeholder="Shown as the From name"
+          styleClass="w-full"
+          data-testid="newsletter-publication-form-from-name">
+        </lfx-input-text>
+        @if (form.controls.fromName.touched && form.controls.fromName.invalid) {
+          <p class="text-xs text-red-600" data-testid="newsletter-publication-form-from-name-error">Enter a sender name of 100 characters or fewer.</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <label for="newsletter-publication-reply-to" class="text-sm font-medium text-gray-700">Reply-to address (optional)</label>
+        <lfx-input-text
+          id="newsletter-publication-reply-to"
+          [form]="form"
+          control="replyToEmail"
+          type="email"
+          placeholder="name@example.com"
+          styleClass="w-full"
+          data-testid="newsletter-publication-form-reply-to">
+        </lfx-input-text>
+        @if (form.controls.replyToEmail.touched && form.controls.replyToEmail.invalid) {
+          <p class="text-xs text-red-600" data-testid="newsletter-publication-form-reply-to-error">Enter a valid email address.</p>
+        }
+        <p class="text-xs text-gray-500">Applies to every edition not yet sent. It has to be on an approved domain.</p>
+      </div>
+
+      <div class="flex justify-end gap-3">
+        <lfx-button
+          type="submit"
+          label="Save publication"
+          severity="info"
+          [loading]="saving()"
+          [disabled]="form.disabled"
+          data-testid="newsletter-publication-form-submit">
+        </lfx-button>
+      </div>
+    </form>
+  }
+</div>
