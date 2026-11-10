@@ -12,7 +12,6 @@ import type {
   MeetingGuestRow,
   MeetingGuestRowActions,
   MeetingGuestStatusKey,
-  MeetingGuestSummary,
   MeetingGuestViewer,
   MeetingHostCandidate,
   MeetingRegistrant,
@@ -178,17 +177,6 @@ export function filterMeetingGuestRows(rows: MeetingGuestRow[], query: string, f
       (!filters.group || (filters.group === MEETING_GUEST_DIRECT_GROUP ? !row.groups.length : row.groups.includes(filters.group))) &&
       (!filters.voting || row.votingRep)
   );
-}
-
-/** Heading and total: participants with attended and invited counts once ended, members for a committee meeting, else guests. */
-export function getMeetingGuestSummary(rows: MeetingGuestRow[], ended: boolean, committeeMeeting: boolean): MeetingGuestSummary {
-  if (ended) {
-    const attended = rows.filter((row) => row.status === 'attended').length;
-    const invited = rows.filter((row) => row.invited).length;
-    return { title: 'Meeting Participants', subtitle: `${attended} attended / ${invited} invited` };
-  }
-  const count = (noun: string) => `${rows.length} ${noun}${rows.length === 1 ? '' : 's'}`;
-  return committeeMeeting ? { title: 'Meeting Members', subtitle: count('member') } : { title: 'Meeting Guests', subtitle: count('guest') };
 }
 
 /** Re-orders registrant rows after a local change, such as a host toggle, with the order the list was built in. */

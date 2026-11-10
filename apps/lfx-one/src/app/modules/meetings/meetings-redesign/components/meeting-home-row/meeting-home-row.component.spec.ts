@@ -392,8 +392,10 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true }), { myRsvp: null }));
 
       expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
-      expect(classes(fixture, 'meetings-home-row-rsvp-cell')).toEqual(
-        expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1'])
+      // At 480px or less the cell unwraps: the RSVP sits left on line 2.
+      expect(classes(fixture, 'meetings-home-row-rsvp-cell')).toEqual(expect.arrayContaining(['contents', '@[481px]:col-[3/4]', '@[481px]:row-start-1']));
+      expect(query(fixture, 'meetings-home-row-rsvp-cell')?.querySelector('lfx-meeting-rsvp-controls')?.parentElement?.className).toContain(
+        'justify-self-start'
       );
       expect(fixture.debugElement.query(By.css('[data-testid="meetings-home-rsvp-accepted"]')).componentInstance.size()).toBe('small');
       query(fixture, 'meetings-home-rsvp')?.click();
@@ -417,6 +419,10 @@ describe('MeetingHomeRowComponent', () => {
 
       expect(join?.querySelector('button')?.getAttribute('aria-label')).toBe('Join Series title');
       expect(join?.querySelector('button')?.className).toContain('h-ui-xsmall');
+      // At 480px or less Join sits right on the row's last line, above the attendance cell it shares.
+      expect(join?.className).toContain('row-start-3');
+      expect(join?.className).toContain('z-[1]');
+      expect(join?.className).toContain('justify-self-end');
       expect(getPublicMeetingJoinUrl).toHaveBeenCalledWith('123', 'secret', { email: 'real@example.test' });
       join?.querySelector('button')?.click();
 
@@ -500,6 +506,10 @@ describe('MeetingHomeRowComponent', () => {
       expect(query(upcoming, 'meetings-home-row-artifacts')).toBeNull();
       expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(
         expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1', 'hidden', 'has-[div]:flex'])
+      );
+      // At 480px or less the buttons sit left and wrap, so a phone row never overflows.
+      expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(
+        expect.arrayContaining(['justify-self-start', '[&>*>div]:shrink', '[&>*>div]:flex-wrap', '@[481px]:[&>*>div]:flex-nowrap'])
       );
     });
 

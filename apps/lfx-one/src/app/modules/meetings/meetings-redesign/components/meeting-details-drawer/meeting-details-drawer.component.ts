@@ -42,6 +42,7 @@ import { MeetingDetailsAgendaComponent } from './agenda/meeting-details-agenda.c
 import { MeetingDetailsGuestsComponent } from './guests/meeting-details-guests.component';
 import { MeetingDetailsHeaderComponent } from './header/meeting-details-header.component';
 import { MeetingDetailsContext } from './meeting-details.context';
+import { MeetingDetailsOccurrenceNavComponent } from './occurrence-nav/meeting-details-occurrence-nav.component';
 import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-details-project-link.component';
 import { MeetingDetailsScheduleComponent } from './schedule/meeting-details-schedule.component';
 import { MeetingDetailsArtifactsService } from './tools/meeting-details-artifacts.service';
@@ -59,6 +60,7 @@ import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.comp
     MeetingDetailsAgendaComponent,
     MeetingDetailsGuestsComponent,
     MeetingDetailsHeaderComponent,
+    MeetingDetailsOccurrenceNavComponent,
     MeetingDetailsOwnActionsComponent,
     MeetingDetailsProjectLinkComponent,
     MeetingDetailsScheduleComponent,

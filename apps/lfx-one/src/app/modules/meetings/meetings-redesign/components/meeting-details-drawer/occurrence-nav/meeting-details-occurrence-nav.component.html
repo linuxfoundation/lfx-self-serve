@@ -21,8 +21,9 @@
       trailingIcon="fa-light fa-angles-up-down"
       popoverLabel="Jump to occurrence"
       popoverPadding="none"
+      popoverAlign="center"
       [popover]="menu"
-      [popoverWidth]="380"
+      [popoverWidth]="320"
       (click)="menuTab.set(null)"
       data-testid="meeting-details-occurrence-menu-button">
       Occurrence {{ index() + 1 }} of {{ timeline().length }}
@@ -51,10 +52,11 @@
         <li>
           <button
             type="button"
-            class="flex w-full items-center gap-[10px] rounded-[8px] px-[8px] py-[6px] text-left [font-variant-numeric:tabular-nums] hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-            [class.bg-gray-100]="shown"
+            class="flex w-full items-center gap-[10px] rounded-[8px] px-[10px] py-[8px] text-left [font-variant-numeric:tabular-nums] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            [class.bg-blue-50]="shown"
+            [class.hover:bg-gray-50]="!shown"
             [class.cursor-not-allowed]="option.cancelled"
-            [class.opacity-50]="option.cancelled"
+            [class.opacity-[.55]]="option.cancelled"
             [attr.aria-disabled]="option.cancelled || null"
             [attr.aria-current]="shown ? 'date' : null"
             (click)="pick(option, close)"

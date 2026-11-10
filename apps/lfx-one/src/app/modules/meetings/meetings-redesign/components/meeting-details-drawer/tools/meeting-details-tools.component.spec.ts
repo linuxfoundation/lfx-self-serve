@@ -4,7 +4,6 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
-import { DOCUMENT } from '@angular/common';
 import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -60,18 +59,16 @@ describe('MeetingDetailsToolsComponent', () => {
   let meetingService: Record<string, ReturnType<typeof vi.fn>>;
   let removedIds: WritableSignal<Set<string>>;
   let removedUids: WritableSignal<ReadonlySet<string>>;
-  let guestCount: WritableSignal<number | null>;
-  let registered: WritableSignal<boolean>;
   let toastShow: ReturnType<typeof vi.fn>;
   let copy: ReturnType<typeof vi.fn>;
   let edit: ReturnType<typeof vi.fn>;
   let closed: Subject<void>;
   let closeDialog: ReturnType<typeof vi.fn>;
   let openSummary: ReturnType<typeof vi.fn>;
+  let openTranscript: ReturnType<typeof vi.fn>;
   let openRecording: ReturnType<typeof vi.fn>;
   let copyRecordingLink: ReturnType<typeof vi.fn>;
   let applySummaryChange: ReturnType<typeof vi.fn>;
-  let windowOpen: ReturnType<typeof vi.fn>;
   let modalOpen: ReturnType<typeof vi.fn>;
   let participantsVersion: WritableSignal<number>;
   let refreshParticipants: ReturnType<typeof vi.fn>;
@@ -104,15 +101,12 @@ describe('MeetingDetailsToolsComponent', () => {
     confirmed = signal<MeetingRsvp[]>([]);
     removedIds = signal(new Set<string>());
     removedUids = signal(new Set<string>());
-    guestCount = signal<number | null>(null);
-    registered = signal(false);
     meetingService = {
       getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
       getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
       getPastMeetingRecording: vi.fn().mockReturnValue(of({ sessions: [{ total_size: 1, share_url: 'https://zoom.example/rec' }] })),
       getPastMeetingTranscript: vi.fn().mockReturnValue(of({ recording_files: [{ file_type: 'TRANSCRIPT', download_url: 'https://zoom.example/vtt' }] })),
       getPastMeetingSummary: vi.fn().mockReturnValue(of(SUMMARY)),
-      getPublicMeeting: vi.fn().mockReturnValue(of({ meeting: {} })),
     };
     toastShow = vi.fn();
     copy = vi.fn().mockReturnValue(true);
@@ -120,10 +114,10 @@ describe('MeetingDetailsToolsComponent', () => {
     closed = new Subject<void>();
     closeDialog = vi.fn(() => closed.next());
     openSummary = vi.fn();
+    openTranscript = vi.fn();
     openRecording = vi.fn();
     copyRecordingLink = vi.fn();
     applySummaryChange = vi.fn();
-    windowOpen = vi.fn();
     modalOpen = vi.fn(() => ({ closed: new Subject<void>(), close: vi.fn() }));
     participantsVersion = signal(0);
     refreshParticipants = vi.fn();
@@ -142,7 +136,6 @@ describe('MeetingDetailsToolsComponent', () => {
       shownRow: row,
       state,
       organizer: computed(() => meeting().organizer === true),
-      invited: computed(() => (!!meeting().invited || registered()) && !removedIds().has(meeting().id)),
       fullAccess: computed(() => hasMeetingFullAccess(meeting(), { organizer: meeting().organizer === true, member: !!meeting().invited })),
       pastMeetingId,
       tab,
@@ -150,7 +143,6 @@ describe('MeetingDetailsToolsComponent', () => {
       participantsVersion,
       refreshParticipants,
       removedRegistrantUids: removedUids,
-      guestCount,
     };
 
     TestBed.configureTestingModule({
@@ -171,11 +163,10 @@ describe('MeetingDetailsToolsComponent', () => {
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingsHomeEditService, useValue: { edit } },
         { provide: MeetingsHomeStore, useValue: { applySummaryChange } },
-        { provide: MeetingsHomeDialogsService, useValue: { openSummary, openRecording, copyRecordingLink } },
+        { provide: MeetingsHomeDialogsService, useValue: { openSummary, openTranscript, openRecording, copyRecordingLink } },
         { provide: UiModalService, useValue: { open: modalOpen } },
       ],
     });
-    TestBed.inject(DOCUMENT).defaultView!.open = windowOpen as unknown as Window['open'];
   });
 
   afterEach(() => {
@@ -258,105 +249,19 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-invite')).toBeNull();
     });
 
-    it('shows only the invited count without RSVPs', async () => {
+    it('shows no counts without RSVPs, only Invite people', async () => {
       meetingService['getMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', null), registrant('reg-b', null)]));
       await render({ organizer: true, is_invite_responses_enabled: false });
 
-      expect(text('meeting-details-invited')).toBe('2 invited');
-      removedUids.set(new Set(['reg-b']));
-      await settle();
-      expect(text('meeting-details-invited')).toBe('1 invited');
       expect(find('meeting-details-rsvp')).toBeNull();
+      expect(find('meeting-details-invite')).not.toBeNull();
+      expect(fixture.nativeElement.textContent).not.toMatch(/\d+ invited/);
     });
   });
 
-  describe('invited count for a non-organizer', () => {
-    it('shows the guest list length as a button to the Guests tab, following local removals', async () => {
-      guestCount.set(3);
-      await render();
-
-      expect(text('meeting-details-total-invitees')).toBe('3 invited');
-      expect(find('meeting-details-total-invitees')?.getAttribute('aria-label')).toBe('3 invited, show guest list');
-      await click('meeting-details-total-invitees');
-      expect(tab()).toBe('guests');
-
-      guestCount.set(2);
-      await settle();
-      expect(text('meeting-details-total-invitees')).toBe('2 invited');
-    });
-
-    it('shows the invitee count as plain text without the guest list, less the viewer after Remove Myself', async () => {
-      meetingService['getPublicMeeting'].mockReturnValue(of({ meeting: { registrant_count: 12 } }));
-      canViewGuests.set(false);
-      await render({ password: 'synthetic-pass' } as Partial<Meeting>);
-
-      expect(meetingService['getPublicMeeting']).toHaveBeenCalledWith('synthetic-meeting', 'synthetic-pass');
-      expect(find('meeting-details-total-invitees')?.tagName).toBe('SPAN');
-      expect(text('meeting-details-total-invitees')).toBe('12 invited');
-
-      removedIds.set(new Set(['synthetic-meeting']));
-      await settle();
-      expect(text('meeting-details-total-invitees')).toBe('11 invited');
-      expect(meetingService['getPublicMeeting']).toHaveBeenCalledTimes(1);
-    });
-
-    it('loads the count once the viewer registers from the drawer, and keeps it through Remove Myself', async () => {
-      meetingService['getPublicMeeting'].mockReturnValue(of({ meeting: { registrant_count: 4 } }));
-      canViewGuests.set(false);
-      await render({ invited: false });
-      expect(meetingService['getPublicMeeting']).not.toHaveBeenCalled();
-
-      registered.set(true);
-      await settle();
-      expect(text('meeting-details-total-invitees')).toBe('4 invited');
-
-      removedIds.set(new Set(['synthetic-meeting']));
-      await settle();
-      expect(text('meeting-details-total-invitees')).toBe('3 invited');
-      expect(meetingService['getPublicMeeting']).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps a count requested before Remove Myself counting the viewer, even when it lands after', async () => {
-      const response = new Subject<unknown>();
-      meetingService['getPublicMeeting'].mockReturnValue(response);
-      canViewGuests.set(false);
-      await render();
-
-      removedIds.set(new Set(['synthetic-meeting']));
-      response.next({ meeting: { registrant_count: 12 } });
-      await settle();
-      expect(text('meeting-details-total-invitees')).toBe('11 invited');
-    });
-
-    it('does not take the viewer off again when the count was loaded after Remove Myself', async () => {
-      meetingService['getPublicMeeting'].mockReturnValue(of({ meeting: { registrant_count: 11 } }));
-      removedIds.set(new Set(['synthetic-meeting']));
-      canViewGuests.set(false);
-      await render();
-
-      expect(text('meeting-details-total-invitees')).toBe('11 invited');
-    });
-
-    it('stays hidden with no invitees, for organizers, once the date ends, and fetches nothing when not invited', async () => {
-      canViewGuests.set(false);
-      await render();
-      expect(find('meeting-details-total-invitees')).toBeNull();
-      fixture.destroy();
-
-      guestCount.set(3);
-      canViewGuests.set(true);
-      await render({ organizer: true });
-      expect(find('meeting-details-total-invitees')).toBeNull();
-      fixture.destroy();
-
-      await render({}, 'ended');
-      expect(find('meeting-details-total-invitees')).toBeNull();
-      fixture.destroy();
-
-      meetingService['getPublicMeeting'].mockClear();
-      await render({ invited: false });
-      expect(meetingService['getPublicMeeting']).not.toHaveBeenCalled();
-    });
+  it('shows no invited count to a non-organizer', async () => {
+    await render();
+    expect(fixture.nativeElement.textContent).not.toMatch(/\d+ invited/);
   });
 
   it('shows no artifacts before the date ends', async () => {
@@ -426,11 +331,11 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-attendance-grid')).toBeNull();
     });
 
-    it('offers the recording, the pending summary to an invitee, and the transcript on the meeting page', async () => {
+    it('offers the recording, the summary without an approval badge, and the transcript dialog', async () => {
       await render({}, 'ended');
 
       expect(find('meeting-details-recording')).not.toBeNull();
-      expect(text('meeting-details-summary-pending')).toBe('Pending');
+      expect(find('meeting-details-summary')?.querySelector('lfx-ui-badge')).toBeNull();
       await click('meeting-details-summary');
       expect(openSummary).toHaveBeenCalledWith(expect.objectContaining({ key: 'synthetic-meeting-1762362000000' }), SUMMARY, expect.any(Function), {
         origin: 'drawer',
@@ -438,7 +343,9 @@ describe('MeetingDetailsToolsComponent', () => {
       });
 
       await click('meeting-details-transcript');
-      expect(windowOpen).toHaveBeenCalledWith(expect.stringContaining('/meetings/synthetic-meeting-1762362000000'), '_blank', 'noopener,noreferrer');
+      expect(openTranscript).toHaveBeenCalledWith('synthetic-meeting-1762362000000', expect.objectContaining({ meeting: expect.anything() }), {
+        origin: 'drawer',
+      });
     });
 
     it('opens and copies the recording link', async () => {
@@ -450,14 +357,6 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(copyRecordingLink).toHaveBeenCalledWith('https://zoom.example/rec');
     });
 
-    it('marks an approved summary', async () => {
-      meetingService['getPastMeetingSummary'].mockReturnValue(of({ ...SUMMARY, approved: true }));
-      await render({}, 'ended');
-
-      expect(text('meeting-details-summary-approved')).toBe('Approved');
-      expect(find('meeting-details-summary-pending')).toBeNull();
-    });
-
     it('shows the approval made in the summary dialog here and on the list', async () => {
       await render({}, 'ended');
       await click('meeting-details-summary');
@@ -466,9 +365,7 @@ describe('MeetingDetailsToolsComponent', () => {
       await settle();
 
       expect(applySummaryChange).toHaveBeenCalledWith('synthetic-meeting-1762362000000', { ...SUMMARY, approved: true });
-
-      expect(text('meeting-details-summary-approved')).toBe('Approved');
-      expect(find('meeting-details-summary-pending')).toBeNull();
+      expect(find('meeting-details-summary')?.querySelector('lfx-ui-badge')).toBeNull();
     });
 
     it('greys out what does not exist', async () => {

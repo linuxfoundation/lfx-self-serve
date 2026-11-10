@@ -38,7 +38,7 @@ export const WithoutCounts: Story = {
     value: 'overview',
   },
 };
-/** The size used on Meetings: 13px text and 11px bottom padding. */
+/** 13px text and 11px bottom padding, for a dense bar. */
 export const Small: Story = { args: { size: 'small' } };
 /** A 14px icon before the label. */
 export const WithIcons: Story = {

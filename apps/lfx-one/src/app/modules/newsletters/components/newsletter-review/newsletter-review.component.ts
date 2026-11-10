@@ -1,16 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
-import { NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS, NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES } from '@lfx-one/shared/constants';
-import { NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
-import { stripHtml } from '@lfx-one/shared/utils';
+import {
+  NEWSLETTER_FALLBACK_TEMPLATE_KEY,
+  NEWSLETTER_SCHEDULE_MAX_HORIZON_HOURS,
+  NEWSLETTER_SCHEDULE_MIN_LEAD_MINUTES,
+  NEWSLETTER_TEMPLATE_LABELS,
+} from '@lfx-one/shared/constants';
+import { NewsletterLayout, NewsletterScheduleWindowError } from '@lfx-one/shared/interfaces';
+import { humanizeFieldKey, stripHtml } from '@lfx-one/shared/utils';
+import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 import { EMPTY, startWith, switchMap } from 'rxjs';
 
 // See newsletter-send-step.component.ts's identical constant — this component and the
@@ -39,9 +45,10 @@ const SCHEDULE_RULES_TEXT = `Pick a time at least ${NEWSLETTER_SCHEDULE_MIN_LEAD
   imports: [ButtonComponent, TagComponent, CalendarComponent, TimePickerComponent],
   templateUrl: './newsletter-review.component.html',
 })
-export class NewsletterReviewComponent {
+export class NewsletterReviewComponent implements OnInit {
   // === Services ===
   private readonly destroyRef = inject(DestroyRef);
+  private readonly manifestService = inject(NewsletterManifestService);
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
@@ -52,8 +59,12 @@ export class NewsletterReviewComponent {
   public readonly edName = input<string>('');
   public readonly edEmail = input<string>('');
   public readonly canSend = input<boolean>(false);
+  public readonly liveSendLocked = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);
+  public readonly canPreview = input<boolean>(false);
   public readonly sending = input<boolean>(false);
+  // The newsletter's owning project, so the template list loads for it rather than the lens.
+  public readonly projectUid = input<string | null>(null);
   public readonly testSending = input<boolean>(false);
   public readonly deleting = input<boolean>(false);
   public readonly committeesError = input<string | null>(null);
@@ -84,6 +95,7 @@ export class NewsletterReviewComponent {
   protected readonly committeeUids: Signal<string[]> = this.initControlValue<string[]>('committeeUids', []);
   protected readonly subjectValue: Signal<string> = this.initControlValue<string>('subject', '');
   protected readonly bodyValue: Signal<string> = this.initControlValue<string>('bodyHtml', '');
+  protected readonly bodyLayoutValue: Signal<NewsletterLayout | null> = this.initControlValue<NewsletterLayout | null>('bodyLayout', null);
   protected readonly sendMode: Signal<'now' | 'schedule'> = this.initControlValue<'now' | 'schedule'>('sendMode', 'now');
 
   // === Derived display values ===
@@ -97,10 +109,36 @@ export class NewsletterReviewComponent {
     if (count === null) return null;
     return `${count} ${count === 1 ? 'recipient' : 'recipients'}`;
   });
+  // Label for the newsletter's block library (blocks-mode drafts only; empty for
+  // html-only drafts). Prefer the catalog's curated label; fall back to humanizing the key when the
+  // catalog hasn't loaded (e.g. landing straight on review without opening the
+  // editor this session).
+  protected readonly templateLabel = computed(() => {
+    const layout = this.bodyLayoutValue();
+    if (!layout) return ''; // html-only draft: no library
+    // A keyless layout is NOT a neutral render: newsletter-service resolves an
+    // omitted/blank key to its fallback library (aaif-user-community) and renders
+    // its chrome. Label it with that library's name so the review card matches
+    // what recipients actually receive; fall back to a humanized key when the
+    // catalog hasn't loaded.
+    const key = layout.template_key?.trim() || NEWSLETTER_FALLBACK_TEMPLATE_KEY;
+    return NEWSLETTER_TEMPLATE_LABELS[key] ?? this.manifestService.templates().find((t) => t.key === key)?.label ?? humanizeFieldKey(key);
+  });
   protected readonly subjectDisplay = computed(() => this.subjectValue().trim() || 'Untitled draft');
   protected readonly hasSubject = computed(() => this.subjectValue().trim().length > 0);
   protected readonly bodyPlainText = computed(() => stripHtml(this.bodyValue() ?? '').trim());
-  protected readonly hasBody = computed(() => this.bodyPlainText().length > 0);
+  // A blocks-mode draft is "filled" as soon as it has composed blocks, even
+  // before render-on-write syncs body_html back — otherwise the review card
+  // wrongly shows "Add body content" (and hides Preview) for a valid layout
+  // draft. Mirrors the manage component's layout-aware `bodyFilled`.
+  protected readonly hasBody = computed(() => {
+    const layout = this.bodyLayoutValue();
+    // Layout-authoritative, mirroring the manage component: a present layout is
+    // content only when it has blocks (an emptied layout is not); fall back to
+    // the plain-text body only for html-only (simple) drafts.
+    if (layout) return (layout.blocks?.length ?? 0) > 0;
+    return this.bodyPlainText().length > 0;
+  });
   protected readonly bodyPreview = computed(() => {
     const text = this.bodyPlainText();
     if (!text) return '';
@@ -115,6 +153,13 @@ export class NewsletterReviewComponent {
     const error = this.scheduleWindowError();
     return error ? SCHEDULE_WINDOW_MESSAGES[error] : null;
   });
+
+  public ngOnInit(): void {
+    // Ensure the template catalog is available so `templateLabel` can show the
+    // curated label. Cached + browser-only in the service, so this is a cheap
+    // no-op when the composer already loaded it.
+    this.manifestService.loadTemplates(this.projectUid()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+  }
 
   // See newsletter-send-step.component.ts's identical method — the radio cards bind
   // directly to the form control (like the date/time pickers below already do) rather

@@ -2,7 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
-<div class="h-px bg-gray-200" aria-hidden="true"></div>
+<!-- Bleeds over the card's 20px padding. -->
+<div class="-mx-[20px] h-px bg-gray-200" aria-hidden="true"></div>
 @if (roster() === undefined) {
   <div class="flex flex-col gap-[6px]" aria-busy="true" data-testid="meeting-details-rsvp-loading">
     <lfx-ui-skeleton width="60%" height="16px" />
@@ -21,11 +22,6 @@
       (viewAll)="context.tab.set('guests')"
       data-testid="meeting-details-rsvp-grid" />
   </div>
-} @else if (roster()) {
-  <!-- Without RSVP counts (RSVPs off, or nobody invited yet), only how many are invited. -->
-  <span class="flex items-center gap-[6px] text-[12px] leading-[16px] text-gray-600" data-testid="meeting-details-invited">
-    <i class="fa-light fa-users" aria-hidden="true"></i>{{ rows().length }} invited
-  </span>
 }
 <!-- The editor needs the project slug, as Edit Meeting does. -->
 @if (context.meeting().project_slug) {

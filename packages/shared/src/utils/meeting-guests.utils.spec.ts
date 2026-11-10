@@ -15,7 +15,6 @@ import {
   filterMeetingGuestRows,
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
-  getMeetingGuestSummary,
   getMeetingGuestRowActions,
   resortMeetingGuestRows,
   getOfferedMeetingGuestFilters,
@@ -237,29 +236,6 @@ describe('row details', () => {
       member('ada@acme.example', 'c-1', CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP),
     ]);
     expect(row).toMatchObject({ votingStatus: 'Alternate Voting Rep', votingRep: true });
-  });
-});
-
-describe('getMeetingGuestSummary', () => {
-  const rows = buildParticipantGuestRows(
-    [participant({ uid: 'p-1' }), participant({ uid: 'p-2', is_attended: false }), participant({ uid: 'p-3', is_invited: false })],
-    { organizers: [], committees: [] },
-    viewer,
-    []
-  );
-
-  it('counts attended and invited participants once ended', () => {
-    expect(getMeetingGuestSummary(rows, true, false)).toEqual({ title: 'Meeting Participants', subtitle: '2 attended / 2 invited' });
-  });
-
-  it('counts members of a committee meeting, else guests', () => {
-    expect(getMeetingGuestSummary(rows, false, true)).toEqual({ title: 'Meeting Members', subtitle: '3 members' });
-    expect(getMeetingGuestSummary(rows, false, false)).toEqual({ title: 'Meeting Guests', subtitle: '3 guests' });
-  });
-
-  it('uses the singular for one person', () => {
-    expect(getMeetingGuestSummary(rows.slice(0, 1), false, false).subtitle).toBe('1 guest');
-    expect(getMeetingGuestSummary(rows.slice(0, 1), false, true).subtitle).toBe('1 member');
   });
 });
 

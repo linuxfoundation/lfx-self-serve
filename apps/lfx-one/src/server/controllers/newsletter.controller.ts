@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  NEWSLETTER_BODY_LAYOUT_MAX_BYTES,
+  NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES,
   NEWSLETTER_BODY_MAX_LENGTH,
   NEWSLETTER_RAW_CONTENT_MAX_LENGTH,
   NEWSLETTER_SUBJECT_MAX_LENGTH,
@@ -11,8 +13,10 @@ import {
 import {
   CreateNewsletterRequest,
   GenerateNewsletterRequest,
+  NewsletterLayout,
   NewsletterListParams,
   NewsletterRecipientCountPayload,
+  NewsletterRenderPreviewPayload,
   NewsletterSchedulePayload,
   NewsletterShareRequest,
   NewsletterStatus,
@@ -27,6 +31,7 @@ import { AiService } from '../services/ai.service';
 import { logger } from '../services/logger.service';
 import { NewsletterMemberBenefitService } from '../services/newsletter-member-benefit.service';
 import { NewsletterService } from '../services/newsletter.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 const COMMITTEE_LIMIT = 50;
 const CONTEXT_NAME_MAX_LENGTH = 200;
@@ -100,7 +105,25 @@ export class NewsletterController {
     try {
       const payload = req.body as NewsletterTestSendPayload;
       this.validateTestSendPayload(payload, req.path, 'newsletter_test_send');
-      const result = await this.newsletterService.testSend(req, projectUid, payload);
+      // A test send goes from the LF sending domain, so it may only go to the
+      // caller's own verified address (#4358 F1).
+      const ownEmail = getEffectiveEmail(req);
+      if (!ownEmail) {
+        throw ServiceValidationError.forField('to_email', 'Verify your email address to send a test email', {
+          operation: 'newsletter_test_send',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
+      if (payload.to_email.trim().toLowerCase() !== ownEmail) {
+        throw ServiceValidationError.forField('to_email', 'Test emails can only be sent to your own email address', {
+          operation: 'newsletter_test_send',
+          service: 'newsletter_controller',
+          path: req.path,
+        });
+      }
+      // Forward the address that was checked, so the service reads it the same way.
+      const result = await this.newsletterService.testSend(req, projectUid, { ...payload, to_email: ownEmail });
       // PII (recipient email) intentionally omitted from log metadata.
       logger.success(req, 'newsletter_test_send', startTime, {});
       res.json(result);
@@ -195,13 +218,75 @@ export class NewsletterController {
 
     try {
       const payload = req.body as CreateNewsletterRequest;
-      this.validateCommonPayload(payload, req.path, 'newsletter_create');
+      this.validateCommonPayload(payload, req.path, 'newsletter_create', false);
       this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_create');
       this.validateScheduledAt(payload, req.path, 'newsletter_create');
 
       const newsletter = await this.newsletterService.createNewsletter(req, projectUid, payload);
       logger.success(req, 'newsletter_create', startTime, { newsletter_id: newsletter.id, version: newsletter.version });
       res.status(201).json(newsletter);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/templates
+   */
+  public async getTemplates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // requireProjectUid / startOperation live INSIDE the try: on Express 4 a
+    // synchronous throw before the first await rejects the returned promise with
+    // no next(error), leaving the request unhandled (see renderPreview).
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_templates_list', { project_uid: projectUid });
+      const result = await this.newsletterService.getTemplates(req, projectUid);
+      logger.success(req, 'newsletter_templates_list', startTime, { count: result.templates.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/templates/:templateKey/manifest
+   */
+  public async getTemplateManifest(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // requireProjectUid / startOperation live INSIDE the try: on Express 4 a
+    // synchronous throw before the first await rejects the returned promise with
+    // no next(error), leaving the request unhandled (see renderPreview).
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const templateKey = String(req.params['templateKey'] || '').trim();
+      const startTime = logger.startOperation(req, 'newsletter_template_manifest', { project_uid: projectUid, template_key: templateKey });
+      const manifest = await this.newsletterService.getTemplateManifest(req, projectUid, templateKey);
+      logger.success(req, 'newsletter_template_manifest', startTime, { template_key: templateKey, block_count: manifest.blocks.length });
+      res.json(manifest);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/projects/:projectUid/newsletters/render-preview
+   *
+   * Renders a layout to its final email HTML server-side (the same MJML render
+   * the send path uses), so the composer can report the authoritative sent-email
+   * size and source rather than estimating from the client preview.
+   */
+  public async renderPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // requireProjectUid / startOperation live INSIDE the try: on Express 4 a
+    // synchronous throw before the first await rejects the returned promise
+    // without reaching next(error), which can hang the request. Keeping them in
+    // the try routes any throw to the error handler.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_render_preview', { project_uid: projectUid });
+      const payload = req.body as NewsletterRenderPreviewPayload;
+      this.validateRenderPreviewPayload(payload, req.path, 'newsletter_render_preview');
+      const result = await this.newsletterService.renderPreview(req, projectUid, payload);
+      logger.success(req, 'newsletter_render_preview', startTime, { bytes: Buffer.byteLength(result.body_html ?? '', 'utf8') });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -237,7 +322,7 @@ export class NewsletterController {
     try {
       const version = parseIfMatch(req);
       const payload = req.body as UpdateNewsletterRequest;
-      this.validateCommonPayload(payload, req.path, 'newsletter_update');
+      this.validateCommonPayload(payload, req.path, 'newsletter_update', true);
       this.validateCommitteeUids(payload.committee_uids, req.path, 'newsletter_update');
       this.validateScheduledAt(payload, req.path, 'newsletter_update');
 
@@ -271,8 +356,9 @@ export class NewsletterController {
    *
    * Owns the full send pipeline in the Go service: recipient resolution
    * (NATS → committee-service), email-chrome rendering, per-recipient fan-out
-   * (NATS → email-service), and status transition. Express just proxies the
-   * If-Match version through.
+   * (NATS → email-service), and status transition. Express refuses a real send
+   * of a block layout draft while live send is off, then proxies the If-Match
+   * version through.
    */
   public async sendNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = this.requireProjectUid(req);
@@ -281,6 +367,7 @@ export class NewsletterController {
 
     try {
       const version = parseIfMatch(req);
+      await this.newsletterService.assertLiveSendAllowed(req, projectUid, newsletterUid, version, 'newsletter_send');
       const result = await this.newsletterService.sendNewsletter(req, projectUid, newsletterUid, version);
       logger.success(req, 'newsletter_send', startTime, {
         newsletter_id: newsletterUid,
@@ -302,7 +389,8 @@ export class NewsletterController {
    * provider. Upstream applies the strict arm-time window (min lead / max
    * horizon) on top of the lenient save-time check `validateScheduledAt`
    * already ran — this handler doesn't duplicate that window check, it just
-   * validates shape so a malformed override doesn't reach the proxy.
+   * validates shape so a malformed override doesn't reach the proxy. It also
+   * refuses to schedule a block layout draft while live send is off.
    */
   public async scheduleNewsletter(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Validation must run inside the try: Express 4 doesn't forward async
@@ -314,6 +402,7 @@ export class NewsletterController {
       const version = parseIfMatch(req);
       const payload = req.body as NewsletterSchedulePayload | undefined;
       const scheduledAtOverride = this.validateScheduleOverride(payload, req.path, 'newsletter_schedule');
+      await this.newsletterService.assertLiveSendAllowed(req, projectUid, newsletterUid, version, 'newsletter_schedule');
 
       const result = await this.newsletterService.scheduleNewsletter(req, projectUid, newsletterUid, version, scheduledAtOverride);
       logger.success(req, 'newsletter_schedule', startTime, {
@@ -609,7 +698,14 @@ export class NewsletterController {
     return optOutId;
   }
 
-  private validateCommonPayload(payload: { subject?: string; body_html?: string; ed_reply_email?: string }, path: string, operation: string): void {
+  private validateCommonPayload(
+    payload: { subject?: string; body_html?: string; body_layout?: NewsletterLayout | null; ed_reply_email?: string },
+    path: string,
+    operation: string,
+    // Update only: allow an explicit body_layout:null + empty body to clear an
+    // existing draft back to the basic editor. A create still requires a body.
+    isUpdate: boolean
+  ): void {
     const fieldErrors: Record<string, string> = {};
 
     if (!payload?.subject || typeof payload.subject !== 'string' || payload.subject.trim().length === 0) {
@@ -618,10 +714,41 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${NEWSLETTER_SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+    // The body may arrive as raw HTML or as a structured block layout. The
+    // newsletter service renders body_layout to body_html on write. Tri-state: an
+    // absent (undefined) or explicit `null` layout selects the body_html path; a
+    // present (non-null) layout object is authoritative upstream (blocks mode).
+    //
+    // A present layout must be STRUCTURALLY valid (blocks is an array) but MAY be
+    // empty: clearing the canvas emits `blocks: []`, a deliberate DRAFT state the
+    // author must be able to persist (rejecting it 400s the save, so the emptied
+    // draft silently reverts to its old content on reload). A wrapper-only layout
+    // renders fine upstream and can be saved; the non-empty requirement lives on
+    // the SEND gate (canSend / bodyFilled), not on draft validation, so an empty
+    // newsletter can be saved but not sent.
+    const layoutPresent = payload?.body_layout !== undefined && payload?.body_layout !== null;
+    const layoutValid = layoutPresent && Array.isArray(payload.body_layout!.blocks);
+    const hasBodyHtml = typeof payload?.body_html === 'string' && payload.body_html.trim().length > 0;
+    if (layoutPresent && !layoutValid) {
+      fieldErrors['body_layout'] = 'A block layout must have a blocks array';
+    } else if (!hasBodyHtml && !layoutValid && !(isUpdate && payload?.body_layout === null)) {
+      // Neither authored html nor a (blocks-mode) layout — nothing to persist, so
+      // a NEW newsletter must carry a body. An UPDATE that explicitly clears the
+      // layout (body_layout: null) with an empty body is allowed: it converts an
+      // existing draft back to the basic editor, a deliberate discard the author
+      // must be able to persist (otherwise the stored layout reverts on reload).
+      // The send gate still requires content, so an emptied draft saves but
+      // cannot send. Upstream applies the same allowance on its explicit-null path.
       fieldErrors['body_html'] = 'Body is required';
-    } else if (payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
+    } else if (!layoutValid && typeof payload?.body_html === 'string' && payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
+      // Only cap authored body_html on the HTML-only path. In blocks mode the
+      // upstream ignores request body_html and re-derives it from body_layout,
+      // and rejects a derived body over 100,000 bytes itself. The layout has its
+      // own size cap.
       fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
+    }
+    if (layoutValid && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+      fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
@@ -646,7 +773,23 @@ export class NewsletterController {
       fieldErrors['subject'] = `Subject must be ${NEWSLETTER_SUBJECT_MAX_LENGTH} characters or fewer`;
     }
 
-    if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
+    // A layout test send recompiles the email from body_layout upstream (the
+    // request body_html is the echoed server render), so require/cap body_html
+    // only on the HTML-only path, and size-cap the layout itself instead. The
+    // upstream rejects a derived body over 100,000 bytes on its own.
+    // A PRESENT body_layout is the upstream test-send trigger and is
+    // authoritative (body_html is ignored), so route on presence — not on
+    // whether it has blocks. An empty present layout must be REJECTED (it would
+    // send a wrapper-only email), not fall through to the HTML path. Only an
+    // absent/null layout uses body_html.
+    const layout = payload?.body_layout;
+    if (layout !== undefined && layout !== null) {
+      if (!Array.isArray(layout.blocks) || layout.blocks.length === 0) {
+        fieldErrors['body_layout'] = 'Add at least one block before sending';
+      } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+        fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+      }
+    } else if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
       fieldErrors['body_html'] = 'Body is required';
     } else if (payload.body_html.length > NEWSLETTER_BODY_MAX_LENGTH) {
       fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
@@ -654,6 +797,42 @@ export class NewsletterController {
 
     if (!payload?.to_email || typeof payload.to_email !== 'string' || !payload.to_email.includes('@')) {
       fieldErrors['to_email'] = 'A valid to_email is required';
+    }
+
+    // ed_reply_email is OPTIONAL on a test send (the upstream TestSendRequest and
+    // the shared interface both mark it optional; when absent the wrapper omits
+    // the "To reply, email …" row). The app sends it, but don't reject an older
+    // client that omits it — validate the format only when a value is supplied.
+    if (payload?.ed_reply_email !== undefined && payload?.ed_reply_email !== null && payload.ed_reply_email !== '') {
+      if (typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
+        fieldErrors['ed_reply_email'] = 'ed_reply_email must be a valid email address';
+      }
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      throw ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+  }
+
+  private validateRenderPreviewPayload(payload: NewsletterRenderPreviewPayload, path: string, operation: string): void {
+    const fieldErrors: Record<string, string> = {};
+
+    const layout = payload?.body_layout;
+    if (!layout || typeof layout !== 'object' || !Array.isArray(layout.blocks)) {
+      fieldErrors['body_layout'] = 'A body_layout with a blocks array is required';
+    } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+      fieldErrors['body_layout'] = `body_layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+    }
+
+    const wrapperContent: unknown = payload?.wrapper_content;
+    if (wrapperContent !== undefined && (wrapperContent === null || typeof wrapperContent !== 'object' || Array.isArray(wrapperContent))) {
+      fieldErrors['wrapper_content'] = 'wrapper_content must be an object';
+    } else if (wrapperContent !== undefined && Buffer.byteLength(JSON.stringify(wrapperContent), 'utf8') > NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES) {
+      fieldErrors['wrapper_content'] = `wrapper_content must be ${NEWSLETTER_WRAPPER_CONTENT_MAX_BYTES} bytes or fewer when serialized`;
     }
 
     if (Object.keys(fieldErrors).length > 0) {

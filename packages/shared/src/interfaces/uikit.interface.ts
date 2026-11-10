@@ -27,7 +27,7 @@ export type UiDensitySize = 'default' | 'small';
 /** Size of a uikit note: the shared density, or `tiny` (24px, 12px text) inside rows, cards and data blocks. */
 export type UiNoteSize = UiDensitySize | 'tiny';
 
-/** Size of uikit tabs: `default` is 14px, `small` is 13px with tighter bottom padding (Meetings). The secondary variant ignores it. */
+/** Size of uikit tabs: `default` is 14px, `small` is 13px with tighter bottom padding. The secondary variant ignores it. */
 export type UiTabsSize = UiDensitySize;
 
 /** Look of uikit tabs: `default` is an underline on a rule, `secondary` is 32px pills. */
@@ -256,6 +256,9 @@ export type UiButtonSize = 'tiny' | 'small' | 'default' | 'large';
 
 /** Which trigger edge a uikit menu lines up with: `start` extends toward the end, `end` extends back toward the start. */
 export type UiMenuAlign = 'start' | 'end';
+
+/** Which host edge a uikit popover lines up with; `center` centers it under the host. */
+export type UiPopoverAlign = UiMenuAlign | 'center';
 
 /** Size of a uikit switch (segmented control): `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = UiControlSize;

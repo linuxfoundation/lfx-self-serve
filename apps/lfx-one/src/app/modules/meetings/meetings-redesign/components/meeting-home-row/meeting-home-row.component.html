@@ -170,20 +170,28 @@
     (click)="$event.stopPropagation()"
     data-testid="meetings-home-row-actions">
     @if (past()) {
-      <!-- Top right beside the menu; on line 2 at 480px or less, as the RSVP cell, so the title keeps a readable width. -->
+      <!-- Top right beside the menu; on line 2, left-aligned and wrapping, at 480px or less, so the title keeps a readable width. -->
       <div
-        class="col-[2/-1] row-start-2 hidden justify-self-end has-[div]:flex @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[861px]:ml-0"
+        class="col-[2/-1] row-start-2 ml-[14px] hidden justify-self-start has-[div]:flex [&>*>div]:shrink [&>*>div]:flex-wrap @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:justify-self-end @[481px]:[&>*>div]:shrink-0 @[481px]:[&>*>div]:flex-nowrap @[861px]:ml-0"
         data-testid="meetings-home-row-artifacts-cell">
         <lfx-meeting-home-artifacts [row]="row()" />
       </div>
     } @else {
-      <!-- On line 2 at 480px or less, so the title keeps a readable width on phones; Join sits after the RSVP. -->
+      <!-- Beside the menu, Join after the RSVP; at 480px or less the cell unwraps: RSVP left on line 2, Join right on the last line, over attendance. -->
       <div
-        class="col-[2/-1] row-start-2 hidden items-center justify-self-end gap-[18px] has-[button]:flex has-[span]:flex @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[861px]:ml-0"
+        class="contents items-center gap-[18px] @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[481px]:hidden @[481px]:justify-self-end @[481px]:has-[button]:flex @[481px]:has-[span]:flex @[861px]:ml-0"
         data-testid="meetings-home-row-rsvp-cell">
-        <lfx-meeting-rsvp-controls [row]="row()" />
+        <div class="col-[2/-1] row-start-2 ml-[14px] hidden justify-self-start has-[span]:flex @[481px]:has-[span]:contents">
+          <lfx-meeting-rsvp-controls [row]="row()" />
+        </div>
         @if (joinable()) {
-          <lfx-ui-button size="small" icon="fa-light fa-video" [ariaLabel]="'Join ' + row().title" (click)="join()" data-testid="meetings-home-row-join"
+          <lfx-ui-button
+            class="z-[1] col-[2/-1] row-start-3 self-end justify-self-end @[481px]:self-auto"
+            size="small"
+            icon="fa-light fa-video"
+            [ariaLabel]="'Join ' + row().title"
+            (click)="join()"
+            data-testid="meetings-home-row-join"
             >Join</lfx-ui-button
           >
         }
@@ -196,9 +204,10 @@
       [view]="view()"
       data-testid="meetings-home-row-menu" />
     @if (attendance(); as attendance) {
-      <!-- Under the actions on wide rows, clear of the menu; beside the body, then under it, as the row narrows. -->
+      <!-- Under the actions on wide rows, clear of the menu; beside the body, then under it, as the row narrows; clear of Join at 480px or less. -->
       <div
         class="col-[2/-1] row-start-3 ml-[14px] mt-[4px] flex justify-start @[481px]:row-start-2 @[601px]:col-start-3 @[601px]:col-end-auto @[601px]:row-[2/span_2] @[601px]:self-end @[601px]:justify-end @[861px]:ml-0 @[861px]:mt-[6px] @[861px]:basis-full @[861px]:pr-[50px]"
+        [class]="joinable() ? 'pr-[80px] @[481px]:pr-0' : ''"
         data-testid="meetings-home-row-attendance">
         <lfx-meeting-home-attendance-popup class="w-full max-w-[220px]" [row]="row()" [past]="past()" [attendance]="attendance" />
       </div>

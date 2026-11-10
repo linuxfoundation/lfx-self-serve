@@ -16,7 +16,6 @@ import {
   MeetingGuestRoleKey,
   MeetingGuestRow,
   MeetingGuestRowActions,
-  MeetingGuestSummary,
   MeetingGuestsLoad,
   MeetingHostCandidate,
   MeetingRegistrant,
@@ -29,7 +28,6 @@ import {
   filterMeetingGuestRows,
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
-  getMeetingGuestSummary,
   getMeetingGuestRowActions,
   getOfferedMeetingGuestFilters,
   isMeetingInviteResponsesEnabled,
@@ -138,9 +136,6 @@ export class MeetingDetailsGuestsComponent {
   protected readonly rows: Signal<MeetingGuestRow[]> = computed(() => this.applyChanges(this.load().rows));
   protected readonly rowActions: Signal<ReadonlyMap<string, MeetingGuestRowActions>> = this.initRowActions();
   protected readonly shown: Signal<MeetingGuestRow[]> = computed(() => filterMeetingGuestRows(this.rows(), this.searchTerm(), this.applied()));
-  protected readonly summary: Signal<MeetingGuestSummary> = computed(() =>
-    getMeetingGuestSummary(this.rows(), this.ended(), (this.context.meeting().committees?.length ?? 0) > 0)
-  );
   protected readonly filtersLabel: Signal<string> = computed(() => (this.chips().length ? `Filters, ${this.chips().length} applied` : ''));
   protected readonly draftChanged: Signal<boolean> = computed(() => !this.sameFilters(this.draft(), this.applied()));
   protected readonly showReset: Signal<boolean> = computed(() => this.chips().length > 0 || !this.sameFilters(this.draft(), MEETING_GUEST_EMPTY_FILTERS));
