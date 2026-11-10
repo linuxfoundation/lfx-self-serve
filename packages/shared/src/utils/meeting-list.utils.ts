@@ -179,7 +179,7 @@ export function filterMeetingsHome(
     const meeting = row.meeting;
     if (query && !matchesMeetingSearch(row, query)) return false;
     if (!matchesEntityFilters(meeting, filters)) return false;
-    if (filters.meetingType && meeting.meeting_type !== filters.meetingType) return false;
+    if (filters.meetingType && meeting.meeting_type?.trim().toLowerCase() !== filters.meetingType.toLowerCase()) return false;
     if (!matchesRsvpFilter(row, filters.rsvp)) return false;
     if (filters.organizedByMe && !isMeetingHomeOrganizer(meeting, viewerUsername)) return false;
     return !declinedSeries?.has(meeting.id) || isMeetingHomeOrganizer(meeting, viewerUsername);
