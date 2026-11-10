@@ -231,14 +231,13 @@ export class CommitteeSettingsTabComponent {
   // (already-patched) row rather than silently dropped. Without this, a just-added auto-sync list
   // would vanish from the card list and the drawer until a later refetch catches up, and the
   // one-auto-direction-per-committee check above would have no row to see as occupying the slot
-  // (dealako #4899 review). Only a uid tracked in pendingAddMlUids gets this treatment — a
-  // config-only-change override that never gets confirmed is NOT replayed as a pending row, because
-  // (unlike an add) its list was already linked before this save, so a successful fetch missing it
-  // means it was unlinked outside this component, not that the index hasn't caught up yet; the
-  // refresh-pipeline tap (see initAssociatedMailingLists) drops that kind of override instead of
-  // leaving it to resurrect here (dealako #4899 review — this replaces the former claim that no
-  // removed uid is ever left in associatedMlOverrides, which only held for unlinks made through this
-  // same component instance).
+  // (dealako #4899 review). This same replay also covers a non-pending, config-only-change override
+  // during its one-miss grace window: the prune loop (see initAssociatedMailingLists) no longer
+  // deletes such an override the first time a fetch misses its uid — a single absence isn't proof it
+  // was unlinked outside this component rather than a transient index false-negative — so the override
+  // stays in the map, and without this replay the row would vanish from the card list for that one
+  // refetch before reappearing (dealako #4899 review's two-miss fallback). The row only disappears for
+  // good once the prune loop actually deletes the override, on its second consecutive miss.
   //
   // A pending row still goes through `patchCommitteeSyncMode`, not just the raw override snapshot:
   // the snapshot's own `committees[]` predates the link, so it has no entry for this committee yet,
@@ -1252,10 +1251,13 @@ export class CommitteeSettingsTabComponent {
         return override ? this.patchCommitteeSyncMode(ml, override.sync_mode) : ml;
       });
       const fetchedUids = new Set(fetched.map((ml) => ml.uid));
-      const pendingAdds = this.pendingAddMlUids();
-      const pendingRows = [...overrides.entries()]
-        .filter(([uid]) => !fetchedUids.has(uid) && pendingAdds.has(uid))
-        .map(([, ml]) => this.patchCommitteeSyncMode(ml, ml.sync_mode));
+      // Any override still in the map and missing from this fetch gets replayed as its own row,
+      // not just a pending add: the prune loop (see initAssociatedMailingLists) now keeps a
+      // non-pending override alive through its first miss too (dealako #4899 review's two-miss
+      // fallback), so during that one-miss grace window the override is still "active" and must
+      // stay visible — the row only needs to disappear once the prune loop actually deletes the
+      // override, which it already does by the override's second consecutive miss.
+      const pendingRows = [...overrides.entries()].filter(([uid]) => !fetchedUids.has(uid)).map(([, ml]) => this.patchCommitteeSyncMode(ml, ml.sync_mode));
       return pendingRows.length > 0 ? [...patched, ...pendingRows] : patched;
     });
   }
