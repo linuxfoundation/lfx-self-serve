@@ -23,7 +23,7 @@ describe('MentorTaskReviewService', () => {
 
   let service: MentorTaskReviewService;
   let add: ReturnType<typeof vi.fn>;
-  let reviewMenteeTask: ReturnType<typeof vi.fn<(taskId: string, status: MentorshipMentorTaskReviewDecision) => Observable<void>>>;
+  let reviewMenteeTask: ReturnType<typeof vi.fn<(taskId: string, status: MentorshipMentorTaskReviewDecision, reason?: string) => Observable<void>>>;
 
   const httpError = (status: number, error: unknown = null) => new HttpErrorResponse({ status, error });
 
@@ -43,10 +43,13 @@ describe('MentorTaskReviewService', () => {
     service = TestBed.inject(MentorTaskReviewService);
   });
 
-  it.each(['complete', 'incomplete'] as const)('sends %s, toasts its success copy and emits true', async (status) => {
-    await expect(firstValueFrom(service.review(TASK_ID, status))).resolves.toBe(true);
+  it.each([
+    ['complete', undefined],
+    ['incomplete', 'Add tests.'],
+  ] as const)('sends %s with its reason, toasts its success copy and emits true', async (status, reason) => {
+    await expect(firstValueFrom(service.review(TASK_ID, status, reason))).resolves.toBe(true);
 
-    expect(reviewMenteeTask).toHaveBeenCalledWith(TASK_ID, status);
+    expect(reviewMenteeTask).toHaveBeenCalledWith(TASK_ID, status, reason);
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: MENTORSHIP_MENTOR_TASK_REVIEW_SUCCESS_SUMMARIES[status] }));
   });
 

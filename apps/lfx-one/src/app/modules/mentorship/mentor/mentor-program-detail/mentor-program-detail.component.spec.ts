@@ -65,7 +65,7 @@ describe('MentorProgramDetailComponent', () => {
   let getMentorProgram: ReturnType<typeof vi.fn>;
   let saveNote: ReturnType<typeof vi.fn>;
   let createTasks: ReturnType<typeof vi.fn<(request: MentorshipTaskCreateRequest) => Observable<MentorshipTaskCreateResponse | null>>>;
-  let reviewTask: ReturnType<typeof vi.fn<(taskId: string, status: MentorshipMentorTaskReviewDecision) => Observable<boolean>>>;
+  let reviewTask: ReturnType<typeof vi.fn<(taskId: string, status: MentorshipMentorTaskReviewDecision, reason?: string) => Observable<boolean>>>;
 
   /**
    * Takes the dialog `onClose` observable (not the value) — a dismissed dialog emits
@@ -367,16 +367,19 @@ describe('MentorProgramDetailComponent', () => {
     const TASK_ID = '9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
     const reviewing = (): readonly string[] => fixture.componentInstance['reviewingTaskIds']();
 
-    it.each(['complete', 'incomplete'] as const)('sends %s, then re-reads the detail without the loading state', (status) => {
+    it.each([
+      ['complete', undefined],
+      ['incomplete', 'Add tests.'],
+    ] as const)('sends %s with its reason, then re-reads the detail without the loading state', (status, reason) => {
       build();
       const reread = detail();
       reread.tabCounts = { ...reread.tabCounts, tasks: 2 };
       getMentorProgram.mockReturnValueOnce(of(reread));
 
-      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status });
+      fixture.componentInstance['onTaskReviewRequested']({ taskId: TASK_ID, status, reason });
       fixture.detectChanges();
 
-      expect(reviewTask).toHaveBeenCalledWith(TASK_ID, status);
+      expect(reviewTask).toHaveBeenCalledWith(TASK_ID, status, reason);
       expect(getMentorProgram).toHaveBeenCalledTimes(2);
       expect(getMentorProgram).toHaveBeenLastCalledWith('mp_gridflow_fall26');
       expect(fixture.componentInstance['tabCounts']().tasks).toBe(2);

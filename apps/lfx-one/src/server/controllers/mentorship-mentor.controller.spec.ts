@@ -11,7 +11,7 @@ import type {
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramsResponse,
 } from '@lfx-one/shared/interfaces';
-import { MENTORSHIP_MENTEE_NOTE_MAX } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_NOTE_MAX, MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -530,15 +530,33 @@ describe('MentorshipMentorController', () => {
       vi.mocked(res.status).mockReturnValue(res);
     });
 
-    it.each(['complete', 'incomplete'] as const)('sends %s for the trimmed task id and answers 204, logging only the id and status', async (status) => {
+    it('approves the trimmed task id with no reason and answers 204, logging only the id and status', async () => {
       const review = vi.spyOn(MentorshipMentorService.prototype, 'reviewMenteeTask').mockResolvedValue(undefined);
 
-      await controller.reviewMenteeTask(buildReviewReq({ status, comment: 'ignored' }, ` ${TASK_ID} `), res, next);
+      await controller.reviewMenteeTask(buildReviewReq({ status: 'complete', comment: 'ignored' }, ` ${TASK_ID} `), res, next);
 
-      expect(review).toHaveBeenCalledWith(expect.anything(), TASK_ID, status);
+      expect(review).toHaveBeenCalledWith(expect.anything(), TASK_ID, 'complete', undefined);
       expect(res.status).toHaveBeenCalledWith(204);
       expect(next).not.toHaveBeenCalled();
-      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'review_mentorship_mentee_task', expect.anything(), { taskId: TASK_ID, status });
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'review_mentorship_mentee_task', expect.anything(), {
+        taskId: TASK_ID,
+        status: 'complete',
+      });
+    });
+
+    it('requests changes with the trimmed reason and answers 204, never logging the reason', async () => {
+      const review = vi.spyOn(MentorshipMentorService.prototype, 'reviewMenteeTask').mockResolvedValue(undefined);
+      const reason = 'x'.repeat(MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX);
+
+      await controller.reviewMenteeTask(buildReviewReq({ status: 'incomplete', reason: `  ${reason}\n` }, ` ${TASK_ID} `), res, next);
+
+      expect(review).toHaveBeenCalledWith(expect.anything(), TASK_ID, 'incomplete', reason);
+      expect(res.status).toHaveBeenCalledWith(204);
+      expect(next).not.toHaveBeenCalled();
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'review_mentorship_mentee_task', expect.anything(), {
+        taskId: TASK_ID,
+        status: 'incomplete',
+      });
     });
 
     it.each([
@@ -547,6 +565,11 @@ describe('MentorshipMentorController', () => {
       ['a missing body', undefined, TASK_ID],
       ['a mentee status', { status: 'submitted' }, TASK_ID],
       ['the app status name', { status: 'completed' }, TASK_ID],
+      ['a request for changes with no reason', { status: 'incomplete' }, TASK_ID],
+      ['a request for changes with a blank reason', { status: 'incomplete', reason: '   ' }, TASK_ID],
+      ['a request for changes with a non-string reason', { status: 'incomplete', reason: 42 }, TASK_ID],
+      ['a reason over the limit', { status: 'incomplete', reason: 'x'.repeat(MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX + 1) }, TASK_ID],
+      ['an approval with a reason', { status: 'complete', reason: 'Looks good' }, TASK_ID],
     ])('rejects %s before calling the service', async (_label, requestBody, taskId) => {
       const review = vi.spyOn(MentorshipMentorService.prototype, 'reviewMenteeTask');
 
