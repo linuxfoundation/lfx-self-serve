@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { GroupsIOMailingList, MailingListCommitteeSync } from '../interfaces/mailing-list.interface';
+import type { GroupsIOMailingList, MailingListCommitteeSync, MailingListGroupLink } from '../interfaces/mailing-list.interface';
 
 import { getEntityCommands } from './entity-route.utils';
 
@@ -60,6 +60,22 @@ function toHttpUrl(value: string | null | undefined): string | null {
 export function getMailingListCommands(list: Pick<GroupsIOMailingList, 'uid' | 'is_foundation'>, leaf?: 'edit'): string[] {
   const flatFallback = leaf ? ['/mailing-lists', list.uid, leaf] : ['/mailing-lists', list.uid];
   return getEntityCommands('mailing-lists', list.uid, list.is_foundation, leaf) ?? flatFallback;
+}
+
+/**
+ * The groups linked to a mailing list, each with its canonical group-details link from the list's own tier.
+ * A group with no uid has `commands: null` so callers show it as plain text instead of dropping it.
+ * `limit` keeps only the first few, so a table can summarise the rest as "+N more".
+ */
+export function getMailingListGroupLinks(list: Pick<GroupsIOMailingList, 'committees' | 'is_foundation'>, limit?: number): MailingListGroupLink[] {
+  return (list.committees ?? []).slice(0, limit).map((committee) => {
+    const uid = committee.uid?.trim();
+    return {
+      uid: committee.uid,
+      name: committee.name?.trim() || null,
+      commands: uid ? (getEntityCommands('groups', uid, list.is_foundation) ?? ['/groups', uid]) : null,
+    };
+  });
 }
 
 /** `?project=` for mailing-list links — present only when the list carries a slug (GH-1567). */

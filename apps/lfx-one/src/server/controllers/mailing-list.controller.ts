@@ -458,6 +458,149 @@ export class MailingListController {
     }
   }
 
+  /**
+   * POST /mailing-lists/:id/sync-diff/start
+   */
+  public async startSyncDiff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'start_sync_diff', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Mailing List ID is required', {
+            operation: 'start_sync_diff',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const start = await this.mailingListService.startSyncDiff(req, id);
+
+      logger.success(req, 'start_sync_diff', startTime, {
+        mailing_list_id: id,
+        job_id: start.job_id,
+      });
+
+      res.json(start);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/sync-diff/:jobId/status
+   */
+  public async getSyncDiffStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, jobId } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_diff_status', {
+      mailing_list_id: id,
+      job_id: jobId,
+    });
+
+    try {
+      if (!id || !jobId) {
+        next(
+          ServiceValidationError.forField(!id ? 'id' : 'jobId', 'Mailing List ID and job ID are required', {
+            operation: 'get_sync_diff_status',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const status = await this.mailingListService.getSyncDiffStatus(req, id, jobId);
+
+      logger.success(req, 'get_sync_diff_status', startTime, {
+        mailing_list_id: id,
+        job_id: jobId,
+        status: status.status,
+      });
+
+      res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/sync-apply/start
+   */
+  public async startSyncApply(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'start_sync_apply', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Mailing List ID is required', {
+            operation: 'start_sync_apply',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const applyRequest = this.parseSyncApplyRequest(req, next);
+      if (!applyRequest) return;
+
+      const start = await this.mailingListService.startSyncApply(req, id, applyRequest);
+
+      logger.success(req, 'start_sync_apply', startTime, {
+        mailing_list_id: id,
+        job_id: start.job_id,
+      });
+
+      res.json(start);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/sync-apply/:jobId/status
+   */
+  public async getSyncApplyStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, jobId } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_apply_status', {
+      mailing_list_id: id,
+      job_id: jobId,
+    });
+
+    try {
+      if (!id || !jobId) {
+        next(
+          ServiceValidationError.forField(!id ? 'id' : 'jobId', 'Mailing List ID and job ID are required', {
+            operation: 'get_sync_apply_status',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const status = await this.mailingListService.getSyncApplyStatus(req, id, jobId);
+
+      logger.success(req, 'get_sync_apply_status', startTime, {
+        mailing_list_id: id,
+        job_id: jobId,
+        status: status.status,
+      });
+
+      res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ============================================
   // Mailing List Member Endpoints
   // ============================================

@@ -2333,7 +2333,9 @@ export class CampaignController {
       // (briefId, projectSlug, platforms, configEnvelope, campaignTypes), and campaign-service
       // reads the destination exclusively from the brief it already stores — `decodeBriefFields`
       // takes `brief.url` and falls back to the nested `event_details.registrationUrl`
-      // (`internal/dispatch/reddit.go`). Only the PLANNING tab ever persists that field.
+      // (`internal/dispatch/reddit.go`). Only the PLANNING tab ever persists that field: the paid
+      // brief editor's Registration URL (#5490), reached from the Implement tab by Edit brief, which
+      // is the remedy each message below names.
       //
       // Refuse here instead, naming the field. This is a READ and a refusal, deliberately: the
       // brief is NOT patched from `body.registrationUrl`, because replacing a brief moves its
@@ -2373,8 +2375,8 @@ export class CampaignController {
               ServiceValidationError.forField(
                 'registrationUrl',
                 shape === 'empty'
-                  ? 'the saved brief has no registration URL, so the ad platforms have no destination for the paid traffic. Set Registration URL on the Planning tab and save the brief, then create again.'
-                  : "the saved brief's registration URL is not a complete web address, so the ad platforms will refuse it. Set Registration URL on the Planning tab to a full https:// address and save the brief, then create again.",
+                  ? 'the saved brief has no registration URL, so the ad platforms have no destination for the paid traffic. Select Edit brief, enter the Registration URL, then Save & Proceed to Implement and create again.'
+                  : "the saved brief's registration URL is not a complete web address, so the ad platforms will refuse it. Select Edit brief, enter a full https:// Registration URL, then Save & Proceed and create again.",
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )
             );
@@ -2390,7 +2392,7 @@ export class CampaignController {
             next(
               ServiceValidationError.forField(
                 'registrationUrl',
-                "Meta Ads only accepts an https:// destination, and the saved brief's registration URL uses http://. Update Registration URL on the Planning tab to https:// and save the brief, then create again.",
+                "Meta Ads only accepts an https:// destination, and the saved brief's registration URL uses http://. Select Edit brief, change the Registration URL to https://, then Save & Proceed and create again.",
                 { operation: 'campaign_create', service: 'campaign_controller' }
               )
             );

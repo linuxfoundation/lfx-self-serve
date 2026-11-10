@@ -529,6 +529,82 @@ export interface SyncApplyRequest {
 }
 
 /**
+ * Identifies the async job started by a sync-diff or sync-apply `/start` call
+ * @description Mirrors the upstream `SyncDiffJobStart`/`SyncApplyJobStart` models. Returned by
+ * `POST /groupsio/mailing-lists/{mailing_list_uid}/sync-diff/start` and `/sync-apply/start`
+ */
+export interface SyncJobStart {
+  /** Identifier for the started job; pass to the matching `/status` endpoint to poll it */
+  job_id: string;
+}
+
+/** Lifecycle state of an async sync-diff or sync-apply job */
+export type SyncJobState = 'pending' | 'ongoing' | 'completed' | 'failed';
+
+/**
+ * Status of an in-progress or finished sync-diff job
+ * @description Returned by `GET /groupsio/mailing-lists/{mailing_list_uid}/sync-diff/{job_id}/status`.
+ * `diff` is only present once `status` is `completed`
+ */
+export interface SyncDiffJobStatus {
+  /** Identifier for the job this status describes */
+  job_id: string;
+  /** Current lifecycle state of the job */
+  status: SyncJobState;
+  /** Number of members compared so far */
+  processed_count: number;
+  /** Total number of members to compare */
+  total_count: number;
+  /** The computed diff, present only when `status` is `completed` */
+  diff?: SyncDiff;
+  /** Failure detail, present only when `status` is `failed` */
+  error_message?: string;
+}
+
+/**
+ * Outcome of one add or remove within a sync-apply job, as reported directly by ITX — without
+ * the member_id/member_type/name enrichment `SyncApplyAddResult`/`SyncApplyRemoveResult` carry,
+ * since that enrichment requires the request-time approved adds/removes, unavailable to a status poll
+ * @description Mirrors the upstream `SyncJobResultEntry` model
+ */
+export interface SyncJobResultEntry {
+  /** Member's email address */
+  email: string;
+  /** Whether this entry was an add or a remove */
+  action: 'add' | 'remove';
+  /** Whether this entry succeeded, failed, or was skipped (e.g. a cross-list remove ITX elected not to apply) */
+  status: 'success' | 'error' | 'skipped';
+  /** Detail for `error` and `skipped` rows explaining why */
+  error?: string;
+}
+
+/**
+ * Status of an in-progress or finished sync-apply job
+ * @description Returned by `GET /groupsio/mailing-lists/{mailing_list_uid}/sync-apply/{job_id}/status`.
+ * `results` is present once `status` is `completed` or `failed`
+ */
+export interface SyncApplyJobStatus {
+  /** Identifier for the job this status describes */
+  job_id: string;
+  /** Current lifecycle state of the job */
+  status: SyncJobState;
+  /** Number of approved adds/removes processed so far */
+  processed_count: number;
+  /** Total number of approved adds/removes to process */
+  total_count: number;
+  /** Count of adds/removes successfully applied */
+  added_count: number;
+  /** Count of removals successfully applied */
+  removed_count: number;
+  /** Count of adds/removes that failed to apply */
+  error_count: number;
+  /** Flat per-entry outcomes, present once `status` is `completed` or `failed` */
+  results?: SyncJobResultEntry[];
+  /** Failure detail, present only when `status` is `failed` */
+  error_message?: string;
+}
+
+/**
  * A mailing list's sync direction and committee/role filters for one specific linked committee.
  * All three fields are empty/unset defaults when the list isn't linked to that committee at all.
  */

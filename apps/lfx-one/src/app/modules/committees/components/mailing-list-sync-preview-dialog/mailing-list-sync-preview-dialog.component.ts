@@ -7,28 +7,31 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { MailingListSyncMode, SyncApplyOutcome } from '@lfx-one/shared/enums';
+import { MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
+import { MailingListSyncMode } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
   MailingListSyncPreviewDialogData,
-  SyncApplyAddResult,
-  SyncApplyRemoveResult,
-  SyncApplyResult,
+  SyncApplyJobStatus,
   SyncDiff,
   SyncDiffAdd,
+  SyncDiffJobStatus,
   SyncDiffRemove,
+  SyncJobResultEntry,
 } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { UserService } from '@services/user.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, finalize, interval, of, Subscription, take } from 'rxjs';
+import { catchError, EMPTY, exhaustMap, finalize, interval, of, Subscription, takeUntil, takeWhile, tap, throwError, timer } from 'rxjs';
+import { UiProgressComponent } from '@shared/uikit/progress/progress.component';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
+import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
 
 type PreviewTab = 'adds' | 'removes' | 'conflicts';
 
 @Component({
   selector: 'lfx-mailing-list-sync-preview-dialog',
-  imports: [ButtonComponent, CheckboxComponent, FilterPillsComponent, ReactiveFormsModule],
+  imports: [ButtonComponent, CheckboxComponent, FilterPillsComponent, ReactiveFormsModule, UiProgressComponent],
   templateUrl: './mailing-list-sync-preview-dialog.component.html',
 })
 export class MailingListSyncPreviewDialogComponent {
@@ -59,13 +62,17 @@ export class MailingListSyncPreviewDialogComponent {
   public loadingDiff = signal(true);
   public loadError = signal<string | null>(null);
   public diff = signal<SyncDiff | null>(null);
+  public diffProcessedCount = signal(0);
+  public diffTotalCount = signal(0);
 
   public applying = signal(false);
   public applyError = signal<string | null>(null);
-  public applyResult = signal<SyncApplyResult | null>(null);
+  public applyResult = signal<SyncApplyJobStatus | null>(null);
+  public applyProcessedCount = signal(0);
+  public applyTotalCount = signal(0);
   public elapsedSeconds = signal(0);
 
-  // Tracks that an apply request was sent, independent of whether a SyncApplyResult came back —
+  // Tracks that an apply request was sent, independent of whether a SyncApplyJobStatus came back —
   // a request can partially succeed upstream before the response errors out, so close() needs to
   // know an apply was attempted even when applyResult() never got set (#4911 review).
   public applyAttempted = signal(false);
@@ -84,15 +91,11 @@ export class MailingListSyncPreviewDialogComponent {
   // Outcome text precomputed here rather than called as a method from the template — the template
   // re-invokes a bound method on every change-detection pass, not just when applyResult() changes
   // (docs/reviews/frontend-checklist.md, #4911 review).
-  public addedWithOutcome: Signal<(SyncApplyAddResult & { outcomeText: string })[]> = this.initAddedWithOutcome();
-  public removedWithOutcome: Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> = this.initRemovedWithOutcome();
+  public addedResults: Signal<(SyncJobResultEntry & { outcomeText: string })[]> = this.initAddedResults();
+  public removedResults: Signal<(SyncJobResultEntry & { outcomeText: string })[]> = this.initRemovedResults();
 
-  // Adds count only ADDED/INVITED (also excludes SKIPPED_CROSS_LIST, neither a failure nor an
-  // actual add); removes count everything except FAILED — so the results-view headings don't
-  // count a row as "added"/"removed" when it actually failed or was skipped
-  // (docs/reviews/frontend-checklist.md § 4, #4911 review).
-  public addedSucceededCount: Signal<number> = this.initAddedSucceededCount();
-  public removedSucceededCount: Signal<number> = this.initRemovedSucceededCount();
+  public addedSucceededCount: Signal<number> = computed(() => this.applyResult()?.added_count ?? 0);
+  public removedSucceededCount: Signal<number> = computed(() => this.applyResult()?.removed_count ?? 0);
 
   public constructor() {
     // Also locks while the results view is showing — otherwise the header X / Escape stayed usable
@@ -122,29 +125,28 @@ export class MailingListSyncPreviewDialogComponent {
     this.applying.set(true);
     this.applyAttempted.set(true);
     this.applyError.set(null);
+    this.applyProcessedCount.set(0);
+    this.applyTotalCount.set(0);
     const ticker = this.startElapsedTicker();
 
     this.mailingListService
-      .applySyncDiff(this.mailingListUid, {
+      .startSyncApply(this.mailingListUid, {
         committee_uid: diff.committee_uid,
         adds: this.selectedAdds(),
         removes: this.selectedRemoves(),
       })
       .pipe(
-        finalize(() => {
-          ticker.unsubscribe();
-          this.applying.set(false);
-        }),
         catchError((error) => {
           this.applyError.set(error?.error?.error ?? 'Could not apply the sync changes. Please try again.');
+          ticker.unsubscribe();
+          this.applying.set(false);
           return of(null);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((result) => {
-        if (result) {
-          this.applyResult.set(result);
-        }
+      .subscribe((start) => {
+        if (!start) return;
+        this.pollSyncApplyStatus(start.job_id, ticker);
       });
   }
 
@@ -181,114 +183,222 @@ export class MailingListSyncPreviewDialogComponent {
     });
   }
 
-  private initAddedWithOutcome(): Signal<(SyncApplyAddResult & { outcomeText: string })[]> {
+  private initAddedResults(): Signal<(SyncJobResultEntry & { outcomeText: string })[]> {
     return computed(() => {
       const reverse = this.isReverseSync();
-      return (this.applyResult()?.added ?? []).map((row) => ({ ...row, outcomeText: this.friendlyAddOutcome(row, reverse) }));
+      return (this.applyResult()?.results ?? [])
+        .filter((row) => row.action === 'add')
+        .map((row) => ({ ...row, outcomeText: this.friendlyOutcome(row, reverse) }));
     });
   }
 
-  private initRemovedWithOutcome(): Signal<(SyncApplyRemoveResult & { outcomeText: string })[]> {
+  private initRemovedResults(): Signal<(SyncJobResultEntry & { outcomeText: string })[]> {
     return computed(() => {
       const reverse = this.isReverseSync();
-      return (this.applyResult()?.removed ?? []).map((row) => ({ ...row, outcomeText: this.friendlyRemoveOutcome(row, reverse) }));
+      return (this.applyResult()?.results ?? [])
+        .filter((row) => row.action === 'remove')
+        .map((row) => ({ ...row, outcomeText: this.friendlyOutcome(row, reverse) }));
     });
-  }
-
-  // Counts only ADDED/INVITED — excluding FAILED alone isn't enough, since SKIPPED_CROSS_LIST is
-  // neither a failure nor an actual add, and was inflating the "succeeded" heading (greptile P2, #4911 review).
-  private initAddedSucceededCount(): Signal<number> {
-    return computed(() => this.addedWithOutcome().filter((row) => row.outcome === SyncApplyOutcome.ADDED || row.outcome === SyncApplyOutcome.INVITED).length);
-  }
-
-  private initRemovedSucceededCount(): Signal<number> {
-    return computed(() => this.removedWithOutcome().filter((row) => row.outcome !== SyncApplyOutcome.FAILED).length);
   }
 
   private loadDiff(): void {
     this.loadingDiff.set(true);
     this.loadError.set(null);
+    this.diffProcessedCount.set(0);
+    this.diffTotalCount.set(0);
     const ticker = this.startElapsedTicker();
 
     this.mailingListService
-      .getSyncDiff(this.mailingListUid)
+      .startSyncDiff(this.mailingListUid)
       .pipe(
-        take(1),
-        finalize(() => {
-          ticker.unsubscribe();
-          this.loadingDiff.set(false);
-        }),
         catchError((error) => {
           this.loadError.set(error?.error?.error ?? 'Could not load the sync preview. Please try again.');
+          ticker.unsubscribe();
+          this.loadingDiff.set(false);
           return of(null);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((diff) => {
-        if (!diff) return;
+      .subscribe((start) => {
+        if (!start) return;
+        this.pollSyncDiffStatus(start.job_id, ticker);
+      });
+  }
 
-        // The mailing list could have been relinked from this committee to another between this
-        // dialog opening and the diff loading — both requests would still target the new
-        // committee, so the preview-to-apply relink check alone can't catch it. Reject a mismatch
-        // up front and keep Apply disabled (copilot, #4911 review).
-        if (diff.committee_uid !== this.committeeUid) {
-          this.loadError.set('This mailing list is now linked to a different committee. Close this dialog and reopen Sync Now to see the current preview.');
+  /** Polls `/sync-diff/:jobId/status` every ~2s until the job reaches a terminal state. */
+  private pollSyncDiffStatus(jobId: string, ticker: Subscription): void {
+    let reachedTerminalState = false;
+
+    interval(2000)
+      .pipe(
+        // exhaustMap (not switchMap) so a slow status request isn't cancelled by the next 2s tick —
+        // switchMap would abort the in-flight request and silently restart it forever, never letting
+        // a slow-but-healthy job reach a terminal state (greptile-apps, cursor/Bugbot, copilot, #5489 review).
+        // catchError lives inside the exhaustMap callback (not on the outer stream) so a single
+        // transient failure (a dropped connection, a 502) is skipped and polling continues on the
+        // next tick, instead of catchError replacing the whole subscription and ending the poll for
+        // good (lfx-one, #5489 review).
+        // A transient per-tick failure (isTransientHttpError — 0/408/429/5xx) is swallowed (returns
+        // null, skipped below) so a stale error message can't linger once loadingDiff() goes false
+        // and hide a diff that a later, successful tick did load. A permanent refusal (401 session
+        // expiry, 403/404/409 conflict) is rethrown instead of swallowed, so it reaches the outer
+        // catchError below and stops polling immediately rather than retrying for the full deadline
+        // (greptile-apps, cursor/Bugbot, copilot, #5489 review).
+        exhaustMap(() =>
+          this.mailingListService
+            .getSyncDiffStatus(this.mailingListUid, jobId)
+            .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of(null) : throwError(() => error))))
+        ),
+        tap((status) => {
+          if (!status) return;
+          this.diffProcessedCount.set(status.processed_count);
+          this.diffTotalCount.set(status.total_count);
+        }),
+        takeWhile((status: SyncDiffJobStatus | null) => status === null || status.status === 'pending' || status.status === 'ongoing', true),
+        takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
+        catchError((error: unknown) => {
+          reachedTerminalState = true;
+          this.loadError.set(extractErrorMessage(error, 'Could not load the sync preview. Please try again.'));
+          return EMPTY;
+        }),
+        finalize(() => {
+          ticker.unsubscribe();
+          this.loadingDiff.set(false);
+          if (!reachedTerminalState) {
+            this.loadError.set('The sync preview is taking longer than expected. Please close this dialog and try again.');
+          }
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((status) => {
+        if (!status) return;
+
+        if (status.status === 'failed') {
+          reachedTerminalState = true;
+          this.loadError.set(status.error_message ?? 'Could not load the sync preview. Please try again.');
           return;
         }
 
-        this.diff.set(diff);
+        if (status.status === 'completed') {
+          reachedTerminalState = true;
+          if (status.diff) {
+            this.applyLoadedDiff(status.diff);
+          } else {
+            this.loadError.set('The sync preview finished without a result. Please close this dialog and try again.');
+          }
+        }
+      });
+  }
 
-        // member_id is unique within a single diff's adds/removes and used directly as the
-        // FormGroup key. FormGroup.get() treats a dot as a nested-path separator, so this assumes
-        // member_id never contains one — true for the UID-shaped ids the backend returns today.
-        const addControls: Record<string, FormControl<boolean>> = {};
-        diff.adds.forEach((add) => {
-          addControls[add.member_id] = new FormControl(true, { nonNullable: true });
-        });
-        this.addCheckboxForm = new FormGroup(addControls);
-        this.addCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.addFormVersion.update((v) => v + 1));
+  private applyLoadedDiff(diff: SyncDiff): void {
+    // The mailing list could have been relinked from this committee to another between this
+    // dialog opening and the diff loading — both requests would still target the new
+    // committee, so the preview-to-apply relink check alone can't catch it. Reject a mismatch
+    // up front and keep Apply disabled (copilot, #4911 review).
+    if (diff.committee_uid !== this.committeeUid) {
+      this.loadError.set('This mailing list is now linked to a different committee. Close this dialog and reopen Sync Now to see the current preview.');
+      return;
+    }
 
-        const removeControls: Record<string, FormControl<boolean>> = {};
-        diff.removes.forEach((remove) => {
-          removeControls[remove.member_id] = new FormControl(true, { nonNullable: true });
-        });
-        this.removeCheckboxForm = new FormGroup(removeControls);
-        this.removeCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.removeFormVersion.update((v) => v + 1));
+    this.diff.set(diff);
+
+    // member_id is unique within a single diff's adds/removes and used directly as the
+    // FormGroup key. FormGroup.get() treats a dot as a nested-path separator, so this assumes
+    // member_id never contains one — true for the UID-shaped ids the backend returns today.
+    const addControls: Record<string, FormControl<boolean>> = {};
+    diff.adds.forEach((add) => {
+      addControls[add.member_id] = new FormControl(true, { nonNullable: true });
+    });
+    this.addCheckboxForm = new FormGroup(addControls);
+    this.addCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.addFormVersion.update((v) => v + 1));
+
+    const removeControls: Record<string, FormControl<boolean>> = {};
+    diff.removes.forEach((remove) => {
+      removeControls[remove.member_id] = new FormControl(true, { nonNullable: true });
+    });
+    this.removeCheckboxForm = new FormGroup(removeControls);
+    this.removeCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.removeFormVersion.update((v) => v + 1));
+  }
+
+  /** Polls `/sync-apply/:jobId/status` every ~2s until the job reaches a terminal state. */
+  private pollSyncApplyStatus(jobId: string, ticker: Subscription): void {
+    let reachedTerminalState = false;
+
+    interval(2000)
+      .pipe(
+        // exhaustMap (not switchMap) so a slow status request isn't cancelled by the next 2s tick —
+        // switchMap would abort the in-flight request and silently restart it forever, never letting
+        // a slow-but-healthy job reach a terminal state (greptile-apps, cursor/Bugbot, copilot, #5489 review).
+        // catchError lives inside the exhaustMap callback (not on the outer stream) so a single
+        // transient failure (a dropped connection, a 502) is skipped and polling continues on the
+        // next tick, instead of catchError replacing the whole subscription and ending the poll for
+        // good (lfx-one, #5489 review).
+        // A transient per-tick failure (isTransientHttpError — 0/408/429/5xx) is swallowed (returns
+        // null, skipped below) so a stale error message can't linger once applying() goes false and
+        // hide a result that a later, successful tick did load. A permanent refusal (401 session
+        // expiry, 403/404/409 conflict) is rethrown instead of swallowed, so it reaches the outer
+        // catchError below and stops polling immediately rather than retrying for the full deadline
+        // (greptile-apps, cursor/Bugbot, copilot, #5489 review). applyAttempted was already set to
+        // true in apply() before this poll started, so closing the dialog on a permanent error still
+        // triggers a membership refresh — it isn't reset here.
+        exhaustMap(() =>
+          this.mailingListService
+            .getSyncApplyStatus(this.mailingListUid, jobId)
+            .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of(null) : throwError(() => error))))
+        ),
+        tap((status) => {
+          if (!status) return;
+          this.applyProcessedCount.set(status.processed_count);
+          this.applyTotalCount.set(status.total_count);
+        }),
+        takeWhile((status: SyncApplyJobStatus | null) => status === null || status.status === 'pending' || status.status === 'ongoing', true),
+        takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
+        catchError((error: unknown) => {
+          reachedTerminalState = true;
+          this.applyError.set(extractErrorMessage(error, 'Applying changes failed. Please try again.'));
+          return EMPTY;
+        }),
+        finalize(() => {
+          ticker.unsubscribe();
+          this.applying.set(false);
+          if (!reachedTerminalState) {
+            this.applyError.set('Applying changes is taking longer than expected. Please close this dialog and try again.');
+          }
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((status) => {
+        if (!status) return;
+
+        if (status.status !== 'completed' && status.status !== 'failed') return;
+        reachedTerminalState = true;
+
+        // A "failed" job can still carry partial `results` (some adds/removes succeeded before the
+        // job errored out) — always surface the failure via applyError regardless of whether results
+        // are present, instead of silently falling into the success view (greptile-apps, cursor/Bugbot,
+        // copilot, #5489 review). applyResult is still set so any partial results remain visible.
+        if (status.status === 'failed') {
+          this.applyError.set(status.error_message ?? 'The sync job failed partway through.');
+        }
+        this.applyResult.set(status);
       });
   }
 
   /**
-   * Human-readable outcome for one applied add. Scoped to the fields the backend actually
-   * returns today (outcome, error, name_hint as a plain display name) — NOT a fuzzy name-match
-   * suggestion against the other roster. That PCC-1604 parity gap is tracked separately and
-   * blocked on ITX; extend this once linuxfoundation/lfx-self-serve#4364 resolves it.
+   * Human-readable outcome for one applied add/remove. The async status poll only reports
+   * success/error per row (no member_id/member_type/name_hint enrichment — that enrichment needs
+   * the request-time approved adds/removes, which aren't available to a status poll), so this is
+   * simpler than the old outcome-enum messaging it replaces.
    */
-  private friendlyAddOutcome(result: SyncApplyAddResult, isReverseSync: boolean): string {
-    const destination = isReverseSync ? 'the committee' : 'the mailing list';
-    switch (result.outcome) {
-      case SyncApplyOutcome.ADDED:
-        return `Added to ${destination}.`;
-      case SyncApplyOutcome.INVITED:
-        return `No LFX account found for ${result.email}${result.name_hint ? ` (${result.name_hint})` : ''} — an invite was sent.`;
-      case SyncApplyOutcome.FAILED:
-        return result.error || 'Could not complete this change.';
-      case SyncApplyOutcome.SKIPPED_CROSS_LIST:
-        return 'Skipped — this member belongs to a different mailing list.';
-      default:
-        return result.outcome;
+  private friendlyOutcome(result: SyncJobResultEntry, isReverseSync: boolean): string {
+    if (result.status === 'error') {
+      return result.error || 'Could not complete this change.';
     }
-  }
-
-  private friendlyRemoveOutcome(result: SyncApplyRemoveResult, isReverseSync: boolean): string {
-    const destination = isReverseSync ? 'the committee' : 'the mailing list';
-    switch (result.outcome) {
-      case SyncApplyOutcome.REMOVED:
-        return `Removed from ${destination}.`;
-      case SyncApplyOutcome.FAILED:
-        return result.error || 'Could not complete this change.';
-      default:
-        return result.outcome;
+    if (result.status === 'skipped') {
+      return result.error || 'Skipped — this change was not applied.';
     }
+    const destination = isReverseSync ? 'the committee' : 'the mailing list';
+    return result.action === 'add' ? `Added to ${destination}.` : `Removed from ${destination}.`;
   }
 
   private startElapsedTicker(): Subscription {

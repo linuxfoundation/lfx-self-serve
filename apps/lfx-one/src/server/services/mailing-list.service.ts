@@ -14,9 +14,12 @@ import {
   MyMailingList,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  SyncApplyJobStatus,
   SyncApplyRequest,
   SyncApplyResult,
   SyncDiff,
+  SyncDiffJobStatus,
+  SyncJobStart,
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
@@ -416,6 +419,78 @@ export class MailingListService {
     });
 
     return result;
+  }
+
+  /** Starts an async sync-diff job and returns its ID immediately — no long-poll timeout needed. */
+  public async startSyncDiff(req: Request, mailingListId: string): Promise<SyncJobStart> {
+    const start = await this.microserviceProxy.proxyRequest<SyncJobStart>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-diff/start`,
+      'POST'
+    );
+
+    logger.debug(req, 'start_sync_diff', 'Started sync-diff job', {
+      mailing_list_uid: mailingListId,
+      job_id: start.job_id,
+    });
+
+    return start;
+  }
+
+  /** Fetches the current progress/result of a sync-diff job started via {@link startSyncDiff}. */
+  public async getSyncDiffStatus(req: Request, mailingListId: string, jobId: string): Promise<SyncDiffJobStatus> {
+    const status = await this.microserviceProxy.proxyRequest<SyncDiffJobStatus>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-diff/${jobId}/status`,
+      'GET'
+    );
+
+    logger.debug(req, 'get_sync_diff_status', 'Fetched sync-diff job status', {
+      mailing_list_uid: mailingListId,
+      job_id: jobId,
+      status: status.status,
+    });
+
+    return status;
+  }
+
+  /** Starts an async sync-apply job for an admin-approved subset of a sync-diff and returns its ID immediately. */
+  public async startSyncApply(req: Request, mailingListId: string, data: SyncApplyRequest): Promise<SyncJobStart> {
+    const start = await this.microserviceProxy.proxyRequest<SyncJobStart>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-apply/start`,
+      'POST',
+      undefined,
+      data
+    );
+
+    logger.debug(req, 'start_sync_apply', 'Started sync-apply job', {
+      mailing_list_uid: mailingListId,
+      job_id: start.job_id,
+    });
+
+    return start;
+  }
+
+  /** Fetches the current progress/result of a sync-apply job started via {@link startSyncApply}. */
+  public async getSyncApplyStatus(req: Request, mailingListId: string, jobId: string): Promise<SyncApplyJobStatus> {
+    const status = await this.microserviceProxy.proxyRequest<SyncApplyJobStatus>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/sync-apply/${jobId}/status`,
+      'GET'
+    );
+
+    logger.debug(req, 'get_sync_apply_status', 'Fetched sync-apply job status', {
+      mailing_list_uid: mailingListId,
+      job_id: jobId,
+      status: status.status,
+    });
+
+    return status;
   }
 
   // ============================================

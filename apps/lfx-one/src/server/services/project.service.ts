@@ -7780,7 +7780,7 @@ export class ProjectService {
     // Resolve mailing list titles for groupsio artifacts. Query by project_uid, then
     // match on the numeric group_id field (groupsio_mailing_list_uid tags hold the
     // mailing list's UUID uid, not the numeric group_id).
-    const mailingListTitleByGroupId = new Map<number, string>();
+    const mailingListByGroupId = new Map<number, { title: string; uid: string }>();
     if (groupsioArtifacts && groupsioArtifacts.length > 0) {
       const mlResults = await fetchAllQueryResources<GroupsIOMailingList>(
         req,
@@ -7800,13 +7800,14 @@ export class ProjectService {
       });
       for (const ml of mlResults) {
         if (ml.group_id != null && ml.title) {
-          mailingListTitleByGroupId.set(ml.group_id, ml.title);
+          mailingListByGroupId.set(ml.group_id, { title: ml.title, uid: ml.uid });
         }
       }
     }
 
     const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => {
-      const mailingListTitle = a.group_id ? mailingListTitleByGroupId.get(a.group_id) : undefined;
+      const mailingList = a.group_id ? mailingListByGroupId.get(a.group_id) : undefined;
+      const mailingListTitle = mailingList?.title;
       return {
         uid: `groupsio_artifact:${a.artifact_id}`,
         type: 'link' as const,
@@ -7817,6 +7818,7 @@ export class ProjectService {
         project_uid: a.project_uid,
         document_source: 'mailing_list' as const,
         document_source_name: mailingListTitle ?? '',
+        mailing_list_uid: mailingList?.uid,
         document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
       };
     });
@@ -7831,6 +7833,7 @@ export class ProjectService {
         created_at: l.created_at,
         document_source: 'committee' as const,
         document_source_name: l.committee_uid ? (committeeNameByUid.get(l.committee_uid) ?? '') : '',
+        committee_uid: l.committee_uid,
       }));
 
     const committeeFileDocs: ProjectDocument[] = (committeeDocs || []).map((f) => ({
@@ -7880,6 +7883,7 @@ export class ProjectService {
       created_at: r.start_time || r.created_at,
       document_source: 'recording' as const,
       document_source_name: r.title || '',
+      past_meeting_id: r.meeting_and_occurrence_id,
     }));
 
     const pastTranscriptDocs: ProjectDocument[] = (pastTranscripts || []).map((t) => ({
@@ -7890,6 +7894,7 @@ export class ProjectService {
       created_at: t.start_time || t.created_at,
       document_source: 'transcript' as const,
       document_source_name: t.title || '',
+      past_meeting_id: t.meeting_and_occurrence_id,
     }));
 
     const pastSummaryDocs: ProjectDocument[] = (pastSummaries || []).map((s) => ({
@@ -7899,6 +7904,7 @@ export class ProjectService {
       created_at: s.summary_start_time || s.created_at,
       document_source: 'summary' as const,
       document_source_name: s.zoom_meeting_topic || '',
+      past_meeting_id: s.meeting_and_occurrence_id,
       summary_uid: s.id,
       // edited_content is an empty string (not absent) for a summary nobody edited, so `??` would never fall back to content.
       summary_content: s.edited_content || s.content,

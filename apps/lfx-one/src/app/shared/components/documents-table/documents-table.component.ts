@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MyDocumentItem } from '@lfx-one/shared/interfaces';
+import { GroupLinkState, MyDocumentItem, MyDocumentTableRow } from '@lfx-one/shared/interfaces';
+import { getDocumentSourceLink } from '@lfx-one/shared/utils';
 import { DocumentDisplayNamePipe } from '@app/shared/pipes/document-display-name.pipe';
 import { DocumentKindTagPipe } from '@app/shared/pipes/document-kind-tag.pipe';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
@@ -16,7 +18,17 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-documents-table',
-  imports: [TableComponent, TagComponent, ButtonComponent, DatePipe, MyDocumentSourceTagPipe, DocumentKindTagPipe, DocumentDisplayNamePipe, TooltipModule],
+  imports: [
+    TableComponent,
+    TagComponent,
+    ButtonComponent,
+    DatePipe,
+    MyDocumentSourceTagPipe,
+    DocumentKindTagPipe,
+    DocumentDisplayNamePipe,
+    TooltipModule,
+    RouterLink,
+  ],
   providers: [DialogService],
   templateUrl: './documents-table.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -29,12 +41,17 @@ export class DocumentsTableComponent {
   public readonly showFoundation = input<boolean>(true);
   public readonly testIdPrefix = input<string>('documents');
   public readonly emptyMessage = input<string>('No documents found');
+  // The group whose own Documents tab this is; its name is plain text instead of a link to the page the user is already on.
+  public readonly currentGroupUid = input<string>('');
+  // Navigation state for group links, so the group page returns to the documents page. Meeting and mailing list pages take none.
+  public readonly groupLinkState = input<GroupLinkState | null>(null);
 
   /** Emitted when a row with `isFolder: true` is clicked. Consumers use this to drill into the folder. */
   public readonly folderOpen = output<MyDocumentItem>();
 
   protected readonly colSpan = computed(() => (this.showFoundation() ? 7 : 6));
   protected readonly hasDocuments = computed(() => this.documents().length > 0);
+  protected readonly rows: Signal<MyDocumentTableRow[]> = this.initRows();
 
   protected onFolderClick(doc: MyDocumentItem): void {
     this.folderOpen.emit(doc);
@@ -82,5 +99,9 @@ export class DocumentsTableComponent {
       a.download = doc.name || 'download';
     }
     a.click();
+  }
+
+  private initRows(): Signal<MyDocumentTableRow[]> {
+    return computed(() => this.documents().map((doc) => ({ ...doc, sourceLink: getDocumentSourceLink(doc, this.currentGroupUid()) })));
   }
 }

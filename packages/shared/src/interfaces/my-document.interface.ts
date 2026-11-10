@@ -129,6 +129,8 @@ export interface MyDocumentItem {
   pastMeetingId?: string;
   /** Mailing list (groups.io) ID for mailing list attachments */
   mailingListId?: string;
+  /** Mailing list UID for mailing list attachments — the id the mailing list details page opens by, unlike the numeric groups.io `mailingListId`; absent when the list could not be resolved */
+  mailingListUid?: string;
   /** File extension or MIME type for icon display (e.g., 'pdf', 'pptx') */
   fileType?: string;
   /** Raw markdown content for summary-type documents — used by the preview dialog */
@@ -161,4 +163,18 @@ export interface MyDocumentItem {
   projectDocumentSource?: ProjectDocumentSource;
   /** What the document is (file, link, recording, ...) — drives the label next to the name. Unset for folders. */
   documentKind?: DocumentKind;
+}
+
+/** Where a document row's group, meeting or mailing list name opens. */
+export interface DocumentSourceLink {
+  /** What the name refers to — only a group page honours the documents page's back state. */
+  kind: 'group' | 'meeting' | 'past_meeting' | 'mailing_list';
+  /** Router commands for the details page; the flat path, which the lens redirect guard resolves to the entity's tier. */
+  commands: string[];
+}
+
+/** A documents-table row with its source link worked out once, so the template never calls a method per row. */
+export interface MyDocumentTableRow extends MyDocumentItem {
+  /** Null when the row has no named source to open, or the table is already on that group's page. */
+  sourceLink: DocumentSourceLink | null;
 }

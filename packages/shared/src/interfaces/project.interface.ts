@@ -229,6 +229,10 @@ export interface ProjectDocument {
   document_source_name?: string;
   /** Committee UID — set on committee_document rows so the UI can build a download URL */
   committee_uid?: string;
+  /** Mailing list UID — set on mailing list rows whose list resolved, so the UI can open the list's details page (the numeric groups.io id is not what that page opens by) */
+  mailing_list_uid?: string;
+  /** Past meeting id (`meeting_and_occurrence_id`) — set on recording, transcript and summary rows so the UI can open the past meeting details */
+  past_meeting_id?: string;
   /** Summary UID — set on past_meeting_summary rows for the preview dialog */
   summary_uid?: string;
   /** Raw markdown summary content — set on past_meeting_summary rows for the preview dialog */

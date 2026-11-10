@@ -5282,6 +5282,82 @@ describe('ImplementationTabComponent create failure messaging', () => {
     expect(c['step']()).toBe('form');
   });
 
+  // #5491: `ServiceValidationError.forField`'s real body, with a reason longer than the 200 characters
+  // `serverAuthoredMessage` puts in front of a reader. This is the registration URL refusal's own text.
+  const LONG_FIELD_REFUSAL =
+    "the saved brief's registration URL is not a complete web address, so the ad platforms will refuse it. Select Edit brief, enter a full https:// Registration URL, then Save & Proceed and create again, now.";
+
+  it('shows a BFF field refusal in full, even past the plain-text length cap, beside the button', async () => {
+    expect(LONG_FIELD_REFUSAL.length).toBeGreaterThan(200);
+    vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: {
+              code: 'VALIDATION_ERROR',
+              error: 'Validation failed for registrationUrl',
+              errors: [{ field: 'registrationUrl', message: LONG_FIELD_REFUSAL, code: 'FIELD_VALIDATION_ERROR' }],
+            },
+          })
+      )
+    );
+    submittableGoogleCreate();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['submit']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(c['errors']()).toEqual([LONG_FIELD_REFUSAL]);
+    const shown = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-submit-error"]');
+    expect(shown?.textContent?.trim()).toBe(LONG_FIELD_REFUSAL);
+    expect(shown?.getAttribute('role')).toBe('alert');
+  });
+
+  it('keeps reading a non-validation 400 through the shared gate, which prefers its top-level message', async () => {
+    // Only a BFF `VALIDATION_ERROR` takes the field-first reader: any other body keeps the shared
+    // rule, so a relayed `errors[]` entry does not displace the message the response leads with.
+    vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { code: 'BAD_REQUEST', error: 'The campaign request was refused.', errors: [{ message: 'an upstream detail' }] },
+          })
+      )
+    );
+    submittableGoogleCreate();
+
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(c['errors']()).toEqual(['The campaign request was refused.']);
+  });
+
+  it('scrolls the refusal into view once the form is back', async () => {
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Set an end date and create again.' } }))
+      );
+      submittableGoogleCreate();
+
+      (fixture.componentInstance as unknown as Record<string, any>)['submit']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(scrolled.map((node) => node.getAttribute('data-testid'))).toEqual(['implementation-submit-error']);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it('keeps the connection fallback for a failure that carried no server message', async () => {
     vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(
       throwError(() => new HttpErrorResponse({ status: 0, error: null, statusText: 'Unknown Error' }))
@@ -5294,6 +5370,98 @@ describe('ImplementationTabComponent create failure messaging', () => {
 
     expect(c['errors']()).toEqual([expect.stringContaining('Unable to reach the campaign service')]);
     expect(c['step']()).toBe('form');
+  });
+});
+
+/**
+ * #5491: whenever Create Campaign is disabled, the line under it says what blocks it. `canSubmit` is
+ * `createBlockedReason() === null`, so the two cannot disagree; these pin the reason's wording for the
+ * registration URL case (#5490) and the generic invalid-control case, and that nothing shows when
+ * Create is enabled.
+ */
+describe('ImplementationTabComponent create blocked reason', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+  const reasonEl = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="implementation-submit-blocked-reason"]');
+  const c = (): Record<string, any> => fixture.componentInstance as unknown as Record<string, any>;
+
+  const seed = (registrationUrl: string): void => {
+    fixture.componentRef.setInput('draft', {
+      eventSlug: 'kubecon-eu-2026',
+      eventName: 'KubeCon EU 2026',
+      registrationUrl,
+      includeSearch: true,
+      budgetUsd: 500,
+      startDate: '2026-09-01',
+      endDate: '2026-09-30',
+      headlines: ['Join us at KubeCon'],
+      descriptions: ['Register today for KubeCon EU 2026.'],
+    } as unknown as CampaignImplementationDraft);
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl, countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      keywords: [SEED_KEYWORD],
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  it('shows nothing while Create is enabled', () => {
+    seed('https://example.com');
+
+    expect(c()['canSubmit']()).toBe(true);
+    expect(c()['createBlockedReason']()).toBeNull();
+    expect(reasonEl()).toBeNull();
+  });
+
+  it('names the empty Registration URL and the editor that sets it on the brief', () => {
+    seed('');
+
+    expect(c()['canSubmit']()).toBe(false);
+    expect(reasonEl()?.textContent?.trim()).toBe(
+      'Create Campaign is unavailable: Registration URL is empty. Select Edit brief, enter the Registration URL, then Save & Proceed to Implement.'
+    );
+  });
+
+  it('names the first invalid required control when the Google form is invalid', () => {
+    seed('https://example.com');
+    c()['campaignForm'].controls.budgetUsd.setValue(0);
+    fixture.detectChanges();
+
+    expect(c()['canSubmit']()).toBe(false);
+    expect(reasonEl()?.textContent?.trim()).toBe('Create Campaign is unavailable: Google Ads: the daily budget is missing or not valid.');
+  });
+
+  it('names an unlisted control from its key', () => {
+    seed('https://example.com');
+    c()['campaignForm'].controls.eventSlug.setValidators(() => ({ required: true }));
+    c()['campaignForm'].controls.eventSlug.updateValueAndValidity();
+    fixture.detectChanges();
+
+    expect(c()['createBlockedReason']()).toBe('Google Ads: the event slug field is missing or not valid.');
+  });
+
+  it('names the missing Start Date', () => {
+    seed('https://example.com');
+    c()['campaignForm'].controls.startDate.setValue('');
+    fixture.detectChanges();
+
+    expect(reasonEl()?.textContent?.trim()).toBe('Create Campaign is unavailable: Choose a Start Date.');
   });
 });
 
