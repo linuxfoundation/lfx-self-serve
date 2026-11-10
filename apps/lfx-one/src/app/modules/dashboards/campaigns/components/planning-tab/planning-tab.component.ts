@@ -93,13 +93,14 @@ const isDefiniteRefusal = (status: number): boolean => status === 400 || status 
  * Whether an operator-typed Registration URL (#5490) is one every ad platform accepts.
  *
  * https only, because Meta refuses an http destination and a brief's URL serves every platform it
- * is created on. Written out with `//` because WHATWG `URL` reads `https:example.com` as https
- * while Go's `url.Parse`, which the platforms validate with, finds no host in it. A public host on
+ * is created on. Written out as `https://` and then a host character, because WHATWG `URL` reads
+ * `https:example.com` and `https:///example.com` as having a host while Go's `url.Parse`, which the
+ * platforms validate with, finds none in either. A public host on
  * a default port, via `canonicalHttpUrl`; and no user name or password, which every platform's
  * validator refuses (the BFF's `describeDestinationUrl` mirrors them).
  */
 function isHttpsRegistrationUrl(value: string): boolean {
-  if (!/^https:\/\//i.test(value) || canonicalHttpUrl(value) === '') return false;
+  if (!/^https:\/\/[^/\\]/i.test(value) || canonicalHttpUrl(value) === '') return false;
   const parsed = new URL(value);
   return parsed.username === '' && parsed.password === '';
 }

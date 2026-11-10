@@ -1278,6 +1278,7 @@ describe('PlanningTabComponent editing an existing brief', () => {
       ['an http:// address, which Meta refuses', 'http://events.example.com/register'],
       ['an address with no scheme', 'events.example.com/register'],
       ['https: without //, which Go reads as having no host', 'https:events.example.com/register'],
+      ['a third slash after https://, which Go also reads as having no host', 'https:///events.example.com/register'],
       ['a private host', 'https://localhost/register'],
       ['a user name and password', 'https://user:secret@events.example.com/register'],
       ['an emptied field', '   '],

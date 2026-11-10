@@ -4188,9 +4188,9 @@ export class ImplementationTabComponent implements OnInit {
    * picked again would read as no change and add nothing. Found by its template reference, not its type, so
    * a second combobox on the tab can never be the one cleared.
    */
+  private readonly googleUserListCombobox = viewChild<UiComboboxComponent>('googleUserListCombobox');
   /** The refusal beside Create Campaign, scrolled into view by `revealCreateMessage`. */
   private readonly createMessage = viewChild<ElementRef<HTMLElement>>('createMessage');
-  private readonly googleUserListCombobox = viewChild<UiComboboxComponent>('googleUserListCombobox');
   /** Where focus goes when a pick hides the picker: the typed box below the cap, else the newest chip's Remove button. */
   private readonly googleAudienceSegmentAddInput = viewChild<ElementRef<HTMLInputElement>>('googleAudienceSegmentAddInput');
   private readonly googleAudienceSegmentRemoveButtons = viewChildren<ElementRef<HTMLButtonElement>>('googleAudienceSegmentRemove');
