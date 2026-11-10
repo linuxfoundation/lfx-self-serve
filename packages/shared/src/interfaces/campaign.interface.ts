@@ -1650,6 +1650,12 @@ export interface CampaignImplementationDraft {
    */
   googleAudienceSegments?: string[];
   /**
+   * The name each audience segment was added under, by resource name (#5493), so a restored segment is shown
+   * by name though the user list read is loading, unavailable or no longer lists it. Never sent. Absent
+   * leaves the names the tab holds alone.
+   */
+  googleAudienceSegmentNames?: Record<string, string>;
+  /**
    * Google's call, promotion and price extensions, as the operator added them.
    *
    * Held, restored and cleared on exactly the rule {@link googleStructuredSnippets} is: absent and

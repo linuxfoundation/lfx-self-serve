@@ -439,7 +439,7 @@ describe('googleDemandGenDemographicsMalformed', () => {
   it.each([
     ['a string', 'FEMALE'],
     ['a list', ['FEMALE']],
-    ['a list that is not a list', { genders: 'FEMALE' }],
+    ['an object whose list is not a list', { genders: 'FEMALE' }],
     ['a non-string entry', { genders: [7] }],
     ['audience segments', { audienceSegments: ['customers/1/userLists/5'] }],
     ['custom audiences beside a value', { genders: ['FEMALE'], customAudiences: ['customers/1/customAudiences/7'] }],

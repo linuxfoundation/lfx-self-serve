@@ -3700,6 +3700,14 @@ export const CREATIVE_ASSET_QUEUE_RETRIES = 3;
 export const CREATIVE_ASSET_QUEUE_RETRY_BASE_MS = 1000;
 
 /**
+ * How many more times the creative-asset library and plan reads are sent after a transient failure
+ * (a 503, a dropped connection) before the read is reported as failed (#5385). Both are re-read after
+ * every stored file, so an upload run is exactly when one meets a busy service. Safe to re-send: both
+ * are reads. Each wait is {@link CREATIVE_ASSET_QUEUE_RETRY_BASE_MS} doubled per retry (1 s, then 2 s).
+ */
+export const CREATIVE_ASSET_READ_RETRIES = 2;
+
+/**
  * Each library upload outcome as it reads, and its badge classes. One table, so the label and the
  * colour cannot disagree.
  */
