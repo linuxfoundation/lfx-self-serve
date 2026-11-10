@@ -190,7 +190,12 @@ describe('pills, stat cards, people', () => {
 describe('buildPipelineCsvRows', () => {
   it('emits the visible columns in order, and rowsToCsv neutralizes formula cells', () => {
     const matrix = buildPipelineCsvRows([
-      row({ name: '=HYPERLINK("x")', stage: 'prospect', announcement_date: '2026-11-18T00:00:00Z', executive_director: { name: 'Ed, Jr', email: 'e@example.com' } }),
+      row({
+        name: '=HYPERLINK("x")',
+        stage: 'prospect',
+        announcement_date: '2026-11-18T00:00:00Z',
+        executive_director: { name: 'Ed, Jr', email: 'e@example.com' },
+      }),
     ]);
     expect(matrix[0]).toEqual([
       'Project',
