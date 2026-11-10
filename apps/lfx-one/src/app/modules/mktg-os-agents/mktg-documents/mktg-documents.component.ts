@@ -122,6 +122,7 @@ export class MktgDocumentsComponent {
   private readonly reloads = signal(0);
   private listedScope = '';
   private detailedScope = '';
+  private destroyed = false;
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
@@ -238,6 +239,7 @@ export class MktgDocumentsComponent {
   );
 
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
     if (isPlatformBrowser(this.platformId)) {
       this.initLists()
         .pipe(takeUntilDestroyed())
@@ -304,23 +306,22 @@ export class MktgDocumentsComponent {
     const scope = this.listedScope;
     this.dismissingRunId.set(run.runId);
     this.dismissError.set(null);
-    this.documentStore
-      .dismissRun(project, run.agentKey, run.documentId, run.runId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => this.dismissed(scope, run.runId),
-        error: (error: HttpErrorResponse) => {
-          if (scope !== this.listedScope) return;
-          // A 404 means the run is already gone from this document: the same outcome as a dismiss.
-          if (error.status === 404) {
-            this.dismissed(scope, run.runId);
-            return;
-          }
-          this.dismissingRunId.set(null);
-          this.dismissError.set({ runId: run.runId, text: this.dismissErrorText(error) });
-          if (error.status === 409 && error.error?.code === MKTG_RUN_NOT_FAILED) this.onRefreshProgress();
-        },
-      });
+    // This one-shot write outlives the page, as Restore does on the document page: leaving Documents must not
+    // cancel it. Only its presentation is scoped to the listing that started it, and to a live component.
+    this.documentStore.dismissRun(project, run.agentKey, run.documentId, run.runId).subscribe({
+      next: () => this.dismissed(scope, run.runId),
+      error: (error: HttpErrorResponse) => {
+        if (!this.listing(scope)) return;
+        // A 404 means the run is already gone from this document: the same outcome as a dismiss.
+        if (error.status === 404) {
+          this.dismissed(scope, run.runId);
+          return;
+        }
+        this.dismissingRunId.set(null);
+        this.dismissError.set({ runId: run.runId, text: this.dismissErrorText(error) });
+        if (error.status === 409 && error.error?.code === MKTG_RUN_NOT_FAILED) this.onRefreshProgress();
+      },
+    });
   }
 
   // === Private initializers ===
@@ -537,10 +538,15 @@ export class MktgDocumentsComponent {
   }
 
   private dismissed(scope: string, runId: string): void {
-    if (scope !== this.listedScope) return;
+    if (!this.listing(scope)) return;
     this.dismissingRunId.set(null);
     this.documents.update((documents) => (documents ? { ...documents, runs: (documents.runs ?? []).filter((entry) => entry.runId !== runId) } : documents));
     this.onRefreshProgress();
+  }
+
+  /** True while this live component still lists the scope a write started from. */
+  private listing(scope: string): boolean {
+    return !this.destroyed && scope === this.listedScope;
   }
 
   private dismissErrorText(error: HttpErrorResponse): string {

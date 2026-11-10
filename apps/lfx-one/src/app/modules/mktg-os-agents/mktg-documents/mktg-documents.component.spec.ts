@@ -489,6 +489,27 @@ describe('MktgDocumentsComponent', () => {
       expect(query('mktg-documents-dismiss-error-' + RUN_ID)).toBeNull();
     });
 
+    it('lets the dismiss write finish after the page is left, and touches nothing on the gone page', async () => {
+      const pending = new Subject<void>();
+      store.dismissRun.mockReturnValue(pending);
+      store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('failed')] }));
+      await render();
+      dismissButton()?.click();
+      await fixture.whenStable();
+      expect(store.dismissRun).toHaveBeenCalledTimes(1);
+      expect(pending.observed).toBe(true);
+      const reads = store.listDocuments.mock.calls.length;
+      // Leaving Documents before the 204 arrives: the one-shot write is still subscribed, so the browser does not abort it.
+      fixture.destroy();
+      expect(pending.observed).toBe(true);
+      expect(() => {
+        pending.next();
+        pending.complete();
+      }).not.toThrow();
+      // The gone page re-reads nothing and shows nothing.
+      expect(store.listDocuments).toHaveBeenCalledTimes(reads);
+    });
+
     it('treats a 404 as already dismissed and re-reads the list', async () => {
       store.dismissRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
       store.listDocuments
