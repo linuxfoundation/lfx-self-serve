@@ -175,12 +175,14 @@ export class CommitteeSettingsTabComponent {
   // Mailing list uids with a genuinely pending ADD override — set only from saveMailingListAssociation's
   // success handler, for a uid in addedMlByUid, never for a config-only change on an already-linked
   // list. associatedMailingLists' pending-row synthesis (see initAssociatedMailingListsWithOverrides)
-  // must only resurrect an override missing from the fetch when its uid is in this set — otherwise a
-  // config-change override that never gets confirmed (the drawer-save eventual-consistency case) stays
-  // in associatedMlOverrides and gets treated as "still pending" even after the same list is unlinked
-  // outside this component, re-linking it the next time a toggle fires (dealako #4899 review). Cleared
-  // the first time a refetch contains the uid at all (see initAssociatedMailingLists' refresh-pipeline
-  // tap), or on committee change (see the constructor).
+  // replays ANY override missing from the fetch, pending-add or config-only (dealako #4899 review's
+  // two-miss fallback), so this set no longer gates the replay itself (commit 7ccb2b8d2 removed that
+  // gate). It's consulted only by the miss-count prune loop below, which must never age out a pending
+  // add's miss count — the add-path row is expected to be absent from the index for a while after a
+  // save, so counting that as a "miss" the same way a config-only override's absence is counted would
+  // prune a just-added list before the index catches up. Cleared the first time a refetch contains the
+  // uid at all (see initAssociatedMailingLists' refresh-pipeline tap), or on committee change (see the
+  // constructor).
   private readonly pendingAddMlUids = signal<ReadonlySet<string>>(new Set());
 
   // Per-uid consecutive-miss counter for the prune loop below: a non-pending override whose uid is
@@ -239,11 +241,16 @@ export class CommitteeSettingsTabComponent {
   // refetch before reappearing (dealako #4899 review's two-miss fallback). The row only disappears for
   // good once the prune loop actually deletes the override, on its second consecutive miss.
   //
-  // A pending row still goes through `patchCommitteeSyncMode`, not just the raw override snapshot:
-  // the snapshot's own `committees[]` predates the link, so it has no entry for this committee yet,
-  // and `lfx-mailing-list-sync-settings` resolves its `committee()` input by scanning that array —
-  // without this, the card shows the list's name with no sync controls at all (greptile, Copilot,
-  // Cursor bugbot #4899 review).
+  // A pending-add row still goes through `patchCommitteeSyncMode`, not just the raw override
+  // snapshot: the snapshot's own `committees[]` predates the link, so it has no entry for this
+  // committee yet, and `lfx-mailing-list-sync-settings` resolves its `committee()` input by scanning
+  // that array — without this, the card shows the list's name with no sync controls at all (greptile,
+  // Copilot, Cursor bugbot #4899 review). A config-only override's replayed row needs the same patch
+  // for a different reason: its snapshot DOES already have a `committees[]` entry (the list was
+  // already linked), but that entry still carries whatever `sync_mode` was in effect before this
+  // save — `patchCommitteeSyncMode` overwrites just that one field with the override's new value, so
+  // the replayed row shows the sync mode the user just chose rather than the stale pre-save one
+  // (dealako #4899 review).
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingListsWithOverrides();
 
   // Same override patch applied to the project-wide snapshot the picker reads — a drawer save (via
@@ -533,8 +540,9 @@ export class CommitteeSettingsTabComponent {
   public onSyncSettingsSavingChange(mlUid: string, saving: boolean): void {
     // A stale card's save can still flip this during the drawer's exit animation, after a committee
     // switch already reset savingMlUids for the new committee — see autoSyncDrawerCommitteeUid's doc
-    // comment (copilot #4899 review).
-    if (this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+    // comment (copilot #4899 review). autoSyncDrawerCommitteeUid is undefined until a drawer has
+    // actually been opened, so a caller that drives this directly (no drawer involved) is never gated.
+    if (this.autoSyncDrawerCommitteeUid !== undefined && this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
       return;
     }
     const next = new Set(this.savingMlUids());
@@ -554,8 +562,9 @@ export class CommitteeSettingsTabComponent {
     // committee() — the drawer's exit animation can keep its content (and this emit) alive past the
     // committee-switch reset, which would otherwise write a stale list into the new committee's
     // associatedMlOverrides and let pending-row replay expose it for an incorrect relink (copilot
-    // #4899 review).
-    if (this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+    // #4899 review). autoSyncDrawerCommitteeUid is undefined until a drawer has actually been opened,
+    // so a caller that drives this directly (no drawer involved) is never gated.
+    if (this.autoSyncDrawerCommitteeUid !== undefined && this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
       return;
     }
     // Apply the save result directly rather than waiting on the refetch below — getMailingListsByCommittee
@@ -836,13 +845,23 @@ export class CommitteeSettingsTabComponent {
   // Drops a pending save override for a uid that just got unlinked — otherwise a stale automatic
   // direction survives the unlink and resurfaces if the same list is relinked later in the session,
   // since reconciliation (see associatedMlOverrides' refresh-pipeline tap) only inspects rows the
-  // fetch still returns (#4899 review).
+  // fetch still returns (#4899 review). Also drops any in-progress miss count for the same uid —
+  // otherwise a later relink can resume counting from a stale, partially-accumulated miss count
+  // instead of starting fresh, pruning the relinked override after fewer real misses than intended
+  // (#4899 review, @dealako).
   private clearMlOverride(uid: string): void {
     const overrides = this.associatedMlOverrides();
-    if (!overrides.has(uid)) return;
-    const next = new Map(overrides);
-    next.delete(uid);
-    this.associatedMlOverrides.set(next);
+    if (overrides.has(uid)) {
+      const next = new Map(overrides);
+      next.delete(uid);
+      this.associatedMlOverrides.set(next);
+    }
+    const missCounts = this.overrideMissCounts();
+    if (missCounts.has(uid)) {
+      const nextMissCounts = new Map(missCounts);
+      nextMissCounts.delete(uid);
+      this.overrideMissCounts.set(nextMissCounts);
+    }
   }
 
   // See lastGoodAssociatedLists' doc comment above — called alongside clearMlOverride() from every
