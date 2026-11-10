@@ -66,7 +66,7 @@ export class FormationPipelineService {
     const scoped = projects.filter((project) => this.inScope(project, parents, rootUid, query) && matchesPipelineSearch(project.name, query.search));
     const baseRows = scoped.map((project) => this.toRow(project, parents, rootUid));
 
-    // Counts ignore the stage selection (and the UI's pills read them), so they come before it is applied.
+    // Counts ignore the stage selection, so they come before it is applied; the UI derives its own counts from the rows after its client-side search.
     const counts = countPipelineRows(baseRows);
     const selected = baseRows.filter((row) => query.stages.includes(row.stage));
     const selectedUids = selected.map((row) => row.uid);

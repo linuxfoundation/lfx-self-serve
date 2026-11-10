@@ -214,6 +214,8 @@ describe('FormationsPipelineComponent (#5475)', () => {
     fixture.componentInstance['exportCsv']();
 
     const text = await (captured as unknown as Blob).text();
+    // Blob.text() strips a UTF-8 BOM, so read the raw bytes: EF BB BF is what lets Excel detect the encoding.
+    expect([...new Uint8Array(await (captured as unknown as Blob).arrayBuffer()).slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     expect(text.split('\r\n')).toHaveLength(2);
     expect(text).toContain("'=Charlie");
     expect(anchorClick).toHaveBeenCalled();

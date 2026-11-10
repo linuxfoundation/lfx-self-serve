@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, DestroyRef, inject, linkedSignal, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -34,7 +33,8 @@ import type {
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import {
-  buildPipelineCsv,
+  buildPipelineCsvRows,
+  downloadCsv,
   buildPipelinePillOptions,
   buildPipelineStatCards,
   countPipelineRows,
@@ -74,7 +74,6 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
 export class FormationsPipelineComponent {
   private readonly formationService = inject(FormationService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly platformId = inject(PLATFORM_ID);
   private readonly router = inject(Router);
 
   protected readonly copy = FORMATION_PIPELINE_COPY;
@@ -173,19 +172,9 @@ export class FormationsPipelineComponent {
     this.refresh$.next();
   }
 
-  /** Downloads the filtered rows (every page) as CSV. Browser-only; nothing runs on the server. */
+  /** Downloads the filtered rows (every page) as CSV. `downloadCsv` is browser-only and a no-op on the server. */
   protected exportCsv(): void {
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-    const rows = this.displayRows();
-    const blob = new Blob([buildPipelineCsv(rows)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = getPipelineCsvFilename();
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(getPipelineCsvFilename(), buildPipelineCsvRows(this.displayRows()));
   }
 
   private initSearchTerm(): Signal<string> {

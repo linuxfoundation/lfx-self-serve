@@ -68,7 +68,7 @@ export const FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES: readonly FormationPipeli
 /** Stages that get a stat card, in order. Disengaged and Confidential have pills only. */
 export const FORMATION_PIPELINE_STAT_STAGES: readonly FormationPipelineStage[] = ['prospect', 'exploratory', 'engaged', 'on_hold', 'archived'];
 
-/** Stat card icon, container and caption per stat stage. Captions come from the design; Engaged and Exploratory captions carry a count and are built in the utils. */
+/** Stat card icon and icon-container classes per stat stage. */
 export const FORMATION_PIPELINE_STAT_CARD_STYLE: Record<string, Pick<StatCardItem, 'icon' | 'iconContainerClass'>> = {
   prospect: { icon: 'fa-light fa-pen-ruler', iconContainerClass: 'bg-slate-100 text-slate-600' },
   exploratory: { icon: 'fa-light fa-magnifying-glass', iconContainerClass: 'bg-blue-100 text-blue-600' },
@@ -93,9 +93,8 @@ export const FORMATION_PIPELINE_DEFAULT_SORT: FormationPipelineSort = { key: 'ex
 /** Table rows per page. */
 export const FORMATION_PIPELINE_PAGE_SIZE = 25;
 
-/** Page-header badge shown beside the Pipeline tab's title. */
+/** All copy of the Pipeline tab: description, filter and export labels, empty and error states. */
 export const FORMATION_PIPELINE_COPY = {
-  badge: 'Formation team only',
   description: 'Every project the formation team is bringing into The Linux Foundation, by stage.',
   notSet: 'Not set',
   allStages: 'All',

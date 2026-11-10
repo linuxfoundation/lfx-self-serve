@@ -3,9 +3,10 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { rowsToCsv } from './file.utils';
 import type { FormationPipelineRow } from '../interfaces/formation-pipeline.interface';
 import {
-  buildPipelineCsv,
+  buildPipelineCsvRows,
   chunkArray,
   buildPipelinePillOptions,
   buildPipelineStatCards,
@@ -147,14 +148,24 @@ describe('pills, stat cards, people', () => {
   });
 });
 
-describe('buildPipelineCsv', () => {
-  it('emits the visible columns and neutralizes formula cells', () => {
-    const csv = buildPipelineCsv([
+describe('buildPipelineCsvRows', () => {
+  it('emits the visible columns in order, and rowsToCsv neutralizes formula cells', () => {
+    const matrix = buildPipelineCsvRows([
       row({ name: '=HYPERLINK("x")', stage: 'prospect', announcement_date: '2026-11-18T00:00:00Z', executive_director: { name: 'Ed, Jr', email: 'e@x.org' } }),
     ]);
-    const [header, line] = csv.split('\r\n');
-    expect(header).toBe('Project,Foundation,Stage,Expected launch,Formation date,Legal entity,ED,PM,Opportunity owner,Updated');
-    expect(line).toBe('"\'=HYPERLINK(""x"")",Foundation,Draft,2026-11-18,,,"Ed, Jr",,,');
+    expect(matrix[0]).toEqual([
+      'Project',
+      'Foundation',
+      'Stage',
+      'Expected launch',
+      'Formation date',
+      'Legal entity',
+      'ED',
+      'PM',
+      'Opportunity owner',
+      'Updated',
+    ]);
+    expect(rowsToCsv(matrix).split('\r\n')[1]).toBe('"\'=HYPERLINK(""x"")",Foundation,Draft,2026-11-18,,,"Ed, Jr",,,');
   });
 
   it('names the file by day', () => {

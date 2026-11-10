@@ -27,7 +27,6 @@ import type {
   FormationPipelineStageFilter,
 } from '../interfaces/formation-pipeline.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
-import { buildCsv } from './csv.utils';
 import { formatIsoDateLabel, parseIsoDateAsUtcMidnight, timeAgo } from './date-time.utils';
 
 const MS_PER_DAY = 86_400_000;
@@ -234,14 +233,28 @@ export function getPipelineUpdatedLabel(updatedAt: string | null | undefined): s
   return updatedAt ? timeAgo(updatedAt) : '';
 }
 
-const PIPELINE_CSV_HEADER = ['Project', 'Foundation', 'Stage', 'Expected launch', 'Formation date', 'Legal entity', 'ED', 'PM', 'Opportunity owner', 'Updated'];
+const PIPELINE_CSV_HEADER: string[] = [
+  'Project',
+  'Foundation',
+  'Stage',
+  'Expected launch',
+  'Formation date',
+  'Legal entity',
+  'ED',
+  'PM',
+  'Opportunity owner',
+  'Updated',
+];
 
-/** CSV of the given rows with the table's columns in order (ED and PM split into two cells). Formula cells are neutralized. */
-export function buildPipelineCsv(rows: readonly FormationPipelineRow[]): string {
+/**
+ * Header plus one row per pipeline row, in the table's column order (ED and PM split into two cells), for `downloadCsv`
+ * / `rowsToCsv` — which quote cells and neutralize formula prefixes (`=`, `+`, `-`, `@`, tab, CR) on string cells.
+ */
+export function buildPipelineCsvRows(rows: readonly FormationPipelineRow[]): string[][] {
   const date = (value: string | null): string => (value ? value.slice(0, 10) : '');
-  return buildCsv(
+  return [
     PIPELINE_CSV_HEADER,
-    rows.map((row) => [
+    ...rows.map((row) => [
       row.name,
       row.parent?.name ?? '',
       FORMATION_PIPELINE_STAGE_LABELS[row.stage],
@@ -252,8 +265,8 @@ export function buildPipelineCsv(rows: readonly FormationPipelineRow[]): string 
       personName(row.program_manager),
       getPipelineOpportunityOwner(row),
       row.updated_at ?? '',
-    ])
-  );
+    ]),
+  ];
 }
 
 /** `formation-pipeline-YYYY-MM-DD.csv` for the given day (UTC). */

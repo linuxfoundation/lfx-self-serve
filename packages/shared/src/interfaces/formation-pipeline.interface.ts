@@ -43,7 +43,7 @@ export interface FormationPipelineRow {
   has_checklist: boolean;
 }
 
-/** `GET /api/formations/pipeline` response. `counts` ignore the `stage` parameter so the strip and pills need no second call. */
+/** `GET /api/formations/pipeline` response. `counts` ignore the `stage` parameter (they cover the foundation and `q` scope); the page recomputes its own over the rows after its client-side name search. */
 export interface FormationPipelineResponse {
   rows: FormationPipelineRow[];
   counts: FormationPipelineCounts;
