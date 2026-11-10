@@ -74,60 +74,68 @@
           }
         </div>
 
-        @if (organizers().length) {
-          <div class="flex flex-wrap items-center gap-[6px] text-[13px] leading-[18px] text-gray-600" data-testid="meeting-details-organizers">
-            <span>Organized by:</span>
-            <span class="inline-flex flex-none items-center pl-[2px]">
-              <!-- One organizer is named beside the avatar, so only a stack of two or more names each avatar. -->
-              @let stack = organizers().length > 1;
-              @for (organizer of organizers(); track organizer.key) {
-                @if (stack && organizer.mailto) {
-                  <a
-                    class="inline-flex flex-none rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
-                    [style.margin-left.px]="$first ? 0 : -5"
-                    [href]="organizer.mailto"
-                    [attr.aria-label]="'Email ' + organizer.name"
-                    [lfxUiTooltip]="organizer.label"
-                    data-testid="meeting-details-organizer-avatar">
-                    <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
-                  </a>
-                } @else {
-                  <span
-                    class="inline-flex flex-none cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
-                    [style.margin-left.px]="$first ? 0 : -5"
-                    [attr.role]="stack ? 'img' : null"
-                    [attr.tabindex]="stack ? 0 : null"
-                    [attr.aria-label]="stack ? organizer.label : null"
-                    [attr.aria-hidden]="stack ? null : 'true'"
-                    [lfxUiTooltip]="organizer.label"
-                    [lfxUiTooltipDisabled]="!stack"
-                    data-testid="meeting-details-organizer-avatar">
-                    <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
-                  </span>
+        @if (organizers().length || scheduledZone()) {
+          <div class="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[13px] leading-[18px] text-gray-600" data-testid="meeting-details-meta">
+            @if (organizers().length) {
+              <div class="flex min-w-0 flex-wrap items-center gap-[6px]" data-testid="meeting-details-organizers">
+                <span>Organized by:</span>
+                <span class="inline-flex flex-none items-center pl-[2px]">
+                  <!-- One organizer is named beside the avatar, so only a stack of two or more names each avatar. -->
+                  @let stack = organizers().length > 1;
+                  @for (organizer of organizers(); track organizer.key) {
+                    @if (stack && organizer.mailto) {
+                      <a
+                        class="inline-flex flex-none rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                        [style.margin-left.px]="$first ? 0 : -5"
+                        [href]="organizer.mailto"
+                        [attr.aria-label]="'Email ' + organizer.name"
+                        [lfxUiTooltip]="organizer.label"
+                        data-testid="meeting-details-organizer-avatar">
+                        <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
+                      </a>
+                    } @else {
+                      <span
+                        class="inline-flex flex-none cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                        [style.margin-left.px]="$first ? 0 : -5"
+                        [attr.role]="stack ? 'img' : null"
+                        [attr.tabindex]="stack ? 0 : null"
+                        [attr.aria-label]="stack ? organizer.label : null"
+                        [attr.aria-hidden]="stack ? null : 'true'"
+                        [lfxUiTooltip]="organizer.label"
+                        [lfxUiTooltipDisabled]="!stack"
+                        data-testid="meeting-details-organizer-avatar">
+                        <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
+                      </span>
+                    }
+                  }
+                </span>
+                @if (organizers().length === 1) {
+                  @let only = organizers()[0];
+                  @if (only.mailto) {
+                    <a
+                      class="min-w-0 break-words text-gray-700 underline decoration-transparent underline-offset-[3px] hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                      [href]="only.mailto"
+                      [attr.title]="'Email ' + only.name"
+                      [attr.aria-label]="'Email ' + only.name"
+                      data-testid="meeting-details-organizer-name"
+                      >{{ only.label }}</a
+                    >
+                  } @else {
+                    <span class="min-w-0 break-words text-gray-700" data-testid="meeting-details-organizer-name">{{ only.label }}</span>
+                  }
                 }
+              </div>
+            }
+            @if (scheduledZone(); as zone) {
+              @if (organizers().length) {
+                <span class="mx-[4px] text-gray-400" aria-hidden="true">・</span>
               }
-            </span>
-            @if (organizers().length === 1) {
-              @let only = organizers()[0];
-              @if (only.mailto) {
-                <a
-                  class="min-w-0 break-words text-gray-700 underline decoration-transparent underline-offset-[3px] hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-                  [href]="only.mailto"
-                  [attr.title]="'Email ' + only.name"
-                  [attr.aria-label]="'Email ' + only.name"
-                  data-testid="meeting-details-organizer-name"
-                  >{{ only.label }}</a
-                >
-              } @else {
-                <span class="min-w-0 break-words text-gray-700" data-testid="meeting-details-organizer-name">{{ only.label }}</span>
-              }
+              <!-- Top-aligned so the globe stays on the first line when the zone wraps. -->
+              <p class="m-0 flex min-w-0 items-start gap-[6px]" data-testid="meeting-details-scheduled-zone">
+                <i class="fa-light fa-globe leading-[18px]" aria-hidden="true"></i><span class="min-w-0">{{ zone }}</span>
+              </p>
             }
           </div>
-        }
-        @if (scheduledZone(); as zone) {
-          <p class="m-0 flex items-center gap-[6px] text-[13px] leading-[18px] text-gray-600" data-testid="meeting-details-scheduled-zone">
-            <i class="fa-light fa-globe" aria-hidden="true"></i>{{ zone }}
-          </p>
         }
       </div>
 
