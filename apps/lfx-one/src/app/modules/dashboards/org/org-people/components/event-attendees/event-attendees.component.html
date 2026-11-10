@@ -61,32 +61,7 @@
         tooltipPosition="top"
         dataTest="org-people-event-attendees-participation-filter" />
     </div>
-    <lfx-more-filters-toggle
-      [(expanded)]="moreFiltersExpanded"
-      [count]="hiddenFilterCount()"
-      controls="org-people-event-attendees-more-filters"
-      dataTest="org-people-event-attendees-more-filters-toggle" />
   </div>
-  <!-- Secondary filters, behind "More filters" -->
-  <div
-    id="org-people-event-attendees-more-filters"
-    class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4"
-    [class.hidden]="!moreFiltersExpanded()"
-    data-testid="org-people-event-attendees-more-filters">
-    <div class="w-full md:w-56">
-      <lfx-select
-        [form]="filterForm"
-        control="attribution"
-        size="small"
-        [options]="attributionOptions"
-        styleClass="w-full"
-        [ariaLabel]="attributionLabel"
-        [tooltip]="attributionTooltip()"
-        tooltipPosition="top"
-        dataTest="org-people-event-attendees-attribution-filter" />
-    </div>
-  </div>
-
   @if (fetchError()) {
     <div role="alert" data-testid="org-people-event-attendees-error">
       <lfx-empty-state

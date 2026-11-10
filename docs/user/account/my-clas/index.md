@@ -118,8 +118,8 @@ You will not see a **⋮** on:
 You start signing from the CLAs tab and finish in the EasyCLA Contributor Console:
 
 1. Select **Sign CLA** at the top right of the CLAs tab. The button is unavailable until your CLAs have loaded; if the list fails to load, select **Retry** first.
-2. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit company, or by pasting a repository link.
-3. Each result shows why it matched — project name, CLA group name, linked company, or repository link — so you can tell near-identical names apart.
+2. In the **Sign a CLA** dialog, type at least three characters. You can search by project name, CLA group name, a linked GitHub, GitLab, or Gerrit source (the repository host namespace, not an employer), or by pasting a repository link.
+3. Each result shows why it matched — project name, CLA group name, linked repository source, or repository link — so you can tell near-identical names apart.
 4. Select the right result and choose **Continue to sign**.
 5. Choose the identity to sign under. What the step offers depends on where the CLA group's repositories live:
    - **GitHub repositories** — **Select a GitHub account** lists your linked GitHub accounts. If you have none linked, the step says _No GitHub accounts are connected to your profile yet. Link one from Identities, then come back to sign._ and offers **Go to Identities**; you can't continue until you link one.

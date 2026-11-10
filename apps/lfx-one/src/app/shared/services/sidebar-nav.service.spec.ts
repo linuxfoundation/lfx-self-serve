@@ -601,7 +601,7 @@ describe('SidebarNavService', () => {
 
     expect(findByLink(items, '/company/acme-inc/overview')?.carryQueryParams).toBeUndefined();
     expect(findByLink(items, '/company/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);
-    expect(findByLink(engagement, '/company/acme-inc/people')?.carryQueryParams).toEqual(['range', 'attribution', 'participation', 'orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/company/acme-inc/people')?.carryQueryParams).toEqual(['range', 'participation', 'orgScope', 'teamMembers']);
     expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
   });
 
@@ -612,7 +612,7 @@ describe('SidebarNavService', () => {
 
     const engagement = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement');
 
-    expect(findByLink(engagement, '/company/acme-inc/events')?.carryQueryParams).toEqual(['range', 'attribution', 'participation']);
+    expect(findByLink(engagement, '/company/acme-inc/events')?.carryQueryParams).toEqual(['range', 'participation']);
     expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
   });
 

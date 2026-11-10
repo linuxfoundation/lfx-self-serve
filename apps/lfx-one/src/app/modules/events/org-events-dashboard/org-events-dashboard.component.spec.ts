@@ -5,7 +5,7 @@ import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { EMPTY_ORG_EVENTS_RESPONSE, ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE, ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_EVENTS_RESPONSE, ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE } from '@lfx-one/shared/constants';
 import type { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
@@ -82,7 +82,6 @@ describe('OrgEventsDashboardComponent', () => {
     expect(el.querySelector('[data-testid="org-events-stat-strip"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-events-title"]')?.textContent).toContain('Acme Motors, Inc.');
     expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', {
-      attribution: 'verified',
       eventScope: 'activity',
       foundation: '',
       range: '730d',
@@ -114,13 +113,13 @@ describe('OrgEventsDashboardComponent', () => {
 
     expect(eventsService.getOrgEvents).toHaveBeenCalledTimes(1);
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(params).toMatchObject({ isPast: false, attribution: 'verified', participation: 'registered', eventScope: 'activity', foundation: '' });
+    expect(params).toMatchObject({ isPast: false, participation: 'registered', eventScope: 'activity', foundation: '' });
     expect(params['range']).toBeUndefined();
   });
 
   it('restores the filters from the URL and sends them on the Past tab', async () => {
     const { eventsService } = await render(null, {
-      query: { tab: 'past', range: '90d', participation: 'attended', attribution: 'self_reported', eventScope: 'all', foundation: 'foundation-a' },
+      query: { tab: 'past', range: '90d', participation: 'attended', eventScope: 'all', foundation: 'foundation-a' },
     });
 
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
@@ -128,26 +127,23 @@ describe('OrgEventsDashboardComponent', () => {
       isPast: true,
       range: '90d',
       participation: 'attended',
-      attribution: 'self_reported',
       eventScope: 'all',
       foundation: 'foundation-a',
     });
     expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', {
-      attribution: 'self_reported',
       eventScope: 'all',
       foundation: 'foundation-a',
       range: '90d',
     });
   });
 
-  it('defaults Count to All and Counted by to Employee match, and sends a Count of All on the Past tab', async () => {
+  it('defaults Count to All, and sends a Count of All on the Past tab', async () => {
     const { component, eventsService } = await render(null, { query: { tab: 'past' } });
 
     expect(component.filterForm.controls.participation.value).toBe('all');
-    expect(component.filterForm.controls.attribution.value).toBe('verified');
     expect(component.participationOptions[0]).toEqual({ label: 'All', value: 'all' });
     const [, params] = eventsService.getOrgEvents.mock.calls[0] as unknown as [string, Record<string, unknown>];
-    expect(params).toMatchObject({ isPast: true, participation: 'all', attribution: 'verified' });
+    expect(params).toMatchObject({ isPast: true, participation: 'all' });
   });
 
   it('shows Range only on the Past tab', async () => {
@@ -165,37 +161,6 @@ describe('OrgEventsDashboardComponent', () => {
     expect(component.filterForm.controls.participation.disabled).toBe(true);
     expect(component.filterForm.controls.participation.value).toBe('attended');
     expect(el.querySelector('[data-testid="org-events-participation-filter"]')?.getAttribute('title')).toBe(ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE);
-  });
-
-  it('keeps Counted by behind "More filters" and counts a non-default pick on the link', async () => {
-    const { el, fixture } = await render(null, { query: { attribution: 'self_reported' } });
-
-    expect(el.querySelector('[data-testid="org-events-more-filters"]')?.classList.contains('hidden')).toBe(true);
-    const toggle = el.querySelector<HTMLButtonElement>('[data-testid="org-events-more-filters-toggle"]');
-    expect(toggle?.textContent).toContain('More filters (1)');
-
-    toggle?.click();
-    fixture.detectChanges();
-    expect(el.querySelector('[data-testid="org-events-more-filters"]')?.classList.contains('hidden')).toBe(false);
-  });
-
-  it('reads Self-reported only from the URL and says so in the caption', async () => {
-    const { component, eventsService } = await render(null, { query: { attribution: 'self_reported' } });
-
-    expect(component.filterForm.controls.attribution.value).toBe('self_reported');
-    expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: 'self_reported' }));
-    expect(eventsService.getOrgEvents).toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: 'self_reported' }));
-    expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.self_reported);
-  });
-
-  // lfx-self-serve#5315 retired Company email and Account on registration: an old link reads with the default instead.
-  it.each(['company_email', 'account'])('falls back to Employee match for the retired ?attribution=%s', async (retired) => {
-    const { component, eventsService } = await render(null, { query: { attribution: retired } });
-
-    expect(component.filterForm.controls.attribution.value).toBe('verified');
-    expect(eventsService.getOrgEventsSummary).toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: 'verified' }));
-    expect(eventsService.getOrgEvents).not.toHaveBeenCalledWith('acc-1', expect.objectContaining({ attribution: retired }));
-    expect(component.upcomingAttendeesCaption()).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.verified);
   });
 
   it('offers Clear filters only when a filter is not at its default', async () => {
