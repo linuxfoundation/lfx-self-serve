@@ -4,7 +4,7 @@ description: Link, verify, and remove the GitHub, social, and email identities u
 audience: [all]
 product_area: Account
 tags: [account, identities, github, email, verification, linux-com-alias, meeting-invitations]
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 intercom_collection: Account
 ---
 
@@ -43,14 +43,14 @@ The profile sidebar and the **Primary** badge use your current primary email. Ch
    - For a social account, select **Continue with GitHub**, **Continue with LinkedIn**, or **Continue with Google** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
    - If that social account is already connected to your own account, LFX confirms **This identity is already connected to your account.** instead of linking it again, and refreshes your identities. Nothing new is linked.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. A 6-digit code is sent to the address; enter that code and select **Verify email**. A wrong or expired code shows **Verification failed. Please try again or request a new code.** After the cooldown, use **Resend code** once if needed. The button shows **Requesting code…** and is disabled while the request is pending. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. After one successful resend request, the **Still waiting for your code?** callout directs you to **Contact support**, while code entry remains available. To correct the address, select **Use a different email** without closing the dialog; the action is disabled while requesting or verifying a code.
-   - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If the code is correct but the address is already linked to an LFX account, the dialog shows **This email is already linked to an LFX account. If you believe this is an error, contact support.** with a **contact support** link. The address is not added, and a new code won't change the outcome.
+   - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If the code is correct but the address is already linked to an LFX account, the dialog shows **This email is already linked to an LFX account. If you believe this is an error, contact support.** with a **contact support** link. The link opens a support chat with a message already filled in that names the address and asks for it to be added to your account; you can edit or delete it before sending. The address is not added, and a new code won't change the outcome.
 
 ## Verify an unverified identity
 
 1. Find the account under **Unverified identities**.
 2. Select **Verify**.
    - For a social account, select **Continue with _[provider]_** to confirm through the provider. If the account is already connected to yours, LFX confirms **This identity is already connected to your account.** and refreshes your identities. That message is not a new verification. If the row still shows under **Unverified identities** after the refresh, contact support rather than signing in again.
-   - For an email address, select **Send verification code**, then enter the 6-digit code and select **Verify identity**. The address stays fixed to the identity you selected. **Contact support** is available immediately and becomes the prominent action after one successful resend request; you can still enter a code if it arrives later. If the address is already connected to your account, LFX confirms **This email is already connected to your account.** and refreshes your identities. If the code is correct but the address is already linked to an LFX account, the dialog shows the same already-linked message with a **contact support** link.
+   - For an email address, select **Send verification code**, then enter the 6-digit code and select **Verify identity**. The address stays fixed to the identity you selected. **Contact support** is available immediately and becomes the prominent action after one successful resend request; you can still enter a code if it arrives later. If the address is already connected to your account, LFX confirms **This email is already connected to your account.** and refreshes your identities. If the code is correct but the address is already linked to an LFX account, the dialog shows the same already-linked message with a **contact support** link, which opens the same pre-filled support chat for that address.
 
 If an unverified identity is not yours, select **This is not me** to reject it, then confirm with **Remove** in the **Remove unverified identity** dialog.
 

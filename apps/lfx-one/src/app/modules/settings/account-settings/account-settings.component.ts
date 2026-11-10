@@ -16,8 +16,10 @@ import {
   ACCOUNT_SETTINGS_SECTIONS,
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CODE_NOT_RECEIVED_HINT,
   EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_LINKED_SUPPORT_TITLE,
   EMAIL_RESEND_FAILED_MESSAGE,
   EMAIL_RESEND_SUPPORT_MESSAGE,
   EMAIL_RESEND_SUPPORT_THRESHOLD,
@@ -25,7 +27,7 @@ import {
   INSIGHTS_PUBLIC_API_FLAG,
   PROFILE_EMAILS_PATH,
 } from '@lfx-one/shared/constants';
-import { emailsEqual } from '@lfx-one/shared/utils';
+import { buildLinkedEmailSupportMessage, emailsEqual, isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
 
@@ -129,6 +131,12 @@ export class AccountSettingsComponent {
   public pendingEmail = signal('');
   public sendingCode = signal(false);
   public verifyingOtp = signal(false);
+  // A correct code for an address already linked to another LFX account: the code step shows a
+  // support callout with a pre-filled chat instead of an error toast (#5511).
+  public linkedConflict = signal(false);
+  public readonly linkedSupportTitle = EMAIL_LINKED_SUPPORT_TITLE;
+  public readonly linkedSupportDetail = EMAIL_ALREADY_LINKED_MESSAGE;
+  public readonly linkedSupportMessage = computed(() => buildLinkedEmailSupportMessage(this.pendingEmail()));
 
   // Add email form (step 1: enter email)
   public addEmailForm = new FormGroup({
@@ -347,6 +355,7 @@ export class AccountSettingsComponent {
         next: (response) => {
           if (response.success) {
             this.pendingEmail.set(email);
+            this.linkedConflict.set(false);
             this.otpStep.set(true);
             this.resendCount.set(isResend ? this.resendCount() + 1 : 0);
             this.resendCooldownUtil.start();
@@ -397,6 +406,11 @@ export class AccountSettingsComponent {
             this.redirectToProfileAuth(error.error.authorize_url);
             return;
           }
+          // Only a proven conflict gets the support callout; wrong or expired codes keep the toast.
+          if (error.status === 409 && isIdentityAlreadyLinkedError(error.error?.error, error.error?.message)) {
+            this.linkedConflict.set(true);
+            return;
+          }
           this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error?.message || 'Verification failed. Please try again.' });
         },
       });
@@ -413,6 +427,7 @@ export class AccountSettingsComponent {
   public cancelOtpStep(): void {
     this.otpStep.set(false);
     this.pendingEmail.set('');
+    this.linkedConflict.set(false);
     this.addEmailForm.reset();
     this.otpForm.reset();
     this.resendCount.set(0);

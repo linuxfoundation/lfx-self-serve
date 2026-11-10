@@ -9,11 +9,14 @@ import {
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CALLBACK_RETRY_MESSAGE,
+  EMAIL_LINKED_SUPPORT_TITLE,
+  EMAIL_LINKED_SUPPORT_TOAST_KEY,
   IDENTITY_ALREADY_CONNECTED_STATUS,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, User } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
@@ -643,7 +646,15 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
       email_status: 'already_linked',
     });
 
-    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'warn', summary: 'Email already linked', detail: EMAIL_ALREADY_LINKED_MESSAGE });
+    // #5511: a sticky toast on the layout's own key, carrying an address-free support-chat pre-fill.
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      key: EMAIL_LINKED_SUPPORT_TOAST_KEY,
+      severity: 'warn',
+      summary: EMAIL_LINKED_SUPPORT_TITLE,
+      detail: EMAIL_ALREADY_LINKED_MESSAGE,
+      sticky: true,
+      data: { supportMessage: buildLinkedEmailSupportMessage() },
+    });
     expect(EMAIL_ALREADY_LINKED_MESSAGE).not.toMatch(/new (verification )?code/i);
     expect(refreshUserIdentities).not.toHaveBeenCalled();
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith(cleanUrl, { replaceUrl: true });
@@ -703,7 +714,7 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     });
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Authorization complete' }));
-    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Email already linked' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ key: EMAIL_LINKED_SUPPORT_TOAST_KEY, summary: EMAIL_LINKED_SUPPORT_TITLE, sticky: true }));
     expect(add).toHaveBeenCalledTimes(2);
     expect(refreshUserIdentities).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();

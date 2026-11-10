@@ -15,6 +15,22 @@
   64px a 16px-root assumption would give) that also apply once the sidebar shows — at lg that leaves
   only a 380px content column next to a 300px rail; at 2xl it leaves 796px.
 -->
+<!-- Sticky already-linked notice from the Flow C callback, on its own key so the app's unkeyed toast never renders it. -->
+<p-toast [key]="linkedSupportToastKey" position="top-right">
+  <ng-template let-message pTemplate="message">
+    <lfx-toast-message [message]="message">
+      <button
+        type="button"
+        lfxOpenIntercom
+        [intercomMessage]="message.data?.supportMessage"
+        class="toast-action"
+        data-testid="profile-linked-support-toast-button">
+        Contact support
+      </button>
+    </lfx-toast-message>
+  </ng-template>
+</p-toast>
+
 <div class="flex flex-col" data-testid="profile-layout">
   <!-- Left column -->
   <div class="min-w-0 flex-1">
