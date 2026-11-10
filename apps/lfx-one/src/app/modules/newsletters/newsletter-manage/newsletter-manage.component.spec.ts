@@ -470,4 +470,21 @@ describe('NewsletterManageComponent publications (#4349)', () => {
     expect(api.showPublicationPicker()).toBe(false);
     expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Publications unavailable' }));
   });
+
+  it('does not clear the publication while the first save is in flight', () => {
+    const created = new Subject<Newsletter>();
+    newsletterService.createNewsletter.mockReturnValue(created);
+    const { component, api } = newComponent();
+    TestBed.tick();
+    fillDraft(component);
+    api.onPublicationChange({ ...PUBLICATION, template_key: undefined });
+    api.saveDraft(true).subscribe();
+    TestBed.tick();
+
+    flag.set(false);
+    TestBed.tick();
+
+    expect(api.selectedPublication()?.id).toBe(PUBLICATION.id);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Publications unavailable' }));
+  });
 });
