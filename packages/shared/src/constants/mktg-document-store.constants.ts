@@ -12,7 +12,7 @@ import type { MktgStoredDocumentRunState } from '../interfaces/mktg-document-run
 import { MKTG_AGENTS } from './mktg-os-agents.constants';
 import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL } from './mktg-run.constants';
 
-/** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`. */
+/** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`, `POST …/runs/:runId/dismiss`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 
 /** Private session-keyed starts. Key enumeration is full; HEAD/GET/Guild discovery uses the bounded newest-mtime window. */

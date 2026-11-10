@@ -87,7 +87,8 @@ describe('MktgDocumentsComponent', () => {
   let fixture: ComponentFixture<MktgDocumentsComponent>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let effectiveUser: ReturnType<typeof signal<{ sub: string } | null>>;
-  let store: { listDocuments: ReturnType<typeof vi.fn>; getDocument: ReturnType<typeof vi.fn> };
+  let impersonating: ReturnType<typeof signal<boolean>>;
+  let store: { listDocuments: ReturnType<typeof vi.fn>; getDocument: ReturnType<typeof vi.fn>; dismissRun: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
@@ -107,7 +108,9 @@ describe('MktgDocumentsComponent', () => {
     store = {
       listDocuments: vi.fn(() => of(documentsResponse())),
       getDocument: vi.fn(() => of(detail)),
+      dismissRun: vi.fn(() => of(undefined)),
     };
+    impersonating = signal(false);
     activeContext = signal<ProjectContext | null>(PROJECT);
     effectiveUser = signal<{ sub: string } | null>({ sub: 'synthetic-subject' });
 
@@ -119,7 +122,7 @@ describe('MktgDocumentsComponent', () => {
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? ''), canWrite: signal(true) } },
         { provide: MktgDocumentStoreService, useValue: store },
-        { provide: UserService, useValue: { user: effectiveUser } },
+        { provide: UserService, useValue: { user: effectiveUser, impersonating } },
       ],
     }).compileComponents();
   });
@@ -411,6 +414,8 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-pending-document')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
     const startedLink = query('mktg-documents-open-started-' + 'b'.repeat(64));
+    // Only a failed row can be dismissed; an active run is never offered the control.
+    expect(query('mktg-documents-dismiss-started-' + 'b'.repeat(64)) !== null).toBe(state === 'failed');
     if (state === 'questions') {
       expect(startedLink?.textContent?.trim()).toBe('Answer the questions');
       expect(startedLink?.getAttribute('href')).toBe(`/mktg-os-agents/${BRAND_KIT.catalogAgentId}?project=${PROJECT.slug}&run=${'b'.repeat(64)}`);
@@ -441,6 +446,121 @@ describe('MktgDocumentsComponent', () => {
       expect(store.listDocuments).toHaveBeenCalledTimes(3);
       expect(query('mktg-documents-revision-1')).toBeNull();
     }
+  });
+
+  describe('dismissing a failed started run', () => {
+    const RUN_ID = 'b'.repeat(64);
+
+    function dismissButton(): HTMLButtonElement | null {
+      return query('mktg-documents-dismiss-started-' + RUN_ID)?.querySelector('button') ?? null;
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    });
+
+    it('disables Dismiss while pending, then drops the row before re-reading so kept rows cannot revive it', async () => {
+      const pending = new Subject<void>();
+      store.dismissRun.mockReturnValue(pending);
+      store.listDocuments
+        .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun('failed')] }))
+        .mockReturnValue(of({ ...documentsResponse(), runs: [], progressUnavailable: true }));
+      await render();
+      const button = dismissButton();
+      if (!button) throw new Error('Missing Dismiss control');
+      expect(button.textContent?.trim()).toBe('Dismiss');
+      expect(button.getAttribute('aria-label')).toMatch(/^Dismiss .+, started 19 Oct, 12:00$/);
+      expect(button.getAttribute('aria-label')).not.toContain('run run');
+      button.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.dismissRun).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, 'brand-kit', 'living', RUN_ID);
+      expect(dismissButton()?.disabled).toBe(true);
+      dismissButton()?.click();
+      expect(store.dismissRun).toHaveBeenCalledTimes(1);
+      const reads = store.listDocuments.mock.calls.length;
+      pending.next();
+      pending.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.listDocuments).toHaveBeenCalledTimes(reads + 1);
+      expect(query('mktg-documents-started-run-' + RUN_ID)).toBeNull();
+      expect(query('mktg-documents-started-runs')?.textContent).toContain('No runs in progress');
+      expect(query('mktg-documents-dismiss-error-' + RUN_ID)).toBeNull();
+    });
+
+    it('treats a 404 as already dismissed and re-reads the list', async () => {
+      store.dismissRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      store.listDocuments
+        .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun('failed')] }))
+        .mockReturnValue(of({ ...documentsResponse(), runs: [] }));
+      await render();
+      dismissButton()?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.listDocuments).toHaveBeenCalledTimes(2);
+      expect(query('mktg-documents-started-run-' + RUN_ID)).toBeNull();
+      expect(query('mktg-documents-dismiss-error-' + RUN_ID)).toBeNull();
+    });
+
+    it('explains a run that changed before the dismiss and re-reads Started runs', async () => {
+      store.dismissRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MKTG_RUN_NOT_FAILED' } })));
+      store.listDocuments
+        .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun('failed')] }))
+        .mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('writing')] }));
+      await render();
+      dismissButton()?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.listDocuments).toHaveBeenCalledTimes(2);
+      expect(query('mktg-documents-dismiss-error-' + RUN_ID)?.textContent).toContain(
+        'This run changed before it could be dismissed. Started runs now shows where it stands.'
+      );
+      expect(query('mktg-documents-started-run-' + RUN_ID)?.textContent).toContain('Writing the document');
+      expect(dismissButton()).toBeNull();
+    });
+
+    it('keeps the row with a retry message when the dismiss fails for another reason', async () => {
+      store.dismissRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('failed')] }));
+      await render();
+      dismissButton()?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.listDocuments).toHaveBeenCalledTimes(1);
+      expect(query('mktg-documents-dismiss-error-' + RUN_ID)?.textContent).toContain('The run could not be dismissed. Try again in a moment.');
+      expect(query('mktg-documents-started-run-' + RUN_ID)).not.toBeNull();
+      expect(dismissButton()?.disabled).toBe(false);
+    });
+
+    it('does not offer Dismiss while impersonating', async () => {
+      impersonating.set(true);
+      store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('failed')] }));
+      await render();
+      expect(query('mktg-documents-started-run-' + RUN_ID)).not.toBeNull();
+      expect(query('mktg-documents-open-started-' + RUN_ID)).not.toBeNull();
+      expect(query('mktg-documents-dismiss-started-' + RUN_ID)).toBeNull();
+    });
+
+    it('ignores a dismiss answer that arrives after the project or subject changed', async () => {
+      const pending = new Subject<void>();
+      store.dismissRun.mockReturnValue(pending);
+      store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('failed')] }));
+      await render();
+      dismissButton()?.click();
+      await fixture.whenStable();
+      effectiveUser.set({ sub: 'other-synthetic-subject' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(dismissButton()?.disabled).toBe(false);
+      const reads = store.listDocuments.mock.calls.length;
+      pending.next();
+      pending.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.listDocuments).toHaveBeenCalledTimes(reads);
+      expect(query('mktg-documents-started-run-' + RUN_ID)).not.toBeNull();
+    });
   });
 
   it('reserves the started-runs slot until the first read, then retains it when runs finish', async () => {
