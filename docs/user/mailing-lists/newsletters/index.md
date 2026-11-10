@@ -4,7 +4,7 @@ description: Write, send, and schedule newsletters to a Newsletter group, see ho
 audience: [all]
 product_area: Mailing Lists
 tags: [newsletters, newsletter, newsletter group, email, communication, schedule, analytics, personalization, share, views, invite, member benefit]
-last_updated: 2026-11-06
+last_updated: 2026-11-10
 intercom_collection: Mailing Lists
 ---
 
