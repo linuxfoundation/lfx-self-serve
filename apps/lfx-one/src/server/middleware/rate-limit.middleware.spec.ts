@@ -10,10 +10,12 @@ import {
   emailSendCodeTargetRateLimiter,
   emailSendCodeUserRateLimiter,
   impersonationSearchRateLimiter,
+  newsletterTestSendRateLimiter,
   selfResendInviteRateLimiter,
 } from './rate-limit.middleware';
 import { IMPERSONATION_SEARCH_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/impersonation.constants';
 import { SELF_RESEND_INVITE_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/meeting-registrant.constants';
+import { NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/newsletter.constants';
 import { EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX, EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/profile.constants';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
@@ -299,6 +301,19 @@ describe('selfResendInviteRateLimiter', () => {
     for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX + 3; attempt++) {
       expect((await request({ sub, downstreamStatus }, selfResendInviteRateLimiter)).allowed, `failed request ${attempt}`).toBe(true);
     }
+  });
+});
+
+describe('newsletterTestSendRateLimiter', () => {
+  it.each([200, 400, 503])('counts every test send, even when downstream answers %s, per user', async (downstreamStatus) => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub, downstreamStatus }, newsletterTestSendRateLimiter)).allowed, `attempt ${attempt}`).toBe(true);
+    }
+    const rejected = await request({ sub }, newsletterTestSendRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect((await request({ sub: `${sub}-another-user` }, newsletterTestSendRateLimiter)).allowed).toBe(true);
   });
 });
 

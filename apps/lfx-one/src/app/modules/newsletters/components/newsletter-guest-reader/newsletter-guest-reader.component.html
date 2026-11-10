@@ -41,6 +41,7 @@
           [subject]="newsletter.subject"
           [bodyHtml]="newsletter.body_html"
           [displayName]="current.foundation.name"
+          [sendDate]="newsletter.sent_at"
           data-testid="newsletter-guest-reader-preview"></lfx-newsletter-preview>
       } @else {
         <div

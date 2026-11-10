@@ -274,6 +274,12 @@
     The preview component falls back to a neutral "Foundation" label when displayName is empty.
     True fidelity needs a backend snapshot of project at send time — tracked as follow-up.
   -->
-  <lfx-newsletter-preview-drawer [(visible)]="previewVisible" [subject]="n.subject" [bodyHtml]="n.body_html" [displayName]="''">
+  <lfx-newsletter-preview-drawer
+    [(visible)]="previewVisible"
+    [subject]="n.subject"
+    [bodyHtml]="n.body_html"
+    [displayName]="''"
+    [fullDocument]="!!n.body_layout"
+    [sendDate]="n.sent_at ?? n.scheduled_at">
   </lfx-newsletter-preview-drawer>
 }

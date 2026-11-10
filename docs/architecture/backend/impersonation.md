@@ -246,6 +246,10 @@ These restrictions apply only while actively impersonating another user, not to 
 - During impersonation, `my-response` returns only invitation identifiers, participation status and removal state, never indexed answers, abstention, comments or submission times. Named content is available through the privacy-checked `my-ballot` endpoint.
 - My Votes Review, the vote page and the Pending Actions inline ballot explain the privacy/read-only restriction instead of showing an editable empty ballot. Normal self-voting, including seeing one's own pseudo-anonymous ballot, is unaffected.
 
+### Newsletter writes in Admin Mode
+
+Creating, updating, deleting, sending, scheduling and test-sending a newsletter, cancelling a schedule, and deleting an opt-out all use `blockDuringImpersonation`, and return **403 `IMPERSONATION_READ_ONLY`** (#4358).
+
 ### 6. SSR Handler
 
 **`apps/lfx-one/src/server/server.ts`**
