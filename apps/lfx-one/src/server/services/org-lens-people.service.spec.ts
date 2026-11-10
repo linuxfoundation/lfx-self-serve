@@ -867,6 +867,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
   describe('key-contact record addresses', () => {
     const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
+    // The contact emails the org's assignments show for these records now.
+    const current = new Set(['first@company.example', 'second@company.example', 'shared@company.example', 'record@company.example']);
 
     it('reads the addresses on the given records only, every one record-only, binding each id', async () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
@@ -884,7 +886,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
         keyContactId: ids[0],
       });
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null)).toEqual({
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual({
         companyEmails: ['first@company.example', 'second@company.example'],
         primaryEmail: null,
         keyContactRecordEmails: ['first@company.example', 'second@company.example'],
@@ -896,8 +898,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
     });
 
     it('answers unconfirmed when neither the records nor the username find an address', async () => {
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null)).toEqual(UNCONFIRMED);
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser')).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current)).toEqual(UNCONFIRMED);
     });
 
     it("merges the username's addresses, which win over the record-only mark", async () => {
@@ -906,7 +908,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'shared@company.example', source: 'key_contact_record', keyContactId: ids[0] });
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'record@company.example', source: 'key_contact_record', keyContactId: ids[1] });
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'MixedUser')).toEqual({
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'MixedUser', current)).toEqual({
         companyEmails: ['shared@company.example', 'record@company.example'],
         primaryEmail: 'shared@company.example',
         keyContactRecordEmails: ['record@company.example'],
@@ -917,7 +919,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     it('answers resolved empty when the username resolves to a roster person with none on file', async () => {
       addRosterRow(ACCOUNT, personKey, 'MixedUser');
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser')).toEqual({
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current)).toEqual({
         companyEmails: [],
         primaryEmail: null,
         companyEmailsStatus: 'resolved',
@@ -931,7 +933,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
         'readKeyContactRecordEmails'
       ).mockResolvedValue(FAILED);
 
-      const result = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser');
+      const result = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current);
 
       expect(result.companyEmailsStatus).toBe('resolved');
       expect(result.companyEmails).toEqual(['first@company.example']);
@@ -941,11 +943,30 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
       database.exec('ALTER TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS RENAME TO SAVED_EXTENDED');
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null)).toEqual(FAILED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual(FAILED);
       expect([...cacheValues.keys()].some((key) => key.includes('people-key-contact-emails'))).toBe(false);
 
       database.exec('ALTER TABLE SAVED_EXTENDED RENAME TO ORG_PEOPLE_EXTENDED_COMPANY_EMAILS');
-      expect((await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null)).companyEmails).toEqual(['first@company.example']);
+      expect((await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).companyEmails).toEqual(['first@company.example']);
+    });
+
+    // A role reassigned from A to B keeps its record id, so a record row (or a cached read) can still carry A's address.
+    it("shows only the record address of the role's current holder after a reassignment under the same id", async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'a.previous@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000002AAA', email: 'B.Current@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, [ids[0]], null, new Set(['b.current@company.example']))).toEqual({
+        companyEmails: ['B.Current@company.example'],
+        primaryEmail: null,
+        keyContactRecordEmails: ['B.Current@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('shows no record address when there are no current contact emails (the assignments read failed)', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, new Set())).toEqual(UNCONFIRMED);
     });
   });
 

@@ -271,10 +271,11 @@ export class OrgLensPeopleController {
   /**
    * GET /api/orgs/:orgUid/lens/people/by-key-contact/company-emails?ids=<record ids> — company addresses for a key
    * contact the drawer opens without a person key: the addresses on their corporate key-contact records (`ids`: 1–50
-   * comma-separated Salesforce record ids), merged with their LF username's. The username is derived here, never taken
-   * from the client (the request logger records the query string): the one username the org's key-contact assignments
-   * with these record ids agree on. When that read fails the lookup continues on the records alone. Never keyed on an
-   * address. An invalid or empty id list is a 400; any other query param is ignored.
+   * comma-separated Salesforce record ids), merged with their LF username's. Both the username and the records' current
+   * contact emails are derived here from the org's key-contact assignments, never taken from the client (the request
+   * logger records the query string): a record address is shown only while it is still the email of the contact the
+   * record names now, as a record can be reassigned to someone else under the same id. When that read fails no record
+   * address is shown. Never keyed on an address. An invalid or empty id list is a 400; any other query param is ignored.
    */
   public async getCompanyEmailsByKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -285,12 +286,13 @@ export class OrgLensPeopleController {
       const keyContactIds = parseKeyContactIds(getStringQueryParam(req, 'ids'), operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid, key_contact_count: keyContactIds.length });
 
-      const username = await this.resolveKeyContactUsername(req, orgUid, keyContactIds, operation);
-      const result = await this.service.getCompanyEmailsByKeyContacts(req, orgUid, keyContactIds, username);
+      const { username, currentEmails } = await this.resolveKeyContactIdentity(req, orgUid, keyContactIds, operation);
+      const result = await this.service.getCompanyEmailsByKeyContacts(req, orgUid, keyContactIds, username, currentEmails);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
         with_username: username !== null,
+        current_email_count: currentEmails.size,
         company_email_count: result.companyEmails.length,
         record_only_email_count: result.keyContactRecordEmails?.length ?? 0,
         company_emails_status: result.companyEmailsStatus,
@@ -698,27 +700,32 @@ export class OrgLensPeopleController {
   }
 
   /**
-   * The LF username the org's key-contact assignments with these record ids agree on (the per-caller cached read the
-   * Key Contacts tab has already warmed), or `null` when they agree on none, when any requested id has no assignment
-   * (agreement over a subset would let an email-grouped opener reach one member's LF addresses — the DR-010 guard), or
-   * when the read fails (logged, counts only).
+   * Who the org's key-contact assignments with these record ids name now (the per-caller cached read the Key Contacts
+   * tab has already warmed): the lower-cased contact emails of the assignments found, which bind the record addresses
+   * to the record's current holder, and the LF username they agree on — `null` when they agree on none or when any
+   * requested id has no assignment (agreement over a subset would let an email-grouped opener reach one member's LF
+   * addresses — the DR-010 guard). A failed read (logged, counts only) answers no emails and no username.
    */
-  private async resolveKeyContactUsername(req: Request, orgUid: string, keyContactIds: readonly string[], operation: string): Promise<string | null> {
+  private async resolveKeyContactIdentity(
+    req: Request,
+    orgUid: string,
+    keyContactIds: readonly string[],
+    operation: string
+  ): Promise<{ username: string | null; currentEmails: ReadonlySet<string> }> {
     try {
       const ids = new Set(keyContactIds);
       const { assignments } = await this.keyContactsService.getKeyContacts(req, orgUid);
       const held = assignments.filter((assignment) => ids.has(assignment.contactUid));
-      if (new Set(held.map((assignment) => assignment.contactUid)).size !== ids.size) {
-        return null;
-      }
-      return agreedUsername(held.map((assignment) => assignment.username));
+      const currentEmails = new Set(held.map((assignment) => assignment.email?.trim().toLowerCase() ?? '').filter(Boolean));
+      const everyIdHeld = new Set(held.map((assignment) => assignment.contactUid)).size === ids.size;
+      return { username: everyIdHeld ? agreedUsername(held.map((assignment) => assignment.username)) : null, currentEmails };
     } catch (error) {
-      logger.warning(req, operation, 'key contacts read failed; looking up the record addresses only', {
+      logger.warning(req, operation, 'key contacts read failed; showing no record addresses', {
         org_uid: orgUid,
         key_contact_count: keyContactIds.length,
         err: error,
       });
-      return null;
+      return { username: null, currentEmails: new Set() };
     }
   }
 

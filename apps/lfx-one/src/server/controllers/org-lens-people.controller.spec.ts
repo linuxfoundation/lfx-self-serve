@@ -441,9 +441,9 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
     getCompanyEmailsByKeyContacts.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' });
     getOrgKeyContacts.mockResolvedValue({
       assignments: [
-        { contactUid: ID_ONE, username: 'JDoe' },
-        { contactUid: ID_TWO, username: 'jdoe' },
-        { contactUid: 'a0F000000000009AAA', username: 'someone-else' },
+        { contactUid: ID_ONE, username: 'JDoe', email: ' JDoe@Company.example ' },
+        { contactUid: ID_TWO, username: 'jdoe', email: 'jdoe@company.example' },
+        { contactUid: 'a0F000000000009AAA', username: 'someone-else', email: 'someone@company.example' },
       ],
     });
   });
@@ -463,41 +463,48 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
     expect(getCompanyEmailsByKeyContacts).not.toHaveBeenCalled();
   });
 
-  it('passes the deduplicated ids and the username their assignments agree on, ignoring a client-supplied username', async () => {
+  it('passes the deduplicated ids, the username their assignments agree on and their current contact emails, ignoring a client-supplied username', async () => {
     const res = buildRes();
 
     await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO},${ID_ONE}`, username: 'a/b' }), res, vi.fn());
 
     expect(getOrgKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID);
-    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], 'JDoe');
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], 'JDoe', new Set(['jdoe@company.example']));
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 
-  it('looks up the records alone when their assignments agree on no username', async () => {
-    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: null }] });
+  // A role reassigned from A to B keeps its record id: the record addresses are bound to the contact it names now.
+  it('binds the record addresses to the email of the contact each record names now', async () => {
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: null, email: 'b.current@company.example' }] });
 
     await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), buildRes(), vi.fn());
 
-    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null);
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null, new Set(['b.current@company.example']));
+  });
+
+  it('looks up the records alone when their assignments agree on no username', async () => {
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: null, email: 'first@company.example' }] });
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), buildRes(), vi.fn());
+
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null, new Set(['first@company.example']));
   });
 
   it('looks up the records alone when any requested id has no assignment, even if the found ones agree', async () => {
     // ID_TWO is absent from the org's assignments: agreement over ID_ONE alone could hand an email-grouped opener one
     // member's LF addresses. Fail closed to the records, as agreedUsername does for a member without a username.
-    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: 'JDoe' }] });
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: 'JDoe', email: 'jdoe@company.example' }] });
 
     await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO}` }), buildRes(), vi.fn());
 
-    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], null);
+    // The found record's current email still binds its addresses; only the username needs every id.
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], null, new Set(['jdoe@company.example']));
   });
 
   it.each([
-    [
-      'resolved when a record email exists',
-      { companyEmails: ['record@company.example'], primaryEmail: null, keyContactRecordEmails: ['record@company.example'], companyEmailsStatus: 'resolved' },
-    ],
-    ['unconfirmed otherwise', { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' }],
-  ])('continues on the records alone when the key contacts read fails: %s', async (_label, result) => {
+    ['unconfirmed', { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' }],
+    ['failed', { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' }],
+  ])('shows no record address when the key contacts read fails, answering %s', async (_label, result) => {
     getOrgKeyContacts.mockRejectedValue(new Error('upstream down'));
     getCompanyEmailsByKeyContacts.mockResolvedValue(result);
     const res = buildRes();
@@ -506,7 +513,7 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
     await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null);
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null, new Set());
     expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'get_org_lens_people_company_emails_by_key_contact', expect.any(String), {
       org_uid: ORG_UID,
       key_contact_count: 1,
