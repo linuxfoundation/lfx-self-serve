@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  OrgAllEmployeeCompanyEmailStatus,
   OrgAllEmployeeCountedRow,
   OrgAllEmployeeRow,
   OrgAllEmployeeRowInternal,
   OrgAllEmployeesCountedResponse,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
+  OrgCompanyEmailKeys,
   OrgTeamMemberKeys,
 } from '@lfx-one/shared/interfaces';
 import { computeOrgAllEmployeeStats } from '@lfx-one/shared/utils';
@@ -104,6 +106,27 @@ export function toWireResponse(
     foundations: response.foundations,
     ...(teamMembers.unavailable ? { teamMembersUnavailable: true as const } : {}),
   };
+}
+
+/**
+ * Stamp each All Employees row with what the person drawer's company-email lookup answers for it, from the account's
+ * company-email keys: a stored row with a warehouse person key `has` an address when its key or its LF username is in
+ * the keys, else `none` on file; a `cdp:` or live-only row (looked up by username only) `has` one when its username is,
+ * else `unconfirmed`. `null` keys (the read failed) leave every row unannotated.
+ */
+export function withCompanyEmailStatus(response: OrgAllEmployeesResponse, keys: OrgCompanyEmailKeys | null): OrgAllEmployeesResponse {
+  if (!keys) {
+    return response;
+  }
+  const personKeys = new Set(keys.personKeys);
+  const usernames = new Set(keys.usernames);
+  const statusOf = (row: OrgAllEmployeeRow): OrgAllEmployeeCompanyEmailStatus => {
+    const username = row.lfUsername?.trim().toLowerCase();
+    if (username && usernames.has(username)) return 'has';
+    if (row.personKey.startsWith('cdp:') || row.personKey.startsWith('live-')) return 'unconfirmed';
+    return personKeys.has(row.personKey) ? 'has' : 'none';
+  };
+  return { ...response, rows: response.rows.map((row) => ({ ...row, companyEmailStatus: statusOf(row) })) };
 }
 
 const NO_TEAM_MEMBERS: OrgTeamMemberKeys = { excluded: null, unavailable: false };

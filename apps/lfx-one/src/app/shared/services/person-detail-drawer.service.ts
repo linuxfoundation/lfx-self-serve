@@ -6,6 +6,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import type {
   OrgAllEmployeeDetail,
+  OrgCompanyEmailsUnavailableReason,
   OrgDrawerDetailResult,
   OrgDrawerKeyContactsResult,
   OrgKeyContactAssignment,
@@ -14,10 +15,17 @@ import type {
   PersonDrawerContext,
   PersonDrawerTab,
 } from '@lfx-one/shared/interfaces';
+import { keyContactEmailLookupIds } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { catchError, map, Observable, of, switchMap } from 'rxjs';
 
-const NO_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable' };
+/** The opener supplied nothing to look up: no address request is made. */
+const NO_IDENTITY_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
+  companyEmails: [],
+  primaryEmail: null,
+  companyEmailsStatus: 'unavailable',
+  companyEmailsReason: 'no_identity',
+};
 
 /** No identity to look up, or the opener already supplied the roles: either way the request is not made. */
 const NO_KEY_CONTACTS: OrgDrawerKeyContactsResult = { assignments: [], status: 'unidentified', error: false };
@@ -29,6 +37,26 @@ function personPath(orgUid: string, context: PersonDrawerContext | null): string
     return `${people}/${encodeURIComponent(context.personKey)}`;
   }
   return context?.username ? `${people}/by-username/${encodeURIComponent(context.username)}` : null;
+}
+
+/**
+ * The company-address request for the opener's identity: the person key's, else the key-contact records' (with the
+ * username, when the opener has one), else the username's; `null` when the opener supplied none of them.
+ */
+function companyEmailsRequest(orgUid: string, context: PersonDrawerContext | null): { url: string; params?: Record<string, string> } | null {
+  const keyContactIds = context?.personKey ? [] : keyContactEmailLookupIds(context?.keyContactIds);
+  if (keyContactIds.length) {
+    const params: Record<string, string> = { ids: keyContactIds.join(',') };
+    if (context?.username) params['username'] = context.username;
+    return { url: `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/by-key-contact/company-emails`, params };
+  }
+  const path = personPath(orgUid, context);
+  if (!path) {
+    return null;
+  }
+  // A live-only person resolves against the directory the opener showed, which the page has already warmed.
+  const view = context?.directoryView;
+  return { url: `${path}/company-emails`, params: view ? { range: view.range, projectScope: view.projectScope } : undefined };
 }
 
 /**
@@ -76,6 +104,9 @@ export class PersonDetailDrawerService {
     keyContactsRequested: this._keyContactsRequested(),
     supplied: this.suppliedKeyContacts(),
   }));
+  // Bumped by `retryCompanyEmails`: re-issues the address request alone, never the activity or roles reads.
+  private readonly _emailsRetry = signal(0);
+  private readonly emailsRequest = computed(() => ({ ...this.detailRequest(), retry: this._emailsRetry() }));
   public readonly isOpen = computed(() => this._activeContext() !== null);
 
   private readonly detailResult = toSignal(
@@ -110,24 +141,26 @@ export class PersonDetailDrawerService {
   );
 
   private readonly emailsResult = toSignal(
-    toObservable(this.detailRequest).pipe(
+    toObservable(this.emailsRequest).pipe(
       switchMap((request): Observable<OrgPersonCompanyEmailsResponse & { request: typeof request }> => {
-        const path = request.orgUid ? personPath(request.orgUid, request.context) : null;
+        const lookup = request.orgUid ? companyEmailsRequest(request.orgUid, request.context) : null;
         // Nobody to look up: no address request at all.
-        if (!path) {
-          return of({ request, ...NO_COMPANY_EMAILS });
+        if (!lookup) {
+          return of({ request, ...NO_IDENTITY_COMPANY_EMAILS });
         }
-        // A live-only person resolves against the directory the opener showed, which the page has already warmed.
-        const view = request.context?.directoryView;
-        const params = view ? { range: view.range, projectScope: view.projectScope } : undefined;
-        return this.http.get<OrgPersonCompanyEmailsResponse>(`${path}/company-emails`, { params }).pipe(
+        return this.http.get<OrgPersonCompanyEmailsResponse>(lookup.url, { params: lookup.params }).pipe(
           // Only a resolved lookup may expose addresses; a missing status surfaces as an email error.
-          map((response) => ({
-            request,
-            companyEmails: response.companyEmailsStatus === 'resolved' ? response.companyEmails : [],
-            primaryEmail: response.companyEmailsStatus === 'resolved' ? (response.primaryEmail ?? null) : null,
-            companyEmailsStatus: response.companyEmailsStatus,
-          })),
+          map((response) => {
+            const resolved = response.companyEmailsStatus === 'resolved';
+            return {
+              request,
+              companyEmails: resolved ? response.companyEmails : [],
+              primaryEmail: resolved ? (response.primaryEmail ?? null) : null,
+              keyContactRecordEmails: resolved ? (response.keyContactRecordEmails ?? []) : [],
+              companyEmailsStatus: response.companyEmailsStatus,
+              companyEmailsReason: response.companyEmailsReason,
+            };
+          }),
           // A failed optional address lookup never turns into a detail error.
           catchError((emailError: unknown) => {
             console.error('Failed to load company emails:', emailError);
@@ -170,7 +203,7 @@ export class PersonDetailDrawerService {
   });
   private readonly currentEmails = computed(() => {
     const result = this.emailsResult();
-    return this._activeContext() && this.orgUid() && result?.request === this.detailRequest() ? result : null;
+    return this._activeContext() && this.orgUid() && result?.request === this.emailsRequest() ? result : null;
   });
 
   private readonly currentKeyContacts = computed(() => {
@@ -187,16 +220,24 @@ export class PersonDetailDrawerService {
 
   public readonly emailsLoading = computed(() => {
     const { orgUid, context } = this.detailRequest();
-    return !!(orgUid && context && (context.personKey || context.username) && !this.currentEmails());
+    return !!(orgUid && context && companyEmailsRequest(orgUid, context) && !this.currentEmails());
   });
   public readonly emailError = computed(() => {
     const result = this.currentEmails();
     return !!result && result.companyEmailsStatus !== 'resolved' && result.companyEmailsStatus !== 'unavailable';
   });
-  public readonly identityUnavailable = computed(() => this.currentEmails()?.companyEmailsStatus === 'unavailable');
+  /** Why no address could be looked up or confirmed; `null` unless the lookup answered `unavailable` (a missing reason reads as `unconfirmed`). */
+  public readonly companyEmailsUnavailableReason = computed<OrgCompanyEmailsUnavailableReason | null>(() => {
+    const result = this.currentEmails();
+    return result?.companyEmailsStatus === 'unavailable' ? (result.companyEmailsReason ?? 'unconfirmed') : null;
+  });
   public readonly companyEmailsResolved = computed(() => this.currentEmails()?.companyEmailsStatus === 'resolved');
-  public readonly companyEmails = computed<string[]>(() => this.currentEmails()?.companyEmails ?? NO_COMPANY_EMAILS.companyEmails);
+  public readonly companyEmails = computed<string[]>(() => this.currentEmails()?.companyEmails ?? []);
   public readonly primaryCompanyEmail = computed<string | null>(() => this.currentEmails()?.primaryEmail ?? null);
+  /** The listed addresses known only from a key-contact record. */
+  public readonly keyContactRecordEmails = computed<string[]>(() => this.currentEmails()?.keyContactRecordEmails ?? []);
+  /** The selected organization's display name, for the address copy; `company` when it has none yet. */
+  public readonly companyName = computed(() => this.accountContext.selectedAccount().accountName?.trim() || 'company');
 
   /** Supplied roles win over the fetch, the way `governanceSeats` does for Governance. */
   public readonly keyContacts = computed<OrgKeyContactAssignment[]>(() => this.suppliedKeyContacts() ?? this.currentKeyContacts()?.assignments ?? []);
@@ -229,6 +270,11 @@ export class PersonDetailDrawerService {
 
   public close(): void {
     this._activeContext.set(null);
+  }
+
+  /** Re-issue the company-address request for the open person (the failed state's Try again); activity and roles are not refetched. */
+  public retryCompanyEmails(): void {
+    this._emailsRetry.update((count) => count + 1);
   }
 
   public setTab(tab: PersonDrawerTab): void {

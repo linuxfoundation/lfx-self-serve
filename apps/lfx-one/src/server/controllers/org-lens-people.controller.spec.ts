@@ -11,6 +11,8 @@ const {
   getContributors,
   getCompanyEmails,
   getCompanyEmailsByUsername,
+  getCompanyEmailsByKeyContacts,
+  getCompanyEmailKeys,
   getEmployeeDetail,
   getEmployeeDetailByUsername,
   getKeyContactsForPerson,
@@ -26,6 +28,8 @@ const {
   getContributors: vi.fn(),
   getCompanyEmails: vi.fn(),
   getCompanyEmailsByUsername: vi.fn(),
+  getCompanyEmailsByKeyContacts: vi.fn(),
+  getCompanyEmailKeys: vi.fn(),
   getEmployeeDetail: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   getKeyContactsForPerson: vi.fn(),
@@ -45,6 +49,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-employment.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-scope.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-key-contact.utils')),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
@@ -53,6 +58,8 @@ vi.mock('../services/org-lens-people.service', () => ({
     public getFormerEmployees = getFormerEmployees;
     public getCompanyEmails = getCompanyEmails;
     public getCompanyEmailsByUsername = getCompanyEmailsByUsername;
+    public getCompanyEmailsByKeyContacts = getCompanyEmailsByKeyContacts;
+    public getCompanyEmailKeys = getCompanyEmailKeys;
     public getEmployeeDetail = getEmployeeDetail;
     public getEmployeeDetailByUsername = getEmployeeDetailByUsername;
     public resolveUsernameByPersonKey = resolveUsernameByPersonKey;
@@ -416,6 +423,108 @@ describe('OrgLensPeopleController getCompanyEmails', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getCompanyEmails).toHaveBeenCalledWith(req, ORG_UID, 'live-0123456789abcdef', expected);
+  });
+});
+
+describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
+  const controller = new OrgLensPeopleController();
+  const ID_ONE = 'a0F000000000001AAA';
+  const ID_TWO = 'a0F000000000002AAA';
+  const keyContactReq = (query: Record<string, string>): Request => ({ params: { orgUid: ORG_UID }, query, path: '/test' }) as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCompanyEmailsByKeyContacts.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' });
+  });
+
+  it.each([
+    ['no ids', {}],
+    ['an empty id list', { ids: '' }],
+    ['a 15-character id', { ids: 'a0F000000000001' }],
+    ['a non-alphanumeric id', { ids: `${ID_ONE},a0F00000000000'AAA` }],
+    ['more than 50 ids', { ids: Array.from({ length: 51 }, (_, index) => `a0F${String(index).padStart(15, '0')}`).join(',') }],
+    ['an unsafe username', { ids: ID_ONE, username: 'a/b' }],
+  ])('answers 400 for %s, before any lookup', async (_label, query) => {
+    const next = vi.fn();
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq(query), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(getCompanyEmailsByKeyContacts).not.toHaveBeenCalled();
+  });
+
+  it('passes the deduplicated ids and the optional username through', async () => {
+    const res = buildRes();
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO},${ID_ONE}`, username: 'jdoe' }), res, vi.fn());
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), buildRes(), vi.fn());
+
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenNthCalledWith(1, expect.anything(), ORG_UID, [ID_ONE, ID_TWO], 'jdoe');
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenNthCalledWith(2, expect.anything(), ORG_UID, [ID_ONE], null);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+});
+
+describe('OrgLensPeopleController All Employees company email status', () => {
+  const controller = new OrgLensPeopleController();
+  const row = (personKey: string, lfUsername: string | null) => ({ personKey, lfUsername });
+  const roster = {
+    ...EMPTY_ROSTER,
+    rows: [
+      row('person-has', null),
+      row('person-by-username', 'Known'),
+      row('person-none', 'nobody'),
+      row('cdp:member-has', 'known'),
+      row('cdp:member-unconfirmed', null),
+      row('live-has', 'known'),
+      row('live-unconfirmed', 'stranger'),
+    ],
+  };
+  const statuses = (res: Response): Record<string, string | undefined> =>
+    Object.fromEntries(
+      ((res.json as ReturnType<typeof vi.fn>).mock.calls[0][0] as { rows: { personKey: string; companyEmailStatus?: string }[] }).rows.map((r) => [
+        r.personKey,
+        r.companyEmailStatus,
+      ])
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getLive.mockResolvedValue(roster);
+    getFormerEmployees.mockResolvedValue(roster);
+    getCompanyEmailKeys.mockResolvedValue({ personKeys: ['person-has', 'cdp:member-unconfirmed'], usernames: ['known'] });
+  });
+
+  it.each([
+    ['the live roster', (res: Response) => controller.getAllEmployees(buildRosterReq({ live: 'true', range: '90d' }), res, vi.fn())],
+    ['the former roster', (res: Response) => controller.getFormerEmployees(buildRosterReq({ range: '90d' }), res, vi.fn())],
+  ])('stamps every row of %s from one keys read', async (_label, read) => {
+    const res = buildRes();
+
+    await read(res);
+
+    expect(getCompanyEmailKeys).toHaveBeenCalledTimes(1);
+    expect(statuses(res)).toEqual({
+      'person-has': 'has',
+      'person-by-username': 'has',
+      'person-none': 'none',
+      'cdp:member-has': 'has',
+      // A cdp: row is read by username only, so its key in the keys does not count.
+      'cdp:member-unconfirmed': 'unconfirmed',
+      'live-has': 'has',
+      'live-unconfirmed': 'unconfirmed',
+    });
+  });
+
+  it('serves the roster without statuses when the keys read failed', async () => {
+    getCompanyEmailKeys.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getAllEmployees(buildRosterReq({ live: 'true', range: '90d' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(Object.values(statuses(res)).every((status) => status === undefined)).toBe(true);
   });
 });
 

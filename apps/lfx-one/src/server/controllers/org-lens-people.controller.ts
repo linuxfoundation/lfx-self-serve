@@ -7,6 +7,7 @@ import {
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   EMAIL_REGEX,
   ORG_EMPLOYMENT_OPTIONS,
+  ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGES,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
@@ -16,6 +17,7 @@ import type { OrgAllEmployeesResponse, OrgEmploymentFilter, OrgLensTimeRange, Or
 import {
   isFilterSafeIdentifier,
   isFilterSafeUsername,
+  isKeyContactRecordId,
   isOrgLensTimeRange,
   normalizeLegacyOrgLensTimeRange,
   parseOrgEmploymentFilter,
@@ -38,6 +40,7 @@ import { OrgPeopleContributorsService } from '../services/org-people-contributor
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
+import { withCompanyEmailStatus } from '../services/org-people-wire.mapper';
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
@@ -85,12 +88,16 @@ export class OrgLensPeopleController {
         org_scope: orgScope,
       });
 
-      // The summary behind the Event Attendees tile does not depend on the roster, so both reads run together.
+      // The summary behind the Event Attendees tile and the company-email keys do not depend on the roster, so the reads run together.
       const rosterRead = live
         ? this.directoryService.getLive(req, orgUid, range, filters, teamMembers, orgScope)
         : this.service.getAllEmployees(orgUid, range, filters, teamMembers, orgScope);
-      const [roster, eventAttendeesTotal] = await Promise.all([rosterRead, this.readEventAttendeesTotal(req, orgUid, range, filters.projectScope)]);
-      const response = this.withEventAttendeesTotal(roster, eventAttendeesTotal);
+      const [roster, eventAttendeesTotal, companyEmailKeys] = await Promise.all([
+        rosterRead,
+        this.readEventAttendeesTotal(req, orgUid, range, filters.projectScope),
+        this.service.getCompanyEmailKeys(req, orgUid),
+      ]);
+      const response = withCompanyEmailStatus(this.withEventAttendeesTotal(roster, eventAttendeesTotal), companyEmailKeys);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -129,7 +136,11 @@ export class OrgLensPeopleController {
         org_scope: orgScope,
       });
 
-      const response = await this.service.getFormerEmployees(orgUid, range, filters, teamMembers, orgScope);
+      const [roster, companyEmailKeys] = await Promise.all([
+        this.service.getFormerEmployees(orgUid, range, filters, teamMembers, orgScope),
+        this.service.getCompanyEmailKeys(req, orgUid),
+      ]);
+      const response = withCompanyEmailStatus(roster, companyEmailKeys);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -246,6 +257,41 @@ export class OrgLensPeopleController {
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
         company_email_count: result.companyEmails.length,
+        company_emails_status: result.companyEmailsStatus,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-key-contact/company-emails?ids=<record ids>[&username=] — company addresses for
+   * a key contact the drawer opens without a person key: the addresses on their corporate key-contact records (`ids`:
+   * 1–50 comma-separated Salesforce record ids), merged with `username`'s when the opener has one. Never keyed on an
+   * address. An invalid or empty id list, or an invalid username, is a 400.
+   */
+  public async getCompanyEmailsByKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_company_emails_by_key_contact';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      const keyContactIds = parseKeyContactIds(getStringQueryParam(req, 'ids'), operation);
+      const username = getStringQueryParam(req, 'username') || null;
+      if (username !== null) {
+        this.assertUsername(username, operation);
+      }
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, key_contact_count: keyContactIds.length, with_username: username !== null });
+
+      const result = await this.service.getCompanyEmailsByKeyContacts(req, orgUid, keyContactIds, username);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        company_email_count: result.companyEmails.length,
+        record_only_email_count: result.keyContactRecordEmails?.length ?? 0,
         company_emails_status: result.companyEmailsStatus,
       });
 
@@ -735,4 +781,16 @@ function parseContributorsEmployment(raw: string | undefined, operation: string)
     );
   }
   return employment;
+}
+
+/**
+ * Validate the key-contact company-email `ids` query param: comma-separated 18-character Salesforce record ids,
+ * deduplicated, 1 to {@link ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS} of them; anything else is a 400.
+ */
+function parseKeyContactIds(raw: string | undefined, operation: string): string[] {
+  const ids = [...new Set((raw ?? '').split(',').map((id) => id.trim()))];
+  if (!raw || ids.length > ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS || !ids.every(isKeyContactRecordId)) {
+    throw ServiceValidationError.forField('ids', `ids must be 1-${ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS} comma-separated Salesforce record ids`, { operation });
+  }
+  return ids;
 }
