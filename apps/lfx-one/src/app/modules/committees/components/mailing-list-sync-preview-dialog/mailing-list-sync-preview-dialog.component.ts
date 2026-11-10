@@ -233,12 +233,21 @@ export class MailingListSyncPreviewDialogComponent {
         // exhaustMap (not switchMap) so a slow status request isn't cancelled by the next 2s tick —
         // switchMap would abort the in-flight request and silently restart it forever, never letting
         // a slow-but-healthy job reach a terminal state (greptile-apps, cursor/Bugbot, copilot, #5489 review).
-        exhaustMap(() => this.mailingListService.getSyncDiffStatus(this.mailingListUid, jobId)),
+        // catchError lives inside the exhaustMap callback (not on the outer stream) so a single
+        // transient failure (a dropped connection, a 502) is skipped and polling continues on the
+        // next tick, instead of catchError replacing the whole subscription and ending the poll for
+        // good (lfx-one, #5489 review).
+        // A transient per-tick failure is swallowed (returns null, skipped below) rather than
+        // surfaced, so a stale error message can't linger once loadingDiff() goes false and hide a
+        // diff that a later, successful tick did load — only the finalize() deadline fallback below
+        // sets a user-facing error if the job never reaches a terminal state.
+        exhaustMap(() => this.mailingListService.getSyncDiffStatus(this.mailingListUid, jobId).pipe(catchError(() => of(null)))),
         tap((status) => {
+          if (!status) return;
           this.diffProcessedCount.set(status.processed_count);
           this.diffTotalCount.set(status.total_count);
         }),
-        takeWhile((status: SyncDiffJobStatus) => status.status === 'pending' || status.status === 'ongoing', true),
+        takeWhile((status: SyncDiffJobStatus | null) => status === null || status.status === 'pending' || status.status === 'ongoing', true),
         takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
         finalize(() => {
           ticker.unsubscribe();
@@ -246,11 +255,6 @@ export class MailingListSyncPreviewDialogComponent {
           if (!reachedTerminalState) {
             this.loadError.set('The sync preview is taking longer than expected. Please close this dialog and try again.');
           }
-        }),
-        catchError((error) => {
-          reachedTerminalState = true;
-          this.loadError.set(error?.error?.error ?? 'Could not load the sync preview. Please try again.');
-          return of(null);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -263,9 +267,13 @@ export class MailingListSyncPreviewDialogComponent {
           return;
         }
 
-        if (status.status === 'completed' && status.diff) {
+        if (status.status === 'completed') {
           reachedTerminalState = true;
-          this.applyLoadedDiff(status.diff);
+          if (status.diff) {
+            this.applyLoadedDiff(status.diff);
+          } else {
+            this.loadError.set('The sync preview finished without a result. Please close this dialog and try again.');
+          }
         }
       });
   }
@@ -309,12 +317,21 @@ export class MailingListSyncPreviewDialogComponent {
         // exhaustMap (not switchMap) so a slow status request isn't cancelled by the next 2s tick —
         // switchMap would abort the in-flight request and silently restart it forever, never letting
         // a slow-but-healthy job reach a terminal state (greptile-apps, cursor/Bugbot, copilot, #5489 review).
-        exhaustMap(() => this.mailingListService.getSyncApplyStatus(this.mailingListUid, jobId)),
+        // catchError lives inside the exhaustMap callback (not on the outer stream) so a single
+        // transient failure (a dropped connection, a 502) is skipped and polling continues on the
+        // next tick, instead of catchError replacing the whole subscription and ending the poll for
+        // good (lfx-one, #5489 review).
+        // A transient per-tick failure is swallowed (returns null, skipped below) rather than
+        // surfaced, so a stale error message can't linger once applying() goes false and hide a
+        // result that a later, successful tick did load — only the finalize() deadline fallback
+        // below sets a user-facing error if the job never reaches a terminal state.
+        exhaustMap(() => this.mailingListService.getSyncApplyStatus(this.mailingListUid, jobId).pipe(catchError(() => of(null)))),
         tap((status) => {
+          if (!status) return;
           this.applyProcessedCount.set(status.processed_count);
           this.applyTotalCount.set(status.total_count);
         }),
-        takeWhile((status: SyncApplyJobStatus) => status.status === 'pending' || status.status === 'ongoing', true),
+        takeWhile((status: SyncApplyJobStatus | null) => status === null || status.status === 'pending' || status.status === 'ongoing', true),
         takeUntil(timer(MAILING_LIST_SYNC_POLL_DEADLINE_MS)),
         finalize(() => {
           ticker.unsubscribe();
@@ -322,11 +339,6 @@ export class MailingListSyncPreviewDialogComponent {
           if (!reachedTerminalState) {
             this.applyError.set('Applying changes is taking longer than expected. Please close this dialog and try again.');
           }
-        }),
-        catchError((error) => {
-          reachedTerminalState = true;
-          this.applyError.set(error?.error?.error ?? 'Could not apply the sync changes. Please try again.');
-          return of(null);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
