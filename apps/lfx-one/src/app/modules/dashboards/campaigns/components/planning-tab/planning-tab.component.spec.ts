@@ -1068,7 +1068,8 @@ describe('PlanningTabComponent editing an existing brief', () => {
     await openInEditor();
 
     expect(internals().briefForm.controls['url'].disabled, 'the URL stayed editable on an existing brief').toBe(true);
-    expect(el('planning-edit-existing-url')?.textContent?.trim()).toBe('https://events.example.com/kubecon-eu-2026');
+    // The event is named by its slug, the row's key: the Registration URL beside it is editable (#5490).
+    expect(el('planning-edit-existing-url')?.textContent?.trim()).toBe('kubecon-eu-2026');
 
     const proceeded: CampaignBriefOutput[] = [];
     fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
@@ -1216,6 +1217,143 @@ describe('PlanningTabComponent editing an existing brief', () => {
 
     await openInEditor(2);
     expect(internals().step()).toBe('review');
+  });
+
+  /**
+   * #5490: the paid editor's Registration URL. The scrape leaves it empty for an event page with no
+   * registration link yet, every ad platform refuses a create whose saved brief has none, and this
+   * field is the only place to set it.
+   */
+  describe('Registration URL (#5490)', () => {
+    interface UrlInternals {
+      isEditing(): boolean;
+      eventDetails(): CampaignEventDetails | null;
+      paidEditForm: FormGroup;
+      paidEditError(): string;
+      editSearchHeadlines: { set(v: string[]): void };
+      saveEdits(): void;
+      cancelEdit(): void;
+      onProceedToImplementation(): void;
+    }
+    const urlInternals = (): UrlInternals => fixture.componentInstance as unknown as UrlInternals;
+    const typeUrl = (value: string): void => urlInternals().paidEditForm.controls['registrationUrl'].setValue(value);
+
+    it('seeds the field from the brief and saves a corrected https URL with it, on the stored event', async () => {
+      await openInEditor();
+      fixture.detectChanges();
+      expect(el('planning-registration-url-edit'), 'no Registration URL field in the paid editor').not.toBeNull();
+      expect(urlInternals().paidEditForm.controls['registrationUrl'].value).toBe('https://events.example.com/kubecon-eu-2026');
+
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+      typeUrl('  https://events.example.com/kubecon-eu-2026/register/  ');
+      urlInternals().onProceedToImplementation();
+
+      expect(proceeded).toHaveLength(1);
+      expect(proceeded[0].eventDetails.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
+      // The URL is not the row's key, so the brief stays on its event.
+      expect(proceeded[0].eventDetails.slug).toBe('kubecon-eu-2026');
+      expect(proceeded[0].eventDetails.name).toBe('KubeCon EU 2026');
+    });
+
+    it('sets a URL on a brief generated without one, and the strip stops warning', async () => {
+      const noUrl = { ...storedBrief, eventDetails: { ...storedBrief.eventDetails, registrationUrl: '' } } as unknown as CampaignBriefOutput;
+      fixture.componentRef.setInput('editRequest', { brief: noUrl, requestId: 11 });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(el('planning-registration-url-missing'), 'an empty registration URL was not called out').not.toBeNull();
+      expect(el('planning-registration-url-value')).toBeNull();
+
+      typeUrl('https://events.example.com/kubecon-eu-2026/register/');
+      urlInternals().saveEdits();
+      fixture.detectChanges();
+
+      expect(urlInternals().isEditing()).toBe(false);
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
+      expect(el('planning-registration-url-missing')).toBeNull();
+      expect(el('planning-registration-url-value')?.textContent?.trim()).toBe('https://events.example.com/kubecon-eu-2026/register/');
+    });
+
+    it.each([
+      ['an http:// address, which Meta refuses', 'http://events.example.com/register'],
+      ['an address with no scheme', 'events.example.com/register'],
+      ['https: without //, which Go reads as having no host', 'https:events.example.com/register'],
+      ['a private host', 'https://localhost/register'],
+      ['a user name and password', 'https://user:secret@events.example.com/register'],
+      ['an emptied field', '   '],
+    ])('refuses %s: the editor stays open with its message, and nothing is applied or emitted', async (_label, value) => {
+      await openInEditor();
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+      urlInternals().editSearchHeadlines.set(['Edited headline']);
+      typeUrl(value);
+
+      urlInternals().onProceedToImplementation();
+      fixture.detectChanges();
+
+      expect(proceeded, 'the brief was handed on with the refused URL').toEqual([]);
+      expect(urlInternals().isEditing()).toBe(true);
+      expect(el('planning-registration-url-error')?.textContent?.trim()).toBe('Enter the full registration link, starting with https://.');
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026');
+      // Refused before anything was applied, so the copy edit is not half-saved either.
+      expect((fixture.componentInstance as unknown as { getSearchCopy(): { headlines: string[] } }).getSearchCopy().headlines).toEqual(['Stored headline']);
+    });
+
+    it('does not judge a URL the operator left unchanged, so an http one already on the brief does not block a copy edit', async () => {
+      const httpBrief = {
+        ...storedBrief,
+        eventDetails: { ...storedBrief.eventDetails, registrationUrl: 'http://events.example.com/kubecon-eu-2026' },
+      } as unknown as CampaignBriefOutput;
+      fixture.componentRef.setInput('editRequest', { brief: httpBrief, requestId: 12 });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+      urlInternals().editSearchHeadlines.set(['Edited headline']);
+
+      urlInternals().onProceedToImplementation();
+
+      expect(proceeded).toHaveLength(1);
+      expect(proceeded[0].eventDetails.registrationUrl).toBe('http://events.example.com/kubecon-eu-2026');
+      expect((proceeded[0].structuredCopy?.['google_search'] as { headlines: string[] }).headlines).toEqual(['Edited headline']);
+    });
+
+    it('carries the URL on a freshly generated brief too, where there is no stored brief to lay it over', async () => {
+      const c = fixture.componentInstance as unknown as {
+        step: { set(v: string): void };
+        eventDetails: { set(v: unknown): void };
+        structuredCopy: { set(v: unknown): void };
+        enterEditMode(): void;
+      };
+      c.step.set('review');
+      c.eventDetails.set({ ...storedBrief.eventDetails, registrationUrl: '' });
+      c.structuredCopy.set(storedBrief.structuredCopy);
+      c.enterEditMode();
+      fixture.detectChanges();
+      expect(internals().editingExistingBrief()).toBe(false);
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+
+      typeUrl('https://events.example.com/kubecon-eu-2026/register/');
+      urlInternals().onProceedToImplementation();
+
+      expect(proceeded).toHaveLength(1);
+      expect(proceeded[0].eventDetails.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
+    });
+
+    it('Save Edits refuses the same way, and Cancel discards the edit and its message', async () => {
+      await openInEditor();
+      typeUrl('http://events.example.com/register');
+      urlInternals().saveEdits();
+      expect(urlInternals().isEditing()).toBe(true);
+      expect(urlInternals().paidEditError()).not.toBe('');
+
+      urlInternals().cancelEdit();
+
+      expect(urlInternals().isEditing()).toBe(false);
+      expect(urlInternals().paidEditError()).toBe('');
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026');
+    });
   });
 
   // Survey too: it rides the email planner's restore, which has no per-send editor to open.

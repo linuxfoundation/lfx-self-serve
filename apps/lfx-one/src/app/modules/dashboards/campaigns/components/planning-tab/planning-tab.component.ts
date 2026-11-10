@@ -89,6 +89,21 @@ import type {
  */
 const isDefiniteRefusal = (status: number): boolean => status === 400 || status === 401 || status === 403 || status === 404;
 
+/**
+ * Whether an operator-typed Registration URL (#5490) is one every ad platform accepts.
+ *
+ * https only, because Meta refuses an http destination and a brief's URL serves every platform it
+ * is created on. Written out with `//` because WHATWG `URL` reads `https:example.com` as https
+ * while Go's `url.Parse`, which the platforms validate with, finds no host in it. A public host on
+ * a default port, via `canonicalHttpUrl`; and no user name or password, which every platform's
+ * validator refuses (the BFF's `describeDestinationUrl` mirrors them).
+ */
+function isHttpsRegistrationUrl(value: string): boolean {
+  if (!/^https:\/\//i.test(value) || canonicalHttpUrl(value) === '') return false;
+  const parsed = new URL(value);
+  return parsed.username === '' && parsed.password === '';
+}
+
 type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
@@ -343,6 +358,22 @@ export class PlanningTabComponent implements OnInit {
     audience: [''],
     registrationUrl: [''],
   });
+
+  /**
+   * The paid brief editor's Registration URL (#5490), as a FormGroup for the `lfx-input-text`
+   * wrapper, the same reason `emailEditForm` is one.
+   *
+   * The scrape leaves `registrationUrl` empty when the event page has no registration link yet, and
+   * every ad platform refuses a create whose saved brief has no destination. This field is the one
+   * place an operator can set or correct it: Save & Proceed saves it with the brief, and the create
+   * reads it from there.
+   */
+  protected readonly paidEditForm = this.fb.group({
+    registrationUrl: [''],
+  });
+
+  /** Why the paid brief edit could not be saved: the Registration URL was changed to something that is not a full https:// address. */
+  protected readonly paidEditError = signal<string>('');
   protected readonly copyBuffer = signal('');
   protected readonly structuredCopy = signal<Record<string, unknown> | null>(null);
   protected readonly hsUtm = signal<string | null>(null);
@@ -1579,6 +1610,11 @@ export class PlanningTabComponent implements OnInit {
   protected onProceedToImplementation(): void {
     if (this.isEditing()) {
       this.saveEdits();
+      // Refused (a changed Registration URL that is not a full https:// address): the editor stays
+      // open with its error, and the handoff stops, as the email editor's refusal stops it below.
+      if (this.isEditing()) {
+        return;
+      }
     }
     // Same reason as the paid flush above: the emitted `eventDetails` is what generation is told
     // to use verbatim, so an editor still open here would send the UNCORRECTED scrape while the
@@ -1791,10 +1827,25 @@ export class PlanningTabComponent implements OnInit {
     this.editDisplayBusinessName.set((display?.['business_name'] as string) ?? '');
     this.editDisplayCta.set((display?.['call_to_action'] as string) ?? '');
     this.editKeywords.set(this.keywords().map((kw) => ({ ...kw })));
+    this.paidEditForm.setValue({ registrationUrl: this.eventDetails()?.registrationUrl ?? '' });
+    this.paidEditError.set('');
     this.isEditing.set(true);
   }
 
   protected saveEdits(): void {
+    // Judged first, so a refusal leaves every edit unapplied and the editor open with its message.
+    const details = this.eventDetails();
+    const editedUrl = (this.paidEditForm.controls.registrationUrl.value ?? '').trim();
+    const urlChanged = details !== null && editedUrl !== details.registrationUrl.trim();
+    if (urlChanged && !isHttpsRegistrationUrl(editedUrl)) {
+      this.paidEditError.set('Enter the full registration link, starting with https://.');
+      return;
+    }
+    this.paidEditError.set('');
+    if (urlChanged) {
+      this.eventDetails.set({ ...details, registrationUrl: editedUrl });
+    }
+
     const copy = { ...(this.structuredCopy() ?? {}) };
     const search = { ...((this.getSearchCopy() as Record<string, unknown>) ?? {}) };
     const display = { ...((this.getDisplayCopy() as Record<string, unknown>) ?? {}) };
@@ -1829,6 +1880,7 @@ export class PlanningTabComponent implements OnInit {
   }
 
   protected cancelEdit(): void {
+    this.paidEditError.set('');
     this.isEditing.set(false);
   }
 
@@ -2121,7 +2173,7 @@ export class PlanningTabComponent implements OnInit {
    * fields applied over it.
    *
    * The event comes from the STORED brief, whatever the planner holds, because the row is keyed on its
-   * slug (see `editingExistingBrief`). The extension lists fall back to the stored ones, because
+   * slug (see `editingExistingBrief`); only its Registration URL is taken from the planner (#5490). The extension lists fall back to the stored ones, because
    * Proceed reports an empty list as absent and this planner has no editor that could have emptied
    * them. LinkedIn copy falls back the same way when no variant could be rebuilt from the copy.
    */
@@ -2133,7 +2185,10 @@ export class PlanningTabComponent implements OnInit {
     return {
       ...base,
       ...built,
-      eventDetails: base.eventDetails,
+      // The stored event, with the one field the editor may change: the Registration URL (#5490). It
+      // is not part of the row's key — `deriveEventSlug` reads `eventDetails.slug` — so changing it
+      // leaves the brief on its event.
+      eventDetails: { ...base.eventDetails, registrationUrl: built.eventDetails.registrationUrl },
       googleCallouts: built.googleCallouts ?? base.googleCallouts,
       googleSitelinks: built.googleSitelinks ?? base.googleSitelinks,
       negativeKeywords: built.negativeKeywords ?? base.negativeKeywords,
