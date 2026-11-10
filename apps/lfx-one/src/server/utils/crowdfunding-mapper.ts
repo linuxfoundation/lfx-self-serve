@@ -160,6 +160,7 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
     donorLogoUrl: b.donor_logo_url,
     donorUsername: b.donor_username,
     initiativeId: b.initiative_id,
+    anonymous: b.anonymous === true,
   };
 }
 
@@ -185,6 +186,9 @@ export function mapMyTransactionToMyDonation(t: BackendMyTransaction): MyDonatio
     date: new Date(t.date).getTime(),
     initiativeName: t.initiative_name || undefined,
     recurring: t.recurring,
+    anonymous: t.anonymous === true,
+    donationId: t.donation_id || undefined,
+    subscriptionId: t.subscription_id || undefined,
   };
 }
 
@@ -197,7 +201,8 @@ export function mapOrgDonation(d: BackendOrgDonation): OrgDonation {
     initiativeName: d.initiative_name || undefined,
     initiativeSlug: d.initiative_slug || undefined,
     donorName: d.donor_name,
-    donorEmail: d.donor_email,
+    donorEmail: d.donor_email ?? '',
+    anonymous: d.anonymous === true,
     amountCents: d.amount_cents,
     date: new Date(d.created_on).getTime(),
   };
@@ -239,5 +244,6 @@ export function mapSubscriptionToRecurringDonation(s: BackendSubscription): Recu
     description: s.initiative_description,
     tags: s.initiative_tags,
     initiativeUrl: s.initiative_url,
+    anonymous: s.anonymous === true,
   };
 }

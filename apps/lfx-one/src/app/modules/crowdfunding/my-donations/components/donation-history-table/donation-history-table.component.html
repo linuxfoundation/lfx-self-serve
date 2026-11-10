@@ -22,6 +22,7 @@
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Initiative</th>
             <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
             <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+            <th scope="col" class="w-12 px-2 py-3"><span class="sr-only">Actions</span></th>
             <!-- Invoice column hidden until invoice downloads are available -->
           </tr>
         </thead>
@@ -35,6 +36,15 @@
                   @if (item.recurring) {
                     <lfx-tag value="Recurring" severity="info" [rounded]="true" data-testid="donation-recurring-tag" />
                   }
+                  @if (item.anonymous) {
+                    <lfx-tag
+                      value="Anonymous"
+                      severity="secondary"
+                      icon="fa-light fa-eye-slash"
+                      [rounded]="true"
+                      tooltip="Your name is hidden wherever this donation is listed. Only you can see it's yours."
+                      data-testid="donation-anonymous-tag" />
+                  }
                 </div>
               </td>
 
@@ -43,11 +53,28 @@
 
               <!-- Amount -->
               <td class="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">{{ item.amountCents / 100 | currency: 'USD' }}</td>
+
+              <!-- Actions: only rows CF matched to its own donation or subscription can change name visibility -->
+              <td class="px-2 py-3 text-right">
+                @if (item.donationId || item.subscriptionId) {
+                  <lfx-button
+                    icon="fa-solid fa-ellipsis"
+                    severity="secondary"
+                    size="small"
+                    [text]="true"
+                    [ariaLabel]="'More options for donation to ' + (item.initiativeName ?? 'initiative')"
+                    ariaHaspopup="menu"
+                    [attr.data-testid]="'donation-row-menu-' + item.id"
+                    (onClick)="onRowMenuToggle($event, item)" />
+                }
+              </td>
             </tr>
           }
         </tbody>
       </table>
     </div>
+
+    <lfx-menu [model]="rowMenuItems()" [popup]="true" appendTo="body" data-testid="donation-row-menu" />
 
     @if (hasMore()) {
       <div class="flex justify-center pt-3" data-testid="donation-history-load-more">
