@@ -21,7 +21,7 @@ import {
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DAY_HEADING_GAP_PX } from '@lfx-one/shared/constants';
+import { IMPERSONATION_BANNER_HEIGHT_PX, MEETINGS_HOME_DAY_HEADING_GAP_PX, PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
 import { MeetingDashboardView, MeetingHomeRow, UiTabItem } from '@lfx-one/shared/interfaces';
 import { countAppliedMeetingFilters } from '@lfx-one/shared/utils';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
@@ -36,6 +36,7 @@ import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.com
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { EMPTY, Observable, skip, switchMap } from 'rxjs';
 
 import { LastMeetingCardComponent } from './components/last-meeting-card/last-meeting-card.component';
@@ -119,6 +120,8 @@ export class MeetingsRedesignComponent {
   /** Widths of the skeleton row's buttons: Yes / No / Maybe upcoming, Recording and AI Summary past. */
   protected readonly skeletonButtons: Record<MeetingDashboardView, string[]> = { upcoming: ['58px', '76px', '54px'], past: ['134px', '108px'] };
   protected readonly personaLoaded = this.personaService.personaLoaded;
+  /** Below 640px, Create Meeting is an icon button. */
+  protected readonly phone: Signal<boolean> = injectIsMobileViewport(PHONE_MEDIA_QUERY);
   /** Measured header height; the tabs bar sticks right below it. */
   protected readonly headerHeight: WritableSignal<number> = signal(0);
   /** Measured tabs bar height; the day headings stick right below it. */

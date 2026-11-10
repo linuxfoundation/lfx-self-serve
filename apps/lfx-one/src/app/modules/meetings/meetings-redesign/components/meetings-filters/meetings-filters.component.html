@@ -12,7 +12,7 @@
     popoverPadding="none"
     popoverAlign="end"
     [popover]="panel"
-    [popoverWidth]="344"
+    [popoverWidth]="panelWidth()"
     [ariaLabel]="buttonLabel()"
     (click)="resetDraft()"
     data-testid="meetings-home-filters-button">
@@ -24,7 +24,7 @@
 }
 
 <ng-template #panel let-close="close">
-  <!-- Exact px design values: 344px panel, 6px body padding, 40px switch rows; rem undershoots at the 14px root. -->
+  <!-- Exact px design values: 344px panel (full width on phones), 6px body padding, 40px switch rows; rem undershoots at the 14px root. -->
   <div class="flex max-h-[min(560px,calc(100vh-220px))] flex-col" data-testid="meetings-home-filters-panel">
     <div class="flex min-h-0 flex-col gap-[2px] overflow-y-auto p-[6px]">
       @if (showFoundation()) {

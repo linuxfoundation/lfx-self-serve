@@ -4,9 +4,10 @@
 <!-- Bare: no drawer chrome, and the body is the one scroller, so the header, tabs and right column stick inside it. -->
 <lfx-ui-drawer [heading]="context.shownRow().title" bare data-testid="meeting-details-drawer">
   <!-- Exact [Npx] design values: rem undershoots at the 14px root. 68px is the sticky header's height. -->
-  <div class="flex w-full flex-col gap-[20px] px-[32px] pb-[48px] pt-[24px] text-gray-900 [--md-head:68px]">
-    <div class="sticky top-0 z-[5] -mx-[32px] -mt-[24px] bg-white px-[32px] pb-[12px] pt-[24px]">
-      <lfx-meeting-details-header [compact]="compact()" />
+  <!-- 16px sides on phones. -->
+  <div class="flex w-full flex-col gap-[20px] px-[16px] pb-[48px] pt-[24px] text-gray-900 [--md-head:68px] sm:px-[32px]">
+    <div class="sticky top-0 z-[5] -mx-[16px] -mt-[24px] bg-white px-[16px] pb-[12px] pt-[24px] sm:-mx-[32px] sm:px-[32px]">
+      <lfx-meeting-details-header [compact]="compact()" [ownActions]="ownActions" />
       @if (showFades()) {
         <span
           class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
@@ -140,7 +141,7 @@
           <!-- Tools slot: host controls, attendance and artifacts. -->
           <lfx-meeting-details-tools data-testid="meeting-details-tools" />
         </div>
-        <lfx-meeting-details-own-actions />
+        <lfx-meeting-details-own-actions #ownActions />
       </div>
 
       <div class="col-start-1 row-start-3 flex min-w-0 flex-col gap-[24px] @[720px]:row-start-2" data-testid="meeting-details-content">

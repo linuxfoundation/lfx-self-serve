@@ -1,11 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingsHomeFilters } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { By } from '@angular/platform-browser';
+import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsFiltersComponent } from './meetings-filters.component';
@@ -42,6 +46,7 @@ describe('MeetingsFiltersComponent', () => {
   let emitted: MeetingsHomeFilters[];
   let outside: HTMLButtonElement;
   const persona = { hasBoardRole: signal(true), hasProjectRole: signal(true) };
+  let phone: boolean;
 
   const byTestId = (testId: string): HTMLElement | null => document.querySelector(`[data-testid="${testId}"]`);
   const button = (testId: string): HTMLButtonElement => byTestId(testId)?.querySelector('button') as HTMLButtonElement;
@@ -94,13 +99,40 @@ describe('MeetingsFiltersComponent', () => {
   beforeEach(() => {
     persona.hasBoardRole.set(true);
     persona.hasProjectRole.set(true);
-    TestBed.configureTestingModule({ providers: [{ provide: PersonaService, useValue: persona }] });
+    phone = false;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: PersonaService, useValue: persona },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: phone, breakpoints: {} }) } },
+      ],
+    });
   });
 
   afterEach(() => {
     fixture.destroy();
     outside.remove();
     vi.restoreAllMocks();
+  });
+
+  describe('panel width', () => {
+    const popoverWidth = (): number | null => fixture.debugElement.query(By.directive(UiButtonComponent)).componentInstance.popoverWidth();
+
+    it('is 344px above the phone breakpoint', async () => {
+      await render();
+      await open();
+
+      expect(popoverWidth()).toBe(344);
+    });
+
+    it('spans the control on phones', async () => {
+      phone = true;
+      await render();
+      await settle();
+      vi.spyOn(fixture.nativeElement as HTMLElement, 'offsetWidth', 'get').mockReturnValue(343);
+      await open();
+
+      expect(popoverWidth()).toBe(343);
+    });
   });
 
   it('shows the applied-filter count on the button', async () => {
