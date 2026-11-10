@@ -117,12 +117,12 @@ describe('MeetingsFiltersComponent', () => {
     expect(button('meetings-home-filters-button').getAttribute('aria-label')).toBeNull();
   });
 
-  it('offers Project, Meeting type, RSVP and both switches on Upcoming, with options from the rows', async () => {
+  it('offers Project from the rows, every meeting type, RSVP and both switches on Upcoming', async () => {
     await render();
     await open();
 
     expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'CNCF', 'OpenSSF']);
-    expect(await optionLabels('meetings-home-filters-type')).toEqual(['All types', 'Board', 'Technical']);
+    expect(await optionLabels('meetings-home-filters-type')).toEqual(['All types', 'Board', 'Maintainers', 'Marketing', 'Technical', 'Legal', 'Other']);
     expect(await optionLabels('meetings-home-filters-rsvp')).toEqual(['Any RSVP', 'Needs response', 'Going', 'Not going', 'Maybe']);
     expect(byTestId('meetings-home-filters-organized')?.textContent).toContain('Organized by me');
     expect(byTestId('meetings-home-filters-hide-declined')?.textContent).toContain('Hide declined meeting series');
@@ -151,13 +151,38 @@ describe('MeetingsFiltersComponent', () => {
       await open();
 
       const fields = Array.from(document.querySelectorAll('[data-testid^="meetings-home-filters-"][label]')).map((field) => field.getAttribute('label'));
-      expect(fields.slice(0, 2)).toEqual(expected ? ['Foundation', 'Project'] : ['Project', 'Meeting type']);
+      expect(fields.slice(0, 2)).toEqual(expected ? ['Foundation', 'Foundation/Project'] : ['Foundation/Project', 'Meeting type']);
       if (expected) expect(await optionLabels('meetings-home-filters-foundation')).toEqual(expected);
     });
 
     it('lists only non-foundation projects in Project', async () => {
       await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
       await open();
+
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes', 'Sigstore']);
+    });
+
+    it('narrows Project to the searched names and clears the search on close', async () => {
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
+      await open();
+      (byTestId('meetings-home-filters-project')?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
+      await settle();
+      const search = byTestId('meetings-home-filters-project-search')?.querySelector('input') as HTMLInputElement;
+      search.value = 'ku';
+      search.dispatchEvent(new Event('input'));
+      await settle();
+
+      expect(Array.from(document.querySelectorAll('[data-testid="ui-option"]')).map((option) => option.textContent?.trim())).toEqual(['Kubernetes']);
+
+      search.value = 'zzz';
+      search.dispatchEvent(new Event('input'));
+      await settle();
+
+      expect(document.querySelectorAll('[data-testid="ui-option"]')).toHaveLength(0);
+      expect(byTestId('ui-select-empty')?.textContent).toContain('No projects match');
+
+      (byTestId('meetings-home-filters-project')?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
+      await settle();
 
       expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes', 'Sigstore']);
     });

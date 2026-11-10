@@ -45,14 +45,20 @@
       @if (showProject()) {
         <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
           <lfx-ui-select
-            label="Project"
+            label="Foundation/Project"
             size="small"
             [value]="draft().project ?? ''"
             (valueChange)="setProject($event)"
+            (openChange)="projectQuery.set('')"
             data-testid="meetings-home-filters-project">
-            <lfx-ui-option value="" label="All projects" />
-            @for (option of projectOptions(); track option.value) {
+            <lfx-ui-search-input lfxUiSelectHeader ariaLabel="Search projects" [(value)]="projectQuery" data-testid="meetings-home-filters-project-search" />
+            @if (!projectQuery()) {
+              <lfx-ui-option value="" label="All projects" />
+            }
+            @for (option of projectMatches(); track option.value) {
               <lfx-ui-option [value]="option.value" [label]="option.label" />
+            } @empty {
+              <p lfxUiSelectEmpty>No projects match “{{ projectQuery() }}”.</p>
             }
           </lfx-ui-select>
         </div>
@@ -65,7 +71,7 @@
           (valueChange)="setMeetingType($event)"
           data-testid="meetings-home-filters-type">
           <lfx-ui-option value="" label="All types" />
-          @for (option of typeOptions(); track option.value) {
+          @for (option of typeOptions; track option.value) {
             <lfx-ui-option [value]="option.value" [label]="option.label" />
           }
         </lfx-ui-select>

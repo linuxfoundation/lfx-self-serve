@@ -393,6 +393,8 @@ describe('filterMeetingsHome', () => {
   it('filters by project and meeting type', () => {
     expect(keys(filterMeetingsHome(rows, filters({ project: 'p-2' }), '', null))).toEqual(['board-1', 'board-2', 'board-3']);
     expect(keys(filterMeetingsHome(rows, filters({ meetingType: 'Technical' }), '', null))).toEqual(['tsc-1', 'tsc-2', 'quiet-1']);
+    const lower = row({ key: 'lower', meeting: buildMeeting({ id: 'lower', meeting_type: ' technical ' }) });
+    expect(keys(filterMeetingsHome([lower], filters({ meetingType: 'Technical' }), '', null))).toEqual(['lower']);
   });
 
   it('filters by foundation: its own meetings and its non-foundation children, with a project taking precedence', () => {
