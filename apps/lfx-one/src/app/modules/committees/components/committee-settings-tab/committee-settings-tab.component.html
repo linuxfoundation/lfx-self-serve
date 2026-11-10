@@ -73,7 +73,7 @@
           </div>
         } @else if (mlRefreshFailed() && associatedMailingLists().length === 0) {
           <lfx-ui-note variant="error" announce data-testid="settings-ml-refresh-failed-notice">
-            Couldn't load mailing lists for this group. What you see here may be out of date.
+            Couldn't load mailing lists for this group.
             <lfx-ui-button note-action variant="secondary" (click)="retryMlRefresh()" data-testid="settings-ml-refresh-retry-button">Retry</lfx-ui-button>
           </lfx-ui-note>
         } @else if (associatedMailingLists().length === 0) {

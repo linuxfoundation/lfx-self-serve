@@ -108,6 +108,12 @@ export class CommitteeSettingsTabComponent {
   public slackWebhookRemovalStaged = signal(false);
   private mlLoadingInternal = signal(true);
 
+  // Committee uid that fetchedAssociatedMailingLists()'s last successful (non-fallback) fetch
+  // resolved for — undefined until the first one lands. Unlike mlLoading(), this stays true across
+  // a same-committee refresh (e.g. a drawer save's refreshMl$), only going stale during an actual
+  // committee switch's fetch gap — see showAutoSyncButton's doc comment (cursor #4899 review).
+  private fetchedAssociatedListsCommitteeUid = signal<string | undefined>(undefined);
+
   // Associated-ML refresh. Drawer saves (onSyncSettingsUpdated) and retryMlRefresh fire only this
   // one; association changes also fire refreshProjectMl$.
   private refreshMl$ = new Subject<void>();
@@ -199,22 +205,36 @@ export class CommitteeSettingsTabComponent {
   // Patches only the overridden `sync_mode` onto the freshly fetched row, rather than returning the
   // override wholesale: the override is a pre-save snapshot, so returning it in full would mask
   // every other field (e.g. `writer`) the subsequent fetch actually refreshed (#4899 review).
+  //
+  // A pending override whose uid the fetch doesn't contain at all — the add-path case, where a
+  // committee refetch lands before the index has the newly-linked row — is appended as its own
+  // (already-patched) row rather than silently dropped. Without this, a just-added auto-sync list
+  // would vanish from the card list and the drawer until a later refetch catches up, and the
+  // one-auto-direction-per-committee check above would have no row to see as occupying the slot
+  // (dealako #4899 review). The override map only ever holds an add/config-change snapshot — a
+  // removed uid is cleared via clearMlOverride, never left in this map — so this can't resurrect a
+  // row the user just unlinked.
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
     const overrides = this.associatedMlOverrides();
     if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
-    return this.fetchedAssociatedMailingLists().map((ml) => {
+    const fetched = this.fetchedAssociatedMailingLists();
+    const patched = fetched.map((ml) => {
       const override = overrides.get(ml.uid);
       return override ? this.patchCommitteeSyncMode(ml, override.sync_mode) : ml;
     });
+    const fetchedUids = new Set(fetched.map((ml) => ml.uid));
+    const pendingRows = [...overrides.entries()].filter(([uid]) => !fetchedUids.has(uid)).map(([, ml]) => ml);
+    return pendingRows.length > 0 ? [...patched, ...pendingRows] : patched;
   });
 
   // Same override patch applied to the project-wide snapshot the picker reads — a drawer save (via
   // onSyncSettingsUpdated) only ever patches associatedMlOverrides, it never fires refreshProjectMl$
   // (that subject exists specifically so a sync-only save does NOT trigger this heavier project-wide
   // refetch — see initProjectMailingLists' doc comment). Without this, the picker's `mailingLists`
-  // input and its configChanged comparison both read the stale pre-drawer sync_mode, so re-opening
-  // the picker right after a drawer save could issue a no-op PUT or let a second list be saved as
-  // automatic (#4899 review: Greptile, Cursor bugbot, Copilot all flagged this independently).
+  // input and saveMailingListAssociation's configChanged detection both read the stale pre-drawer
+  // sync_mode, so re-opening the picker right after a drawer save could issue a no-op PUT or let a
+  // second list be saved as automatic (#4899 review: Greptile, Cursor bugbot, Copilot all flagged
+  // this independently).
   //
   // For a list this committee is linked to, prefer associatedMailingLists()'s sync_mode over the raw
   // override map: once the associated-list refresh confirms a drawer save, it deletes the override
@@ -272,12 +292,21 @@ export class CommitteeSettingsTabComponent {
   // the viewer can actually manage sync settings on — committee canEdit() and per-list `writer`
   // access are separate permissions (see the drawer template's per-row writer gate), so with no
   // writable list the drawer would otherwise open to nothing but bare names (#4899 review). Also
-  // gated on !mlLoading() — this component instance is reused across a route navigation from one
-  // committee to another, and associatedMailingLists() keeps returning the PREVIOUS committee's data
-  // until its refetch for the new committee lands, so without this the button stays bound to (and
-  // can open a drawer full of) the prior committee's writable lists during that gap (cursor #4899 review).
+  // gated on fetchedAssociatedListsCommitteeUid() matching the current committee — this component
+  // instance is reused across a route navigation from one committee to another, and
+  // associatedMailingLists() keeps returning the PREVIOUS committee's data until its refetch for the
+  // new committee lands, so without this the button stays bound to (and can open a drawer full of)
+  // the prior committee's writable lists during that gap (cursor #4899 review). Deliberately NOT
+  // gated on mlLoading(), which also flips true on every same-committee refresh (e.g. a drawer save's
+  // refreshMl$) — that would hide/recreate this button, and the UiModalService it opens, on every
+  // save, breaking the drawer's restoreFocus return and flashing autoSyncButtonDisabled's "refreshing"
+  // state the user never otherwise sees (cursor #4899 review).
   public showAutoSyncButton = computed(
-    () => this.autoSyncEnabled() && this.canEdit() && !this.mlLoading() && this.associatedMailingLists().some((ml) => ml.writer === true)
+    () =>
+      this.autoSyncEnabled() &&
+      this.canEdit() &&
+      this.fetchedAssociatedListsCommitteeUid() === this.committee().uid &&
+      this.associatedMailingLists().some((ml) => ml.writer === true)
   );
 
   // Blocks opening the drawer while an Add List/Remove association change is in flight — a sync
@@ -428,9 +457,10 @@ export class CommitteeSettingsTabComponent {
           // hide an unrelated mailing list of the same uid on this one (#4899 review).
           this.unlinkedMlUids.set(new Set());
           // Force-close any drawer left open from the previous committee — see autoSyncDrawerRef's
-          // doc comment (cursor #4899 review). Bypasses canClose deliberately: no save can still be
-          // in flight for the previous committee once we've navigated away from it, and the user is
-          // no longer looking at this drawer's committee at all.
+          // doc comment (cursor #4899 review). Bypasses canClose deliberately: a card's in-flight PUT
+          // is fire-and-forget (see MailingListSyncSettingsComponent.save) and still completes against
+          // the previous committee; its destroyed child drops the (updated) emit, so clearing
+          // savingMlUids here is safe even if a save was still running (dealako #4899 review).
           this.autoSyncDrawerRef?.close();
           this.savingMlUids.set(new Set());
         }
@@ -1251,6 +1281,7 @@ export class CommitteeSettingsTabComponent {
               const suppressed = this.unlinkedMlUids();
               const filtered = suppressed.size === 0 ? lists : lists.filter((ml) => !suppressed.has(ml.uid));
               this.lastGoodAssociatedLists = { uid: c!.uid, lists: filtered };
+              this.fetchedAssociatedListsCommitteeUid.set(c!.uid);
               return filtered;
             }),
             catchError((error) => {
