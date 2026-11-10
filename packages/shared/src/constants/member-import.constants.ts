@@ -75,13 +75,40 @@ export const MEMBER_IMPORT_STATUS_DISPLAY: Readonly<Record<MemberImportRowStatus
   ready: { label: 'Ready', severity: 'info' },
   invalid: { label: 'Invalid', severity: 'danger' },
   skipped: { label: 'Skipped', severity: 'secondary' },
+  unknown: { label: 'Outcome unknown', severity: 'warn' },
   importing: { label: 'Adding…', severity: 'info' },
   added: { label: 'Added', severity: 'success' },
   failed: { label: 'Failed', severity: 'danger' },
+  waiting: { label: 'Waiting to resume', severity: 'warn' },
+  not_submitted: { label: 'Not yet submitted', severity: 'secondary' },
 };
 
-/** HTTP statuses after which an import sends no further rows: lost access, a missing group, or rate limiting. */
-export const MEMBER_IMPORT_FATAL_HTTP_STATUSES: ReadonlySet<number> = new Set([401, 403, 404, 429]);
+/**
+ * HTTP statuses after which an import sends no further rows: lost session or access, or a missing group.
+ * A 429 is not fatal — the import pauses and resumes (GH-5111).
+ */
+export const MEMBER_IMPORT_FATAL_HTTP_STATUSES: ReadonlySet<number> = new Set([401, 403, 404]);
 
-/** Max concurrent member creates in a Members-tab CSV import (GH-5110); independent of COMMITTEE_INVITE_CONCURRENCY so invite flows keep their cap. */
-export const MEMBER_IMPORT_CONCURRENCY = 10;
+/** Rows sent per bulk request in a Members-tab CSV import; chunks are sent one at a time (GH-5111). */
+export const MEMBER_IMPORT_BULK_CHUNK_SIZE = 25;
+
+/** Most rows committee-service accepts in one bulk member create request (upstream `MaxLength`). */
+export const MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX = 100;
+
+/** BFF upstream timeout for one bulk member create request, above the 30 s default. */
+export const MEMBER_IMPORT_BULK_TIMEOUT_MS = 60_000;
+
+/** Automatic pauses one import run may take before it stops and leaves rows for a manual retry. */
+export const MEMBER_IMPORT_MAX_PAUSES = 3;
+
+/** Backoff before resubmitting rows after a temporary, not-attempted or uncertain outcome, by pause number. */
+export const MEMBER_IMPORT_PAUSE_DELAYS_MS = [15_000, 30_000, 60_000] as const;
+
+/** Pause after a 429 whose Retry-After header is unreadable. */
+export const MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS = 60_000;
+
+/** Longest supported automatic pause; longer server deadlines stop recovery instead of being shortened. */
+export const MEMBER_IMPORT_RETRY_AFTER_MAX_MS = 120_000;
+
+/** Shortest single automatic pause, so a zero or past Retry-After never resubmits immediately. */
+export const MEMBER_IMPORT_RETRY_AFTER_MIN_MS = 1_000;
