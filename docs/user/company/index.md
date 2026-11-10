@@ -90,7 +90,7 @@ See [Choose and switch a company](./choose-a-company/) for what you land on firs
 - [Company Meetings](./meetings/) — the company's meeting attendance, where its people spend that time, and how it adds to project influence
 - [Groups](./groups/) — the groups where the company's employees hold seats, who holds them, and the CSV export
 - [EasyCLA](./easycla/) — corporate CLAs for the selected company
-- [Company Profile](./org-profile/) — the company's details and addresses, who can edit the profile, and how to upload a logo
+- [Company Profile](./company-profile/) — the company's details and addresses, who can edit the profile, and how to upload a logo
 - [Company involvement in a foundation](../dashboards/company-involvement/) — the company's involvement in one foundation, on the Foundation lens overview
 - [Company FAQ](./faq/) — short answers about the Company lens and each of its pages, switching companies, Company Lens access, leaderboard score breakdowns, Crowdfunding Initiatives, involvement in one foundation, who can edit a corporate CLA, who can see a company, and CLA Manager changes
 - [CLAs](../account/my-clas/) — your own Individual CLAs and your coverage under an employer's corporate CLA
