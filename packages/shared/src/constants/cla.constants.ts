@@ -120,10 +120,9 @@ export const SIGN_IDENTITY_PLATFORM_LABELS = {
 } as const;
 
 /**
- * Why a GitLab-linked CLA Group cannot be signed here. An identity gap, not a configuration
- * flag: GitLab signing authenticates the contributor through GitLab OAuth at signing time and
- * keys the EasyCLA user record on the GitLab numeric id, and Self Serve can neither obtain nor
- * verify a GitLab identity today.
+ * GitLab account linking is supported in Profile → Identities, but the CLA signing flow
+ * does not yet implement GitLab identity selection or the signing handoff. Linking a
+ * GitLab account does not enable signing a GitLab-only CLA Group here.
  */
 export const GITLAB_UNSUPPORTED_MESSAGE = 'Signing CLA using GitLab is not supported from Self Serve';
 

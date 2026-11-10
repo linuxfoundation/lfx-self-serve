@@ -8,11 +8,14 @@ import {
   MEMBER_IMPORT_FIELDS,
   MEMBER_IMPORT_HTTP_URL_PATTERN,
   MEMBER_IMPORT_MAX_RECORDS,
+  MEMBER_IMPORT_PAUSE_DELAYS_MS,
+  MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS,
+  MEMBER_IMPORT_RETRY_AFTER_MIN_MS,
   MEMBER_IMPORT_VOTING_COLUMNS,
   MEMBER_IMPORT_VOTING_STATUS_LABELS,
 } from '../constants/member-import.constants';
 import { LINKEDIN_PROFILE_PATTERN } from '../constants/validation.constants';
-import type { CreateCommitteeMemberRequest } from '../interfaces/member.interface';
+import type { CommitteeMemberBulkCreateRowResult, CreateCommitteeMemberRequest } from '../interfaces/member.interface';
 import type {
   MemberImportCells,
   MemberImportColumn,
@@ -31,6 +34,7 @@ const ROLE_BY_NAME = new Map(MEMBER_ROLES.map(({ value }) => [value as string, v
 const VOTING_STATUS_BY_NAME = new Map(MEMBER_FORM_VOTING_STATUSES.map(({ value }) => [value as string, value]));
 const APPOINTED_BY_BY_NAME = new Map(APPOINTED_BY_OPTIONS.map(({ value }) => [value as string, value]));
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const RETRY_AFTER_SECONDS_PATTERN = /^\d+$/;
 
 /** Template guidance for the columns that apply to a group, with group-specific requiredness. */
 export function getMemberImportFieldGuide(rules: MemberImportGroupRules): MemberImportFieldGuide[] {
@@ -236,6 +240,79 @@ export function prepareMemberImportRows(
     }
     return { ...base, status: 'ready', issues, payload: buildMemberImportPayload(cells) };
   });
+}
+
+/**
+ * Row patch for one bulk member create result (GH-5111).
+ *
+ * Added rows and people already in the group never go back into the queue. An `already_member`
+ * result confirms presence, not which request created the membership or applied its details.
+ * Temporary and not-attempted rows wait for resubmission; invalid rows cannot succeed unchanged.
+ */
+export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreateRowResult, row: MemberImportRow): Partial<MemberImportRow> {
+  if (result.status === 'added') {
+    return { status: 'added', reason: undefined, retryable: undefined, uncertain: false };
+  }
+
+  if (result.status === 'skipped') {
+    if (result.reason === 'already_member') {
+      if (row.uncertain) {
+        return {
+          status: 'skipped',
+          conflict: true,
+          reason:
+            'Already a member of this group. The earlier addition could not be confirmed; imported details may not have been applied. Review pending invitations.',
+          retryable: undefined,
+          uncertain: false,
+        };
+      }
+      return { status: 'skipped', conflict: true, reason: 'Already a member of this group.', retryable: undefined, uncertain: false };
+    }
+    return { status: 'skipped', reason: 'Duplicate of an earlier row in the file.', retryable: undefined, uncertain: false };
+  }
+
+  if (result.reason === 'temporary') {
+    return {
+      status: 'waiting',
+      reason: 'A temporary problem interrupted this row. It will be sent again automatically.',
+      retryable: undefined,
+      uncertain: true,
+    };
+  }
+  if (result.reason === 'not_attempted' || (result.reason === undefined && result.retryable)) {
+    return { status: 'waiting', reason: 'Not sent yet. It will be sent automatically.', retryable: undefined };
+  }
+
+  const detail = (result.message ?? '').trim() || 'The member details were rejected.';
+  return {
+    status: row.uncertain ? 'unknown' : 'failed',
+    reason: `${row.uncertain ? 'The earlier outcome is unknown. ' : ''}${/[.!?]$/.test(detail) ? detail : `${detail}.`} Fix this row in the file and import it again.`,
+    retryable: false,
+    uncertain: !!row.uncertain,
+  };
+}
+
+/**
+ * Milliseconds to pause before resubmitting rows (GH-5111).
+ *
+ * A non-null `retryAfter` (a 429's Retry-After header) is read as delay seconds or an HTTP-date,
+ * falling back to {@link MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS} when unreadable. Without a header,
+ * the backoff for this pause number applies. Valid server minimums are never shortened; callers
+ * must stop automatic recovery if the delay exceeds their supported wait budget.
+ */
+export function getMemberImportRetryDelayMs(retryAfter: string | null, pauseIndex: number, now: number = Date.now()): number {
+  const backoff = MEMBER_IMPORT_PAUSE_DELAYS_MS[Math.min(Math.max(pauseIndex, 0), MEMBER_IMPORT_PAUSE_DELAYS_MS.length - 1)];
+  const delay = retryAfter === null ? backoff : (parseRetryAfterMs(retryAfter, now) ?? MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS);
+  return Math.max(delay, MEMBER_IMPORT_RETRY_AFTER_MIN_MS);
+}
+
+function parseRetryAfterMs(value: string, now: number): number | null {
+  const trimmed = value.trim();
+  if (RETRY_AFTER_SECONDS_PATTERN.test(trimmed)) {
+    return Number(trimmed) * 1000;
+  }
+  const date = Date.parse(trimmed);
+  return Number.isNaN(date) ? null : date - now;
 }
 
 function isColumnRequired(requiredWhen: MemberImportFieldDefinition['requiredWhen'], rules: MemberImportGroupRules): boolean {

@@ -403,18 +403,22 @@ test.describe('Org People → Board tab', () => {
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-0')).toHaveText(JORDAN_COMPANY_EMAIL);
 
-    // 2. Resolved EMPTY → "no company email on record"; only this state may make that claim.
+    // 2. Resolved EMPTY → "No … email on file"; only this state may make that claim.
     await stubCompanyEmails((route) => route.fulfill({ status: 200, contentType: 'application/json', body: resolved([]) }));
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
 
-    // 2b. UNAVAILABLE → "not available from this view"; an empty list here is NOT "none on record".
+    // 2b. UNAVAILABLE → "We couldn't confirm a company email at …"; an empty list here is NOT "none on file".
     await stubCompanyEmails((route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [], companyEmailsStatus: 'unavailable' }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ companyEmails: [], companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' }),
+      })
     );
     await openDrawer();
-    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email-unconfirmed')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
 
     // 2c. Response without a status → failed; addresses must never render (older-replica case).
@@ -425,7 +429,7 @@ test.describe('Org People → Board tab', () => {
     await expect(page.getByTestId('person-detail-drawer-email-failed')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
 
-    // 3. Lookup FAILED → "couldn't be loaded" (server answers 200 with status 'failed', never a 5xx).
+    // 3. Lookup FAILED → "Couldn't load emails." with Try again (server answers 200 with status 'failed', never a 5xx).
     await stubCompanyEmails((route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ companyEmails: [], companyEmailsStatus: 'failed' }) })
     );
@@ -441,7 +445,7 @@ test.describe('Org People → Board tab', () => {
     await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
 
-    // 4. No identity → "not available from this view" and NO request; the address is never a lookup key.
+    // 4. No identity → "Emails aren't shown on this page" and NO request; the address is never a lookup key.
     let callsWithoutIdentity = 0;
     await stubBoardMembers(page);
     await stubCompanyEmails((route) => {
@@ -449,7 +453,7 @@ test.describe('Org People → Board tab', () => {
       return route.fulfill({ status: 500, body: 'unexpected lookup without an identity' });
     });
     await openDrawer();
-    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toBeVisible();
+    await expect(page.getByTestId('person-detail-drawer-email-no-identity')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
     expect(callsWithoutIdentity).toBe(0);
   });

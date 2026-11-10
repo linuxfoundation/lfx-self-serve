@@ -54,11 +54,15 @@ export class PersonDetailDrawerComponent implements OnDestroy {
    */
   protected readonly copiedEmail: Signal<string | null> = computed(() => this.initCopiedEmail());
 
-  // Failed, not-available and none-on-record are distinct states: "no company address" is a claim
-  // about a named person and must never be shown when there was no identity to look them up with.
+  // Failed, unconfirmed, nothing-to-look-up and none-on-file are distinct states: "no company address on file" is a
+  // claim about a named person and is only made after a lookup that completed with a known identity.
   protected readonly companyEmailsFailed: Signal<boolean> = computed(() => this.drawer.emailError());
-  protected readonly companyEmailsNotAvailable: Signal<boolean> = computed(() => this.drawer.identityUnavailable());
-  protected readonly companyEmailsNoneOnRecord: Signal<boolean> = computed(() => this.drawer.companyEmailsResolved() && this.companyEmails().length === 0);
+  protected readonly companyEmailsUnconfirmed: Signal<boolean> = computed(() => {
+    const reason = this.drawer.companyEmailsUnavailableReason();
+    return reason === 'unlinked_identity' || reason === 'unconfirmed';
+  });
+  protected readonly companyEmailsNoIdentity: Signal<boolean> = computed(() => this.drawer.companyEmailsUnavailableReason() === 'no_identity');
+  protected readonly companyEmailsNoneOnFile: Signal<boolean> = computed(() => this.drawer.companyEmailsResolved() && this.companyEmails().length === 0);
 
   public ngOnDestroy(): void {
     this.drawer.close();
@@ -171,9 +175,11 @@ export class PersonDetailDrawerComponent implements OnDestroy {
   // Addresses arrive on their own request, so they render independently of the activity fetch's loading or error state.
   private initCompanyEmails(): PersonDrawerEmail[] {
     const primary = this.drawer.primaryCompanyEmail();
+    const recordOnly = new Set(this.drawer.keyContactRecordEmails());
     return this.drawer.companyEmails().map((email) => ({
       email,
       isPrimary: email === primary,
+      fromKeyContactRecord: recordOnly.has(email),
       href: isMailtoSafeEmail(email) ? `mailto:${email}` : null,
     }));
   }

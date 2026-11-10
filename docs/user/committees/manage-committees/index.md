@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-06
+last_updated: 2026-11-10
 intercom_collection: Committees
 ---
 
@@ -83,7 +83,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.
 6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. To fix a value, correct the file and choose it again; you can also remove a row from the preview. The import cannot start while any row is invalid.
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
-8. Select **Add _N_ members**.
+8. Select **Add _N_ members**. Rows are added in batches, one batch at a time. While the import runs, each row shows **Not yet submitted**, **Adding…**, or **Waiting to resume** until it settles. A retry run preserves **Outcome unknown** for an unconfirmed earlier attempt until that row is sent again.
 
 ### Import while creating or editing a group
 
@@ -110,9 +110,12 @@ People already in the group or already staged in the form are skipped. Imports u
 ### Members-tab results and retry
 
 - People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
-- After the import, each row shows **Added**, **Skipped**, or **Failed** with the reason. Select **Retry _N_ failed** to send only the failed rows again — added and skipped rows are never resubmitted.
-- If your session expires, you lose permission to manage the group, or too many requests are sent, the import stops and rows that were not sent are marked **Failed** so you can retry them later. For too many requests, wait a minute before retrying.
-- If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, missing-invitation, and rate-limit errors during cleanup also stop new member requests, but never resubmit the members already added.
+- After the import, each row shows **Added**, **Skipped**, **Failed**, **Outcome unknown**, or **Not yet submitted** with the reason. Select **Retry _N_** to send the **Not yet submitted** rows, unresolved attempts and any failed rows that can still succeed. Added and skipped rows are never resubmitted, and rows the service rejected as invalid are not retried — fix them in the file and import it again.
+- If the service asks the import to slow down, or a batch hits a temporary problem, the import pauses and resumes on its own, up to 3 times per run. The dialog shows when it will resume. A server cooldown longer than two minutes stops automatic recovery rather than retrying early; the dialog shows the earliest retry time. **Retry** stays unavailable until a known cooldown ends, even after **Stop import**. The cooldown notice disappears and **Retry** becomes available when the wait ends. Once the pause budget is exhausted, review the outcomes before retrying.
+- Select **Stop import** during a pause to end the import. Rows that were never sent stay **Not yet submitted**. A submitted row whose response was lost stays **Outcome unknown**, not Failed or Added; close the dialog to refresh and review the roster before retrying.
+- When recovery finds an existing membership, the row is **Skipped**, not proof that this import added the person or applied the CSV details. Review the existing member and any pending invitation; skipped rows do not trigger invitation cleanup.
+- If your session expires, you lose permission to manage the group, or the group can no longer be found, the import stops with the next step to take, and rows that were not sent are marked **Not yet submitted** so you can retry them later.
+- If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, and missing-invitation errors during cleanup also stop new member requests, but never resubmit the members already added. A cleanup that is rate limited only adds the warning and does not stop the import.
 - Select **Close** to return to the roster, which refreshes to show the new members. Newly added members can take a few moments to appear.
 
 ## Delete a group

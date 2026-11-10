@@ -17,6 +17,7 @@ import {
   ORG_SCOPE_CAPTION_PHRASE,
 } from '@lfx-one/shared/constants';
 import type {
+  OrgAllEmployeeCompanyEmailFilter,
   OrgAllEmployeeEmploymentFilter,
   OrgAllEmployeeRow,
   OrgAllEmployeesResponse,
@@ -356,6 +357,73 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
       expect(rowKeys().sort()).toEqual(['org-people-all-employees-row-p-1', 'org-people-all-employees-row-p-2']);
       expect(el().querySelector('[data-testid="org-people-all-employees-error"]')).toBeNull();
+    });
+  });
+
+  // The Company email filter reads the status the server stamps on every row; a row without one shows only under "All".
+  describe('in the browser, with the company email filter', () => {
+    const answer = async (): Promise<void> => {
+      snowflake$.next(
+        response(
+          [
+            row('p-has', 'Ada Lovelace', { commitsCount: 1, companyEmailStatus: 'has' }),
+            row('p-none', 'Alan Turing', { commitsCount: 1, companyEmailStatus: 'none' }),
+            row('p-unknown', 'Barbara Liskov', { commitsCount: 1 }),
+          ],
+          3
+        )
+      );
+      snowflake$.complete();
+      former$.next(response([row('p-left', 'Grace Hopper', { isFormer: true, commitsCount: 4, companyEmailStatus: 'unconfirmed' })], 1));
+      former$.complete();
+      await settle();
+    };
+    const companyEmailControl = (): FormControl<OrgAllEmployeeCompanyEmailFilter> =>
+      (fixture.componentInstance as unknown as { filterForm: FormGroup<{ companyEmail: FormControl<OrgAllEmployeeCompanyEmailFilter> }> }).filterForm.controls
+        .companyEmail;
+
+    it('lists every row under "All email statuses", and only the matching rows under each status', async () => {
+      await mount('browser', '/?employment=all');
+      await answer();
+      expect(rowKeys().sort()).toEqual([
+        'org-people-all-employees-row-p-has',
+        'org-people-all-employees-row-p-left',
+        'org-people-all-employees-row-p-none',
+        'org-people-all-employees-row-p-unknown',
+      ]);
+
+      for (const [status, expected] of [
+        ['has', 'p-has'],
+        ['none', 'p-none'],
+        ['unconfirmed', 'p-left'],
+      ] as const) {
+        companyEmailControl().setValue(status);
+        await settle();
+        expect(rowKeys()).toEqual([`org-people-all-employees-row-${expected}`]);
+      }
+    });
+
+    it('writes ?companyEmail= on change, drops the default, reads it on load, and clears it with the other filters', async () => {
+      await mount('browser', '/?employment=all&companyEmail=none');
+      await answer();
+      expect(companyEmailControl().value).toBe('none');
+      expect(rowKeys()).toEqual(['org-people-all-employees-row-p-none']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-more-filters-toggle"]')?.textContent).toContain('1');
+
+      companyEmailControl().setValue('has');
+      await settle();
+      expect(TestBed.inject(Router).url).toContain('companyEmail=has');
+
+      companyEmailControl().setValue('all');
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('companyEmail');
+
+      companyEmailControl().setValue('unconfirmed');
+      await settle();
+      (fixture.componentInstance as unknown as { clearFilters(): void }).clearFilters();
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('companyEmail');
+      expect(companyEmailControl().value).toBe('all');
     });
   });
 
@@ -1407,7 +1475,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     it('clears every filter to its default in one roster read and drops their URL params, keeping the tab', async () => {
       const clear = (): HTMLButtonElement | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
-      await mount('browser', '/?tab=employees&employment=current&range=90d&projectScope=lf&metric=commits&teamMembers=include&orgScope=all');
+      await mount('browser', '/?tab=employees&employment=current&companyEmail=has&range=90d&projectScope=lf&metric=commits&teamMembers=include&orgScope=all');
       const state = fixture.componentInstance as unknown as {
         filterForm: FormGroup<{ search: FormControl<string>; activity: FormControl<string> }>;
         searchTerm(): string;
@@ -1437,6 +1505,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         foundation: '',
         activity: 'all',
         employment: 'all',
+        companyEmail: 'all',
         range: '730d',
         projectScope: FILTERS.projectScope,
         metric: FILTERS.metric,

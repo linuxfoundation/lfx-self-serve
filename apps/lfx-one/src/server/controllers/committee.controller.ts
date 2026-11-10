@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -503,6 +503,60 @@ export class CommitteeController {
       res.status(201).json(newMember);
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * POST /committees/:id/members/bulk
+   */
+  public async bulkCreateCommitteeMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const skipNotification = getStringQueryParam(req, 'skip_notification') === 'true';
+    const members: unknown = req.body?.members;
+    const rowCount = Array.isArray(members) ? members.length : 0;
+    // Log counts only, never the body: the rows carry imported personal data.
+    const startTime = logger.startOperation(req, 'bulk_create_committee_members', {
+      committee_id: id,
+      row_count: rowCount,
+      skip_notification: skipNotification,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Committee ID is required', {
+            operation: 'bulk_create_committee_members',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!Array.isArray(members) || members.length === 0 || members.length > MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX) {
+        next(
+          ServiceValidationError.forField('members', `members must be an array of 1 to ${MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX} rows`, {
+            operation: 'bulk_create_committee_members',
+            service: 'committee_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const result = await this.committeeService.bulkCreateCommitteeMembers(req, id, members as CreateCommitteeMemberRequest[], skipNotification);
+
+      logger.success(req, 'bulk_create_committee_members', startTime, {
+        committee_id: id,
+        row_count: rowCount,
+        added: result.added,
+        skipped: result.skipped,
+        failed: result.failed,
+      });
+
+      res.status(200).json(result);
+    } catch (error) {
       next(error);
     }
   }

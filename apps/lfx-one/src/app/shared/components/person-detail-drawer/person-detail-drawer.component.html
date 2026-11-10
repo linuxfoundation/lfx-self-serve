@@ -74,6 +74,9 @@
                       Primary
                     </span>
                   }
+                  @if (companyEmail.fromKeyContactRecord) {
+                    <span class="shrink-0 text-[10px] italic text-gray-500" data-testid="person-detail-drawer-email-record-hint">from key contact record</span>
+                  }
                   <button
                     type="button"
                     class="shrink-0 text-gray-500 hover:text-gray-700"
@@ -97,13 +100,26 @@
           } @else if (drawer.emailsLoading()) {
             <span class="mt-1 h-3 w-40 animate-pulse rounded bg-gray-200" data-testid="person-detail-drawer-email-loading"></span>
           } @else if (companyEmailsFailed()) {
-            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
-          } @else if (companyEmailsNotAvailable()) {
-            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-not-available">
-              Company emails aren't available from this view
+            <span class="mt-1 flex min-w-0 items-center gap-2 text-xs text-gray-500" data-testid="person-detail-drawer-email-failed">
+              <span class="truncate">Couldn't load emails.</span>
+              <button
+                type="button"
+                class="shrink-0 font-medium text-blue-700 hover:underline"
+                data-testid="person-detail-drawer-email-retry"
+                (click)="drawer.retryCompanyEmails()">
+                Try again
+              </button>
             </span>
-          } @else if (companyEmailsNoneOnRecord()) {
-            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-none"> No company email on record </span>
+          } @else if (companyEmailsUnconfirmed()) {
+            <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-unconfirmed">
+              We couldn't confirm a company email at {{ drawer.companyName() }}
+            </span>
+          } @else if (companyEmailsNoIdentity()) {
+            <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-no-identity"> Emails aren't shown on this page </span>
+          } @else if (companyEmailsNoneOnFile()) {
+            <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-none">
+              No {{ drawer.companyName() }} email on file
+            </span>
           }
         </span>
       </div>
