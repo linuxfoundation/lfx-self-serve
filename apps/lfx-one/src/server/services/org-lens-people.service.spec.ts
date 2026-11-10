@@ -924,6 +924,19 @@ describe('OrgLensPeopleService person-key company emails', () => {
       });
     });
 
+    it('keeps the addresses of one leg when the other fails', async () => {
+      addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+      vi.spyOn(
+        service as unknown as { readKeyContactRecordEmails: () => Promise<OrgPersonCompanyEmailsResponse> },
+        'readKeyContactRecordEmails'
+      ).mockResolvedValue(FAILED);
+
+      const result = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser');
+
+      expect(result.companyEmailsStatus).toBe('resolved');
+      expect(result.companyEmails).toEqual(['first@company.example']);
+    });
+
     it('answers failed without caching it, and recovers', async () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
       database.exec('ALTER TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS RENAME TO SAVED_EXTENDED');

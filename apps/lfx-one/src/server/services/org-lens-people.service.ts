@@ -456,7 +456,7 @@ export class OrgLensPeopleService {
    * Company-affiliated emails for a key contact opened without a person key: the company addresses recorded on the
    * person's corporate key-contact records (`keyContactIds`, Salesforce record ids), merged with the `username` lookup
    * when the caller derived one from the org's assignments (an address also known from an LF account is not record-only). `resolved` when any address
-   * is found or the username lookup resolved; otherwise `unavailable` (`unconfirmed`). Failures answer `failed` and are
+   * is found or the username lookup resolved; otherwise `unavailable` (`unconfirmed`). A failed leg answers `failed` only when the other found no address; failures are
    * never cached. Keyed on identity only: no address is ever an input.
    */
   public async getCompanyEmailsByKeyContacts(
@@ -469,10 +469,11 @@ export class OrgLensPeopleService {
       this.readKeyContactRecordEmails(req, accountId, keyContactIds),
       username ? this.getCompanyEmailsByUsername(req, accountId, username) : null,
     ]);
-    if (records.companyEmailsStatus === 'failed' || byUsername?.companyEmailsStatus === 'failed') {
+    const merged = toCompanyEmails([...responseRows(byUsername), ...responseRows(records)]);
+    // One failed leg never hides the other's addresses; with nothing in hand a failed leg is a failure, not "none".
+    if (merged.companyEmails.length === 0 && (records.companyEmailsStatus === 'failed' || byUsername?.companyEmailsStatus === 'failed')) {
       return FAILED_COMPANY_EMAILS;
     }
-    const merged = toCompanyEmails([...responseRows(byUsername), ...responseRows(records)]);
     if (merged.companyEmails.length === 0 && byUsername?.companyEmailsStatus !== 'resolved') {
       return UNCONFIRMED_COMPANY_EMAILS;
     }
