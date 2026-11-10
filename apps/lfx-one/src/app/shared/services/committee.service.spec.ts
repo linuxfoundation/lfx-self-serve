@@ -154,6 +154,12 @@ describe('CommitteeService.bulkCreateCommitteeMembers', () => {
     expect(received).toBe(result);
   });
 
+  it('encodes the committee ID as one URL path segment', () => {
+    service.bulkCreateCommitteeMembers('group/with ?#', members).subscribe();
+
+    expect(http.post).toHaveBeenCalledWith('/api/committees/group%2Fwith%20%3F%23/members/bulk', { members }, { params: undefined });
+  });
+
   it('sets skip_notification when notifications are off', () => {
     service.bulkCreateCommitteeMembers(UID, members, { skipNotification: true }).subscribe();
 

@@ -62,6 +62,7 @@ import {
   of,
   race,
   Subject,
+  Subscription,
   switchMap,
   take,
   tap,
@@ -126,7 +127,7 @@ export class ImportMembersDialogComponent {
   public fileErrors = signal<string[]>([]);
   public reading = signal(false);
   public rows = signal<MemberImportRow[]>([]);
-  /** Set when an auth/not-found response, the pause cap or Stop import ended the run; unsent rows stay retryable. */
+  /** Set when auth/not-found, the pause cap, an excessive server cooldown or Stop import ends the run. */
   public stopReason = signal<string | null>(null);
   public batchTotal = signal(0);
   public batchSettled = signal(0);
@@ -141,6 +142,7 @@ export class ImportMembersDialogComponent {
   public readonly maxPauses = MEMBER_IMPORT_MAX_PAUSES;
   /** Ends the current pause early; in-flight requests are never cancelled. */
   private readonly stopRequested = new Subject<void>();
+  private retryDeadlineTimer?: Subscription;
 
   public readonly busy = computed(() => this.reading() || this.phase() === 'importing');
   public readonly readyCount = computed(() => this.countRows('ready'));
@@ -157,6 +159,15 @@ export class ImportMembersDialogComponent {
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
   public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0 && this.invalidCount() === 0);
   public readonly canRetry = computed(() => this.phase() === 'results' && this.retryableCount() > 0);
+  public readonly retryDeadlineLabel = computed(() => {
+    if (!this.canRetry() || this.retryNotBefore() === 0) {
+      return null;
+    }
+    const deadline = new Date(this.retryNotBefore());
+    return Number.isNaN(deadline.getTime())
+      ? 'The service requested an unsupported cooldown. Close and try again later.'
+      : `Retry no earlier than ${deadline.toLocaleString()}. Retry is unavailable until this cooldown ends.`;
+  });
   public readonly canChooseFile = computed(() => (this.phase() === 'select' || this.phase() === 'preview') && !this.busy());
   public readonly closeLabel = computed(() => (this.phase() === 'results' ? 'Close' : 'Cancel'));
   public readonly rowViews: Signal<MemberImportRowView[]> = this.initRowViews();
@@ -246,13 +257,6 @@ export class ImportMembersDialogComponent {
     }
     this.stopReason.set('You stopped the import.');
     this.stopRequested.next();
-  }
-
-  public retryDeadlineLabel(): string {
-    const deadline = new Date(this.retryNotBefore());
-    return Number.isNaN(deadline.getTime())
-      ? 'The service requested an unsupported cooldown. Close and try again later.'
-      : `Retry no earlier than ${deadline.toLocaleString()}. Earlier attempts to retry will not submit any rows.`;
   }
 
   public close(): void {
@@ -357,7 +361,7 @@ export class ImportMembersDialogComponent {
     this.stopReason.set(null);
     this.pauseCount.set(0);
     this.resumeAt.set(null);
-    this.retryNotBefore.set(0);
+    this.setRetryDeadline(0);
     this.batchTotal.set(rows.length);
     this.batchSettled.set(0);
     this.form.controls.send_notification.disable();
@@ -461,7 +465,10 @@ export class ImportMembersDialogComponent {
     );
   }
 
-  /** Request-level failures: 429 pauses, 401/403/404 stop the run, 400 fails the chunk, anything else is an unknown outcome. */
+  /**
+   * Request-level failures: 429 pauses unless its cooldown exceeds the automatic wait limit;
+   * 401/403/404 stop the run, 400 rejects the chunk, and anything else leaves its outcome unknown.
+   */
   private handleChunkError(rows: MemberImportRow[], err: unknown, skipNotification: boolean): Observable<void> {
     const httpError = err instanceof HttpErrorResponse ? err : null;
     const status = httpError?.status ?? 0;
@@ -502,17 +509,18 @@ export class ImportMembersDialogComponent {
   }
 
   /**
-   * Waits, then resubmits the rows as a new chunk. Stops the run instead once the pause budget is
-   * spent. Unresolved submitted attempts remain Outcome unknown; only unsent rows are Not yet submitted.
+   * Waits, then resubmits the rows as a new chunk. Stops when the pause budget is spent, a server
+   * cooldown exceeds the automatic wait limit, or the run already stopped. Unresolved submitted
+   * attempts remain Outcome unknown; only unsent rows are Not yet submitted.
    */
   private pauseThenResubmit(rows: MemberImportRow[], retryAfter: string | null, skipNotification: boolean): Observable<void> {
     return defer(() => {
       const delay = getMemberImportRetryDelayMs(retryAfter, this.pauseCount());
       if (retryAfter !== null) {
-        this.retryNotBefore.set(Math.max(this.retryNotBefore(), Date.now() + delay));
+        this.setRetryDeadline(Math.max(this.retryNotBefore(), Date.now() + delay));
       }
       if (delay > MEMBER_IMPORT_RETRY_AFTER_MAX_MS) {
-        const reason = 'The service cooldown exceeds the automatic wait limit. Retry only after the cooldown shown below.';
+        const reason = 'The service cooldown exceeds the automatic wait limit. Automatic recovery stopped; retry once the service permits.';
         this.stopReason.set(reason);
         this.markUnsubmitted(rows, reason);
         return EMPTY;
@@ -551,6 +559,19 @@ export class ImportMembersDialogComponent {
         })
       );
     });
+  }
+
+  /** Clear elapsed cooldowns without resubmitting; recheck long deadlines in bounded timer intervals. */
+  private setRetryDeadline(deadline: number): void {
+    this.retryDeadlineTimer?.unsubscribe();
+    this.retryNotBefore.set(deadline);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0 || !Number.isFinite(remaining)) {
+      return;
+    }
+    this.retryDeadlineTimer = timer(Math.min(remaining, MEMBER_IMPORT_RETRY_AFTER_MAX_MS))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.setRetryDeadline(Date.now() < deadline ? deadline : 0));
   }
 
   /** Emits the cleanup warning (or undefined) — a failed revoke never turns an added member into a failure. */

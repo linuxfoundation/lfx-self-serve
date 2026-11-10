@@ -506,6 +506,38 @@ describe('ImportMembersDialogComponent', () => {
       respond(2);
       expect(component.phase()).toBe('results');
       expect(component.addedCount()).toBe(30);
+      fixture.detectChanges();
+      expect(component.retryNotBefore()).toBe(0);
+      expect(query('import-members-retry-deadline')).toBeNull();
+    });
+
+    it('retries only a missing result and preserves the existing-member outcome on recovery', async () => {
+      await upload('email\nada@example.com\ngrace@example.com');
+      vi.useFakeTimers();
+      component.startImport();
+      pending[0].response.next({
+        results: [{ index: 0, email: 'ada@example.com', status: 'added', retryable: false, member_uid: 'member-0' }],
+        added: 1,
+        skipped: 0,
+        failed: 0,
+      });
+      pending[0].response.complete();
+
+      expect(component.rows().map((row) => row.status)).toEqual(['added', 'waiting']);
+      expect(component.rows()[1].uncertain).toBe(true);
+      expect(component.batchSettled()).toBe(1);
+      vi.advanceTimersByTime(14_999);
+      expect(pending).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(sentEmails(1)).toEqual(['grace@example.com']);
+      respond(1, { 0: { status: 'skipped', reason: 'already_member' } });
+
+      expect(component.rows()[1]).toMatchObject({ status: 'skipped', conflict: true, uncertain: false });
+      expect(component.rows()[1].reason).toContain('earlier addition could not be confirmed');
+      expect(component.addedCount()).toBe(1);
+      expect(component.conflictCount()).toBe(1);
+      expect(component.phase()).toBe('results');
+      expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
     });
 
     it('waits on temporary and not-attempted rows, then resubmits only those rows', async () => {
@@ -622,10 +654,14 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.rows().every((row) => row.status === 'not_submitted')).toBe(true);
       expect(component.stopReason()).toContain('cooldown exceeds');
       expect(query('import-members-retry-deadline')?.textContent).toContain('Retry no earlier than');
+      expect((query('import-members-retry-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
       vi.advanceTimersByTime(299_999);
       component.retryFailed();
       expect(pending).toHaveLength(1);
       vi.advanceTimersByTime(1);
+      fixture.detectChanges();
+      expect(query('import-members-retry-deadline')).toBeNull();
+      expect((query('import-members-retry-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
       component.retryFailed();
       expect(pending).toHaveLength(2);
       respond(1);
@@ -704,10 +740,12 @@ describe('ImportMembersDialogComponent', () => {
       vi.useFakeTimers();
       component.startImport();
       failBulk(0, 429, { 'Retry-After': '5' });
+      const deadline = component.retryNotBefore();
       fixture.destroy();
 
       vi.advanceTimersByTime(120_000);
       expect(pending).toHaveLength(1);
+      expect(component.retryNotBefore()).toBe(deadline);
     });
   });
 

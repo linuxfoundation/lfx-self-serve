@@ -141,8 +141,8 @@
           attempt are marked Outcome unknown; review the roster before retrying them.
         </p>
       }
-      @if (phase() === 'results' && retryNotBefore() > 0) {
-        <p class="text-sm text-amber-700" data-testid="import-members-retry-deadline">{{ retryDeadlineLabel() }}</p>
+      @if (retryDeadlineLabel(); as deadlineLabel) {
+        <p class="text-sm text-amber-700" data-testid="import-members-retry-deadline">{{ deadlineLabel }}</p>
       }
       @if (phase() === 'results' && (retryableCount() > 0 || failedCount() > 0)) {
         <p class="text-sm text-gray-600" data-testid="import-members-retry-help">
@@ -282,6 +282,7 @@
         icon="fa-light fa-rotate-right"
         size="small"
         severity="info"
+        [disabled]="retryNotBefore() > 0"
         (onClick)="retryFailed()"
         data-testid="import-members-retry-btn">
       </lfx-button>

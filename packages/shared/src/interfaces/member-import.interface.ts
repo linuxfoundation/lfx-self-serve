@@ -16,7 +16,8 @@ export type MemberImportCells = Partial<Record<MemberImportColumn, string>>;
  * Lifecycle of one imported row: `ready`/`invalid`/`skipped` while previewing, then
  * `not_submitted` until its chunk is sent, `importing` while that bulk request is in flight,
  * `waiting` while a retryable outcome pauses before resubmission, and `added`/`skipped`/`failed`
- * once it settles. Rows left unsent when a run stops stay `not_submitted`.
+ * once it settles. `unknown` preserves an earlier attempt that may have committed without a
+ * confirmed result. Rows left unsent when a run stops stay `not_submitted`.
  */
 export type MemberImportRowStatus = 'ready' | 'invalid' | 'skipped' | 'importing' | 'added' | 'failed' | 'waiting' | 'not_submitted' | 'unknown';
 

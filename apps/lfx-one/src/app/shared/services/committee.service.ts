@@ -252,7 +252,7 @@ export class CommitteeService {
   ): Observable<CommitteeMemberBulkCreateResult> {
     const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
 
-    return this.http.post<CommitteeMemberBulkCreateResult>(`/api/committees/${committeeId}/members/bulk`, { members }, { params }).pipe(
+    return this.http.post<CommitteeMemberBulkCreateResult>(`/api/committees/${encodeURIComponent(committeeId)}/members/bulk`, { members }, { params }).pipe(
       take(1),
       tap(() => this.evictCommitteeDetailCache(committeeId))
     );
