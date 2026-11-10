@@ -491,13 +491,22 @@ describe('ImportMembersDialogComponent', () => {
 
       expect(component.paused()).toBe(true);
       expect(component.waitingCount()).toBe(5);
-      expect(component.statusMessage()).toBe('Paused: resuming automatically in about 30 seconds (pause 1 of 3).');
+      expect(component.statusMessage()).toBe('Paused: 30-second recovery pause (pause 1 of 3). The import will resume automatically.');
       expect(query('import-members-paused-notice')?.textContent).toContain('pause 1 of 3');
       expect(query('import-members-stop-btn')).not.toBeNull();
       expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import chunk failed', { status: 429 });
 
+      const pausedNotice = query('import-members-paused-notice')?.textContent;
+      expect(pausedNotice).toContain('This pause lasts about 30 seconds;');
+      expect(pausedNotice).toContain('resume is scheduled for');
+      expect(pausedNotice).not.toContain('in about 30 seconds');
+      const resumeAt = component.resumeAt();
       vi.advanceTimersByTime(29_999);
+      fixture.detectChanges();
       expect(pending).toHaveLength(2);
+      expect(component.resumeAt()).toBe(resumeAt);
+      expect(query('import-members-paused-notice')?.textContent).toBe(pausedNotice);
+      expect(query('import-members-status')?.textContent).toContain('Paused: 30-second recovery pause (pause 1 of 3). The import will resume automatically.');
       vi.advanceTimersByTime(1);
       expect(pending).toHaveLength(3);
       expect(sentEmails(2)).toEqual(emails(5, 25).split('\n'));

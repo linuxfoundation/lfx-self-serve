@@ -311,7 +311,7 @@ export class ImportMembersDialogComponent {
           return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.`;
         case 'importing':
           if (this.paused()) {
-            return `Paused: resuming automatically in about ${this.resumeInSeconds()} seconds (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}).`;
+            return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
           }
           return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
         case 'results': {
