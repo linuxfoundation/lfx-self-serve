@@ -43,6 +43,11 @@ describe('fitAdCopyToWidth', () => {
     expect(fitAdCopyToWidth(line, width)).toBe(expected);
   });
 
+  it('keeps a plus sign attached to a word, as in C++, and drops a standalone one', () => {
+    expect(fitAdCopyToWidth('Master modern systems with C++ today', 30)).toBe('Master modern systems with C++');
+    expect(fitAdCopyToWidth('Kubernetes + Argo + Flux summit', 13)).toBe('Kubernetes');
+  });
+
   it('keeps a sentence-ending full stop', () => {
     expect(fitAdCopyToWidth('Register today. Seats are limited', 20)).toBe('Register today.');
   });

@@ -7,8 +7,12 @@ const utf16Width = (char: string): number => char.length;
 /** Scripts written without spaces between words, where a cut between any two characters is a word boundary. */
 const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
 
-/** Characters a cut line must not end on: a joiner or separator that promises more text after it. */
-const DANGLING_TAIL = /[\s&+,;:/|\\\-–—([{·•]$/u;
+/**
+ * Characters a cut line must not end on: a joiner or separator that promises more text after it. A
+ * `+` counts only as a standalone token ("Kubernetes +"); attached to a word it is part of the name,
+ * as in `C++`, and stays.
+ */
+const DANGLING_TAIL = /(?:[\s&,;:/|\\\-–—([{·•]|(?:^|\s)\++)$/u;
 
 /** English words a cut line must not end on, because they only make sense before another word. */
 const DANGLING_WORD = /(^|\s)(and|or|with|for|the|a|an|to|of|in|at|on|by|from|plus|your|our)$/iu;

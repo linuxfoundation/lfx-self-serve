@@ -2886,6 +2886,8 @@ describe('CampaignProxyService generated copy and keywords', () => {
         'alternatively argo',
         'argocon barcelona',
         'alternative energy summit',
+        'open source alternative energy summit',
+        'linux alternative fuels conference',
         'vs code conference',
         'learn vs code summit',
       ];

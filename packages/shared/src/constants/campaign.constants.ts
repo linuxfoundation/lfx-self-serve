@@ -5873,9 +5873,11 @@ function demandGenFieldWidth(control: string): number {
  * searching them is shopping away from an event, and for a Linux Foundation event the event named is
  * usually the foundation's own. Shapes rather than bare words, so a topic keyword that merely holds
  * one is kept: "alternative energy summit" (an adjective before its noun) and "vs code conference".
+ * "X alternative" also skips an alternative-topic noun after it ("energy", "fuels", "medicine"), so
+ * "open source alternative energy summit" stays a topic keyword wherever the phrase falls in the term.
  */
 export const COMPETITOR_KEYWORD_PATTERN =
-  /\S\s+alternatives?\b|\balternatives?\s+(?:to|for)\b|\S\s+(?:vs\.?|versus)\s+(?!code\b)\S|\bcompetitors?\b|\binstead of\b/iu;
+  /\S\s+alternatives?\b(?!\s+(?:energy|fuels?|medicine|investments?|assets?|proteins?|data|music|rock|credit|dispute)\b)|\balternatives?\s+(?:to|for)\b|\S\s+(?:vs\.?|versus)\s+(?!code\b)\S|\bcompetitors?\b|\binstead of\b/iu;
 
 /**
  * The Google creative text fields campaign-service bounds by RUNE count rather than by display width:
