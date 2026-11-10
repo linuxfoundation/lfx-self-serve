@@ -47,6 +47,9 @@ import type { Request } from 'express';
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
 const req = {} as Request;
+// The forecast view keeps closed events, so its reads take the registrations view's past flag.
+const NOT_ENDED_SCOPE =
+  /EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_REGISTRATIONS r\s*WHERE r\.event_id = f\.event_id\s*AND r\.event_is_past = FALSE\s*\)/;
 
 function eventRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -120,13 +123,14 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     execute.mockResolvedValue({ rows: [eventRow()] });
   });
 
-  it('binds only the foundation, keeps upcoming events, and reads one past the cap', async () => {
+  it('binds only the foundation, keeps events that have not ended, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['acme']);
     expect(sql).toContain('is_all_projects = TRUE');
-    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
+    expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}`);
     expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id');
     expect(sql).not.toContain('GROUP BY');
@@ -194,6 +198,8 @@ describe('HealthMetricsEventsService.getRegistrationForecastCurve', () => {
 
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['acme', 'evt-1']);
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
+    expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain('pred_type');
     expect(sql).not.toContain('GROUP BY');
     expect(curve.eventId).toBe('evt-1');
@@ -249,7 +255,8 @@ describe('HealthMetricsEventsService.getRegistrationHistory', () => {
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['evt-1', -180, 'acme']);
     expect(sql).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS');
-    expect(sql).toContain('event_start_date < CURRENT_DATE()');
+    // The past-events view alone decides that the event has ended; no start-date rule of its own.
+    expect(sql).not.toContain('event_start_date < CURRENT_DATE()');
     expect(sql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS p\s*WHERE p\.foundation_slug = \?/);
     // Blank or padded formats fold into one series rather than splitting the curve.
     expect(sql).toContain("NULLIF(TRIM(h.event_registration_type), '') AS event_registration_type");
@@ -581,7 +588,7 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+LIMIT 1/);
   });
 
-  it('keeps the tab when the only event is still to come, reading the forecast after past events', async () => {
+  it('keeps the tab when the only event has not ended, reading the forecast after past events', async () => {
     execute
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
@@ -592,8 +599,8 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     const [sql, binds] = execute.mock.calls[2];
     expect(glance.hasEvents).toBe(true);
     expect(binds).toEqual(['acme']);
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST');
-    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST f');
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
   });
 
   it('keeps the tab for a foundation with revenue rows but no event in the events views', async () => {
