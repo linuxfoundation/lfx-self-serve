@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
@@ -22,6 +23,7 @@ import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -506,7 +508,7 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
 });
 
 /**
- * Guards #4190: GitLab is offered in Add account with its brand icon, and LF ID stays excluded.
+ * Guards #4190: GitLab is visible but unavailable pending #4151 rollout verification; LF ID stays excluded.
  */
 describe('AddAccountDialogComponent — provider list (#4190)', () => {
   let fixture: ComponentFixture<AddAccountDialogComponent>;
@@ -537,6 +539,51 @@ describe('AddAccountDialogComponent — provider list (#4190)', () => {
 
     expect(component.providers.find((provider) => provider.id === 'gitlab')).toEqual(expect.objectContaining({ name: 'GitLab', icon: 'fa-brands fa-gitlab' }));
     expect(component.providers.some((provider) => provider.id === 'lfid')).toBe(false);
+  });
+
+  it('disables the GitLab button and does not start linking when clicked', async () => {
+    const component = setup();
+    await fixture.whenStable();
+    const selectProvider = vi.spyOn(component, 'onSelectProvider');
+    const root = fixture.nativeElement as HTMLElement;
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+
+    expect(button).not.toBeNull();
+    expect(button?.disabled).toBe(true);
+    button?.click();
+
+    expect(selectProvider).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')?.textContent).toBe('Coming soon');
+  });
+
+  it('explains GitLab availability on hover and keyboard focus', async () => {
+    setup();
+    await fixture.whenStable();
+    const hint = fixture.debugElement.query(By.css('[data-testid="provider-action-hint-gitlab"]'));
+
+    expect(hint.nativeElement.getAttribute('tabindex')).toBe('0');
+    expect(hint.nativeElement.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
+    expect(hint.injector.get(Tooltip, null)?.content).toBe('Coming soon');
+    expect(hint.injector.get(Tooltip, null)?.tooltipEvent).toBe('both');
+  });
+
+  it('keeps the existing providers enabled and the email flow usable', async () => {
+    const component = setup();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+
+    for (const provider of ['github', 'linkedin', 'google', 'email']) {
+      const button = root.querySelector<HTMLButtonElement>(`[data-testid="provider-action-${provider}"] button`);
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+      expect(root.querySelector(`[data-testid="provider-action-hint-${provider}"]`)?.hasAttribute('tabindex')).toBe(false);
+    }
+
+    root.querySelector<HTMLButtonElement>('[data-testid="provider-action-email"] button')?.click();
+    await fixture.whenStable();
+
+    expect(component.step()).toBe('connect');
+    expect(root.querySelector('[data-testid="add-account-email"]')).not.toBeNull();
   });
 
   it('leaves GitLab out when the caller restricts the providers', () => {

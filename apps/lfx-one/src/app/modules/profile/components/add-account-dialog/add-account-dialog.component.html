@@ -19,16 +19,34 @@
             <i [class]="provider.icon + ' text-lg text-slate-600'"></i>
           </div>
           <div class="flex-1">
-            <span class="mb-0.5 block text-sm font-bold text-slate-900">{{ provider.name }}</span>
+            <span class="mb-0.5 flex items-center gap-2 text-sm font-bold text-slate-900">
+              {{ provider.name }}
+              @if (provider.id === 'gitlab') {
+                <span class="text-xs font-medium text-slate-500" data-testid="provider-gitlab-coming-soon">Coming soon</span>
+              }
+            </span>
             <span class="text-[13px] leading-snug text-slate-500">{{ provider.description }}</span>
           </div>
-          <lfx-button
-            [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
-            severity="secondary"
-            [outlined]="true"
-            size="small"
-            (onClick)="onSelectProvider(provider)"
-            [attr.data-testid]="'provider-action-' + provider.id" />
+          <!-- Keep GitLab unavailable until the #4151 rollout is verified; enable it in a follow-up PR. -->
+          <span
+            class="inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+            [attr.tabindex]="provider.id === 'gitlab' ? 0 : null"
+            [attr.role]="provider.id === 'gitlab' ? 'group' : null"
+            [attr.aria-label]="provider.id === 'gitlab' ? 'GitLab account linking: Coming soon' : null"
+            [pTooltip]="provider.id === 'gitlab' ? 'Coming soon' : undefined"
+            tooltipPosition="top"
+            tooltipEvent="both"
+            [attr.data-testid]="'provider-action-hint-' + provider.id">
+            <lfx-button
+              [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              [disabled]="provider.id === 'gitlab'"
+              [class.pointer-events-none]="provider.id === 'gitlab'"
+              (onClick)="onSelectProvider(provider)"
+              [attr.data-testid]="'provider-action-' + provider.id" />
+          </span>
         </div>
       }
     </div>
