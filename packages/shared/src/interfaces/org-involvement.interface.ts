@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgEventsAttribution } from './org-events-filters.interface';
-
 /** Foundation entry in the org foundation coverage response. */
 export interface OrgFoundationCoverageFoundation {
   foundationId: string;
@@ -46,8 +44,6 @@ export interface OrgInvolvementEventAttendanceMonthlyResponse {
   totalAttended: number;
   /** Distinct accepted speakers over the window — NOT the sum of the monthly points. */
   totalSpeakers: number;
-  /** The attribution the numbers use — the all-relations default; `account` only if the pinned attribution is ever Company email and the company has no company-email data. */
-  servedAttribution: OrgEventsAttribution;
   attendeesMonthlyData: number[];
   speakersMonthlyData: number[];
   monthlyLabels: string[];

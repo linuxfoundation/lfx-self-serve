@@ -142,7 +142,7 @@ async function stubOrgContext(
         personas: ['contributor'],
         personaProjects: {},
         projects: [],
-        organizations: hasAccess
+        companies: hasAccess
           ? [
               {
                 accountId: TEST_ACCOUNT_ID,
@@ -233,7 +233,7 @@ test.describe('Org Projects', () => {
     await expect(contributors).toHaveAttribute('aria-label', /View 1 contributor for Kubernetes/);
     await contributors.click();
 
-    await expect(page).toHaveURL(/\/company\/projects\/kubernetes\?(?:.*&)?card=contributors/);
+    await expect(page).toHaveURL(/\/org\/projects\/kubernetes\?(?:.*&)?card=contributors/);
   });
 
   test('Participants count links to the project detail page without a drawer param', async ({ page }) => {
@@ -242,7 +242,7 @@ test.describe('Org Projects', () => {
 
     await page.getByTestId('org-projects-participants-kubernetes').click();
 
-    await expect(page).toHaveURL(/\/company\/projects\/kubernetes(?:\?|$)/);
+    await expect(page).toHaveURL(/\/org\/projects\/kubernetes(?:\?|$)/);
     expect(page.url()).not.toContain('card=');
   });
 
@@ -271,7 +271,7 @@ test.describe('Org Projects', () => {
     await gotoOrgProjectsPage(page, { hasAccess: false });
     await expect(page.getByTestId('org-projects-no-access-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-projects-no-access-title')).toHaveText('No company linked to your account');
-    await expect(page.getByTestId('org-projects-no-access-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-projects-no-access-secondary')).toContainText('How affiliations and access work');
 
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await gotoOrgProjectsPage(page, { workspacesStatus: 500 });

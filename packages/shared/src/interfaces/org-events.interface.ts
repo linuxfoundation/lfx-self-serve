@@ -47,8 +47,8 @@ export interface OrgEvent {
   readonly isOrgSponsor: boolean;
 }
 
-/** Paginated response for org events. `servedAttribution` is the attribution the counts use — `account` when `company_email` was picked but the company has no company-email data. */
-export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent> & { readonly servedAttribution: OrgEventsAttribution };
+/** Paginated response for org events. */
+export type OrgEventsResponse = OffsetPaginatedResponse<OrgEvent>;
 
 /** Org event row with presentation fields pre-baked for template rendering (avoids method calls in template). */
 export interface OrgEventRowVm extends OrgEvent {
@@ -81,7 +81,6 @@ export interface OrgEventsSummary {
   readonly totalEvents: number;
   readonly pastEvents: number;
   readonly upcomingEvents: number;
-  readonly servedAttribution: OrgEventsAttribution;
 }
 
 /** Backend options for OrgLensEventsService.getOrgEvents. */
@@ -119,7 +118,6 @@ export interface OrgEventAttendeesDrawerResponse {
   readonly eventName: string;
   /** People in `data`: everyone the picked option counts for the event, narrowed by any name search. */
   readonly total: number;
-  readonly servedAttribution: OrgEventsAttribution;
   readonly data: readonly OrgEventAttendee[];
 }
 

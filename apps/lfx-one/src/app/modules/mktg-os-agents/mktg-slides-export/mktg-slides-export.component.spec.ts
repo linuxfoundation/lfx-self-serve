@@ -8,7 +8,6 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
-  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY,
   MKTG_DOCUMENT_EXPORT_HISTORY_WAIT_MS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
@@ -21,7 +20,6 @@ import {
   MktgSlidesExportStartResponse,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { Observable, of, Subject, throwError } from 'rxjs';
@@ -90,8 +88,6 @@ describe('MktgSlidesExportComponent', () => {
     await fixture.whenStable();
   };
 
-  /** The Download PDF flag (#5302), pinned on so the panel's reasons read as today; one test turns it off. */
-  const pdfFlag = signal(true);
   async function setup(platformId: 'browser' | 'server' = 'browser'): Promise<void> {
     service = {
       last: vi.fn(() => of(lastResponse)),
@@ -104,7 +100,6 @@ describe('MktgSlidesExportComponent', () => {
         provideNoopAnimations(),
         provideMktgSlidesExportStub(service),
         { provide: MktgDependencyService, useValue: { documentsChanged$: documentsChanged.asObservable() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
         { provide: PLATFORM_ID, useValue: platformId },
       ],
     }).compileComponents();
@@ -113,7 +108,6 @@ describe('MktgSlidesExportComponent', () => {
   }
 
   beforeEach(() => {
-    pdfFlag.set(true);
     documentsChanged = new Subject<string>();
     lastResponse = { last: null, latestRevision: { id: `000002-${SHA}`, number: 2, contentSha256: SHA } };
     started = {
@@ -616,7 +610,6 @@ describe('MktgSlidesExportComponent', () => {
         provideNoopAnimations(),
         provideMktgSlidesExportStub(service),
         { provide: MktgDependencyService, useValue: { documentsChanged$: documentsChanged.asObservable() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
     }).compileComponents();
@@ -646,17 +639,12 @@ describe('MktgSlidesExportComponent', () => {
     expect(query('mktg-slides-export-panel')).toBeNull();
   });
 
-  it('names Slides alone in the approval reason while Download PDF is behind its flag, and PDF and Slides when it is on (#5302)', async () => {
-    pdfFlag.set(false);
+  it('names PDF and Slides in the approval reason while there is no approved current', async () => {
     await setup();
     const host = fixture.componentInstance;
     host.target.set(null);
     await fixture.whenStable();
     const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
-    expect(exporter.disabledReason()).toBe(MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE_SLIDES_ONLY);
-    expect(exporter.disabledReason()).not.toContain('PDF');
-    pdfFlag.set(true);
-    await fixture.whenStable();
     expect(exporter.disabledReason()).toBe(MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE);
   });
 

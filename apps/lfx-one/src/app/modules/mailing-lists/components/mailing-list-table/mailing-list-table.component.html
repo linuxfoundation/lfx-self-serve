@@ -283,10 +283,23 @@
 
           <!-- Linked Groups Column -->
           <td>
-            <div class="flex flex-wrap gap-1">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
               @if (mailingList.committees?.length) {
-                @for (committee of mailingList.committees | sliceLinkedGroups: maxVisibleGroups; track committee.uid) {
-                  <lfx-tag [value]="committee.name" styleClass="tag-neutral"> </lfx-tag>
+                @for (group of mailingList.groupLinks; track $index) {
+                  @if (group.commands) {
+                    <a
+                      [routerLink]="group.commands"
+                      [queryParams]="mailingList.linkQueryParams"
+                      [state]="groupLinkState"
+                      class="lfx-table-name-link text-sm"
+                      [attr.data-testid]="'mailing-list-group-link-' + mailingList.uid + '-' + group.uid">
+                      {{ group.name || '-' }}
+                    </a>
+                  } @else {
+                    <span class="text-sm text-gray-700" [attr.data-testid]="'mailing-list-group-text-' + mailingList.uid + '-' + $index">{{
+                      group.name || '-'
+                    }}</span>
+                  }
                 }
                 @if (mailingList.committees.length > maxVisibleGroups) {
                   <span

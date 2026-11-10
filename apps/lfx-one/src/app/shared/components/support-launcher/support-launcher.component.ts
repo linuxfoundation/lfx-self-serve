@@ -9,7 +9,7 @@ import { OverlayStateService } from '@services/overlay-state.service';
 // Compact support button that stands in for Intercom's default launcher on phone widths. Intercom
 // binds to it through `custom_launcher_selector` (see IntercomService) and opens the messenger itself;
 // the button has no click handler of its own. It steps aside while an
-// overlay registered with OverlayStateService is open (today the meeting-join guests drawer) or a page
+// overlay registered with OverlayStateService is open (such as a drawer) or a page
 // reports a sticky bottom bar, so it never covers row actions. While it is hidden, pages outside main-layout
 // (/meetings/:id) keep a Support button in their header (#4922).
 @Component({

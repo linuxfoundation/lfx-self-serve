@@ -38,7 +38,6 @@ import {
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
-  HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
@@ -50,6 +49,7 @@ import {
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
   MEETING_ATTENDEE_STATUS_INFO,
+  MEETING_DETAILS_FEATURES,
   MEETING_HOME_ATTENDANCE_BG_CLASSES,
   MEETING_VISIBILITY_BG_CLASSES,
   MENTION_SENTIMENT_CONFIG,
@@ -104,8 +104,6 @@ const uiVarMap = (tokens, prefix, keyPrefix = '') =>
   Object.fromEntries(tokens.filter((t) => t.name.startsWith(prefix)).map((t) => [`${keyPrefix}${t.name.slice(prefix.length)}`, uiVar(t.name)]));
 const uiMotion = (prefix) => uiVarMap(uiTokens.motion.tokens, prefix, 'ui-');
 const uiTypeStyles = uiTokens.type.groups.flatMap((group) => group.styles.map((style) => ({ ...style, family: style.family ?? group.family })));
-// Type-role classes set the library's cv11/ss01, so uikit text and content projected into uikit containers (modal body, table cells, collapse panels) get them; the app body is unchanged.
-const FONT_FEATURES_UI = '"cv11", "ss01"';
 const uiFontSizes = Object.fromEntries(uiTypeStyles.map((s) => [s.name, [s.fontSize, { lineHeight: s.lineHeight }]]));
 
 /** @type {import('tailwindcss').Config} */
@@ -162,6 +160,8 @@ export default {
     ...Object.values(MEETING_HOME_ATTENDANCE_BG_CLASSES),
     // Meetings attendee grid status dots (MEETING_ATTENDEE_STATUS_INFO, not scanned here)
     ...Object.values(MEETING_ATTENDEE_STATUS_INFO).flatMap((info) => [info.dotClass, info.legendDotClass]),
+    // Meeting details drawer feature badge icon colours (MEETING_DETAILS_FEATURES, not scanned here)
+    ...MEETING_DETAILS_FEATURES.map((feature) => feature.iconClass),
     // Social Listening platform icon colors (MENTION_PLATFORM_CONFIG in @lfx-one/shared, not scanned here)
     ...Object.values(MENTION_PLATFORM_CONFIG).map((c) => c.colorClass),
     // Social Listening analytics distribution bars (barClass on MENTION_PLATFORM_CONFIG / MENTION_SENTIMENT_CONFIG)
@@ -268,12 +268,6 @@ export default {
     ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
       .flatMap((value) => (typeof value === 'string' ? [value] : Object.values(value)))
       .flatMap((classes) => classes.split(' ')),
-    // Member growth end labels (HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES in @lfx-one/shared) — applied via [class].
-    ...[
-      ...Object.values(HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.placement),
-      HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.strong,
-      HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES.regular,
-    ].flatMap((classes) => classes.split(' ')),
     // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],
@@ -482,8 +476,6 @@ export default {
         // Form fields (input, textarea, select, multi-select, combobox) use a stronger ring than cards.
         '.edge-control': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-300')}` },
         '.edge-control-hover': { boxShadow: `0 0 0 1px ${uiVar('ui-neutral-alpha-400')}` },
-        // cv11/ss01 for uikit text that sets a size without a type role.
-        '.font-features-ui': { fontFeatureSettings: FONT_FEATURES_UI },
         // Library icon box (bundle.css `i[class*="fa-"]`): Font Awesome 7 sizes a glyph with --fa-width (1.25em); the library keeps 1em.
         '.ui-icon': { '--fa-width': '1em', height: '1em', flexShrink: '0' },
       });
@@ -494,7 +486,6 @@ export default {
             `.${s.name}`,
             {
               fontFamily: uiVar(`font-${s.family}`),
-              fontFeatureSettings: FONT_FEATURES_UI,
               fontSize: s.fontSize,
               lineHeight: s.lineHeight,
               fontWeight: String(s.fontWeight),

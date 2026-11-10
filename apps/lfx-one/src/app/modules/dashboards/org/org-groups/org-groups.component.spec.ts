@@ -91,7 +91,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
-      // lfxOpenIntercom (the empty state's contact-support link) injects the app-root MessageService.
+      // The empty state no longer carries a support link (#5447); MessageService stays provided for the page's other controls.
       MessageService,
       {
         provide: OrgLensEmptyStateService,

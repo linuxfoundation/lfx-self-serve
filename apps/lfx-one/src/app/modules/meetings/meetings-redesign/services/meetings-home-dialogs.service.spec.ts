@@ -9,6 +9,7 @@ import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingTranscriptDialogComponent } from '../components/meeting-transcript-dialog/meeting-transcript-dialog.component';
 import { MeetingsHomeSummaryDialogComponent } from '../components/meetings-home-summary-dialog/meetings-home-summary-dialog.component';
 import { MeetingsHomeDialogsService } from './meetings-home-dialogs.service';
 
@@ -45,6 +46,24 @@ describe('MeetingsHomeDialogsService', () => {
     service.openSummary(ROW, summary, onChange);
 
     expect(open).toHaveBeenCalledWith(MeetingsHomeSummaryDialogComponent, { data: { row: ROW, summary, onChange } });
+  });
+
+  it('passes the drawer origin and pending flag to the summary dialog', () => {
+    const summary = {} as PastMeetingSummary;
+
+    service.openSummary(ROW, summary, undefined, { origin: 'drawer', showPending: true });
+
+    expect(open).toHaveBeenCalledWith(MeetingsHomeSummaryDialogComponent, {
+      data: { row: ROW, summary, onChange: undefined, origin: 'drawer', showPending: true },
+    });
+  });
+
+  it('opens the transcript dialog for a past meeting with its origin', () => {
+    service.openTranscript('synthetic-past-meeting', ROW, { origin: 'drawer' });
+
+    expect(open).toHaveBeenCalledWith(MeetingTranscriptDialogComponent, {
+      data: { row: ROW, pastMeetingId: 'synthetic-past-meeting', origin: 'drawer' },
+    });
   });
 
   it('opens a valid recording link in a new tab and reports an invalid one', () => {

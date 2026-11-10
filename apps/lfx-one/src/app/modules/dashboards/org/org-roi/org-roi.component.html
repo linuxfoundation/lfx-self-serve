@@ -17,9 +17,9 @@
         type="button"
         (click)="drawerVisible.set(true)"
         class="inline-flex items-center gap-2 self-start rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 sm:self-auto"
-        data-testid="org-roi-assumptions-trigger">
+        data-testid="org-roi-settings-trigger">
         <i class="fa-light fa-sliders" aria-hidden="true"></i>
-        Model assumptions
+        Model settings
       </button>
     }
   </lfx-page-header>
@@ -80,6 +80,8 @@
   } @else {
     <lfx-org-roi-kpi-cards [summary]="summary()" />
 
+    <lfx-org-roi-model-overview />
+
     <lfx-org-roi-annual-trend [method]="method()" />
   }
 
@@ -105,6 +107,6 @@
        success branch it would not exist on the empty state — the trigger would set `visible`
        and nothing would open, which is the state the method control has to rescue. -->
   @if (canChooseMethod()) {
-    <lfx-org-roi-assumptions-drawer [(visible)]="drawerVisible" [method]="method()" (methodChange)="setMethod($event)" />
+    <lfx-org-roi-settings-drawer [(visible)]="drawerVisible" [method]="method()" (methodChange)="setMethod($event)" />
   }
 </div>

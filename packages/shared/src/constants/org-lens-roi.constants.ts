@@ -22,6 +22,18 @@ export const ORG_LENS_ROI_METHOD_LABELS: Record<(typeof ORG_LENS_ROI_METHODS)[nu
 };
 
 /**
+ * Annotated like `ORG_LENS_ROI_METHOD_LABELS`, so adding a method without a description fails here
+ * rather than leaving one option in the settings drawer unexplained. Wording follows the model
+ * methodology (lf-dbt, docs/lfx_roi: "Why the logistic method is the default").
+ */
+export const ORG_LENS_ROI_METHOD_DESCRIPTIONS: Record<(typeof ORG_LENS_ROI_METHODS)[number], string> = {
+  logit:
+    'Pools evidence across your other projects and across the project’s other organizations, which steadies short or sparse histories. Its markups are the least related to how much a pair spends.',
+  direct:
+    'Ranks pairs on their raw activity rate alone. It saturates for pairs that are active every month and keeps a heavier top tail, so it is best read as a robustness check on the logistic figures.',
+};
+
+/**
  * `localStorage` key the selected estimation method persists under. Versioned so that choices saved
  * before Logit was confirmed as the default reset once to it; bump again only for the same reason.
  */
@@ -88,6 +100,37 @@ export const ORG_LENS_ROI_PROJECT_MEASURE_LABELS: Record<(typeof ORG_LENS_ROI_PR
   netReturn: 'Net Return',
 };
 
+/** The two readings of the annual trend, in tab order. Year over year is the default. */
+export const ORG_LENS_ROI_ANNUAL_SERIES_MODES = ['yearly', 'cumulative'] as const;
+
+/** Annotated like `ORG_LENS_ROI_PROJECT_MEASURE_LABELS`, so adding a mode without a label fails here. */
+export const ORG_LENS_ROI_ANNUAL_SERIES_MODE_LABELS: Record<(typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number], string> = {
+  yearly: 'Year over year',
+  cumulative: 'Cumulative',
+};
+
+/**
+ * Dataset names per mode. The canvas legend and the tooltip both read these, which is why the chart
+ * options themselves never have to vary by mode.
+ */
+export const ORG_LENS_ROI_ANNUAL_SERIES_LABELS: Record<(typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number], { investment: string; return: string }> = {
+  yearly: { investment: 'Investment', return: 'Return' },
+  cumulative: { investment: 'Cumulative investment', return: 'Cumulative return' },
+};
+
+/**
+ * The apportionment disclosure, which both modes owe and neither can phrase the same way. The
+ * leading sentence is if anything more load-bearing cumulatively, since the whole curve's shape is
+ * an artefact of the apportionment weights. Only the trailing clause differs: "movement between
+ * years" describes a per-year shape and says nothing true about a monotonic running total.
+ */
+export const ORG_LENS_ROI_ANNUAL_APPORTIONMENT_NOTE: Record<(typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number], string> = {
+  yearly:
+    "Yearly figures are apportioned from lifetime totals by each year's share of investment — they are not measured independently for each year, so movement between years reflects when the activity happened rather than a change in performance.",
+  cumulative:
+    "Yearly figures are apportioned from lifetime totals by each year's share of investment — they are not measured independently for each year, so the shape of the cumulative curve reflects when the activity happened rather than a change in performance.",
+};
+
 /** Ends in gray so the remainder slice reads as "everything else" rather than as another category. */
 export const ORG_LENS_ROI_DONUT_PALETTE: readonly string[] = [
   lfxColors.blue[600],
@@ -104,6 +147,45 @@ export const ORG_LENS_ROI_DONUT_PALETTE: readonly string[] = [
 
 export const ORG_LENS_ROI_DONUT_REMAINDER_COLOR = lfxColors.gray[400];
 
+/**
+ * The in-app synopsis of the contribution ROI model, shown in the disclosure under the KPI cards.
+ * It is the page's only explanation of what the model does while the staff ROI documentation is
+ * unpublished, so keep every claim here true to the model methodology (lf-dbt, docs/lfx_roi) rather
+ * than simplifying it into something stronger than the model supports.
+ *
+ * `investment` carries the page's standing privacy commitment — rates identical for every
+ * organization, no pay data — which is asserted by e2e. Do not weaken it.
+ */
+export const ORG_LENS_ROI_MODEL_OVERVIEW = {
+  whatTheseAre:
+    'These figures put a dollar value on what your organization puts into Linux Foundation projects, and on the economic return associated with those projects. Both are modelled estimates, useful for comparison and for seeing the scale of an investment — not audited accounting figures.',
+  dataSources:
+    'Everything is derived from records the Linux Foundation already holds: code and community contribution history, leadership meeting attendance, memberships, event attendance and sponsorship, and training.',
+  investment:
+    'Money spent directly — membership fees, sponsorships, event tickets, courses — is counted as recorded. Staff time is estimated from activity records, converted to full-time-equivalent effort, and priced at flat benchmark rates that are the same for every organization. No salary, payroll, or invoice data is used.',
+  markup:
+    'Value is inferred from behavior rather than asked for. An organization that keeps investing in a project, year after year and across several kinds of contribution, reveals that it values the project at least at what that participation costs. How persistently it contributes yields a markup — a strategic importance factor, the perceived value per dollar of efficiently allocated cost. That ranking is turned into dollars using the LF Research survey on contribution ROI.',
+  returnAndRoi:
+    'Applying the markup to the cost of your contribution portfolio gives Total Return. Set against Total Investment, that gives ROI as a percentage and the benefit-cost ratio as a multiple — always exactly one more than ROI.',
+  limits:
+    'The model values contributing to open source, not using it. Most organizations that benefit from these projects never contribute, so these figures understate the total value the projects create.',
+} as const;
+
+/** The research the markup calibration is anchored to, linked from the model overview. */
+export const ORG_LENS_ROI_SURVEY_URL = 'https://www.linuxfoundation.org/research/contribution-roi';
+
+/**
+ * Target for the model documentation link in the overview disclosure. Empty on purpose: the ROI
+ * articles were removed from the Help Center in #5257 because the page is LF Staff Only, and the
+ * link stays unrendered until staff-facing documentation is published. Setting this is the only
+ * change needed to bring it back.
+ */
+export const ORG_LENS_ROI_DOCS_URL = '';
+
+/**
+ * Per-metric definitions for the project detail page. The portfolio page explains itself through
+ * `ORG_LENS_ROI_MODEL_OVERVIEW` instead, so this is no longer shared between the two surfaces.
+ */
 export const ORG_LENS_ROI_KPI_EXPLANATION = {
   totalExpenditure:
     'We count your organization’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every organization. No salary, payroll, or invoice data is used.',

@@ -2,7 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (heading()) {
-  <span data-testid="ui-tooltip-title">{{ heading() }}</span>
+  <span class="inline-flex items-center gap-[6px]" data-testid="ui-tooltip-title">
+    @if (icon()) {
+      <i class="ui-icon text-[11px] leading-none" [class]="icon()" aria-hidden="true" data-testid="ui-tooltip-icon"></i>
+    }
+    <span>{{ heading() }}</span>
+  </span>
   <!-- shortcut: raw var() in a class, as colour utilities cannot take alpha on a CSS variable. revisit: when the library ships a background-alpha token. -->
   <span class="font-normal text-[color:color-mix(in_srgb,var(--ui-background-100)_65%,transparent)]" data-testid="ui-tooltip-text">{{ text() }}</span>
 } @else if (items().length) {
@@ -28,7 +33,7 @@
     @for (key of shortcut(); track $index) {
       <!-- shortcut: literal white at 25% for the key ring. revisit: when the library ships a white-alpha token. -->
       <kbd
-        class="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-ui-xs px-[4px] label-12 font-normal tabular-nums shadow-[0_0_0_1px_rgba(255,255,255,0.25)]"
+        class="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-ui-xs px-[4px] label-12 font-normal shadow-[0_0_0_1px_rgba(255,255,255,0.25)]"
         >{{ key }}</kbd
       >
     }

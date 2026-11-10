@@ -8,10 +8,11 @@ import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import { RecurrenceType } from '../enums';
-import { Meeting, MeetingAttachment, MeetingOccurrence } from '../interfaces';
+import { Meeting, MeetingAttachment, MeetingOccurrence, PastMeetingAttachment } from '../interfaces';
 import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
+  applyPastMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
@@ -151,5 +152,26 @@ describe('applyMeetingAttachmentChanges', () => {
 
   it('never lists an attachment that was added and then deleted', () => {
     expect(applyMeetingAttachmentChanges([], changes([read('a')], ['a']))).toEqual([]);
+  });
+});
+
+describe('applyPastMeetingAttachmentChanges', () => {
+  const past = (uid: string): PastMeetingAttachment => ({
+    uid,
+    meeting_and_occurrence_id: 'mtg-1-1',
+    meeting_id: 'mtg-1',
+    type: 'link',
+    name: uid,
+    created_at: '2030-01-01T00:00:00Z',
+  });
+
+  it('adds what the read lacks once and drops what was deleted', () => {
+    const result = applyPastMeetingAttachmentChanges([past('a'), past('b')], { deletedUids: ['a'], addedAttachments: [past('b'), past('c')] });
+    expect(result.map((a) => a.uid)).toEqual(['c', 'b']);
+  });
+
+  it('returns the list untouched without changes', () => {
+    const list = [past('a')];
+    expect(applyPastMeetingAttachmentChanges(list, undefined)).toBe(list);
   });
 });

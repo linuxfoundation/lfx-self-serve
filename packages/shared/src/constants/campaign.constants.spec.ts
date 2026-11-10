@@ -47,15 +47,23 @@ import {
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
+  GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
+  GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
+  GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS,
   GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
@@ -67,9 +75,15 @@ import {
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_NOTICES,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_CREATIVE_SHARED_CAPS,
+  GOOGLE_SEARCH_ASSETS_NOTICE,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_GEO_LIST_ENTRIES,
   MAX_REDDIT_HEADLINE_LENGTH,
+  MICROSOFT_MAX_GEO_TARGETS,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
@@ -803,6 +817,35 @@ describe('Google conversion actions', () => {
   });
 });
 
+describe('Google location caps', () => {
+  /**
+   * `maxGeoTargets` in `internal/platform/googleads/geo.go`, 500 since campaign-service v1.0.32
+   * (#515), applied to the targeted and excluded lists SEPARATELY. Written as literals so a drift
+   * in the constant fails here rather than moving every spec that reads it.
+   */
+  it('caps each geo list at 500, as upstream does', () => {
+    expect(GOOGLE_ADS_MAX_GEO_TARGETS).toBe(500);
+    expect(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS).toBe(500);
+  });
+
+  /** Upstream raised only `maxGeoTargets`; `maxProximityTargets` and Microsoft's own cap are unchanged. */
+  it('leaves the radius and Microsoft location caps where they were', () => {
+    expect(GOOGLE_ADS_MAX_PROXIMITY_TARGETS).toBe(20);
+    expect(MICROSOFT_MAX_GEO_TARGETS).toBe(30);
+  });
+
+  /**
+   * The resource bound on both geo lists must sit ABOVE both caps, or a list at its cap would be
+   * refused by the generic bound before the named refusal; the shared creative bound stays at 100.
+   */
+  it('bounds the geo lists above their caps without widening the shared list bound', () => {
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBe(2000);
+    expect(MAX_GOOGLE_CREATIVE_LIST_ENTRIES).toBe(100);
+  });
+});
+
 describe('Google channel enums and creative catalogue', () => {
   /**
    * The monitoring GAQL filters `campaign.advertising_channel_type` with these literals, and the
@@ -820,13 +863,12 @@ describe('Google channel enums and creative catalogue', () => {
   });
 
   /**
-   * Search builds its ad from the shared headline/description copy, and the Google Ads API cannot
-   * create a Video campaign at all — so neither collects a channel creative, and offering one would
-   * build a form whose only possible outcome is a refusal.
+   * The Google Ads API cannot create a Video campaign at all, so Video collects no creative: offering
+   * one would build a form whose only possible outcome is a refusal. Search collects its campaign
+   * assets (#5262); its ad copy stays the shared headline/description arrays.
    */
-  it('collects a creative only for the three channels that carry one', () => {
-    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display']);
-    expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('search');
+  it('collects a creative for the four channels that carry one, and never for Video', () => {
+    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display', 'search']);
     expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('video');
   });
 
@@ -844,6 +886,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': 'demandGenCreative',
       'performance-max': 'performanceMaxCreative',
       display: 'displayCreative',
+      search: 'searchAssets',
     });
   });
 
@@ -857,6 +900,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': 'Demand Gen',
       'performance-max': 'Performance Max',
       display: 'Display',
+      search: 'Search',
     });
   });
 
@@ -922,6 +966,7 @@ describe('Google channel enums and creative catalogue', () => {
       'demand-gen': ['businessName'],
       'performance-max': ['businessName'],
       display: ['longHeadline', 'businessName'],
+      search: [],
     });
   });
 
@@ -943,6 +988,7 @@ describe('Google channel enums and creative catalogue', () => {
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'].map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES.display).toEqual([]);
     expect(GOOGLE_CREATIVE_EITHER_OR_RULES['performance-max']).toEqual([]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.search).toEqual([]);
   });
 
   /** The independent requirement on Performance Max and Display, which is what makes their empty rule lists correct. */
@@ -972,6 +1018,40 @@ describe('Google channel enums and creative catalogue', () => {
       [['marketingImages', 'squareMarketingImages'], 15],
       [['logoImages', 'squareLogoImages'], 5],
     ]);
+    expect(shape('search')).toEqual([[['adImages', 'landscapeAdImages'], 20]]);
+  });
+
+  /**
+   * campaign-service v1.0.35 `search_assets.go` (#477, #538): `searchImageSlots`' three rows and the caps
+   * beside them, and a 25-wide business name. None is required, so nothing carries `min` or
+   * `requiredOnce`: `validateSearchAssets` accepts any one of the four alone.
+   */
+  it('states the Search assets exactly as campaign-service v1.0.35 slots and caps them', () => {
+    expect(GOOGLE_CREATIVE_FIELD_SPECS.search).toEqual([
+      { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Optional.' },
+      expect.objectContaining({ control: 'adImages', kind: 'list', max: 20, image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 } }),
+      expect.objectContaining({ control: 'landscapeAdImages', kind: 'list', max: 20, image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 } }),
+      expect.objectContaining({ control: 'businessLogoImages', kind: 'list', max: 1, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } }),
+    ]);
+    for (const field of GOOGLE_CREATIVE_FIELD_SPECS.search as readonly GoogleCreativeFieldSpec[]) {
+      expect(field.min).toBeUndefined();
+      expect(field.requiredOnce).toBeUndefined();
+    }
+    // The asset plan names Search's slots by the request's own keys (`searchCatalog`, `slot_catalog.go`).
+    expect(GOOGLE_ASSET_PLAN_SLOT_CONTROLS.search).toEqual({
+      adImages: 'adImages',
+      landscapeAdImages: 'landscapeAdImages',
+      businessLogoImages: 'businessLogoImages',
+    });
+  });
+
+  /** Search serves on its ads with its assets empty, so it alone gets the optional line instead of the empty-shell one. */
+  it('warns of an empty shell on every creative section but Search', () => {
+    expect([...GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE]).toEqual(['search']);
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const expected = channel === 'search' ? GOOGLE_SEARCH_ASSETS_NOTICE : GOOGLE_CREATIVE_REQUIRED_NOTICE;
+      expect(GOOGLE_CREATIVE_SECTION_NOTICES[channel]).toBe(expected);
+    }
   });
 
   /**
@@ -1341,22 +1421,31 @@ describe('Google Ads campaign criteria vocabularies', () => {
     expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
   });
 
-  it('fences devices and demographics from two separate lists, which differ on demand gen', () => {
+  it('fences devices and demographics from two separate lists, which differ on demand gen and performance max', () => {
     // Separate constants because `validateCriteriaPlan` fences them in separate branches. Demand
-    // Gen takes device exclusions (#474) and refuses demographic exclusions; Performance Max devices
-    // are not offered by this client.
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).toContain('demand-gen');
-    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen']);
-    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
+    // Gen (linuxfoundation/lfx-v2-campaign-service#474) and Performance Max (linuxfoundation/lfx-v2-campaign-service#500) take device exclusions and refuse demographic exclusions.
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS]).toEqual([...GOOGLE_CAMPAIGN_CHANNELS]);
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen', 'performance-max']);
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
     expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
   });
 
-  it('fences sitelinks apart from the other extensions, which differ on demand gen', () => {
+  it('fences sitelinks, callouts and snippets, and the other extensions apart, as upstream does', () => {
     // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474) and refuses every
-    // other extension list there. Performance Max is not opened by this client for either.
-    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen']);
+    // other extension list there.
+    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen', 'performance-max']);
+    // Performance Max takes sitelinks, callouts and structured snippets (linuxfoundation/lfx-v2-campaign-service#461) and refuses calls,
+    // promotions, prices and lead forms ("supported on Search campaigns only").
+    expect([...GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS]).toEqual(['search', 'performance-max']);
     expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);
+  });
+
+  it('takes search themes on performance max alone, up to 50 of 80 runes each', () => {
+    // `validatePerformanceMaxSignals` (v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): asset group signals, and only Performance Max
+    // has asset groups. `maxSearchThemes` and `maxSearchThemeRunes` in `pmax_signals.go`.
+    expect([...GOOGLE_CHANNELS_WITH_SEARCH_THEMES]).toEqual(['performance-max']);
+    expect(GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES).toBe(50);
+    expect(GOOGLE_ADS_MAX_SEARCH_THEME_RUNES).toBe(80);
   });
 
   it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {

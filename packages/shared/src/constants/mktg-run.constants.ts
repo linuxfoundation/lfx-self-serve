@@ -55,6 +55,8 @@ export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
 export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** A discarded or superseded session cannot accept another turn. */
 export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
+/** Only a failed started run can be dismissed from the Documents page. */
+export const MKTG_RUN_NOT_FAILED = 'MKTG_RUN_NOT_FAILED';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
 export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 
@@ -99,8 +101,6 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   documentName: 'Brand Kit',
   intro:
     'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s approved Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter, and downloads as a 16-page PDF. Every result is stored as a new revision in Documents.',
-  introSlidesOnly:
-    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s approved Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter. Every result is stored as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
@@ -940,8 +940,16 @@ export const MKTG_RUN_POLL = {
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
-/** Bound raw Guild history reads to 2,000 events per result request. */
-export const MKTG_RAW_EVENTS_MAX_PAGES = 4;
+/**
+ * Absolute cap on raw Guild event pages (500 each) read for one result request:
+ * 10,000 raw events. Guild serves a session's events oldest-first, so the
+ * finalize receipt and the root envelope ride the LAST page, and the loop is
+ * sized from the API's `pagination.total_count`; this cap only bounds it. A
+ * Member 360 session writes about 8 raw events per member (a 308-member
+ * foundation: 2,558 events; the biggest session seen: 3,037). A safety bound,
+ * not a product limit: past it the truncation marker is appended as before.
+ */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 20;
 
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';

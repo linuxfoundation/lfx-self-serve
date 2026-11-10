@@ -15,6 +15,7 @@ import {
   CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS,
   CAMPAIGN_TACTIC_OPTIONS,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
+  GOOGLE_MIN_DAILY_BUDGET_USD,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
@@ -356,6 +357,145 @@ export function dailyBudgetFromTotal(total: number, days: number): number | null
   let cents = Math.round(total * 100);
   if (cents / 100 > total) cents -= 1;
   return Math.floor(cents / days) / 100;
+}
+
+/**
+ * The Google Ads UI link for one campaign, or `''` without an id: the one link format this app uses
+ * for Google, on the create results and the Optimize views alike. It carries no customer (`__c`/`ocid`)
+ * parameter, because no Google Ads customer id reaches this app, so Google opens it in the signed-in
+ * user's default account; a user whose default is another account switches to the campaign's there.
+ * The id is percent-encoded: ids are numeric, so this changes nothing in practice for one from upstream.
+ *
+ * @param campaignId - The Google Ads campaign id
+ */
+export function googleAdsCampaignUrl(campaignId: string | null | undefined): string {
+  return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${encodeURIComponent(campaignId)}` : '';
+}
+
+const EVENT_DATE_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+/**
+ * A month name or its abbreviation, as a capture group, then an optional dot. The lookahead ends the
+ * name at a word boundary, so a word that only STARTS like a month — Marriott, Janeiro, Junction,
+ * Decatur — is not read as one. Every month pattern below is built from this one token.
+ */
+const EVENT_DATE_MONTH =
+  '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?![a-z])\\.?';
+const EVENT_DATE_ORDINAL = '(?:st|nd|rd|th)?';
+/** `March 15`, `Mar. 15th`: the month, then the day. */
+const EVENT_DATE_MONTH_FIRST = new RegExp(`\\b${EVENT_DATE_MONTH}\\s+(\\d{1,2})${EVENT_DATE_ORDINAL}\\b`, 'i');
+/** `15 March`, `15-16 March`: the (first) day, then the month. */
+const EVENT_DATE_DAY_FIRST = new RegExp(
+  `\\b(\\d{1,2})${EVENT_DATE_ORDINAL}(?:\\s*[-\u2013\u2014]\\s*\\d{1,2}${EVENT_DATE_ORDINAL})?\\s+${EVENT_DATE_MONTH}\\b`,
+  'i'
+);
+const EVENT_DATE_ISO = /\b(\d{4})-(\d{2})-(\d{2})\b/;
+const EVENT_DATE_YEAR = /\b(20\d{2})\b/;
+const EVENT_DATE_YEARS = /\b20\d{2}\b/g;
+/** Every month named, in order: used to spot a range that crosses into the next year. */
+const EVENT_DATE_ANY_MONTH = new RegExp(`\\b${EVENT_DATE_MONTH}`, 'gi');
+
+/**
+ * The first day of an event, as `YYYY-MM-DD`, read from the brief's human-readable `dates` (#1614).
+ *
+ * The scrape asks for "human-readable date range" (`EVENT_EXTRACTION_PROMPT`), so the text is free
+ * form. This reads the shapes event pages use — `2027-03-15`, `March 15, 2027`, `March 15-17, 2027`,
+ * `March 30 - April 1, 2027`, `15 March 2027`, `15-17 March 2027`, with or without a weekday — and
+ * takes the FIRST day of a range, with the first year written. A range that crosses New Year with the
+ * year written once after it, `December 30 - January 2, 2027`, starts in the year before; written
+ * after the start, `December 30, 2026 - January 2`, the year is the start's. Anything it cannot place on a real calendar day, a date with no year among them, is
+ * `null`, so a caller keeps its own default rather than acting on a guess.
+ *
+ * @param dates - `CampaignEventDetails.dates`
+ * @returns The event's first day, or `null` when the text does not name one
+ */
+export function campaignEventStartDate(dates: string | null | undefined): string | null {
+  if (typeof dates !== 'string') return null;
+  const iso = EVENT_DATE_ISO.exec(dates);
+  if (iso) return calendarDayNumber(iso[0]) === null ? null : iso[0];
+  const year = EVENT_DATE_YEAR.exec(dates)?.[1];
+  if (year === undefined) return null;
+  const monthFirst = EVENT_DATE_MONTH_FIRST.exec(dates);
+  const dayFirst = EVENT_DATE_DAY_FIRST.exec(dates);
+  // Whichever shape starts earlier is the start date: "30 March - 1 April" and "March 30 - April 1"
+  // each also hold a later fragment the other pattern could read.
+  let monthName: string;
+  let day: string;
+  let startAt: number;
+  if (monthFirst && (!dayFirst || monthFirst.index <= dayFirst.index)) {
+    [monthName, day, startAt] = [monthFirst[1], monthFirst[2], monthFirst.index];
+  } else if (dayFirst) {
+    [day, monthName, startAt] = [dayFirst[1], dayFirst[2], dayFirst.index];
+  } else {
+    return null;
+  }
+  const monthNumber = (name: string): number => EVENT_DATE_MONTHS.indexOf(name.slice(0, 3).toLowerCase()) + 1;
+  const month = monthNumber(monthName);
+  // "December 30 - January 2, 2027" writes the year once, for the END: a later month numbered below the
+  // start's, with the one year written after it, means the range crosses New Year and the start is in
+  // the year before. Written BEFORE that month — "December 30, 2026 - January 2" — the year is the
+  // start's own and is kept.
+  const years = [...dates.matchAll(EVENT_DATE_YEARS)];
+  const crossesYear =
+    years.length === 1 &&
+    [...dates.matchAll(EVENT_DATE_ANY_MONTH)].some((found) => found.index > startAt && monthNumber(found[1]) < month && years[0].index > found.index);
+  const startYear = crossesYear ? Number(year) - 1 : Number(year);
+  const date = `${startYear}-${String(month).padStart(2, '0')}-${day.padStart(2, '0')}`;
+  return calendarDayNumber(date) === null ? null : date;
+}
+
+/**
+ * The end date a campaign's flight opens with (#1614): the event's first day when the brief names one
+ * after today, else the given fallback.
+ *
+ * Strictly after today, because every non-Google platform the same end date reaches refuses an end
+ * that is not after its start (campaign-service's LinkedIn, Meta, Reddit, Microsoft and X preflights),
+ * and the flight opens starting today. Google states no longest flight (`validateFlightWindow` checks
+ * only the order of the two dates), so a later event is not capped.
+ *
+ * @param eventDates - `CampaignEventDetails.dates`
+ * @param today - Today, `YYYY-MM-DD`
+ * @param fallback - The end date to use when the event date is unknown or not after today
+ */
+export function defaultCampaignEndDate(eventDates: string | null | undefined, today: string, fallback: string): string {
+  const event = campaignEventStartDate(eventDates);
+  if (event === null) return fallback;
+  const eventDay = calendarDayNumber(event);
+  const todayDay = calendarDayNumber(today);
+  return eventDay !== null && todayDay !== null && eventDay > todayDay ? event : fallback;
+}
+
+/**
+ * The Google flight end and daily budget the brief seed opens with (#4847, #1614): the brief's total
+ * divided over the days from today through `endDate`, both counted.
+ *
+ * Never below {@link GOOGLE_MIN_DAILY_BUDGET_USD}, the floor the budget control enforces, because a seed
+ * under it opens the tab with Create blocked. What happens when the total spread to `endDate` falls
+ * under it depends on whether the end date is Google's alone to move:
+ *
+ * - `mayShorten` (Google is the only platform on the brief): the flight is SHORTENED to the most days
+ *   the total funds at the floor, so the seed spends no more than the brief planned. A total that funds
+ *   fewer than two days gets the shortest flight every other platform also accepts — two days, since
+ *   each refuses an end that is not after the start — at the floor, which is the least Google can spend;
+ *   the tab says that is more than the brief plans.
+ * - Otherwise the end date is shared with the brief's other platforms and is not Google's to change: it
+ *   is kept, and the budget is seeded at the floor. The tab says that flight spends more than the plan.
+ *
+ * @param total - The brief's total budget, or `null` when it has none
+ * @param today - The flight's first day, `YYYY-MM-DD`
+ * @param endDate - The end date the flight would otherwise open with, `YYYY-MM-DD`
+ * @param mayShorten - Whether the seed may move the end date, which every selected platform shares
+ * @returns The end date and daily budget to seed; `dailyBudget` is `null` when there is no usable total
+ */
+export function googleSeededFlight(total: number | null, today: string, endDate: string, mayShorten: boolean): { endDate: string; dailyBudget: number | null } {
+  const days = campaignFlightDays(today, endDate);
+  const daily = total !== null && days !== null ? dailyBudgetFromTotal(total, days) : null;
+  if (daily === null || daily >= GOOGLE_MIN_DAILY_BUDGET_USD || total === null) return { endDate, dailyBudget: daily };
+  const todayDay = calendarDayNumber(today);
+  if (!mayShorten || todayDay === null) return { endDate, dailyBudget: GOOGLE_MIN_DAILY_BUDGET_USD };
+  const fundedDays = Math.floor(total / GOOGLE_MIN_DAILY_BUDGET_USD);
+  const flightDays = Math.max(fundedDays, 2);
+  const shortened = new Date((todayDay + flightDays - 1) * 86_400_000).toISOString().slice(0, 10);
+  return { endDate: shortened, dailyBudget: fundedDays >= 2 ? dailyBudgetFromTotal(total, fundedDays) : GOOGLE_MIN_DAILY_BUDGET_USD };
 }
 
 /**

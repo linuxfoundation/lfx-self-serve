@@ -51,15 +51,25 @@
           data-testid="meetings-redesign-header-actions">
           <lfx-pending-rsvps [rows]="store.pendingRsvpRows()" [fallbackFocus]="createButton() ?? heading" />
           @if (personaLoaded()) {
-            <lfx-ui-button #createButton variant="tertiary-accent" icon="fa-light fa-plus" (click)="createMeeting()" data-testid="meetings-home-create">
-              Create Meeting
+            <lfx-ui-button
+              #createButton
+              [variant]="phone() ? 'secondary-accent' : 'tertiary-accent'"
+              icon="fa-light fa-plus"
+              [iconOnly]="phone()"
+              [ariaLabel]="phone() ? 'Create Meeting' : ''"
+              [lfxUiTooltip]="phone() ? 'Create Meeting' : ''"
+              (click)="createMeeting()"
+              data-testid="meetings-home-create">
+              @if (!phone()) {
+                Create Meeting
+              }
             </lfx-ui-button>
           }
         </div>
       </div>
 
-      <!-- Right column content, folded into the centre at 1024px and below: two columns, one in a centre of 620px or less -->
-      <div class="mb-[20px] grid grid-cols-1 gap-[20px] @[621px]:grid-cols-2 min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
+      <!-- Right column content, folded into the centre at 1024px and below: two columns, one in a centre of 620px or less; none on phones -->
+      <div class="mb-[20px] grid grid-cols-1 gap-[20px] max-sm:hidden @[621px]:grid-cols-2 min-[1025px]:hidden" data-testid="meetings-redesign-folded-rail">
         <ng-container [ngTemplateOutlet]="railTemplate" [ngTemplateOutletContext]="{ $implicit: 'folded' }" />
       </div>
 
@@ -74,7 +84,6 @@
         <!-- Search and Filters sit inside the tabs, on their rule. -->
         <lfx-ui-tabs
           class="min-[1025px]:@[440px]:flex-nowrap"
-          size="small"
           ariaLabel="Meetings"
           [idPrefix]="idPrefix"
           [tabs]="tabs()"

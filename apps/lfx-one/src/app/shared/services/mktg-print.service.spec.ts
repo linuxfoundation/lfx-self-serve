@@ -11,6 +11,8 @@ import {
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_ONLY_CLASS,
+  MKTG_PORTRAIT_PAGE_NAME,
+  MKTG_PORTRAIT_PRINT_CLASS,
   MKTG_PRINT_FONT_LINK_ID_PREFIX,
   MKTG_PRINT_FONT_WAIT_MS,
   MKTG_PRINT_FRAME_LINGER_MS,
@@ -136,6 +138,31 @@ describe('MktgPrintService isolated frame', () => {
     root.innerHTML = `<section class="${BRAND_KIT_PORTRAIT_PRINT_CLASS}" data-testid="synthetic-print">Synthetic print</section>`;
     configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
     expect(framePageRule()).toBe(`@page { ${MKTG_PRINT_PAGE_SETUPS['mktg-framework']} }`);
+  });
+
+  it.each([
+    ['Chromium', CHROME_UA],
+    ['WebKit', SAFARI_UA],
+  ])("in %s gives a document of portrait frames US Letter with no margin, unnamed and as the frames' own named page", (_engine, userAgent) => {
+    printAs(userAgent);
+    root.className = BRAND_KIT_PRINT_ONLY_CLASS;
+    root.innerHTML = `<div class="${BRAND_KIT_PORTRAIT_PRINT_CLASS} ${MKTG_PORTRAIT_PRINT_CLASS}"><section class="pp-page" data-page="1">Synthetic frame</section></div>`;
+    configure().printNow(BRAND_KIT_PRINT_BODY_CLASS);
+    const setup = MKTG_PRINT_PAGE_SETUPS['mktg-portrait'];
+    expect(setup).toBe('size: auto; margin: 0;');
+    expect(framePageRule()).toBe(`@page { ${setup} }\n@page ${MKTG_PORTRAIT_PAGE_NAME} { ${setup} }`);
+    expect(framePageRule()).not.toContain('@page mktg-framework');
+    // No page margins in either engine: the flowing parts beside the frames keep their own room.
+    expect(currentFrame().contentDocument?.body.classList.contains(MKTG_PRINT_PAGE_MARGINS_CLASS)).toBe(false);
+  });
+
+  it('in the family print, the portrait frames set the page too', () => {
+    printAs(SAFARI_UA);
+    root.className = MKTG_FAMILY_PRINT_ONLY_CLASS;
+    root.innerHTML = `<section class="${MKTG_PORTRAIT_PRINT_CLASS}"><section class="pp-page" data-page="1">Synthetic frame</section></section>`;
+    configure().printNow(MKTG_FAMILY_PRINT_BODY_CLASS);
+    expect(framePageRule()).toContain(`@page ${MKTG_PORTRAIT_PAGE_NAME} { ${MKTG_PRINT_PAGE_SETUPS['mktg-portrait']} }`);
+    expect(framePageRule()).not.toContain('0.55in');
   });
 
   it('prints every page with no margin, where the browser would draw its header and footer', () => {

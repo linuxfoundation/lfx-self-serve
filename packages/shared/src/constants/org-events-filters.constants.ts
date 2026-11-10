@@ -17,16 +17,15 @@ import type {
 
 /** "Counted by" options, default first. */
 export const ORG_EVENTS_ATTRIBUTION_OPTIONS: readonly OrgEventsAttributionOption[] = [
-  { label: 'Company email or employee', value: 'verified' },
-  { label: 'All relations', value: 'all' },
-  { label: 'Company email', value: 'company_email' },
-  { label: 'Account on registration', value: 'account' },
+  { label: 'Employee match', value: 'verified' },
+  { label: 'Self-reported only', value: 'self_reported' },
+  { label: 'All', value: 'all' },
 ] as const;
 
 /**
- * Default "Counted by" — the URL drops `?attribution=` when it is active. The Overview is pinned to it. People credited
- * only through the company they named on their registration are a weak relationship and are not counted by default
- * (lfx-self-serve#5158); All relations adds them on demand.
+ * Default "Counted by" — the URL drops `?attribution=` when it is active. The Overview is pinned to it. People linked
+ * only through the organization they named on their registration or talk submission are a weak relationship and are not
+ * counted by default (lfx-self-serve#5158); Self-reported only lists them alone and All adds them (lfx-self-serve#5315).
  */
 export const DEFAULT_ORG_EVENTS_ATTRIBUTION: OrgEventsAttribution = 'verified';
 
@@ -38,26 +37,17 @@ export const ORG_EVENTS_ATTRIBUTION_LABEL = 'Counted by';
 
 /** Tooltip on the "Counted by" filter, per option. */
 export const ORG_EVENTS_ATTRIBUTION_TOOLTIP: Readonly<Record<OrgEventsAttribution, string>> = {
-  verified:
-    'People who registered or spoke with a company email address the organization has on record, or current employees on the roster. People who only named the organization on their registration are left out; choose All relations to include them.',
-  all: 'Everyone related to the company: company-email registrations, current employees, and people who only named the organization on their registration (self-declared).',
-  company_email: 'People who registered with one of the company’s own email addresses.',
-  account: 'Registrations credited to the company’s account, whatever address was used.',
+  verified: 'Registered or spoke with a company email address on record, or their LF account matches someone on the company roster.',
+  self_reported: 'Linked only because they named the organization on their registration or talk submission.',
+  all: 'Everyone linked to the organization, including people who only named it on their registration or talk submission.',
 };
 
 /** Phrase a caption or tooltip adds for the attribution it counts. */
 export const ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE: Readonly<Record<OrgEventsAttribution, string>> = {
-  verified: 'Company email or current employee.',
-  company_email: 'Registered with a company email.',
-  account: 'Registrations credited to the company account.',
-  all: 'Everyone related to the company, including people who only named it on their registration.',
+  verified: 'Company email on record or LF account on the company roster.',
+  self_reported: 'Linked only because they named the organization on their registration or talk submission.',
+  all: 'Everyone linked to the organization, including people who only named it on their registration or talk submission.',
 };
-
-/**
- * Note shown while Company email is picked but the company has no company-email data: the read serves Account on
- * registration instead, so the numbers are not zero.
- */
-export const ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE = 'No company-email data is available for this company; counts use registrations credited to the account.';
 
 /** "Count" options, default first. */
 export const ORG_EVENTS_PARTICIPATION_OPTIONS: readonly OrgEventsParticipationOption[] = [
@@ -129,8 +119,7 @@ export const ORG_EVENTS_NEUTRAL_SPEAKER_LABEL = 'Speaker';
 /** The one mapping from an attribution to its warehouse column suffix; every Events read derives its column identifiers from it, never from user input. */
 export const ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX: Readonly<Record<OrgEventsAttribution, OrgEventsAttributionColumnSuffix>> = {
   verified: 'VERIFIED',
-  company_email: 'COMPANY_EMAIL',
-  account: 'ACCOUNT',
+  self_reported: 'SELF_REPORTED',
   all: 'ALL',
 };
 
@@ -141,17 +130,16 @@ export const ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT: Readonly<Record<OrgEventsP
   attended: 'ATTENDED',
 };
 
-/** The per-attribution metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects. */
-export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMetricColumn[] = Object.values(ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX).flatMap(
-  (suffix) => [
-    `ATTENDEES_REGISTERED_${suffix}` as const,
-    `ATTENDEES_ALL_${suffix}` as const,
-    `SPEAKERS_${suffix}` as const,
-    `TOTAL_ATTENDEES_REGISTERED_${suffix}` as const,
-    `TOTAL_ATTENDEES_ALL_${suffix}` as const,
-    `TOTAL_SPEAKERS_${suffix}` as const,
-  ]
-);
+/**
+ * The metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects: only those of the default attribution, which
+ * the Overview is pinned to (the monthly table has no Self-reported only columns).
+ */
+export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMetricColumn[] = [
+  'ATTENDEES_ALL_VERIFIED',
+  'SPEAKERS_VERIFIED',
+  'TOTAL_ATTENDEES_ALL_VERIFIED',
+  'TOTAL_SPEAKERS_VERIFIED',
+] as const;
 
 /** Longest foundation id the Events filters accept; ids are short opaque strings and the value is only ever bound, never inlined. */
 export const ORG_EVENTS_FOUNDATION_ID_MAX_LENGTH = 128;

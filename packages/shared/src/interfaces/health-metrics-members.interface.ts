@@ -15,7 +15,6 @@ import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
 import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsChartTipView, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
-import type { HealthMetricsOverviewKpiView } from './health-metrics-overview.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsMembersSectionKey = (typeof HEALTH_METRICS_MEMBERS_SECTIONS)[number]['key'];
@@ -57,80 +56,39 @@ export interface HealthMetricsMembersTierIcon {
   radius: string;
 }
 
-/** A palette colour for the other tiers, and the reserved tier it could be mistaken for. */
-export interface HealthMetricsMembersBreakdownPaletteEntry {
-  color: string;
-  resembles: HealthMetricsMembersReservedTier | null;
-}
-
-export type HealthMetricsMembersBreakdownViewMode = 'chart' | 'table';
-
-export interface HealthMetricsMembersBreakdownViewOption {
-  value: HealthMetricsMembersBreakdownViewMode;
-  /** The tooltip and screen-reader name of the icon-only option. */
-  label: string;
-  icon: string;
-}
-
-/** One stacked segment, positioned as a share of the chart's height. */
-export interface HealthMetricsMembersBreakdownSegmentView {
-  key: string;
-  color: string;
-  bottomPct: number;
-  heightPct: number;
-}
-
-/** One year's column: its stack, the labels under it and its popup. */
+/** One year's column header: e.g. `2026 YTD` for the running year. */
 export interface HealthMetricsMembersBreakdownColumnView {
   year: number;
-  /** e.g. `2026 YTD` for the running year. */
   label: string;
-  membersLabel: string;
-  /** Bottom to top. */
-  segments: HealthMetricsMembersBreakdownSegmentView[];
-  tip: HealthMetricsChartTipView;
-  /** The popup's figures in a sentence, for a screen reader on the focused column. */
-  ariaLabel: string;
 }
 
-export interface HealthMetricsMembersBreakdownLegendItemView {
-  label: string;
-  color: string;
-  /** A divider before the item, setting the grey tiers apart. */
-  divided: boolean;
-}
+export type HealthMetricsMembersBreakdownRowKind = 'tier' | 'total';
 
-export type HealthMetricsMembersBreakdownRowKind = 'tier' | 'total' | 'change';
-
-export interface HealthMetricsMembersBreakdownCellView {
-  label: string;
-  /** A change row's direction; `null` for any other cell and for a change with nothing to compare. */
-  tone: 'up' | 'down' | null;
-}
-
-/** One row of the table view: a tier, a total, or the change under a total. */
+/** One row of the table: a tier, or a total under the tiers. */
 export interface HealthMetricsMembersBreakdownRowView {
   key: string;
   label: string;
   kind: HealthMetricsMembersBreakdownRowKind;
   icon: HealthMetricsMembersReservedTier | null;
+  /** Every other tier row is tinted, as the design stripes them. */
+  striped: boolean;
   /** One per year, in the columns' order. */
-  cells: HealthMetricsMembersBreakdownCellView[];
+  cells: string[];
 }
 
 /** The breakdown table's class strings, by row kind where they differ. */
 export interface HealthMetricsMembersBreakdownTableClasses {
   label: Record<HealthMetricsMembersBreakdownRowKind, string>;
   cell: Record<HealthMetricsMembersBreakdownRowKind, string>;
-  lastCell: Record<HealthMetricsMembersBreakdownRowKind, string>;
-  change: Record<'up' | 'down', string>;
+  stripe: string;
+  totalFill: string;
   cellBase: string;
   rowRule: string;
   cellRule: string;
   totalRule: string;
 }
 
-/** A table row as drawn: its rules, and each cell's type and fill as classes. */
+/** A table row as drawn: its rules and fill, and each cell's type as classes. */
 export interface HealthMetricsMembersBreakdownTableRow {
   key: string;
   label: string;
@@ -140,15 +98,11 @@ export interface HealthMetricsMembersBreakdownTableRow {
   cells: { label: string; cellClass: string }[];
 }
 
-/** `#breakdown`, built over the loaded years; only the metrics row follows the selected period. */
+/** `#breakdown`: members per tier at each year's end, with the totals and revenue under them. */
 export interface HealthMetricsMembersBreakdownView {
-  /** False when no year in the chart has a tier row. */
+  /** False when no year shown has a tier row. */
   measured: boolean;
-  kpis: HealthMetricsOverviewKpiView[];
-  /** The y axis, top to bottom. */
-  yTicks: string[];
   columns: HealthMetricsMembersBreakdownColumnView[];
-  legend: HealthMetricsMembersBreakdownLegendItemView[];
   rows: HealthMetricsMembersBreakdownRowView[];
   /** The selected year's members, for the sub-nav badge; `null` when unmeasured. */
   count: number | null;
@@ -172,98 +126,42 @@ export interface HealthMetricsMembersGrowth {
   months: HealthMetricsMembersGrowthMonth[];
 }
 
-/** Highlights draws the earlier years as one range; All years draws each as its own line. */
-export type HealthMetricsMembersGrowthViewMode = 'highlights' | 'all';
-
-export interface HealthMetricsMembersGrowthViewOption {
-  value: HealthMetricsMembersGrowthViewMode;
+/** A month's point on a year's line, in percent of the plot box, with its value drawn above it. */
+export interface HealthMetricsMembersGrowthPointView {
+  month: number;
+  leftPct: number;
+  topPct: number;
   label: string;
 }
 
-/** One line, as an SVG path over the chart's 600-wide viewBox. */
-export interface HealthMetricsMembersGrowthPathView {
-  key: string;
-  d: string;
+/** One year's line, as an SVG path over the plot's viewBox; only the period's year is solid. */
+export interface HealthMetricsMembersGrowthLineView {
+  year: number;
   color: string;
-  width: number;
   dashed: boolean;
+  d: string;
+  points: HealthMetricsMembersGrowthPointView[];
 }
 
-/** Where an end label sits beside its point: below and right, right and just below, or right and centred. */
-export type HealthMetricsMembersGrowthLabelPlacement = 'below-right' | 'right-below' | 'right';
-
-/** The end labels' offsets by placement, and their weights; applied via [class], so Tailwind's safelist carries them. */
-export interface HealthMetricsMembersGrowthLabelClasses {
-  placement: Record<HealthMetricsMembersGrowthLabelPlacement, string>;
-  strong: string;
-  regular: string;
-}
-
-/** An end label before it is laid out: where it sits off its point, its weight, and whether it stacks with December's. */
-export interface HealthMetricsMembersGrowthEndLabel {
-  key: string;
-  text: string;
-  leftPct: number;
-  topPct: number;
-  color: string;
-  placement: HealthMetricsMembersGrowthLabelPlacement;
-  strong: boolean;
-  stacks: boolean;
-}
-
-/** An end label's box in pixels, so labels that stack can be pushed apart. */
-export interface HealthMetricsMembersGrowthLabelBox {
-  offsetPx: Record<HealthMetricsMembersGrowthLabelPlacement, number>;
-  heightPx: number;
-  gapPx: number;
-}
-
-/** A label on the plot, positioned in percent of the plot box, with its offset and weight classes. */
-export interface HealthMetricsMembersGrowthLabelView {
-  key: string;
-  text: string;
-  leftPct: number;
-  topPct: number;
-  color: string;
-  classes: string;
-}
-
-/** A month's hover and focus target, with its popup. */
+/** A month's hover and focus target, centred on it and spanning the month spacing, with its popup. */
 export interface HealthMetricsMembersGrowthColumnView {
   month: number;
   label: string;
   leftPct: number;
+  widthPct: number;
   tip: HealthMetricsChartTipView;
   ariaLabel: string;
 }
 
-/** A legend swatch: a line (solid or dashed, via `background`) or the range's band. */
-export interface HealthMetricsMembersGrowthLegendItemView {
-  label: string;
-  background: string;
-  band: boolean;
-}
-
-/** `#growth`: this year against last year and the earlier years, cumulative by month. */
+/** `#growth`: cumulative new members by month, one line per year. */
 export interface HealthMetricsMembersGrowthView {
-  /** False when the foundation has no month rows. */
+  /** False when no year has a measured month. */
   measured: boolean;
-  kpis: HealthMetricsOverviewKpiView[];
-  /** The y axis, top to bottom. */
-  yTicks: string[];
-  monthLabels: string[];
-  /** Earlier years first, so this year draws on top. */
-  paths: HealthMetricsMembersGrowthPathView[];
-  /** The earlier years' range; empty in All years, or with no year from the band's first year on. */
-  bandPath: string;
-  /** This month's x in the viewBox, for the Today line. */
-  todayX: number;
-  todayPct: number;
-  /** This year's point today, drawn hollow. */
-  todayDot: { leftPct: number; topPct: number };
-  labels: HealthMetricsMembersGrowthLabelView[];
+  /** The y axis's top label; the bottom is 0. */
+  yMax: string;
+  /** Oldest year first, so the newest draws on top; the legend reads in the same order. */
+  lines: HealthMetricsMembersGrowthLineView[];
   columns: HealthMetricsMembersGrowthColumnView[];
-  legend: HealthMetricsMembersGrowthLegendItemView[];
   ariaLabel: string;
 }
 

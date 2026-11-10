@@ -16,7 +16,6 @@ import {
   ORG_EVENTS_ATTRIBUTION_LABEL,
   ORG_EVENTS_ATTRIBUTION_OPTIONS,
   ORG_EVENTS_ATTRIBUTION_TOOLTIP,
-  ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
   ORG_EVENTS_PARTICIPATION_OPTIONS,
@@ -81,7 +80,6 @@ export class EventAttendeesComponent {
   protected readonly attributionOptions = [...ORG_EVENTS_ATTRIBUTION_OPTIONS];
   protected readonly participationLabel = ORG_EVENTS_PARTICIPATION_LABEL;
   protected readonly attributionLabel = ORG_EVENTS_ATTRIBUTION_LABEL;
-  protected readonly attributionUnavailableNote = ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Speakers', 'Attendees', 'Events', 'Foundations'];
 
@@ -135,12 +133,8 @@ export class EventAttendeesComponent {
 
   protected readonly response: Signal<OrgEventAttendeesResponse> = this.initResponse();
 
-  // Counted by falls back to the account when the company has no company-email data; say so instead of showing silent zeros.
-  protected readonly attributionUnavailable = computed(
-    () => !this.isLoading() && !this.fetchError() && this.response().servedAttribution !== this.attribution()
-  );
   protected readonly attendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.response().servedAttribution]}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.attribution()]}`
   );
   protected readonly participationTooltip = computed(() => ORG_EVENTS_PARTICIPATION_TOOLTIP[this.participation()]);
   protected readonly attributionTooltip = computed(() => ORG_EVENTS_ATTRIBUTION_TOOLTIP[this.attribution()]);

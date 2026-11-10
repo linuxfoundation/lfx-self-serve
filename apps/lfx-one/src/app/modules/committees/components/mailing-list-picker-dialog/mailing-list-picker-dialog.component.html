@@ -40,6 +40,9 @@
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Email</th>
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Visibility</th>
             <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Type</th>
+            @if (syncEnabled()) {
+              <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Sync Direction</th>
+            }
           </tr>
         </thead>
         <tbody>
@@ -80,7 +83,70 @@
                 }
               </td>
               <td class="py-3 px-4 text-gray-500">{{ ml.type | mailingListType }}</td>
+              @if (syncEnabled()) {
+                @let disabledReason = ml | mailingListDirectionDisabledReason: selectedMailingListUids() : activeAutoSyncUid() : mailingLists;
+                <td class="py-3 px-4" data-testid="settings-ml-picker-direction-cell" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
+                  <lfx-select
+                    [form]="mlDirectionForm"
+                    [control]="ml.uid"
+                    [options]="directionOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    size="small"
+                    styleClass="w-full !text-[12px]"
+                    [tooltip]="disabledReason"
+                    tooltipPosition="top"
+                    [ariaLabel]="'Sync direction for ' + ml.group_name"
+                    [dataTest]="'settings-ml-picker-direction-' + ml.uid"></lfx-select>
+                </td>
+              }
             </tr>
+            <!-- Criterion 3 (#4026): committee-filter controls, shown only for a selected list whose
+                 direction is Committee → Mailing List — a plain, unfiltered sync otherwise. -->
+            @if (syncEnabled() && selectedMailingListUids().has(ml.uid) && syncDirections()[ml.uid] === autoCToMlMode) {
+              <tr
+                class="border-t border-gray-100 bg-gray-50/60"
+                (click)="$event.stopPropagation()"
+                (keydown)="$event.stopPropagation()"
+                [attr.data-testid]="'settings-ml-picker-filters-row-' + ml.uid">
+                <td></td>
+                <td colspan="5" class="py-2.5 px-4">
+                  <div class="flex flex-col gap-2 sm:flex-row sm:gap-4">
+                    <div class="flex-1">
+                      <label class="block text-[11px] font-medium text-gray-500 mb-1">Voting statuses (optional)</label>
+                      <lfx-multi-select
+                        [form]="mlCommitteeFilterForm"
+                        [control]="ml.uid"
+                        [options]="committeeFilterOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        size="small"
+                        display="chip"
+                        placeholder="All voting statuses"
+                        styleClass="w-full !text-[12px]"
+                        [ariaLabel]="'Committee voting-status filter for ' + ml.group_name"
+                        [attr.data-testid]="'settings-ml-picker-committee-filter-' + ml.uid"></lfx-multi-select>
+                    </div>
+                    <div class="flex-1">
+                      <label class="block text-[11px] font-medium text-gray-500 mb-1">{{ committeeLabel.singular }} roles (optional)</label>
+                      <lfx-multi-select
+                        [form]="mlCommitteeRoleFilterForm"
+                        [control]="ml.uid"
+                        [options]="committeeRoleFilterOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        size="small"
+                        display="chip"
+                        placeholder="All roles"
+                        styleClass="w-full !text-[12px]"
+                        [ariaLabel]="'Committee role filter for ' + ml.group_name"
+                        [attr.data-testid]="'settings-ml-picker-role-filter-' + ml.uid"></lfx-multi-select>
+                    </div>
+                  </div>
+                  <p class="text-[11px] text-gray-400 mt-1.5">Leave blank to sync every {{ committeeLabel.singular.toLowerCase() }} member.</p>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>
@@ -89,6 +155,13 @@
       </div>
     }
   </div>
+
+  @if (syncEnabled() && activeAutoSyncUid()) {
+    <p class="text-[11.5px] text-gray-400 -mt-2">
+      Only one mailing list per {{ committeeLabel.singular.toLowerCase() }} can have automatic sync configured at a time — set it back to Manual before choosing
+      a direction for another list.
+    </p>
+  }
 </div>
 
 <div class="flex justify-end gap-2 mt-4">

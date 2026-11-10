@@ -85,14 +85,39 @@ priority-ordered recommendations, caveats and typed sources. The shared
 scores, overall and verdict agree, with sources covering the audited pages.
 The server projects it through the existing optional `aeoGeoReport` field;
 no browser input becomes a report sidecar. The guard mirrors the frozen min-length/HTTP-regex gates; link safety is separately enforced by the renderer. The Document view uses
-`AeoGeoReportComponent` for both web and print. A 1.0 report without that field
+`AeoGeoReportComponent` for both web and print. A finding's or recommendation's
+detail renders through the shared `MarkdownRendererComponent` in restricted mode,
+so the agent's inline code spans render as code (not as literal backticks) on both
+surfaces, in the report's own type; scorecard summaries stay plain text, and
+each caveat renders as the reader sentences of `aeoGeoReaderCaveat` (shared
+utils): a failed third-party search and an LFX record the agent could not read
+map to fixed wording, and the known plumbing shapes (a snake_case field name, a
+slug, a uid, a credits or quota phrase, a provider subject quoting a failure)
+are left out of the sentence that carries them; a quoted result title and any
+sentence about the audited site pass through unchanged — the stored report is
+unchanged, and, on screen and in print alike (one shared component), a report
+with no caveats shows no Caveats section and two caveats that map to the same
+sentence print it once (`aeoGeoReaderCaveats`). The print
+of a typed report opens with the report's title and facts, then the score card,
+then the report without a second headline, and its headings, scorecard rows,
+findings, recommendations and list items carry CSS Fragmentation `break-after:
+avoid` / `break-inside: avoid` so no heading is orphaned and no block splits
+across pages; a Sources list of up to `AEO_GEO_SOURCES_KEEP_TOGETHER_MAX` items
+is one such block with its heading, a longer one flows (no page numbers: the zero-margin page setup has no
+margin area for a counter). The shared `MktgPrintSheetComponent` takes an optional
+`head` template, rendered as a row of its table head group under the page room,
+which the report uses for the shared `MktgPrintRunningHeadComponent` (project,
+"AEO/GEO report", date; no version) in the project's kit brand or the LF look —
+Chromium repeats it on every page, WebKit prints it once. A 1.0 report without that field
 uses the original Markdown renderer without a special legacy label; a malformed
-typed report is not silently treated as legacy. Download PDF renders only while the
-`mktg-os-pdf-download-enabled` flag is on (#5302, default off; the report row keeps
-Audit again alone otherwise) and uses the shared
+typed report is not silently treated as legacy. Download PDF uses the shared
 `MktgPrintService` browser dialog (Save as PDF) and the asset pages' print-only
 CSS. Only the validated report prints, never
-the navigation, and a scope change or destruction cancels a pending print.
+the navigation, and a scope change or destruction cancels a pending print. A
+press before the project's Brand Kit read settles (a kit, or the LF look after
+a failed read) is kept as one press and prints after the render that follows;
+the button stays enabled, and a document change or destruction drops the
+waiting press.
 No Markdown file is downloaded. Refusal and permanent polling failures clear recovery and offer Run again without Check again. A timeout keeps the capability until its TTL: “The audit is taking longer than expected.” offers Check again, which resumes result polling so a late report can be stored. Explicit Run again clears the old capability before re-entry or a fresh generation. A transient poll fallback is marked, never treated as proof that answers landed. It offers Run again, never comments, revision
 or restore controls for a report. Its single immutable revision row and About share the right column at laptop width and stack below on narrow screens.
 Slides export is a separate capability,

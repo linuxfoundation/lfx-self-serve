@@ -9,15 +9,24 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   Committee,
+  CommitteeAssociatedMailingListRow,
   CommitteeUpdateData,
   CreateMailingListRequest,
   GroupsIOMailingList,
   JoinMode,
+  MailingListAssociationUpdateResult,
   MailingListPickerDialogResult,
+  MailingListSyncPreviewDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
-import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
-import { MAILING_LIST_ACCESS_DENIED_MESSAGE, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import { CommitteeMemberVisibility, CommitteeMemberVotingStatus, MailingListSyncMode } from '@lfx-one/shared/enums';
+import {
+  MAILING_LIST_ACCESS_DENIED_MESSAGE,
+  MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
+  WG_WEEKLY_BRIEF_SLACK_FLAG,
+} from '@lfx-one/shared/constants';
+import { getMailingListCommitteeSync } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -25,9 +34,10 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, defer, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
+import { MailingListSyncPreviewDialogComponent } from '../mailing-list-sync-preview-dialog/mailing-list-sync-preview-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
@@ -119,6 +129,11 @@ export class CommitteeSettingsTabComponent {
   // Associated mailing lists (queried directly by committee_uid tag)
   public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
 
+  // Precomputed per-row state for the Settings tab's associated-mailing-list cards — avoids
+  // nested ternaries and repeated ml.writer/ml.sync_mode branching in the template
+  // (docs/reviews/frontend-checklist.md §4/§12, #4911 review).
+  public associatedMailingListRows: Signal<CommitteeAssociatedMailingListRow[]> = this.initAssociatedMailingListRows();
+
   // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
   // Only block once lists have loaded and none are writable — an empty list is the picker's own
   // "no mailing lists" state, which still offers Create New List.
@@ -138,6 +153,11 @@ export class CommitteeSettingsTabComponent {
   // actually succeed; this flag alone controls whether the card renders at all, so it stays off
   // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
+
+  // Dark-launch gate for the "Sync Now" preview/apply entry point on each associated mailing list
+  // card — same flag as the Mailing List Settings sync toggle (#4024), so both committee/mailing-list
+  // sync surfaces roll out together. Default false: unflagged, "Sync Now" stays hidden even for editors.
+  public syncPreviewEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
 
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
   // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
@@ -179,7 +199,7 @@ export class CommitteeSettingsTabComponent {
         const committeeChanged = this.lastCommitteeUid !== undefined && this.lastCommitteeUid !== c.uid;
         this.lastCommitteeUid = c.uid;
         const preserveWebhookEdit = !committeeChanged && this.form.controls.chat_webhook_url.dirty;
-        this.form.patchValue({
+        const incomingValues = {
           name: c.name,
           category: c.category,
           parent_uid: c.parent_uid ?? null,
@@ -194,7 +214,16 @@ export class CommitteeSettingsTabComponent {
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
-        });
+        };
+        // On a same-committee refresh (e.g. after a reverse mailing-list sync via openSyncPreviewDialog),
+        // drop any field the admin has a dirty, unsaved edit on from the patch instead of clobbering it —
+        // chat_webhook_url already got this treatment above; this extends it to every other control
+        // (copilot, #4911 review). A committee-changed navigation still fully repatches: an unsaved edit
+        // for committee A must never survive onto committee B's form.
+        const patchValues = committeeChanged
+          ? incomingValues
+          : (Object.fromEntries(Object.entries(incomingValues).filter(([key]) => !this.form.get(key)?.dirty)) as typeof incomingValues);
+        this.form.patchValue(patchValues);
         if (!preserveWebhookEdit) {
           this.editingSlackWebhookUrl.set(false);
           this.slackWebhookRemovalStaged.set(false);
@@ -252,6 +281,39 @@ export class CommitteeSettingsTabComponent {
         },
         error: () => this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Unable to verify your access. Please try again.' }),
       });
+  }
+
+  public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
+    // closable: true from the start — lockDynamicDialogWhile (inside the dialog) flips
+    // config.closable to false while the diff is loading, while applying, while the apply result
+    // (success or error) is on screen, so the header X and Escape are blocked during those
+    // windows. PrimeNG's Dialog only reads closeOnEscape/closable once, at open, to bind its
+    // Escape listener — opening with closable: false here would mean Escape can never be rebound
+    // later even once lockDynamicDialogWhile flips it back to true (#4911 review).
+    const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+      header: `Sync Now — ${ml.group_name}`,
+      width: '800px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid: this.committee().uid },
+    });
+
+    if (!ref) return;
+
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MailingListSyncPreviewDialogResult | null) => {
+      this.refreshMl$.next();
+      // Only a reverse sync (mailing list → committee) can change committee membership —
+      // committeeUpdated triggers the parent's onSettingsSaved(), which refetches the committee and
+      // repatches the Settings form. The same-committee dirty filter (constructor) now keeps any
+      // in-flight unsaved edit intact across that repatch, but a reverse sync is still the only
+      // reason to pay for the cache-bypassing refetch at all — a forward sync, a Cancel, or a
+      // load/apply error didn't touch committee membership, so there's nothing new to fetch
+      // (#4911 review).
+      if (result?.committeeChanged) {
+        this.committeeUpdated.emit();
+      }
+    });
   }
 
   public removeMailingList(ml: GroupsIOMailingList): void {
@@ -396,6 +458,21 @@ export class CommitteeSettingsTabComponent {
             this.editingSlackWebhookUrl.set(false);
             this.slackWebhookRemovalStaged.set(false);
           }
+          // Mark every other successfully-saved control pristine, only if its current value still
+          // equals what was actually submitted. Without this, the constructor's same-committee
+          // dirty filter (above) treats a saved control as "still has an unsaved edit" forever —
+          // the server-normalized value never lands, and a later unrelated save resends the stale
+          // value, reverting any change another writer made in between (cursor, greptile, copilot,
+          // dealako [blocking], #4911 review). Checking against `values` (captured at submit time)
+          // rather than unconditionally resetting dirty keeps a genuinely new edit — typed while
+          // this request was still in flight — marked dirty, since that one was never submitted.
+          Object.keys(values).forEach((key) => {
+            if (key === 'chat_webhook_url') return;
+            const control = this.form.get(key);
+            if (control?.dirty && control.value === (values as Record<string, unknown>)[key]) {
+              control.markAsPristine();
+            }
+          });
           this.committeeUpdated.emit();
         },
         error: (err: any) => {
@@ -455,32 +532,98 @@ export class CommitteeSettingsTabComponent {
 
     ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
       if (!result) return;
-      this.saveMailingListAssociation(result.selectedUids, associatedUids);
+      this.saveMailingListAssociation(result.selectedUids, associatedUids, result.syncModes, result.committeeFilters, result.committeeRoleFilters);
     });
   }
 
-  private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>): void {
+  private saveMailingListAssociation(
+    currentSelection: Set<string>,
+    originalSelectedUids: Set<string>,
+    syncModes: Map<string, MailingListSyncMode>,
+    committeeFilters = new Map<string, CommitteeMemberVotingStatus[]>(),
+    committeeRoleFilters = new Map<string, string[]>()
+  ): void {
     const committee = this.committee();
     if (!committee?.uid) return;
 
     const added = [...currentSelection].filter((uid) => !originalSelectedUids.has(uid));
     const removed = [...originalSelectedUids].filter((uid) => !currentSelection.has(uid));
+    // Lists that stay linked across this save but may have had only their sync direction, or
+    // (#4026 criterion 3) committee/role filters, changed in the picker dialog — `added`/`removed`
+    // above only cover link/unlink, so a config-only change here needs its own update call.
+    const configChanged = [...currentSelection]
+      .filter((uid) => originalSelectedUids.has(uid))
+      .filter((uid) => {
+        const desiredSync = syncModes.get(uid);
+        const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
+        // The read model stores sync_mode/filters per-entry inside ml.committees[], not as
+        // top-level fields on the mailing list — getMailingListCommitteeSync resolves the entry
+        // for THIS committee instead of reading the (always-empty-on-reads) top-level fields.
+        const persisted = getMailingListCommitteeSync(ml, committee.uid);
+        if (desiredSync !== undefined && desiredSync !== (persisted.syncMode ?? MailingListSyncMode.MANUAL)) return true;
+        const desiredFilters = committeeFilters.get(uid);
+        if (desiredFilters !== undefined && !this.arraysEqualAsSets(desiredFilters, persisted.committeeFilters)) return true;
+        const desiredRoleFilters = committeeRoleFilters.get(uid);
+        if (desiredRoleFilters !== undefined && !this.arraysEqualAsSets(desiredRoleFilters, persisted.committeeRoleFilters)) return true;
+        return false;
+      });
 
-    if (added.length === 0 && removed.length === 0) {
+    if (added.length === 0 && removed.length === 0 && configChanged.length === 0) {
       return;
     }
 
-    const updates$: Observable<{ uid: string; success: boolean; status?: number }>[] = [];
+    // The backend only allows one active auto-sync list per committee, so at most one list in this
+    // batch can be releasing that slot (moving off an auto mode it previously held). With per-list
+    // direction editing (#4026), a single save can both release that slot and activate a different
+    // list into it in the same batch — firing all of those PUTs through one flat forkJoin races
+    // them, so an activation can land before its paired release, or succeed even though the release
+    // failed. Bucket by outcome and sequence releases before activations instead.
+    //
+    // Only the slot-releasing update gates activation: an unrelated release in the same batch (e.g.
+    // a new list linked as Manual, or an unlink that was never auto-synced) has nothing an
+    // activation depends on, so its failure must not block activations that don't need it.
+    const releaseUpdates: { uid: string; result$: Observable<MailingListAssociationUpdateResult>; releasesAutoSyncSlot: boolean }[] = [];
+    const activateUpdates: { uid: string; result$: Observable<MailingListAssociationUpdateResult> }[] = [];
 
-    // Associate: set committee_uid on newly selected MLs
+    // currentlyOnThisCommittee distinguishes a list already linked to committee.uid (whose AUTO
+    // sync_mode, if any, occupies *this* committee's slot) from one only found via
+    // projectMailingLists() (a project-wide lookup) that may be AUTO-synced to a *different*
+    // committee — re-associating that list to this committee doesn't free a slot on this
+    // committee, so it must never gate this save's activations.
+    const queueUpdate = (
+      uid: string,
+      payload: Partial<CreateMailingListRequest>,
+      currentSyncMode: MailingListSyncMode | undefined,
+      currentlyOnThisCommittee: boolean
+    ): void => {
+      // Deferred so the service call — and thus any mock/spy recording it — fires only when this
+      // observable is actually subscribed (forkJoin for releases immediately, but for activations
+      // only inside the switchMap below, once releases have resolved), not when it's merely built.
+      const result$ = defer(() => this.mailingListService.updateMailingList(uid, payload)).pipe(
+        map(() => ({ uid, success: true })),
+        catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
+      );
+      if (payload.sync_mode && payload.sync_mode !== MailingListSyncMode.MANUAL) {
+        activateUpdates.push({ uid, result$ });
+      } else {
+        const releasesAutoSyncSlot = currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;
+        releaseUpdates.push({ uid, result$, releasesAutoSyncSlot });
+      }
+    };
+
+    // Associate: set committee_uid on newly selected MLs, applying any direction chosen for it
+    // in the same dialog session (#4026) — buildMlUpdatePayload falls back to MANUAL when no
+    // explicit direction was chosen (e.g. the sync settings feature flag is off). A newly added
+    // list is by definition not currently on this committee, so it can never be releasing this
+    // committee's slot.
     for (const uid of added) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid)).pipe(
-            map(() => ({ uid, success: true })),
-            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
-          )
+        queueUpdate(
+          uid,
+          this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid), committeeFilters.get(uid), committeeRoleFilters.get(uid)),
+          getMailingListCommitteeSync(ml, committee.uid).syncMode,
+          false
         );
       }
     }
@@ -489,22 +632,54 @@ export class CommitteeSettingsTabComponent {
     for (const uid of removed) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        updates$.push(
-          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null)).pipe(
-            map(() => ({ uid, success: true })),
-            catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
-          )
+        queueUpdate(uid, this.buildMlUpdatePayload(ml, null), getMailingListCommitteeSync(ml, committee.uid).syncMode, true);
+      }
+    }
+
+    // Config-only change: the list stays linked to this same committee, only its sync_mode and/or
+    // committee/role filters (#4026 criterion 3) move.
+    for (const uid of configChanged) {
+      const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
+      if (ml) {
+        queueUpdate(
+          uid,
+          this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid), committeeFilters.get(uid), committeeRoleFilters.get(uid)),
+          getMailingListCommitteeSync(ml, committee.uid).syncMode,
+          true
         );
       }
     }
 
-    if (updates$.length === 0) {
+    if (releaseUpdates.length === 0 && activateUpdates.length === 0) {
       return;
     }
 
+    const runReleases$ = releaseUpdates.length > 0 ? forkJoin(releaseUpdates.map((u) => u.result$)) : of<MailingListAssociationUpdateResult[]>([]);
+
     this.savingMl.set(true);
-    forkJoin(updates$)
-      .pipe(finalize(() => this.savingMl.set(false)))
+    runReleases$
+      .pipe(
+        switchMap((releaseResults) => {
+          if (activateUpdates.length === 0) {
+            return of(releaseResults);
+          }
+          const failedSlotRelease = releaseResults.find((r, i) => releaseUpdates[i].releasesAutoSyncSlot && !r.success);
+          if (failedSlotRelease) {
+            // Skip the activations outright — activating a new auto-sync slot is only safe once we
+            // know the slot it depends on was actually released. Carry the triggering failure's
+            // status onto each skipped placeholder so a 403 slot-release still surfaces as
+            // permission-denied rather than the generic error below.
+            const skipped: MailingListAssociationUpdateResult[] = activateUpdates.map((u) => ({
+              uid: u.uid,
+              success: false,
+              status: failedSlotRelease.status,
+            }));
+            return of([...releaseResults, ...skipped]);
+          }
+          return forkJoin(activateUpdates.map((u) => u.result$)).pipe(map((activateResults) => [...releaseResults, ...activateResults]));
+        }),
+        finalize(() => this.savingMl.set(false))
+      )
       .subscribe({
         next: (results) => {
           const failed = results.filter((r) => !r.success).length;
@@ -538,7 +713,59 @@ export class CommitteeSettingsTabComponent {
     return fallback;
   }
 
-  private buildMlUpdatePayload(ml: GroupsIOMailingList, committeeUid: string | null): Partial<CreateMailingListRequest> {
+  /** Order-insensitive array equality, used to detect a no-op committee/role filter change (#4026 criterion 3). */
+  private arraysEqualAsSets(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    const setB = new Set(b);
+    return a.every((value) => setB.has(value));
+  }
+
+  private buildMlUpdatePayload(
+    ml: GroupsIOMailingList,
+    committeeUid: string | null,
+    explicitSyncMode?: MailingListSyncMode,
+    explicitCommitteeFilters?: CommitteeMemberVotingStatus[],
+    explicitCommitteeRoleFilters?: string[]
+  ): Partial<CreateMailingListRequest> {
+    // Preserve the existing sync direction (#4024) only when the committee is unchanged —
+    // detaching/reattaching the SAME committee is a full-resource PUT, so omitting sync_mode would
+    // silently reset it to manual. Re-linking to a DIFFERENT committee must reset to manual instead,
+    // or auto-sync would silently start against a committee nobody configured it for (#4880 review).
+    //
+    // `explicitSyncMode` lets the picker dialog's per-list direction control (#4026) win over both
+    // of those defaults — it's only populated (non-undefined) when the admin actually chose a
+    // direction with the sync settings feature flag on, so an unset value here always falls back
+    // to the #4024/#4880 behavior above untouched.
+    const sameCommittee = !!committeeUid && ml.committees?.[0]?.uid === committeeUid;
+    // The read model stores sync_mode/filters per-entry inside ml.committees[], not as top-level
+    // fields on the mailing list — getMailingListCommitteeSync resolves the entry for THIS
+    // committee instead of reading the (always-empty-on-reads) top-level fields directly.
+    const persisted = sameCommittee ? getMailingListCommitteeSync(ml, committeeUid) : undefined;
+    let syncMode: MailingListSyncMode | undefined;
+    if (explicitSyncMode !== undefined) {
+      syncMode = explicitSyncMode;
+    } else if (sameCommittee) {
+      syncMode = persisted?.syncMode;
+    } else if (committeeUid) {
+      syncMode = MailingListSyncMode.MANUAL;
+    }
+
+    // Committee/role filters (#4026 criterion 3, linuxfoundation/lfx-v2-mailing-list-service#110)
+    // are only meaningful while the resolved direction is auto_c_to_ml — mirrors the sync_mode
+    // preserve/reset rule above: carry the list's own persisted filters forward only when staying
+    // on the SAME committee, reset to unfiltered when linking to a different one, and explicitly
+    // clear both to `[]` (rather than omitting them) whenever the resolved direction isn't
+    // auto_c_to_ml, so stale filters don't linger after switching away from that direction.
+    let committeeFilters: CommitteeMemberVotingStatus[] | undefined;
+    let committeeRoleFilters: string[] | undefined;
+    if (syncMode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST) {
+      committeeFilters = explicitCommitteeFilters ?? persisted?.committeeFilters ?? [];
+      committeeRoleFilters = explicitCommitteeRoleFilters ?? persisted?.committeeRoleFilters ?? [];
+    } else if (committeeUid) {
+      committeeFilters = [];
+      committeeRoleFilters = [];
+    }
+
     return {
       name: ml.group_name,
       public: ml.public,
@@ -551,7 +778,31 @@ export class CommitteeSettingsTabComponent {
       subject_tag: ml.subject_tag,
       writers: ml.writers,
       auditors: ml.auditors,
+      sync_mode: syncMode,
+      committee_filters: committeeFilters,
+      committee_role_filters: committeeRoleFilters,
     };
+  }
+
+  private initAssociatedMailingListRows(): Signal<CommitteeAssociatedMailingListRow[]> {
+    return computed(() =>
+      this.associatedMailingLists().map((ml) => {
+        const removable = ml.writer === true;
+        const syncModeSupported =
+          ml.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST || ml.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE;
+
+        let syncTooltip = `Preview and apply committee sync for ${ml.group_name}`;
+        if (!removable) {
+          syncTooltip = 'You need Manage access to this mailing list to sync it.';
+        } else if (!syncModeSupported) {
+          syncTooltip = `Set a sync direction for ${ml.group_name} in Mailing List Settings before syncing.`;
+        }
+
+        const removeTooltip = removable ? `Remove mailing list ${ml.group_name}` : 'You need Manage access to this mailing list to unlink it.';
+
+        return { ...ml, removable, syncModeSupported, syncTooltip, removeTooltip };
+      })
+    );
   }
 
   private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
@@ -574,8 +825,11 @@ export class CommitteeSettingsTabComponent {
   }
 
   private initProjectMailingLists(): Signal<GroupsIOMailingList[]> {
+    const committee$ = toObservable(this.committee);
+    const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
+
     return toSignal(
-      toObservable(this.committee).pipe(
+      merge(committee$, refresh$).pipe(
         filter((c) => !!c?.project_uid),
         switchMap((c) => {
           return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(catchError(() => of([] as GroupsIOMailingList[])));

@@ -21,12 +21,11 @@ import {
   MAILING_LIST_MAX_VISIBLE_GROUPS,
 } from '@lfx-one/shared';
 import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListMemberModStatus, MailingListMemberType } from '@lfx-one/shared/enums';
-import { FilterOption, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
-import { getMailingListCommands, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { FilterOption, GroupLinkState, GroupsIOMailingList, MailingListTableRowVm, MyMailingList } from '@lfx-one/shared/interfaces';
+import { getMailingListCommands, getMailingListGroupLinks, getMailingListGroupsIoUrl, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
-import { SliceLinkedGroupsPipe } from '@pipes/slice-linked-groups.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
@@ -50,7 +49,6 @@ import { TooltipModule } from 'primeng/tooltip';
     GroupEmailPipe,
     MailingListTypeLabelPipe,
     RemainingGroupsTooltipPipe,
-    SliceLinkedGroupsPipe,
     StripHtmlPipe,
     EmptyStateComponent,
     ConfirmDialogModule,
@@ -84,6 +82,8 @@ export class MailingListTableComponent {
 
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
+  // Group links return to this list; this layout is never the Me lens, so no lens is restored.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: MAILING_LIST_LABEL.plural, backPath: '/mailing-lists', fromMeLens: false };
   protected readonly mailingListLabelPlural = MAILING_LIST_LABEL.plural;
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly audienceAccess = MailingListAudienceAccess;
@@ -206,6 +206,7 @@ export class MailingListTableComponent {
         return {
           ...mailingList,
           viewCommands: getMailingListCommands(mailingList),
+          groupLinks: getMailingListGroupLinks(mailingList, this.maxVisibleGroups),
           linkQueryParams: getMailingListLinkQueryParams(mailingList),
           groupsIoUrl: getMailingListGroupsIoUrl(mailingList),
           isMember: joinedUids.has(mailingList.uid),

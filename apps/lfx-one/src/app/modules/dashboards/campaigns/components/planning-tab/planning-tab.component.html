@@ -314,7 +314,7 @@
       <!--
         Budget & Assets Card — paid only, and not merely by association. Both halves state a
         paid-ad fact that is wrong for email: the helper text under the budget describes DAILY AD
-        PACING ("Budget/day = Total / (End Date − Today)"), and HubSpot staging has no daily
+        PACING (the Google daily budget divided from the total), and HubSpot staging has no daily
         spend; the asset sizes are ad creative dimensions.
 
         The budget also reaches the copy generator, which appends "Total Campaign Budget: $N" to
@@ -338,7 +338,10 @@
                   class="w-full rounded-r-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   data-testid="planning-budget-input" />
               </div>
-              <p class="text-xs text-gray-500">Budget/day = Total / (End Date − Today)</p>
+              <!-- The Implement tab's seed: googleSeededFlight(total, today, defaultCampaignEndDate(...)). -->
+              <p class="text-xs text-gray-500" data-testid="planning-budget-pacing-hint">
+                Google daily budget = Total ÷ days from today through the end date (the event's first day, else 30 days out), and never under 1 a day
+              </p>
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-gray-700">Image Assets (Google Drive) <span class="font-normal text-gray-400">(optional)</span></label>
@@ -541,18 +544,33 @@
             </span>
           }
         </div>
+        <!-- Where the paid traffic lands (#5490). Every ad platform refuses a create whose saved brief
+             has none, so an empty one is said here, with the editor that fixes it, rather than first at
+             Create on the Implement tab. -->
+        <div class="mt-1 pl-7 text-xs" data-testid="planning-registration-url">
+          @if (details.registrationUrl) {
+            <span class="text-gray-600"
+              >Registration URL:
+              <span class="break-all font-mono text-gray-800" data-testid="planning-registration-url-value">{{ details.registrationUrl }}</span></span
+            >
+          } @else {
+            <span class="text-amber-800" data-testid="planning-registration-url-missing">
+              This brief has no registration URL, and campaigns can't be created without one. Select Edit Brief and enter it under Registration URL.
+            </span>
+          }
+        </div>
       }
       <!-- The event is fixed while an existing brief is edited (#4983), so this says so and shows the
-           URL read-only rather than leaving the user to find out at the URL field. -->
+           event read-only rather than leaving the user to find out at the URL field. Its Registration
+           URL is not part of that: the editor below changes it (#5490). -->
       @if (editingExistingBrief() && eventDetails(); as details) {
         <div class="mt-2 flex flex-col gap-1 pl-7 text-xs text-gray-600" data-testid="planning-edit-existing-note">
           <span
-            >Event URL:
-            <span class="break-all font-mono text-gray-800" data-testid="planning-edit-existing-url">{{ details.registrationUrl || details.slug }}</span></span
+            >Event: <span class="break-all font-mono text-gray-800" data-testid="planning-edit-existing-url">{{ details.slug }}</span></span
           >
           <span>
-            The event and its URL can't be changed while editing this brief. To plan a different event, select New Brief. When you proceed, your changes replace
-            this event's saved brief, which is then approved again.
+            The event can't be changed while editing this brief; its Registration URL can, under Edit Brief. To plan a different event, select New Brief. When
+            you proceed, your changes replace this event's saved brief, which is then approved again.
           </span>
         </div>
       }
@@ -680,6 +698,25 @@
 
     <!-- Google Search Ad Copy -->
     @if (isEditing()) {
+      <!-- EDIT MODE: Registration URL (#5490). Saved with the brief on Save & Proceed; campaign-service
+           reads every create's destination from the saved brief. Shown when the brief has event details,
+           which is where the URL is stored. -->
+      @if (eventDetails()) {
+        <div class="flex flex-col gap-1 rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-registration-url-edit">
+          <label for="planning-registration-url-input" class="text-sm font-semibold text-gray-900">Registration URL</label>
+          <p class="text-xs text-gray-500">Where the ads send people. Enter a full https:// address.</p>
+          <lfx-input-text
+            [form]="paidEditForm"
+            control="registrationUrl"
+            inputId="planning-registration-url-input"
+            type="url"
+            placeholder="https://events.linuxfoundation.org/..."
+            dataTest="planning-registration-url-input" />
+          @if (paidEditError(); as editError) {
+            <p #paidEditErrorMessage class="text-xs text-red-700" role="alert" data-testid="planning-registration-url-error">{{ editError }}</p>
+          }
+        </div>
+      }
       <!-- EDIT MODE: Search Copy -->
       @if (editSearchHeadlines().length > 0 || editSearchDescriptions().length > 0) {
         <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-search-copy-edit">
@@ -781,7 +818,7 @@
           <div class="flex flex-col gap-4">
             <div>
               <div class="mb-2 flex items-center justify-between">
-                <h4 class="text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+                <h4 class="text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
                 <button type="button" (click)="addEditItem(editDisplayHeadlines)" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
                   <i class="fa-light fa-plus" aria-hidden="true"></i> Add
                 </button>
@@ -795,14 +832,14 @@
                         [value]="h"
                         (input)="editDisplayHeadlines.set(updateEditItem(editDisplayHeadlines(), $index, $any($event.target).value))"
                         [class]="
-                          h.length > 40
+                          h.length > 30
                             ? 'w-full rounded-md border border-red-300 bg-red-50 px-3 py-1.5 pr-16 text-xs text-red-800 focus:outline-none focus:ring-1 focus:ring-red-500'
                             : 'w-full rounded-md border border-gray-300 px-3 py-1.5 pr-16 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
                         " />
                       <span
                         class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs"
-                        [class]="h.length > 40 ? 'text-red-500' : 'text-gray-400'">
-                        {{ h.length }}/40
+                        [class]="h.length > 30 ? 'text-red-500' : 'text-gray-400'">
+                        {{ h.length }}/30
                       </span>
                     </div>
                     <button
@@ -1030,14 +1067,14 @@
 
           <div class="flex flex-col gap-4">
             <div>
-              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
               <div class="flex flex-wrap gap-1.5">
                 @for (h of asStringArray(display['headlines']); track $index) {
                   <span
                     class="rounded-md border px-2.5 py-1 text-xs"
-                    [class]="h.length > 40 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
+                    [class]="h.length > 30 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
                     {{ h }}
-                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/40</span>
+                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/30</span>
                   </span>
                 }
               </div>

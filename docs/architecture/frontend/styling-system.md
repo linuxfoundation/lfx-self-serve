@@ -90,6 +90,18 @@ export default {
 };
 ```
 
+### Print inks
+
+Print documents are the one place an off-scale colour is written: the Marketing OS
+portrait print grammar's four neutral inks (`MKTG_PORTRAIT_INKS` in
+`packages/shared/src/constants/mktg-portrait-print.constants.ts`: ink, muted, hairline,
+mist) are the print design's own values, which `lfxColors`' slate-tinted gray scale does
+not hold and which read differently on paper beside a kit's colours. They are written in
+that one constant, with the design file named beside them, set by the page frame as
+`--pp-*` custom properties, and read everywhere else only through those properties; the
+grammar's white and semantic red come from `lfxColors`. No other hex is written in a
+print stylesheet or component.
+
 ## 🔤 Font System
 
 ### Font Configuration

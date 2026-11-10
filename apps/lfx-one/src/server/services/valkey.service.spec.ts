@@ -471,7 +471,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       'people-all:v8:roster',
       'people-contributors:v5:all:all',
       'people-former:v4:all:all',
-      'people-event-attendees:v5:730d:verified:all',
+      'people-event-attendees:v6:730d:verified:all',
       'people-trainees:v10:all',
     ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
@@ -486,6 +486,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
       'people-former:v3:all:all:all',
       'people-event-attendees:v3:730d:all:all',
       'people-event-attendees:v4:730d:all:all',
+      'people-event-attendees:v5:730d:verified:all',
       'people-unclassified:v2:all:all',
       'people-contributors:v3:all:all',
       'people-contributors:v4:all:all',

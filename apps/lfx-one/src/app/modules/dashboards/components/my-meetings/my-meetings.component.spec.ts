@@ -151,4 +151,119 @@ describe('MyMeetingsComponent', () => {
     expect(testId('dashboard-next-meeting-error')?.textContent).toContain("Couldn't load upcoming meetings");
     expect(testId('dashboard-next-meeting-error')?.textContent).not.toContain('your');
   });
+
+  describe('upcoming meetings pager', () => {
+    const meetingIn = (id: string, hours: number): Meeting =>
+      ({ id, title: `Synthetic ${id}`, start_time: new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(), duration: 30 }) as Meeting;
+    const position = (): string => (testId('dashboard-meeting-card-pager-position')?.textContent ?? '').trim();
+    const click = async (kind: 'previous' | 'next'): Promise<void> => {
+      testId(`dashboard-meeting-card-pager-${kind}`)?.click();
+      await fixture.whenStable();
+    };
+    const open = async (meetings: Meeting[]): Promise<void> => {
+      getUserMeetings.mockReturnValue(of(meetings));
+      fixture = TestBed.createComponent(MyMeetingsComponent);
+      await fixture.whenStable();
+    };
+    const text = (): string => fixture.nativeElement.textContent ?? '';
+
+    it('opens on the next meeting and steps forward and back in place', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3), meetingIn('m3', 4)]);
+      expect(position()).toBe('1 of 3');
+      expect(text()).toContain('Synthetic m1');
+      expect(text()).toContain('NEXT MEETING');
+
+      await click('next');
+      expect(position()).toBe('2 of 3');
+      expect(text()).toContain('Synthetic m2');
+      expect(text()).not.toContain('Synthetic m1');
+
+      await click('previous');
+      expect(position()).toBe('1 of 3');
+      expect(text()).toContain('Synthetic m1');
+    });
+
+    it('labels a later meeting "UPCOMING MEETING", not "NEXT MEETING"', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3)]);
+
+      await click('next');
+
+      expect(text()).toContain('UPCOMING MEETING');
+      expect(text()).not.toContain('NEXT MEETING');
+    });
+
+    it('stops at both ends instead of wrapping', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3)]);
+      expect(testId('dashboard-meeting-card-pager-previous')?.getAttribute('aria-disabled')).toBe('true');
+
+      await click('next');
+
+      expect(testId('dashboard-meeting-card-pager-next')?.getAttribute('aria-disabled')).toBe('true');
+      await click('next');
+      expect(position()).toBe('2 of 2');
+    });
+
+    it('offers no pager for a single upcoming meeting', async () => {
+      await open([meetingIn('m1', 2)]);
+
+      expect(testId('dashboard-meeting-card-pager')).toBeNull();
+    });
+
+    it('pages through at most five meetings', async () => {
+      await open(Array.from({ length: 7 }, (_, index) => meetingIn(`m${index + 1}`, index + 2)));
+
+      expect(position()).toBe('1 of 5');
+    });
+
+    it('starts again from the next meeting after the project changes', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3), meetingIn('m3', 4)]);
+      await click('next');
+      expect(position()).toBe('2 of 3');
+
+      activeContext.set({ uid: 'project-2' } as ProjectContext);
+      await fixture.whenStable();
+
+      expect(position()).toBe('1 of 3');
+    });
+
+    it('starts again from the next meeting after Retry reloads the list', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3), meetingIn('m3', 4)]);
+      await click('next');
+      expect(position()).toBe('2 of 3');
+
+      fixture.componentInstance['retryUpcoming']();
+      await fixture.whenStable();
+
+      expect(position()).toBe('1 of 3');
+    });
+
+    it('starts again from the next meeting after the lens changes away and back', async () => {
+      await open([meetingIn('m1', 2), meetingIn('m2', 3), meetingIn('m3', 4)]);
+      await click('next');
+      expect(position()).toBe('2 of 3');
+
+      activeLens.set('org');
+      await fixture.whenStable();
+      activeLens.set('me');
+      await fixture.whenStable();
+
+      expect(position()).toBe('1 of 3');
+    });
+  });
+
+  describe('card order', () => {
+    it('puts the next meeting before the last meeting in the DOM, so stacked and side-by-side layouts agree', () => {
+      const next = testId('dashboard-next-meeting-column');
+      const last = testId('dashboard-last-meeting-column');
+
+      expect(next).not.toBeNull();
+      expect(last).not.toBeNull();
+      expect(next!.compareDocumentPosition(last!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('does not reorder either column with order utilities, which would split tab order from what is on screen', () => {
+      expect(testId('dashboard-next-meeting-column')?.className).not.toMatch(/\border-\d/);
+      expect(testId('dashboard-last-meeting-column')?.className).not.toMatch(/\border-\d/);
+    });
+  });
 });

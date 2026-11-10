@@ -10,8 +10,8 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Tabs for switching sections of one page, following the WAI-ARIA tabs pattern: a labelled `tablist`, roving `tabindex`, and
  * Left/Right/Home/End moving focus and selection together. Disabled tabs take focus from those keys without being selected, so their
  * reason tooltip opens, but they stay out of the initial tab stop. Use `[(value)]` to read and set the selection.
- * `variant="default"` is an underline with a 2px accent bar on a rule; `variant="secondary"` is 32px pills. `size="small"` (13px) is the
- * one used on Meetings. A tab can have a count, an icon, and a disabled state with a tooltip that says why. The component renders the
+ * `variant="default"` is an underline with a 2px accent bar on a rule; `variant="secondary"` is 32px pills. `size="small"` is 13px; the
+ * default is 14px. A tab can have a count, an icon, and a disabled state with a tooltip that says why. The component renders the
  * tablist only: render the `role="tabpanel"` elements yourself and point them at `idPrefix`. Projected content, such as a search field, sits at
  * the end of the row, 16px from the tabs and on the same rule; it wraps below the tabs when the row is too narrow, and the rule stays under it.
  */

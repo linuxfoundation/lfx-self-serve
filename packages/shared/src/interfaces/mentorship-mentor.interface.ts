@@ -270,7 +270,7 @@ export interface MentorshipMentorProgramStats {
   applicants: number;
 }
 
-/** A mentor's program status: `completed` once every term is closed, otherwise `open`. */
+/** A mentor's program status: a published program's `MentorshipProgramStatus`, which upstream reads from its terms. */
 export type MentorshipMentorProgramStatus = (typeof MENTORSHIP_MENTOR_PROGRAM_STATUSES)[number];
 
 /** Program row on the mentor My Programs list and the program-detail header. The counts cover all the program's terms. */

@@ -1,12 +1,14 @@
 ---
 title: Company FAQ
-description: Short answers about the Company lens — how to switch companies, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Company lens — what the lens is and what you can do in it, how to switch companies, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Company Profile page shows and who can edit it, where to see the company's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Company Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Company
 tags:
   [
     company,
     faq,
+    org-lens,
+    overview,
     switch-company,
     company-overview,
     dashboard,
@@ -29,9 +31,13 @@ tags:
     leaderboard,
     crowdfunding,
   ]
-last_updated: 2026-11-06
+last_updated: 2026-11-09
 intercom_collection: Company
 ---
+
+## What is the Company lens, and what can I do in it?
+
+The Company lens in LFX Self Serve shows one company at a time: how it takes part in Linux Foundation foundations and projects, its foundation memberships, its projects, its people and their activity, its profile, and its corporate CLAs (Contributor License Agreements). You can open a company there when you hold a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer sees **Dashboard**, **Memberships**, **Projects**, **Crowdfunding Initiatives** (only for an Admin granted directly on that company), **Crowdfunding Donations**, the **Company Engagement** pages (**People**, **Code Contributions**, **Events**, **Training & Certification**, **Meetings** and **Groups**), **EasyCLA** and **Company Profile**. A CLA Manager, or an initial CLA Manager designee, with no other role on that company sees only **EasyCLA**. See [What can I do in the Company lens?](../#what-can-i-do-in-the-company-lens).
 
 ## How do I switch to a different company?
 
@@ -39,7 +45,7 @@ You switch companies from the company switcher at the top of the sidebar in the 
 
 ## What does the Org Overview dashboard show?
 
-The Org Overview, the **Dashboard** of the Company lens, summarizes how the selected company takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the company's active contributors, maintainer roles, event attendees (registered or attended, by company email or as employees) and speakers, and its people's training: people with training activity, certified people and courses taken. Selecting one of the three **Education** cards opens **Training & Certification**. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the company's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. See [What is the Org Overview?](../company-overview/#what-is-the-company-overview).
+The Org Overview, the **Dashboard** of the Company lens, summarizes how the selected company takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the company's active contributors, maintainer roles, event attendees (registered or attended, counted by **Employee match**: a company email address on record or an LF account on the company roster) and speakers, and its people's training: people with training activity, certified people and courses taken. Selecting one of the three **Education** cards opens **Training & Certification**. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the company's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. See [What is the Org Overview?](../company-overview/#what-is-the-company-overview).
 
 ## Where do I see my company's involvement in one foundation?
 
@@ -71,7 +77,7 @@ Yes. The time range you pick on People or Code Contributions carries to the othe
 
 ## What does the Events page show?
 
-The Events page in the Company lens lists the foundation events where the selected company has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **Company email or employee** (a company email address on record, or a current employee on the roster), and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the company. Select an attendee or speaker count to open the people behind it. The page is under **Company Engagement** in the Company lens sidebar. See [Events page](../company-events/#events-page).
+The Events page in the Company lens lists the foundation events where the selected company has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **Employee match** (a company email address on record, or an LF account that matches someone on the company roster), and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the company. Select an attendee or speaker count to open the people behind it. The page is under **Company Engagement** in the Company lens sidebar. See [Events page](../company-events/#events-page).
 
 ## What does the Training & Certification page show?
 
@@ -87,7 +93,7 @@ The Groups page lists the working groups, committees and other groups across Lin
 
 ## What does the Company Profile page show, and who can edit it?
 
-The Company Profile page shows the selected company's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the company in the Company lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the company, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The company name and the addresses cannot be changed on this page. Changes save to the company's record, so everyone who can open the company sees them. See [Who can edit the company profile?](../company-profile/#who-can-edit-the-company-profile).
+The Company Profile page shows the selected company's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the company in the Company lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the company, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The company name and the addresses cannot be changed on this page. Changes save to the company's record, so everyone who can open the company sees them. See [Who can edit the company profile?](../org-profile/#who-can-edit-the-company-profile).
 
 ## Why don't I see Crowdfunding Initiatives in the Company lens?
 

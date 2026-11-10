@@ -15,6 +15,8 @@ export interface MktgKitAsset {
   /** Sentence noun phrase for the Family's next-steps caption. */
   captionName?: string;
   description: string;
+  /** The family book's opener line for the document: what it holds, in a sentence (the design board's words). */
+  bookSummary?: string;
   agentKey?: MktgDocumentAgentKey;
 }
 
@@ -26,8 +28,6 @@ export interface MktgKitFamily {
   leadSummary?: string;
   description: string;
   intro?: string;
-  /** The intro while Download PDF is behind its flag (MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG off); `intro` when absent. */
-  introSlidesOnly?: string;
   assets: MktgKitAsset[];
   /**
    * Agent ids in run order: catalog ids, plus ids declared ahead of their catalog entry.

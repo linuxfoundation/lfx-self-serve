@@ -438,4 +438,44 @@ describe('CreativeSlotGridComponent', () => {
       expect(text('creative-slot-row-rule:google-ads/VIDEO/Video rule')).toContain('Missing');
     });
   });
+  /** #1614 (F9): campaign-service plans Search's optional asset slots, but the Implement tab sends no Search image. */
+  describe('groups the host sends no images for', () => {
+    const ready = { projectSlug: 'tlf', briefId: 'b-1', platforms: ['google-ads'] };
+    const SEARCH_IMAGE = 'google-ads/SEARCH/AD_IMAGE';
+    const withSearch: CreativeAssetPlan = {
+      ...PLAN,
+      assignments: [
+        ...PLAN.assignments,
+        {
+          slotKey: SEARCH_IMAGE,
+          platform: 'google-ads',
+          channel: 'SEARCH',
+          slot: 'AD_IMAGE',
+          label: 'Search ad image',
+          requirement: '1:1 square',
+          assetIds: ['a-1'],
+          minCount: 0,
+          maxCount: 20,
+        },
+      ],
+      gaps: [...PLAN.gaps, { platform: 'google-ads', channel: 'SEARCH', label: 'Search rule', need: 1, reason: 'None stored.' }],
+    };
+
+    it('lists a group the host names no exclusion for', async () => {
+      await build(withSearch);
+      render(ready);
+      expect(text(`creative-slot-row-${SEARCH_IMAGE}`)).toContain('Covered');
+    });
+
+    it('leaves out the rows and gaps of an excluded group, and keeps the rest', async () => {
+      await build(withSearch);
+      render({ ...ready, excludedGroups: ['google-ads/SEARCH'] });
+
+      expect(q(`creative-slot-row-${SEARCH_IMAGE}`)).toBeNull();
+      expect(q('creative-slot-row-rule:google-ads/SEARCH/Search rule')).toBeNull();
+      expect(q('creative-slot-group-google-ads/SEARCH')).toBeNull();
+      expect(text('creative-slot-row-google-ads/PERFORMANCE_MAX/MARKETING_IMAGE')).toContain('Covered');
+      expect(text('creative-slot-grid-open-count')).toContain('2 slots still need an image');
+    });
+  });
 });

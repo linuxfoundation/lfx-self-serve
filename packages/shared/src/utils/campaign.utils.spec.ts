@@ -20,10 +20,14 @@ import {
   campaignSurveySourceTextTooLong,
   deriveSurveySlug,
   surveySourceTitle,
+  campaignEventStartDate,
   campaignFlightDays,
   campaignLabelColumns,
   dailyBudgetFromTotal,
+  defaultCampaignEndDate,
   describeCampaignDispatchFailure,
+  googleAdsCampaignUrl,
+  googleSeededFlight,
   isReversedCampaignFlight,
   keywordActionKey,
   normalizeSponsors,
@@ -569,5 +573,129 @@ describe('campaignLabelColumns', () => {
       created_at: 'yesterday',
     });
     expect(labels).toEqual({ channel: '—', stage: '—', tactic: '—', created: '—' });
+  });
+});
+
+describe('campaignEventStartDate (#1614)', () => {
+  it.each([
+    ['2027-03-15', '2027-03-15'],
+    ['March 15, 2027', '2027-03-15'],
+    ['Mar. 15th, 2027', '2027-03-15'],
+    ['Monday, March 15, 2027', '2027-03-15'],
+    ['March 23-26, 2027', '2027-03-23'],
+    ['March 30 \u2013 April 1, 2027', '2027-03-30'],
+    ['15 March 2027', '2027-03-15'],
+    ['23\u201326 March 2027', '2027-03-23'],
+    ['30 March - 1 April 2027', '2027-03-30'],
+    // Both shapes match here; the earlier one is the start.
+    ['30 March \u2013 April 1, 2027', '2027-03-30'],
+    ['December 30, 2026 - January 2, 2027', '2026-12-30'],
+    // The year written once, for the end of a range that crosses New Year.
+    ['December 30 \u2013 January 2, 2027', '2026-12-30'],
+    ['30 December - 2 January 2027', '2026-12-30'],
+    ['December 28-31, 2026', '2026-12-28'],
+    // The one year written after the START is the start's, not the end's (PR #5387 review).
+    ['December 30, 2026 - January 2', '2026-12-30'],
+    ['30 December 2026 - 2 January', '2026-12-30'],
+    // A word that only starts like a month is not one (PR #5387 review): read as a later, lower month
+    // ahead of the year, each of these would move the start a year back.
+    ['December 3 at the Marriott Marquis, 2028', '2028-12-03'],
+    ['December 2, Rio de Janeiro 2028', '2028-12-02'],
+    ['November 5 at Junction City, 2028', '2028-11-05'],
+    ['March 3 in Decatur, 2028', '2028-03-03'],
+    ['September 10, 2028 at the Marriott Marquis', '2028-09-10'],
+    ['September 1 2027', '2027-09-01'],
+  ])('reads %s as %s', (dates, expected) => {
+    expect(campaignEventStartDate(dates)).toBe(expected);
+  });
+
+  it.each([
+    ['no year', 'March 15'],
+    ['no month', '15 2027'],
+    ['an impossible day', 'February 30, 2027'],
+    ['an impossible ISO date', '2027-02-30'],
+    ['a month and year only', 'March 2027'],
+    ['blank', ''],
+    ['a duration', 'Self-paced, 40 hours'],
+  ])('is null for %s', (_label, dates) => {
+    expect(campaignEventStartDate(dates)).toBeNull();
+  });
+
+  it('is null for a missing value', () => {
+    expect(campaignEventStartDate(undefined)).toBeNull();
+    expect(campaignEventStartDate(null)).toBeNull();
+  });
+});
+
+describe('defaultCampaignEndDate (#1614)', () => {
+  const today = '2026-11-07';
+  const fallback = '2026-12-07';
+
+  it('ends on the event day when it is after today, even past the fallback', () => {
+    expect(defaultCampaignEndDate('March 15, 2027', today, fallback)).toBe('2027-03-15');
+  });
+
+  it('ends on the event day when it is before the fallback', () => {
+    expect(defaultCampaignEndDate('November 20, 2026', today, fallback)).toBe('2026-11-20');
+  });
+
+  it('keeps the fallback for an event today, since every other platform refuses an end that is not after the start', () => {
+    expect(defaultCampaignEndDate('November 7, 2026', today, fallback)).toBe(fallback);
+  });
+
+  it('keeps the fallback for a past event or unreadable dates', () => {
+    expect(defaultCampaignEndDate('March 15, 2026', today, fallback)).toBe(fallback);
+    expect(defaultCampaignEndDate('Self-paced', today, fallback)).toBe(fallback);
+    expect(defaultCampaignEndDate(undefined, today, fallback)).toBe(fallback);
+  });
+
+  it('divides the brief total over the same flight it ends', () => {
+    const end = defaultCampaignEndDate('March 15, 2027', today, fallback);
+    expect(campaignFlightDays(today, end)).toBe(129);
+    expect(dailyBudgetFromTotal(1000, campaignFlightDays(today, end) as number)).toBe(7.75);
+  });
+});
+
+describe('googleAdsCampaignUrl (#1614)', () => {
+  it('links to the campaign in the Google Ads UI', () => {
+    expect(googleAdsCampaignUrl('24447438160')).toBe('https://ads.google.com/aw/campaigns?campaignId=24447438160');
+  });
+
+  it('is empty without an id', () => {
+    expect(googleAdsCampaignUrl('')).toBe('');
+    expect(googleAdsCampaignUrl(undefined)).toBe('');
+  });
+
+  it('percent-encodes the id', () => {
+    expect(googleAdsCampaignUrl('1&x=2')).toBe('https://ads.google.com/aw/campaigns?campaignId=1%26x%3D2');
+  });
+});
+
+describe('googleSeededFlight (#4847, #1614)', () => {
+  const today = '2026-11-07';
+
+  it('divides the total over the flight when that is at least the floor, either way', () => {
+    expect(googleSeededFlight(1000, today, '2026-12-07', true)).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
+    expect(googleSeededFlight(1000, today, '2026-12-07', false)).toEqual({ endDate: '2026-12-07', dailyBudget: 32.25 });
+  });
+
+  it('shortens a Google-only flight to the days the total funds at the floor, never seeding under it', () => {
+    // 100 over the 129 days to 15 March is 0.77 a day; 100 days at 1 a day ends 14 February.
+    expect(googleSeededFlight(100, today, '2027-03-15', true)).toEqual({ endDate: '2027-02-14', dailyBudget: 1 });
+  });
+
+  it('gives a total under two days at the floor the shortest flight the platforms accept, not the whole run-up', () => {
+    // PR #5389 review: 1.5 kept the 129-day flight at 1 a day, about 129 against a plan of 1.5.
+    expect(googleSeededFlight(1.5, today, '2027-03-15', true)).toEqual({ endDate: '2026-11-08', dailyBudget: 1 });
+  });
+
+  it('keeps an end date shared with other platforms and seeds the floor (PR #5389 review)', () => {
+    expect(googleSeededFlight(100, today, '2027-03-15', false)).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
+    expect(googleSeededFlight(1.5, today, '2027-03-15', false)).toEqual({ endDate: '2027-03-15', dailyBudget: 1 });
+  });
+
+  it('seeds no budget without a usable total', () => {
+    expect(googleSeededFlight(null, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
+    expect(googleSeededFlight(0, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
   });
 });

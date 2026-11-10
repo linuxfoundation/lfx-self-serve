@@ -42,7 +42,7 @@ describe('mapMentorshipMentorProgram', () => {
     name: 'GridFlow',
     project_name: ' LF Energy ',
     logo_url: 'https://cdn.example.org/gridflow.png',
-    status: 'open',
+    status: 'in_progress',
     stats: { mentees: 3, applicants: 7, tasks_to_review: 2 },
   };
 
@@ -53,7 +53,7 @@ describe('mapMentorshipMentorProgram', () => {
         slug: 'gridflow',
         name: 'GridFlow',
         projectName: 'LF Energy',
-        status: 'open',
+        status: 'in-progress',
         stats: { mentees: 3, tasksToReview: 2, applicants: 7 },
         logoUrl: 'https://cdn.example.org/gridflow.png',
       },
@@ -61,16 +61,20 @@ describe('mapMentorshipMentorProgram', () => {
     });
   });
 
-  it('keeps a completed status', () => {
-    expect(mapMentorshipMentorProgram({ ...item, status: 'completed' })).toEqual({
-      program: expect.objectContaining({ status: 'completed' }),
+  it.each([
+    ['accepting', 'accepting'],
+    ['upcoming', 'upcoming'],
+    ['completed', 'completed'],
+  ])('reads the upstream status %s as %s', (status, expected) => {
+    expect(mapMentorshipMentorProgram({ ...item, status })).toEqual({
+      program: expect.objectContaining({ status: expected }),
       unknownStatus: false,
     });
   });
 
-  it('shows a status it does not know as open and flags it', () => {
-    expect(mapMentorshipMentorProgram({ ...item, status: 'archived' })).toEqual({
-      program: expect.objectContaining({ status: 'open' }),
+  it.each(['archived', 'open', 'in-progress', 'constructor'])('shows the status "%s" it does not know as in progress and flags it', (status) => {
+    expect(mapMentorshipMentorProgram({ ...item, status })).toEqual({
+      program: expect.objectContaining({ status: 'in-progress' }),
       unknownStatus: true,
     });
   });
@@ -83,7 +87,7 @@ describe('mapMentorshipMentorProgram', () => {
       slug: 'program-1',
       name: 'GridFlow',
       projectName: '',
-      status: 'open',
+      status: 'in-progress',
       stats: { mentees: 3, tasksToReview: 2, applicants: 7 },
     });
   });

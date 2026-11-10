@@ -4,7 +4,6 @@
 import type { FilterOption } from '../interfaces';
 import type { OrgEventsResponse, OrgEventsTabConfig, OrgEventsTabId } from '../interfaces/org-events.interface';
 import { DEFAULT_EVENTS_PAGE_SIZE } from './events.constants';
-import { DEFAULT_ORG_EVENTS_ATTRIBUTION } from './org-events-filters.constants';
 
 /** Org Events page tabs in visible order (`upcoming` is the default). */
 export const ORG_EVENTS_TABS: readonly OrgEventsTabConfig[] = [
@@ -24,7 +23,6 @@ export const EMPTY_ORG_EVENTS_RESPONSE: OrgEventsResponse = {
   total: 0,
   pageSize: DEFAULT_EVENTS_PAGE_SIZE,
   offset: 0,
-  servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
 };
 
 /** Status filter options for the Org Events filter bar. */

@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgEventsAttribution } from './org-events-filters.interface';
-
 /** Role badge — once-a-speaker-always-Speaker on the per-person row (Item 4 R4.1); per-event truth on the expanded row. */
 export type OrgEventAttendeeRole = 'Speaker' | 'Attendee';
 
@@ -80,8 +78,6 @@ export interface OrgEventAttendeesResponse {
   /** Person × event rows, newest event first; the browser applies no range or ended-only filter of its own. */
   details: OrgEventAttendeeDetailRow[];
   summary: OrgEventAttendeesSummary;
-  /** The attribution the rows and summary use — `account` when `company_email` was picked but the company has no company-email data. */
-  servedAttribution: OrgEventsAttribution;
   foundationOptions: OrgEventAttendeeFoundationOption[];
   eventOptions: OrgEventAttendeeEventOption[];
 }

@@ -78,6 +78,18 @@ describe('shared document/comment attribution', () => {
     expect(mocks.warning).toHaveBeenCalledExactlyOnceWith(req, 'mktg_document_comment_author', 'Comment author lookup unavailable');
   });
 
+  it('joins the directory first and last name when it carries no full name, as the profile page does', async () => {
+    mocks.user.mockResolvedValue({ success: true, data: { name: '', given_name: ' Ada ', family_name: 'Lovelace', username: 'synthetic-username' } });
+    expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Ada Lovelace' });
+    mocks.user.mockResolvedValue({ success: true, data: { given_name: 'Ada' } });
+    expect(await authors.resolveAuthor({} as Request, 'other-writer')).toEqual({ name: 'Ada' });
+  });
+
+  it('keeps a full name the directory gives over its parts', async () => {
+    mocks.user.mockResolvedValue({ success: true, data: { name: 'Ada King', given_name: 'Ada', family_name: 'Lovelace' } });
+    expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: 'Ada King' });
+  });
+
   it('never falls back to username when the display name is empty', async () => {
     mocks.user.mockResolvedValue({ success: true, data: { name: '', username: 'synthetic-username' } });
     expect(await authors.resolveAuthor(req, 'opaque-writer')).toEqual({ name: null });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { ORG_LENS_ROI_KPI_EXPLANATION, ORG_LENS_ROI_KPI_ICON_CLASS, ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants';
+import { ORG_LENS_ROI_KPI_ICON_CLASS, ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants';
 import type { OrgLensRoiSummary, StatCardItem } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 
@@ -15,8 +15,6 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 })
 export class OrgRoiKpiCardsComponent {
   public readonly summary = input.required<OrgLensRoiSummary>();
-
-  protected readonly explanation = ORG_LENS_ROI_KPI_EXPLANATION;
 
   protected readonly cards: Signal<StatCardItem[]> = computed(() => {
     const summary = this.summary();

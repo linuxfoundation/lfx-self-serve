@@ -42,14 +42,6 @@ export function orgEventsScopeUrlParam(scope: OrgEventsScope): OrgEventsScope | 
 }
 
 /**
- * The attribution a read serves for a pick: `company_email` only when the company has company-email data, else
- * `account` — a company with none is served registrations credited to its account instead of zeros.
- */
-export function effectiveOrgEventsAttribution(attribution: OrgEventsAttribution, hasCompanyEmailCoverage: boolean): OrgEventsAttribution {
-  return attribution === 'company_email' && !hasCompanyEmailCoverage ? 'account' : attribution;
-}
-
-/**
  * The participation a read serves for a pick: `attended` and `all` only on a tab of ended events — upcoming events have no
  * attendance, so the Upcoming tab always counts registrations (and `all`, registered or attended, is registered there).
  */

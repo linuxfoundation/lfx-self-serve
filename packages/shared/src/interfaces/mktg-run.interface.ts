@@ -894,9 +894,12 @@ export type MktgAssetViewKind = 'messaging-framework' | 'boilerplates' | 'faq';
 export interface MktgFrameworkAsset {
   kind: 'messaging-framework';
   content: FoundationMessageContent;
-  report: FoundationMessageReport;
+  /** The run's report from the revision's sidecar; null when the sidecar has none (a hand-copied record): nothing is made up in its place. */
+  report: FoundationMessageReport | null;
   checks: FoundationMessageChecks;
   mode: FoundationMessageMode;
+  /** The day the run read its sources (`inputs_record.date_read`, YYYY-MM-DD); null when the record lacks a valid one. The print's "figures as of". */
+  dateRead?: string | null;
 }
 
 /**
@@ -1016,8 +1019,6 @@ export interface MktgAgentIntake {
   documentName: string;
   /** One-paragraph intro under the form title. */
   intro: string;
-  /** The intro while Download PDF is behind its flag (MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG off); `intro` when absent. */
-  introSlidesOnly?: string;
   /**
    * Batch-mode preamble lines prepended to the composed chat message — the
    * agent's own form-mode wording, quoted verbatim so its MODE RULES trigger.

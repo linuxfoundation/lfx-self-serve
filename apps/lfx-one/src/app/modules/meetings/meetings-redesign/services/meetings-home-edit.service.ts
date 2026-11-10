@@ -7,7 +7,14 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { Meeting, MeetingEditScopeDialogData, MeetingHomeRow, MeetingOccurrence, RecurringMeetingEditScopeResult } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingComposerSectionId,
+  MeetingEditScopeDialogData,
+  MeetingHomeRow,
+  MeetingOccurrence,
+  RecurringMeetingEditScopeResult,
+} from '@lfx-one/shared/interfaces';
 import { buildMeetingOccurrenceRoute, getActiveOccurrences, getCurrentOrNextOccurrence, getEntityCommands, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -41,7 +48,8 @@ export class MeetingsHomeEditService {
     return this.checkingIds().has(meetingId);
   }
 
-  public edit(row: MeetingHomeRow): void {
+  /** `section` is where the composer lands; the pre-v2 editor ignores it. */
+  public edit(row: MeetingHomeRow, section?: MeetingComposerSectionId): void {
     const meeting = row.meeting;
     if (this.isChecking(meeting.id)) return;
 
@@ -54,12 +62,12 @@ export class MeetingsHomeEditService {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: (fresh) => this.openEditor(row, fresh),
+        next: (fresh) => this.openEditor(row, fresh, section),
         error: (error: unknown) => this.reportCheckFailure(error),
       });
   }
 
-  private openEditor(row: MeetingHomeRow, fresh: Meeting): void {
+  private openEditor(row: MeetingHomeRow, fresh: Meeting, section?: MeetingComposerSectionId): void {
     if (fresh.organizer !== true) {
       this.showError('Editing unavailable', 'You no longer have permission to edit this meeting.');
       return;
@@ -82,7 +90,7 @@ export class MeetingsHomeEditService {
     const meeting: Meeting = { ...row.meeting, ...fresh };
     const occurrence = fresh.recurrence ? this.resolveOccurrence(row, fresh) : null;
     if (!occurrence) {
-      this.openSeriesEditor(meeting);
+      this.openSeriesEditor(meeting, section);
       return;
     }
 
@@ -93,17 +101,17 @@ export class MeetingsHomeEditService {
       .subscribe((result) => {
         if (!result?.proceed) return;
         if (result.scope === 'series') {
-          this.openSeriesEditor(meeting);
+          this.openSeriesEditor(meeting, section);
           return;
         }
         const picked = (result.occurrenceId ? this.findOccurrence(fresh, result.occurrenceId) : null) ?? occurrence;
-        this.openOccurrenceEditor(meeting, picked);
+        this.openOccurrenceEditor(meeting, picked, section);
       });
   }
 
-  private openSeriesEditor(meeting: Meeting): void {
+  private openSeriesEditor(meeting: Meeting, section?: MeetingComposerSectionId): void {
     if (this.meetingsV2Enabled()) {
-      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid });
+      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid, section });
       return;
     }
 
@@ -118,9 +126,9 @@ export class MeetingsHomeEditService {
     void this.router.navigate(commands, { queryParams });
   }
 
-  private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence): void {
+  private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence, section?: MeetingComposerSectionId): void {
     if (this.meetingsV2Enabled()) {
-      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid, occurrenceId: occurrence.occurrence_id });
+      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid, occurrenceId: occurrence.occurrence_id, section });
       return;
     }
 

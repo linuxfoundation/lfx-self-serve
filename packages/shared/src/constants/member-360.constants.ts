@@ -56,6 +56,11 @@ export const ACTION_OWNERS = ['Marketing', 'Member Success', 'Sales'] as const;
 export const MEMBER_360_TIER_OPTIONS = [{ label: 'All', value: '' }, ...ENGAGEMENT_TIERS.map((value) => ({ label: value, value }))];
 export const MEMBER_360_OWNER_OPTIONS = [{ label: 'All', value: '' }, ...ACTION_OWNERS.map((value) => ({ label: value, value }))];
 export const PRIORITIES = ['High', 'Medium', 'Low'] as const;
+/** Actions by Team on the document page: teams in renewal order (Sales closes renewals first) and priorities High first. The workbook keeps its own order. */
+export const MEMBER_360_ACTION_TEAM_ORDER = ['Sales', 'Marketing', 'Member Success'] as const satisfies readonly (typeof ACTION_OWNERS)[number][];
+export const MEMBER_360_PRIORITY_ORDER = PRIORITIES;
+/** Rows a folded list shows on the document page before "Show all" (the design board shows three per team). */
+export const MEMBER_360_FOLDED_ROWS = 3;
 export const DATA_SOURCES = ['lfx_platform', 'uploaded_trackers', 'hubspot', 'social_listening', 'web_research', 'google_drive'] as const;
 export const SCOPE_WARNINGS = ['all_lf_requested'] as const;
 export const CATEGORY_SCORE_KEYS = Object.fromEntries(CATEGORY_KEYS.map((k) => [k, `${k}_score`])) as Record<

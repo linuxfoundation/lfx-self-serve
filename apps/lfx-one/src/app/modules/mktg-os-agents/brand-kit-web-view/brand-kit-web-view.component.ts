@@ -33,7 +33,6 @@ import {
   BRAND_KIT_WEB_VIEW_TABS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
-  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
@@ -58,7 +57,6 @@ import {
   mktgPrintBrand,
   mktgPrintDocumentTitle,
 } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -126,6 +124,8 @@ export class BrandKitWebViewComponent {
   public readonly viewingDraft = input(false);
   public readonly approvedKit = input<BrandKitRevision | null>(null);
   public readonly approvedVersion = input<number | null>(null);
+  /** The approved revision's own approval record (who, when, what it accepted): the PDF's approval line and Sources box read it, whatever revision the page shows. */
+  public readonly approvedApproval = input<MktgRevisionApproval | null>(null);
   /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
   public readonly approvedCreatedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
@@ -173,11 +173,16 @@ export class BrandKitWebViewComponent {
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
   protected readonly printBrand = computed(() => mktgPrintBrand(this.approvedKit()));
+  /**
+   * The printed (approved) revision's approval, from its own record (`approvedApproval`); a host that passes none gets
+   * this page's only when the revision it shows is the one that prints. Else none, and the PDF leaves the line out.
+   */
+  protected readonly printApproval = computed(
+    () => this.approvedApproval() ?? (this.approvedVersion() !== null && this.versionNumber() === this.approvedVersion() ? this.approval() : null)
+  );
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
-  /** Download PDF and the footer's PDF sentence render only while the flag is on (#5302); off, Export to Google Slides is the row's one action and takes its solid style. */
-  protected readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
   /** What the reviewer should look at: the gaps and the sources that failed (the findings' list when the report has one). */

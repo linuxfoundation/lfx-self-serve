@@ -30,7 +30,6 @@ import {
   ORG_EVENTS_ATTRIBUTION_OPTIONS,
   ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
   ORG_EVENTS_ATTRIBUTION_TOOLTIP,
-  ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
@@ -128,7 +127,6 @@ export class OrgEventsDashboardComponent {
   public readonly participationLabel = ORG_EVENTS_PARTICIPATION_LABEL;
   public readonly attributionLabel = ORG_EVENTS_ATTRIBUTION_LABEL;
   public readonly scopeLabel = ORG_EVENTS_SCOPE_LABEL;
-  public readonly attributionUnavailableNote = ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE;
 
   // === Filter form ===
   // Range, foundation, count, show and counted by follow `?range=`, `?foundation=`, `?participation=`, `?eventScope=` and
@@ -148,14 +146,10 @@ export class OrgEventsDashboardComponent {
   public readonly searchTerm = signal('');
   public readonly selectedStatus = signal<string | null>(null);
   public readonly upcomingEventsLoading = signal(true);
-  // What each tab's current list read was asked for and served, `null` while pending or after an error: the captions and the
-  // fallback notice follow the list itself, never the independent summary read or a response from an earlier selection.
-  public readonly upcomingServed = signal<{ requested: OrgEventsAttribution; served: OrgEventsAttribution } | null>(null);
   public readonly upcomingEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
   public readonly upcomingSortField = signal('EVENT_START_DATE');
   public readonly upcomingSortOrder = signal<'ASC' | 'DESC'>('ASC');
   public readonly pastEventsLoading = signal(true);
-  public readonly pastServed = signal<{ requested: OrgEventsAttribution; served: OrgEventsAttribution } | null>(null);
   public readonly pastEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
   public readonly pastSortField = signal('EVENT_START_DATE');
   public readonly pastSortOrder = signal<'ASC' | 'DESC'>('DESC');
@@ -221,23 +215,12 @@ export class OrgEventsDashboardComponent {
       this.scope() !== DEFAULT_ORG_EVENTS_SCOPE ||
       this.attribution() !== DEFAULT_ORG_EVENTS_ATTRIBUTION
   );
-  // Tiles read the summary, which carries its own served attribution.
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
-  // Company email falls back to the account when the company has no company-email data. Each tab's list response says which
-  // attribution it counted by; only a current, successful response for the picked "Counted by" counts.
-  private readonly upcomingServedAttribution = computed(() => this.servedIn(this.upcomingServed()));
-  private readonly pastServedAttribution = computed(() => this.servedIn(this.pastServed()));
-  public readonly attributionUnavailable = computed(() => {
-    const served = this.isPastTab() ? this.pastServedAttribution() : this.upcomingServedAttribution();
-    return served !== null && served !== this.attribution();
-  });
   public readonly upcomingAttendeesCaption = computed(
-    () =>
-      `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.upcomingServedAttribution() ?? this.attribution()]}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.attribution()]}`
   );
   public readonly pastAttendeesCaption = computed(
-    () =>
-      `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.pastServedAttribution() ?? this.attribution()]}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.attribution()]}`
   );
   public readonly drawerParticipation = this.effectiveParticipation;
   public readonly drawerAttribution = this.attribution;
@@ -247,7 +230,6 @@ export class OrgEventsDashboardComponent {
     sortField: this.upcomingSortField,
     sortOrder: this.upcomingSortOrder,
     loading: this.upcomingEventsLoading,
-    served: this.upcomingServed,
     isPast: false,
     errorDetail: 'Failed to load upcoming events. Please try again.',
   });
@@ -257,7 +239,6 @@ export class OrgEventsDashboardComponent {
     sortField: this.pastSortField,
     sortOrder: this.pastSortOrder,
     loading: this.pastEventsLoading,
-    served: this.pastServed,
     isPast: true,
     errorDetail: 'Failed to load past events. Please try again.',
   });
@@ -417,11 +398,6 @@ export class OrgEventsDashboardComponent {
     );
   }
 
-  /** The attribution a list read served, only while it answers the picked "Counted by"; `null` while pending, stale or failed. */
-  private servedIn(entry: { requested: OrgEventsAttribution; served: OrgEventsAttribution } | null): OrgEventsAttribution | null {
-    return entry && entry.requested === this.attribution() ? entry.served : null;
-  }
-
   // Foundations with events under the picked "Show" and "Counted by"; `null` until loaded or when the read fails.
   private initFoundationsResponse(): Signal<OrgEventFoundationsResponse | null> {
     const query$ = toObservable(
@@ -446,11 +422,10 @@ export class OrgEventsDashboardComponent {
     sortField: Signal<string>;
     sortOrder: Signal<'ASC' | 'DESC'>;
     loading: WritableSignal<boolean>;
-    served: WritableSignal<{ requested: OrgEventsAttribution; served: OrgEventsAttribution } | null>;
     isPast: boolean;
     errorDetail: string;
   }): Signal<OrgEventsResponse> {
-    const { tab, page, sortField, sortOrder, loading, served, isPast, errorDetail } = opts;
+    const { tab, page, sortField, sortOrder, loading, isPast, errorDetail } = opts;
     return toSignal(
       toObservable(
         computed(() => {
@@ -475,13 +450,9 @@ export class OrgEventsDashboardComponent {
       ).pipe(
         debounceTime(0),
         filter((params): params is NonNullable<typeof params> => params !== null),
-        tap(() => {
-          loading.set(true);
-          served.set(null);
-        }),
+        tap(() => loading.set(true)),
         switchMap(({ accountId, ...params }) =>
           this.eventsService.getOrgEvents(accountId, { ...params, isPast }).pipe(
-            tap((response) => served.set({ requested: params.attribution, served: response.servedAttribution })),
             catchError(() => {
               this.messageService.add({
                 severity: 'error',

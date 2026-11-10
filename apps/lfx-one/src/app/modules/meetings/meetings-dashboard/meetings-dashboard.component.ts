@@ -24,6 +24,7 @@ import {
   MY_MEETINGS_STATS_WINDOW_DAYS,
 } from '@lfx-one/shared/constants';
 import {
+  GroupLinkState,
   Lens,
   MeetingCalendarClickProps,
   MeetingDashboardView,
@@ -132,6 +133,8 @@ export class MeetingsDashboardComponent {
   // calendar surface a no-op outside its supported context.
   public canShowCalendarView = computed(() => this.activeLens() === 'foundation' || this.activeLens() === 'project');
   public isCalendarView = computed(() => this.viewMode() === 'calendar' && this.canShowCalendarView());
+  // Group links on the cards return here, and restore the Me lens when that is where the user was.
+  public groupLinkState: Signal<GroupLinkState> = computed(() => ({ backLabel: 'Meetings', backPath: '/meetings', fromMeLens: this.activeLens() === 'me' }));
   public calendarEvents: Signal<EventInput[]>;
   public calendarLoading: Signal<boolean>;
 

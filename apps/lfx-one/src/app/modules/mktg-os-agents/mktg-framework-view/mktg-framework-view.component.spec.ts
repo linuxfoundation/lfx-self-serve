@@ -6,11 +6,25 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { provideRouter, Router } from '@angular/router';
-import { FOUNDATION_MESSAGE_CONTENT_LIMITS, FOUNDATION_MESSAGE_PRINT_BODY_CLASS, FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM } from '@lfx-one/shared/constants';
-import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
+import {
+  FOUNDATION_MESSAGE_CONTENT_LIMITS,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_PRINT_KIT_READ_NOTES,
+  MKTG_PRINT_KIT_READ_PENDING,
+  MKTG_PRINT_LF_LOOK,
+} from '@lfx-one/shared/constants';
+import {
+  BrandKitRevision,
+  MktgFrameworkAsset,
+  MktgFrameworkViewState,
+  MktgPrintKitRead,
+  MktgSlidesExportTarget,
+  MktgRevisionApproval,
+} from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { isMktgDocumentCommentAnchor } from '@lfx-one/shared/utils';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
@@ -33,10 +47,13 @@ class HostComponent {
   public readonly approvedAsset = signal<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = signal<number | null>(null);
   public readonly approvedCreatedAt = signal<string | null>(null);
-  public readonly kit = signal<BrandKitRevision | null>(null);
+  public readonly kitRead = signal<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE);
   public readonly exportTarget = signal<MktgSlidesExportTarget | null>(null);
   public readonly approval = signal<MktgRevisionApproval | null>(null);
 }
+
+/** A kit read that has settled with the kit. */
+const settledKit = (kit: BrandKitRevision | null): MktgPrintKitRead => ({ settled: true, kit, failed: false });
 
 const pair = (a: string, b: string): [string, string] => [a, b];
 
@@ -138,8 +155,6 @@ describe('MktgFrameworkViewComponent', () => {
   let host: HostComponent;
   let printer: { prepare: Mock; printNow: Mock; clear: Mock; ensureFontStylesheet: Mock };
   let slidesExport: { last: Mock; start: Mock; poll: Mock };
-  /** The Download PDF flag (#5302), pinned on so the PDF tests see today's screens; one test turns it off. */
-  const pdfFlag = signal(true);
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
@@ -149,7 +164,6 @@ describe('MktgFrameworkViewComponent', () => {
   };
 
   beforeEach(async () => {
-    pdfFlag.set(true);
     printer = { prepare: vi.fn(() => Promise.resolve()), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
@@ -165,7 +179,6 @@ describe('MktgFrameworkViewComponent', () => {
         provideMktgSlidesExportStub(slidesExport),
         provideMktgCommentsStub(),
         { provide: MktgDependencyService, useValue: { documentsChanged$: NEVER } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => pdfFlag } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
@@ -473,20 +486,22 @@ describe('MktgFrameworkViewComponent', () => {
     expect(print?.getAttribute('data-brand')).toBe('lf');
     expect(query('mktg-framework-print-title')?.textContent).toContain('Messaging Framework');
     expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 3');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V3.0');
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
     expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers');
-    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('Sources and gaps');
-    expect(query('mktg-framework-print-goals')?.querySelectorAll('thead th').length).toBe(3);
+    expect(query('mktg-framework-print-contents')?.textContent).toContain('Sources & gaps');
+    // The portrait book prints every chapter: the goal matrix, the profiles, the message house, the numbers, the run's report.
+    expect(query('mktg-framework-print-goals')?.querySelectorAll('thead, tfoot').length).toBe(0);
     expect(query('mktg-framework-print-goals')?.textContent).toContain('Built together');
-    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('ICPs');
-    expect(query('mktg-framework-print-icp-contributors')).toBeNull();
-    expect(query('mktg-framework-print-pillars')).toBeNull();
-    expect(print?.textContent).not.toContain('Open releases for everyone.');
+    expect(query('mktg-framework-print-icp-contributors')).not.toBeNull();
+    expect(query('mktg-framework-print-pillars')).not.toBeNull();
+    expect(query('mktg-framework-print-umbrella')?.textContent).toContain('Open releases for everyone.');
     expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
-    expect(print?.textContent).not.toContain('No member count.');
-    expect(print?.textContent).not.toContain('Check the member count.');
+    expect(query('mktg-framework-print-gaps')?.textContent).toContain('No member count.');
+    // The run's notes and the reviewer's note stay on screen only.
+    expect(query('mktg-framework-print-notes')).toBeNull();
     expect(print?.textContent).not.toContain('Check the dates.');
+    expect(print?.textContent).not.toContain('Check the member count.');
 
     // Export to Google Slides waits for the page to name a stored revision.
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
@@ -507,26 +522,21 @@ describe('MktgFrameworkViewComponent', () => {
     host.approvedVersion.set(1);
     await fixture.whenStable();
     expect(query('mktg-framework-view-version')?.textContent).toContain('v3');
-    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 1');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V1.0');
     expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-print')?.textContent).not.toContain('New draft only');
   });
 
-  it('hides Download PDF while its flag is off and gives Export to Google Slides the row’s solid style, restoring both when it turns on (#5302)', async () => {
+  it('offers Export to Google Slides outlined and Download PDF solid beside it with an approved current', async () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     host.approvedAsset.set(ASSET);
     host.approvedVersion.set(1);
-    pdfFlag.set(false);
     await fixture.whenStable();
     const actions = query('mktg-framework-view-actions');
-    expect(query('mktg-framework-view-download-pdf')).toBeNull();
-    expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual(['Export to Google Slides']);
-    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
-    // The print rendering stays mounted: only the entry button is gated.
+    // The print root is mounted with the button, and the print service prepared for it.
     expect(query('mktg-framework-view-print')).not.toBeNull();
-    pdfFlag.set(true);
-    await fixture.whenStable();
+    expect(printer.prepare).toHaveBeenCalledWith(null);
     expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
       'Export to Google Slides',
       'Download PDF',
@@ -550,7 +560,7 @@ describe('MktgFrameworkViewComponent', () => {
     const kit = brandKitTestRevision();
     host.asset.set(ASSET);
     host.state.set('ready');
-    host.kit.set(kit);
+    host.kitRead.set(settledKit(kit));
     host.exportTarget.set(target);
     await fixture.whenStable();
 
@@ -568,24 +578,78 @@ describe('MktgFrameworkViewComponent', () => {
     const kit = brandKitTestRevision();
     host.asset.set(ASSET);
     host.state.set('ready');
-    host.kit.set(kit);
+    host.kitRead.set(settledKit(kit));
     host.approvedAsset.set(ASSET);
     host.approvedVersion.set(1);
     await fixture.whenStable();
 
     const print = query('mktg-framework-print') as HTMLElement;
     expect(print.getAttribute('data-brand')).toBe('kit');
-    expect(print.style.getPropertyValue('--mfp-dark')).toBe(kit.kit.dark);
-    expect(print.style.getPropertyValue('--mfp-accent')).toBe(kit.kit.accent);
-    expect(print.style.getPropertyValue('--mfp-font')).toContain('Montserrat');
-    // No reversed artwork in the kit: the cover draws the primary lockup white.
+    // The kit's inks and typeface reach every frame through the portrait grammar's look.
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]') as HTMLElement;
+    expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(frame.style.getPropertyValue('--pp-accent')).toBe(kit.kit.accent);
+    expect(frame.style.getPropertyValue('--pp-font')).toContain('Montserrat');
+    // No reversed artwork in the kit, and a multi-colour primary: the cover draws it in full colour on the dark band — a filter would
+    // flatten the mark to one shape (the kit grammar's rule; a one-colour primary is the one filtered to white).
     expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-    expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');
+    expect(query('mktg-framework-print-cover-logo')?.style.filter).toBe('');
+    // …and, unreversable, on the grammar's white plate (the kit cover's precedence, editor W3).
+    expect(query('mktg-portrait-plate')?.contains(query('mktg-framework-print-cover-logo'))).toBe(true);
 
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
     // No approved date known here: the name carries none, never the download's.
     expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'TestOrbit · Messaging framework · v1');
+  });
+
+  it('waits for the Brand Kit read before it prints: no print root and Download PDF disabled with the reason while the read is open, then the kit’s brand once it settles (editor C1)', async () => {
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    host.kitRead.set(MKTG_PRINT_KIT_READ_PENDING);
+    await fixture.whenStable();
+    // Nothing of the LF default is built for a project whose kit is still being read.
+    expect(query('mktg-framework-print')).toBeNull();
+    const button = query('mktg-framework-view-download-pdf')?.querySelector('button');
+    expect(button?.disabled).toBe(true);
+    // The reason is the wrapping span's tooltip and label (the same span that names the approval rule).
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBe(MKTG_PRINT_KIT_READ_NOTES.pending);
+    button?.click();
+    expect(printer.printNow).not.toHaveBeenCalled();
+    // The read settles late with the kit: the print is the kit's, never the LF look, and the button prints it.
+    host.kitRead.set(settledKit(kit));
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="cover"]') as HTMLElement;
+    expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(frame.style.getPropertyValue('--pp-dark')).not.toBe(MKTG_PRINT_LF_LOOK.dark);
+    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBeNull();
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.printNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('never prints the LF look for a failed Brand Kit read: no print root, Download PDF disabled and saying so; the LF look only for a project with no kit stored', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    host.kitRead.set({ settled: true, kit: null, failed: true });
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')).toBeNull();
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBe(MKTG_PRINT_KIT_READ_NOTES.failed);
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.printNow).not.toHaveBeenCalled();
+    // No kit stored (the read settled with none): the LF look prints.
+    host.kitRead.set(MKTG_PRINT_KIT_READ_NONE);
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
   });
 
   it('opens Sources from its tab without the duplicate reviewer-note link', async () => {

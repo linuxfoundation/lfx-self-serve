@@ -1,22 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import {
   BRAND_KIT_ICON_HIGHLIGHT_INDEX,
+  BRAND_KIT_ICON_PORTRAIT_STRIP_SIZE_PX,
+  BRAND_KIT_ICON_PORTRAIT_TILE_SIZE_PX,
   BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX,
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_ICON_STRIP_INK,
   BRAND_KIT_ICON_STRIP_SIZE_PX,
   BRAND_KIT_ICON_TILE_COLUMNS,
-  BRAND_KIT_ICON_STROKE_LINECAP,
-  BRAND_KIT_ICON_STROKE_LINEJOIN,
-  BRAND_KIT_ICON_STROKE_WIDTH,
   BRAND_KIT_ICON_TILE_SIZE_PX,
-  BRAND_KIT_ICON_VIEWBOX_SIZE,
 } from '@lfx-one/shared/constants';
 import { BrandKitIconColours, BrandKitIconSample, BrandKitIconStripItem } from '@lfx-one/shared/interfaces';
+import { MktgBrandKitIconComponent } from '../mktg-brand-kit-icon/mktg-brand-kit-icon.component';
 
 /**
  * The Brand Kit's iconography samples as the design board draws them: the
@@ -34,7 +32,7 @@ import { BrandKitIconColours, BrandKitIconSample, BrandKitIconStripItem } from '
  */
 @Component({
   selector: 'lfx-mktg-brand-kit-icon-samples',
-  imports: [NgTemplateOutlet],
+  imports: [MktgBrandKitIconComponent],
   templateUrl: './mktg-brand-kit-icon-samples.component.html',
   // `@container`: the web strip queries the host's width to choose one row of eight or 4 + 4.
   host: { class: '@container block', 'data-testid': 'brand-kit-icon-samples' },
@@ -45,14 +43,11 @@ export class MktgBrandKitIconSamplesComponent {
   public readonly colours = input.required<BrandKitIconColours>();
   /** The print sheet's variant: the board's sizes in table boxes, beside the rules on the sheet's Iconography page. */
   public readonly print = input(false);
+  /** With `print`: the portrait book's Iconography page, at the design mock's sizes (164 × 150 tiles, a 120 px strip). */
+  public readonly portrait = input(false);
 
   // === The shared drawing frame ===
   protected readonly icons = BRAND_KIT_ICON_SAMPLES;
-  protected readonly viewBox = `0 0 ${BRAND_KIT_ICON_VIEWBOX_SIZE} ${BRAND_KIT_ICON_VIEWBOX_SIZE}`;
-  protected readonly strokeWidth = BRAND_KIT_ICON_STROKE_WIDTH;
-  protected readonly linecap = BRAND_KIT_ICON_STROKE_LINECAP;
-  protected readonly linejoin = BRAND_KIT_ICON_STROKE_LINEJOIN;
-  protected readonly tileIconSize = BRAND_KIT_ICON_TILE_SIZE_PX;
   /** The board's 4 × 2 tiles as rows, for the print sheet's table. */
   protected readonly tileRows: readonly (readonly BrandKitIconSample[])[] = Array.from(
     { length: Math.ceil(BRAND_KIT_ICON_SAMPLES.length / BRAND_KIT_ICON_TILE_COLUMNS) },
@@ -64,8 +59,13 @@ export class MktgBrandKitIconSamplesComponent {
   // === Computed ===
   /** The strip's icons in the board's order, each with its ink: white, except the highlighted one in the kit's highlight. */
   protected readonly strip: Signal<BrandKitIconStripItem[]> = this.initStrip();
-  /** The strip icons' side: the board's 30 px in print; 24 px on the web, where the strip must hold one row in the half-width card. */
-  protected readonly stripIconSize = computed(() => (this.print() ? BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX : BRAND_KIT_ICON_STRIP_SIZE_PX));
+  /** The tile icons' side: the board's 32 px; the mock's 36 px on the portrait page. */
+  protected readonly tileIconSize = computed(() => (this.print() && this.portrait() ? BRAND_KIT_ICON_PORTRAIT_TILE_SIZE_PX : BRAND_KIT_ICON_TILE_SIZE_PX));
+  /** The strip icons' side: the board's 30 px in print (the mock's 32 on the portrait page); 24 px on the web, where the strip must hold one row in the half-width card. */
+  protected readonly stripIconSize = computed(() => {
+    if (!this.print()) return BRAND_KIT_ICON_STRIP_SIZE_PX;
+    return this.portrait() ? BRAND_KIT_ICON_PORTRAIT_STRIP_SIZE_PX : BRAND_KIT_ICON_PRINT_STRIP_SIZE_PX;
+  });
 
   // === Private initializers ===
   private initStrip(): Signal<BrandKitIconStripItem[]> {

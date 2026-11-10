@@ -418,6 +418,21 @@ describe('MktgSlidesExportService', () => {
       expect(assets.faq).toEqual([{ q: 'What is this project?', a: 'A synthetic project.' }]);
     });
 
+    it('sends the framework member wrapped with its revision number and date on a family export, as the kit member is sent (deck lane ask)', async () => {
+      await seedFramework(documentStore);
+      await seedFramework(documentStore, 'Search, open. Twice.');
+      await seedKit(documentStore);
+
+      const started = await service.startFamilyExport(req, familyInput);
+
+      expect(started.snapshot.members.find((member) => member.agentKey === 'foundation-message')).toMatchObject({ revisionNumber: 2 });
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['framework']['version']).toBe(2);
+      expect(typeof assets['framework']['generated_at']).toBe('string');
+      expect(Number.isNaN(Date.parse(assets['framework']['generated_at'] as string))).toBe(false);
+      expect(assets['framework']['content']).toMatchObject({ mf: { tagline: 'Search, open. Twice.' }, mh: { umbrella: 'Open search.', pillars: [] } });
+    });
+
     it('sends the kit member’s approved revision number as the kit’s version on a family export, as the document export does', async () => {
       await seedFramework(documentStore);
       await seedKit(documentStore);
@@ -1042,7 +1057,8 @@ describe('MktgSlidesExportService', () => {
       }
       // Seventeen different images under the same content-addressed prefix as the logo: an icon in one colour is one key.
       expect(new Set([...icons.dark, ...icons.light, icons.highlight]).size).toBe(ICON_IMAGES);
-      expect(store.publicImages.size).toBe(1 + ICON_IMAGES);
+      // Beside them the primary lockup and its two recolours (reversed, one-colour): the fixture's lockup carries ink.
+      expect(store.publicImages.size).toBe(3 + ICON_IMAGES);
       const bytesOf = (url: string): Buffer => store.publicImages.get(url.replace('https://cdn.example.test/', '')) as Buffer;
       // Each drawn square at the icon side, not the logo's.
       expect(pngSize(bytesOf(icons.dark[0]))).toEqual({ width: 240, height: 240 });

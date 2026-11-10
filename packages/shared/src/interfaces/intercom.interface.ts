@@ -14,6 +14,7 @@ export interface IntercomBootOptions {
   email?: string;
   created_at?: number;
   intercom_user_jwt?: string;
+  hide_default_launcher?: boolean;
   [key: string]: unknown;
 }
 

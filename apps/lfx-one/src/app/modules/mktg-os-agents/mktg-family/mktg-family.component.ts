@@ -10,7 +10,6 @@ import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.c
 import {
   MKTG_KIT_FAMILIES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
-  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_POLL,
@@ -23,7 +22,6 @@ import {
   resolveMktgFamilyActions,
   resolveMktgFamilyRun,
 } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { catchError, distinctUntilChanged, EMPTY, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
@@ -71,12 +69,6 @@ export class MktgFamilyComponent {
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
-  /** While Download PDF is behind its flag (#5302), the header reads the catalog's Slides-only intro where the family has one. */
-  private readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
-  protected readonly intro = computed(() => {
-    const definition = this.definition();
-    return (this.pdfEnabled() ? definition?.intro : (definition?.introSlidesOnly ?? definition?.intro)) ?? definition?.description;
-  });
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly actions = this.initActions();

@@ -5,6 +5,8 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MKTG_FAMILY_EXPORT_API_PATH, MKTG_FAMILY_EXPORT_KINDS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
 import {
+  MktgFamilyExportAgentKey,
+  MktgFamilyExportKind,
   MktgFamilyExportLastResponse,
   MktgFamilyExportMember,
   MktgFamilyExportRecord,
@@ -12,19 +14,27 @@ import {
   MktgFamilyExportRunUpdate,
   MktgFamilyExportStartResponse,
   MktgFamilyExportTarget,
+  MktgFamilyPrintTextSource,
   MktgFamilyPrintView,
+  MktgRevisionResponse,
   MktgSlidesExportMode,
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAssetOfRevision,
+  brandKitWebsiteHost,
   buildBoilerplatesPrintView,
   buildBrandKitBookView,
   buildFaqPrintView,
   buildFoundationMessagePrintView,
   faqAssetOfRevision,
+  foundationMessageAssetOfRevision,
+  mktgFamilyExportAgentKeys,
+  mktgFamilyPrintConflicts,
+  mktgFamilyPrintDocument,
+  mktgFamilyPrintBrand,
+  mktgFamilyPrintNumberConflicts,
   mktgPrintBrand,
   readBrandKitRevision,
-  readFoundationMessageContent,
 } from '@lfx-one/shared/utils';
 import { pollMktgSlidesExport } from '@shared/utils/mktg-slides-export-poll.util';
 import { catchError, finalize, forkJoin, map, Observable, shareReplay, startWith, switchMap, take, throwError } from 'rxjs';
@@ -124,19 +134,38 @@ export class MktgFamilyExportService {
       )
     ).pipe(
       map((responses) => {
-        const kitResponse = responses.find((response) => response.type.agentKey === 'brand-kit');
+        // Each member by its kind in the family (never an agent list): the kind names the reader its revision needs.
+        const kindOf = (agentKey: string): MktgFamilyExportKind | null =>
+          agentKey in MKTG_FAMILY_EXPORT_KINDS ? MKTG_FAMILY_EXPORT_KINDS[agentKey as MktgFamilyExportAgentKey] : null;
+        const ofKind = (kind: MktgFamilyExportKind): MktgRevisionResponse | undefined => responses.find((response) => kindOf(response.type.agentKey) === kind);
+        const kitResponse = ofKind('kit');
         const kit = kitResponse ? readBrandKitRevision(kitResponse.sidecar) : null;
         if (kitResponse && !kit) throw new Error('The approved brand kit could not be read.');
-        const frameworkResponse = responses.find((response) => response.type.agentKey === 'foundation-message');
-        const content = frameworkResponse ? readFoundationMessageContent(frameworkResponse.markdown) : null;
-        if (frameworkResponse && !content) throw new Error('The approved messaging framework could not be read.');
+        const frameworkResponse = ofKind('framework');
+        // The framework as its standalone print reads it: the content, the run's report and the day it read its sources
+        // (one reader, so its Sources & gaps page prints the same blocks inside the family; null report when the record has none).
+        const frameworkAsset = frameworkResponse ? foundationMessageAssetOfRevision(frameworkResponse.markdown, frameworkResponse.sidecar) : null;
+        if (frameworkResponse && !frameworkAsset) throw new Error('The approved messaging framework could not be read.');
         const book = kit ? buildBrandKitBookView(kit, kitResponse?.revision.number) : null;
-        const framework = content ? buildFoundationMessagePrintView(content, projectName, frameworkResponse?.revision.number ?? null, kit) : null;
-        const brand = mktgPrintBrand(kit);
-        const boilerplatesResponse = responses.find((response) => response.type.agentKey === 'boilerplates');
+        const framework =
+          frameworkResponse && frameworkAsset
+            ? buildFoundationMessagePrintView(
+                frameworkAsset.content,
+                projectName,
+                frameworkResponse.revision.number ?? null,
+                kit,
+                frameworkResponse.approval?.approvedAt ?? null,
+                frameworkAsset.report,
+                frameworkAsset.dateRead ?? null
+              )
+            : null;
+        // The family's covers draw the lockup the kit's own book decides (reversed file, filtered one-ink primary, or the
+        // full-colour primary on the white plate), so the family and the kit never disagree on a dark ground.
+        const brand = mktgFamilyPrintBrand(mktgPrintBrand(kit), book);
+        const boilerplatesResponse = ofKind('boilerplates');
         const boilerplates = boilerplatesResponse ? boilerplatesAssetOfRevision(boilerplatesResponse.markdown, boilerplatesResponse.sidecar) : null;
         if (boilerplatesResponse && !boilerplates) throw new Error('The approved boilerplates could not be read.');
-        const faqResponse = responses.find((response) => response.type.agentKey === 'faq');
+        const faqResponse = ofKind('faq');
         const faq = faqResponse ? faqAssetOfRevision(faqResponse.markdown, faqResponse.sidecar) : null;
         if (faqResponse && !faq) throw new Error('The approved FAQ could not be read.');
         // The newest member revision names the PDF, so the same set of members always gives the same name.
@@ -144,20 +173,81 @@ export class MktgFamilyExportService {
           .map((response) => response.revision.createdAt)
           .filter((createdAt): createdAt is string => !!createdAt && Number.isFinite(Date.parse(createdAt)))
           .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+        // The book's chapters, in exporter order (the family's asset order, not an agent list), each with what its run left open.
+        const openItems: Record<MktgFamilyExportKind, string[]> = {
+          framework: frameworkAsset?.report?.gaps ?? [],
+          kit: kit?.report.findings?.missing_assets.map((missing) => missing.reason) ?? [],
+          boilerplates: boilerplates?.report.gaps ?? [],
+          // A question the FAQ left unanswered prints nowhere else (the FAQ pages print answered questions only), so it
+          // is an open item too, once, whether or not the run's report repeats it as a gap.
+          faq: faq ? [...new Set([...faq.report.gaps, ...faq.checks.unanswered.map((entry) => entry.question)])] : [],
+        };
+        const documents = mktgFamilyExportAgentKeys(target.familyId)
+          .map((agentKey) => ({ agentKey, response: responses.find((response) => response.type.agentKey === agentKey) }))
+          .filter((entry) => !!entry.response)
+          .map(({ agentKey, response }, index) =>
+            mktgFamilyPrintDocument(
+              target.familyId,
+              agentKey,
+              index + 1,
+              response?.revision.number ?? null,
+              response?.approval ?? null,
+              openItems[MKTG_FAMILY_EXPORT_KINDS[agentKey]],
+              // The Sources table's Data cell: the day the run read its figures (its record's date_read, else its generation date); none → an empty cell.
+              this.dataReadAt(response?.sidecar)
+            )
+          );
+        const boilerplatesView = boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null;
+        const faqView = faq ? buildFaqPrintView(faq, brand) : null;
+        // Where the documents disagree: the framework's key numbers against the FAQ's answers and the boilerplates'
+        // text, the kit's line against the framework's tagline, the kit's colour conflicts; nothing the texts do not say.
+        // Spelling rows (AWS / Amazon Web Services) and the Silver tier are a recorded follow-up (maintainer, 7 Nov 2026).
+        const titleOf = (kind: MktgFamilyExportKind): string => documents.find((document) => MKTG_FAMILY_EXPORT_KINDS[document.agentKey] === kind)?.title ?? '';
+        const textSources: MktgFamilyPrintTextSource[] = [
+          {
+            title: titleOf('faq'),
+            texts: faqView?.groups.flatMap((group) => group.questions.filter((entry) => entry.answered).map((entry) => entry.answer)) ?? [],
+          },
+          { title: titleOf('boilerplates'), texts: boilerplatesView?.lengths.map((row) => row.text) ?? [] },
+        ].filter((source) => source.title && source.texts.length);
         return {
           framework,
           kit: book,
-          boilerplates: boilerplates ? buildBoilerplatesPrintView(boilerplates, brand) : null,
-          faq: faq ? buildFaqPrintView(faq, brand) : null,
+          // The kit inside the family prints what the standalone print prints: its approval reaches the kit renderer unchanged.
+          kitApproval: kitResponse?.approval ?? null,
+          boilerplates: boilerplatesView,
+          faq: faqView,
           brand,
           projectName,
           printedAt: new Date().toISOString(),
           newestRevisionAt: newestRevisionAt ?? null,
           fontFamily: book?.fontUrl ? book.type.family : brand.fontFamily,
           weights: book?.weights.map((weight) => weight.weight) ?? MKTG_PRINT_FONT_WEIGHTS,
+          documents,
+          tagline: frameworkAsset?.content.mf.tagline?.trim() ?? '',
+          websiteLabel: brandKitWebsiteHost(kit?.websiteUrl ?? null),
+          boilerplatesSources: boilerplates?.report.sources_read.map((source) => source.trim()).filter(Boolean) ?? [],
+          conflicts: [
+            ...mktgFamilyPrintNumberConflicts(framework?.numbers ?? [], textSources),
+            ...mktgFamilyPrintConflicts(
+              frameworkAsset?.content.mf.tagline ?? '',
+              kit?.chapters.voice.line ?? '',
+              kit?.report.color_conflicts ?? [],
+              titleOf('kit')
+            ),
+          ],
         };
       })
     );
+  }
+
+  /** The day a run read its figures: the envelope's `inputs_record.date_read` (framework, FAQ, boilerplates), else the kit's `generated_at`; null when the sidecar has neither. */
+  private dataReadAt(sidecar: Record<string, unknown> | null | undefined): string | null {
+    const inputs = sidecar?.['inputs_record'];
+    const dateRead = inputs && typeof inputs === 'object' ? (inputs as Record<string, unknown>)['date_read'] : null;
+    if (typeof dateRead === 'string' && dateRead.trim()) return dateRead;
+    const generatedAt = sidecar?.['generated_at'];
+    return typeof generatedAt === 'string' && generatedAt.trim() ? generatedAt : null;
   }
 
   private key(target: MktgFamilyExportTarget): string {

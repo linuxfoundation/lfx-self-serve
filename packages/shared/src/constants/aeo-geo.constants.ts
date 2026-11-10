@@ -35,3 +35,18 @@ export const AEO_GEO_INTAKE_ERRORS = {
   domain: 'Enter a valid domain or website URL, e.g. project.example or https://project.example/. Public website names only.',
   key_pages: 'Leave blank to let the agent choose, or enter two to five different absolute http(s) URLs, one per line. Public website names only.',
 } as const;
+/**
+ * A printed Sources list up to this long moves to the next page whole with its heading rather than leave its
+ * last lines alone on a page; a longer list flows, so a near-empty page is never forced.
+ */
+export const AEO_GEO_SOURCES_KEEP_TOGETHER_MAX = 12;
+/**
+ * Reader sentences for the agent's caveats. The known plumbing shapes (a snake_case field name, a slug, a uid,
+ * a credits or quota phrase, or a provider subject (a search, the provider, the API, a lookup) quoting a failure)
+ * map to these or are left out; quoted results and sentences about the audited site pass through unchanged.
+ */
+export const AEO_GEO_READER_CAVEATS = {
+  search_unavailable: 'Third-party search was not available for this run.',
+  lfx_record_unread: 'The LFX project record could not be read directly.',
+  inputs_unavailable: "Some of the audit's inputs were unavailable for this run.",
+} as const;

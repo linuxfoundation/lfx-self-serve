@@ -16,9 +16,7 @@ import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskFilterOption,
-  HealthMetricsMembersBreakdownPaletteEntry,
   HealthMetricsMembersBreakdownTableClasses,
-  HealthMetricsMembersBreakdownViewOption,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersBoardLatestTone,
@@ -31,9 +29,6 @@ import type {
   HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
   HealthMetricsMembersGrowth,
-  HealthMetricsMembersGrowthLabelBox,
-  HealthMetricsMembersGrowthLabelClasses,
-  HealthMetricsMembersGrowthViewOption,
   HealthMetricsMembersNps,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
@@ -52,11 +47,11 @@ import type {
 export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   {
     key: 'growth',
-    // Always the running year, whatever the period, so the empty state never names a past year.
+    // One read serves every period, so the empty state never names a past year.
     empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members, snapshot: true },
     label: 'Member growth by year',
     heading: 'Member growth by year',
-    description: 'Cumulative new members joining each month, this year against last year and the historical range.',
+    description: 'New members each month, this year against last year.',
     footnote: [],
     footnoteCaution: false,
   },
@@ -66,7 +61,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'Membership breakdown by tier',
     heading: 'Membership breakdown by tier',
     // `{year}` is the running year, filled in by `buildHealthMetricsMembersSections`.
-    description: 'Members per tier at the end of each year, with totals and annual revenue. {year} is year to date.',
+    description: 'Members per tier at each year end. {year} is year to date.',
     footnote: [],
     footnoteCaution: false,
   },
@@ -176,59 +171,28 @@ export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
 /** Read-failed / no-foundation value: no month rows, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED: HealthMetricsMembersGrowth = { months: [] };
 
-/** The earliest year read and drawn: All years and the popup go back to it. */
+/** The earliest year read; the chart draws at most one line per colour, newest first. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR = 2017;
-
-/** Highlights' grey range starts a year later than All years, as the design draws it. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_BAND_FIRST_YEAR = 2018;
-
-/** The year "Since" compares this year against, at the same month. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_BASELINE_YEAR = 2019;
 
 /** Upper bound on month rows read: 12 a year, from the first year on, with decades to spare. */
 export const HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP = 600;
 
-export const HEALTH_METRICS_MEMBERS_GROWTH_MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+/** The plot's SVG viewBox, stretched to the card; January and December sit `insetX` in from each edge. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_PLOT = { width: 1000, height: 300, insetX: 40 } as const;
 
-/** The plot's SVG viewBox; it stretches to the card, and the design draws it 280px tall. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_PLOT = { width: 600, height: 280 } as const;
-
-/** The design's growth colours: this year in accent, last year in neutral, the earlier years light. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_COLORS = {
-  current: lfxColors.blue[500],
-  prior: lfxColors.gray[500],
-  earlier: lfxColors.gray[300],
-  band: lfxColors.gray[400],
-  /** The band at the design's 35% for its legend swatch. */
-  bandSwatch: `${lfxColors.gray[400]}59`,
-  today: lfxColors.gray[500],
-  gridline: lfxColors.gray[100],
-  axis: lfxColors.gray[200],
-} as const;
-
-/** How each end label sits off its point, as the design offsets them, and its weight. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_LABEL_CLASSES: HealthMetricsMembersGrowthLabelClasses = {
-  placement: {
-    'below-right': 'translate-x-[8px] translate-y-[4px]',
-    'right-below': 'translate-x-[10px] -translate-y-[2px]',
-    right: 'translate-x-[10px] -translate-y-1/2',
-  },
-  strong: 'font-semibold',
-  regular: 'font-medium',
-};
-
-/** An end label's box in pixels: its top off its point per placement (as the classes offset it), height and least gap. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_LABEL_BOX: HealthMetricsMembersGrowthLabelBox = {
-  offsetPx: { 'below-right': 4, 'right-below': -2, right: -8 },
-  heightPx: 16,
-  gapPx: 2,
-};
-
-/** The view switch over the growth chart; the first is the default. */
-export const HEALTH_METRICS_MEMBERS_GROWTH_VIEW_OPTIONS: readonly HealthMetricsMembersGrowthViewOption[] = [
-  { value: 'highlights', label: 'Highlights' },
-  { value: 'all', label: 'All years' },
-];
+/** One colour per year, newest first: this year in accent, then the design's palette. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS = [
+  lfxColors.blue[500],
+  lfxColors.violet[400],
+  lfxColors.emerald[400],
+  lfxColors.amber[400],
+  lfxColors.red[400],
+  lfxColors.gray[400],
+  lfxColors.violet[300],
+  lfxColors.emerald[300],
+  lfxColors.amber[300],
+  lfxColors.red[300],
+] as const;
 
 /** Read-failed / no-foundation value: no tier rows, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED: HealthMetricsMembersTiers = { rows: [] };
@@ -239,11 +203,8 @@ export const HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP = 500;
 /** The first year the breakdown shows; a foundation that started later starts at its own first year. */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR = 2019;
 
-/** The tiers with a colour and an icon of their own, in the order they always lead and stack from the bottom. */
+/** The tiers with an icon of their own. */
 export const HEALTH_METRICS_MEMBERS_RESERVED_TIERS = ['diamond', 'platinum', 'gold', 'silver'] as const;
-
-/** With all three present, every tier that is not reserved is grey; Diamond does not count towards it. */
-export const HEALTH_METRICS_MEMBERS_BREAKDOWN_GROUPING_TIERS = ['platinum', 'gold', 'silver'] as const satisfies readonly HealthMetricsMembersReservedTier[];
 
 /** How a reserved tier reads, whatever the foundation's spelling of it. */
 export const HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS: Record<HealthMetricsMembersReservedTier, string> = {
@@ -252,43 +213,6 @@ export const HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS: Record<HealthMetricsMe
   gold: 'Gold',
   silver: 'Silver',
 };
-
-/** The reserved tiers keep these colours in every tier setup; while one is present, no other tier takes its colour. */
-export const HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS: Record<HealthMetricsMembersReservedTier, string> = {
-  diamond: lfxColors.violet[500],
-  platinum: lfxColors.blue[900],
-  // The design's dark yellow has no palette token.
-  gold: '#D08700',
-  silver: lfxColors.blue[500],
-};
-
-/** With Platinum, Gold and Silver all present, every tier that is not reserved is this grey, as one segment. */
-export const HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR = lfxColors.gray[300];
-
-/** The label of the grey segment when two or more tiers share it. */
-export const HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_LABEL = 'Others';
-
-/**
- * The other tiers' colours, in order, when any of Platinum, Gold and Silver is missing. An entry is skipped while the
- * reserved tier it resembles is present, and back in rotation without it; past the last, the colours repeat.
- */
-export const HEALTH_METRICS_MEMBERS_BREAKDOWN_PALETTE: readonly HealthMetricsMembersBreakdownPaletteEntry[] = [
-  { color: lfxColors.blue[500], resembles: 'silver' },
-  { color: lfxColors.violet[500], resembles: 'diamond' },
-  { color: lfxColors.emerald[500], resembles: null },
-  { color: lfxColors.amber[500], resembles: 'gold' },
-  { color: lfxColors.red[500], resembles: null },
-  { color: lfxColors.blue[800], resembles: 'platinum' },
-  { color: lfxColors.violet[800], resembles: null },
-  { color: lfxColors.emerald[800], resembles: null },
-  { color: lfxColors.amber[800], resembles: null },
-  { color: lfxColors.red[800], resembles: null },
-  { color: lfxColors.blue[400], resembles: null },
-  { color: lfxColors.violet[300], resembles: null },
-  { color: lfxColors.emerald[300], resembles: null },
-  { color: lfxColors.amber[300], resembles: null },
-  { color: lfxColors.red[300], resembles: null },
-];
 
 /**
  * The tier icons as the design draws them: a gradient cut to a diamond (Diamond, Platinum) or a ring (Gold, Silver).
@@ -323,36 +247,25 @@ export const HEALTH_METRICS_MEMBERS_TIER_ICONS: Record<HealthMetricsMembersReser
 export const HEALTH_METRICS_MEMBERS_CHART_TIP_ROOM_PX = 292;
 
 /**
- * The breakdown table's classes: row labels by kind, value cells by kind (the last year washed in accent), a change
- * tinted by its direction, and the rules between cells. Applied via [class], so Tailwind's safelist carries them.
+ * The breakdown table's classes: row labels and value cells by kind, the striped and total fills, and the rules
+ * between cells. Applied via [class], so Tailwind's safelist carries them.
  */
 export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES: HealthMetricsMembersBreakdownTableClasses = {
   label: {
     tier: 'text-[13px] font-medium text-gray-900',
     total: 'text-[13px] font-semibold text-gray-900',
-    change: 'text-[12px] font-normal text-gray-500',
   },
   cell: {
     tier: 'text-[13px] font-normal text-gray-900',
     total: 'text-[13px] font-semibold text-gray-900',
-    change: 'text-[12px] font-normal text-gray-400',
   },
-  lastCell: { tier: 'bg-blue-50', total: 'bg-blue-100', change: 'bg-blue-50' },
-  change: {
-    up: 'text-[12px] font-medium text-emerald-600 bg-emerald-50',
-    down: 'text-[12px] font-medium text-red-600 bg-red-50',
-  },
+  stripe: 'bg-gray-50',
+  totalFill: 'bg-blue-100',
   cellBase: 'flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] py-[11px] leading-[18px]',
   rowRule: 'border-b border-[color:var(--ui-neutral-alpha-100)]',
   cellRule: 'border-l border-[color:var(--ui-neutral-alpha-100)]',
   totalRule: 'border-t border-gray-900',
 };
-
-/** The view switch over the breakdown; the first is the default. */
-export const HEALTH_METRICS_MEMBERS_BREAKDOWN_VIEW_OPTIONS: readonly HealthMetricsMembersBreakdownViewOption[] = [
-  { value: 'chart', label: 'Chart view', icon: 'fa-light fa-chart-column' },
-  { value: 'table', label: 'Table view', icon: 'fa-light fa-table' },
-];
 
 /** The directory's filter, search and page state in the URL; each key is namespaced to the section. */
 export const HEALTH_METRICS_MEMBERS_QUERY_PARAMS = {

@@ -340,8 +340,8 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await page.getByTestId('org-roi-project-picker-none').click();
     await expect(page.getByTestId('org-roi-project-picker-empty')).toBeVisible();
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
 
     await expect(page.getByTestId('org-roi-project-picker-empty')).toBeVisible();
     await expect(page.getByTestId('org-roi-projects-bar-empty')).toBeVisible();
@@ -369,8 +369,8 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await expect(state).toContainText('This section could not be loaded');
 
     // Switching method re-issues the read, which now succeeds.
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
 
     const chips = page.getByTestId('org-roi-project-picker-chips');
     await expect(chips).toBeVisible();

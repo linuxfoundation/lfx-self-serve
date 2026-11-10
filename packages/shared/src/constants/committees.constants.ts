@@ -735,3 +735,9 @@ export const GROUPS_ENGAGEMENT_ICON_CLASS = {
   activeMembers: 'bg-violet-100 text-violet-600',
   meetingsThisMonth: 'bg-amber-100 text-amber-600',
 } as const;
+
+/**
+ * List routes a group details page can return to. The page reads `backPath` from navigation state,
+ * so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
+ */
+export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];

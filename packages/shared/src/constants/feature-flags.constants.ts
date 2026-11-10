@@ -3,29 +3,6 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
-/**
- * Dark-launch gate for Marketing OS "Download PDF" (#5302). Default false: the in-app PDFs are being rebuilt
- * as landscape book pages, and until that lands the PDF comes from the exported Google Slides deck
- * (File → Download → PDF). LaunchDarkly targeting is the rollout switch, never the code default: everything
- * below comes back by flipping the flag, with no deploy.
- *
- * Off, the entry buttons are hidden — the AEO/GEO report row of the document view, the messaging framework
- * view, the brand kit web view and the family export card — and the copy that names a PDF changes so no screen
- * promises one: the kit footer's PDF sentence and the family card's PDF note are hidden; the family card's
- * approval note and sr-only format hint, the Slides export panel's disabled reason, the family intro and the
- * Brand Kit intake intro read their `…_SLIDES_ONLY` / `introSlidesOnly` wordings; Export to Google Slides takes
- * the solid style where it is now the row's one action; and the family card skips its PDF preparation. On,
- * every screen and string is today's.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag` in each component that renders one of
- * these; it gates no endpoint, and the print components, the print service and the print-only DOM stay. On
- * SSR (no provider) it reads the default, the off state. In the browser the components render under the route
- * `mktgOsAgentsEnabledGuard` gates, so the value is resolved before the first render in production, or under
- * a local override that pins BOTH this key and `mktg-os-agents-enabled`; with only the module key pinned the
- * guard returns before the provider is READY, and the PDF buttons can appear once LaunchDarkly resolves
- * (non-production builds only).
- */
-export const MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG = 'mktg-os-pdf-download-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /**
  * Dark-launch gate for the Org Lens Crowdfunding Donations page (lfx-crowdfunding#415): the route (`cfOrgDonationsGuard`,
@@ -63,6 +40,24 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
  * only this one hides/shows the UI without changing what a direct API caller can do.
  */
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
+
+/**
+ * Dark-launch gate for the committee ↔ mailing-list sync UI across #4022's frontend surfaces:
+ * the ON/OFF toggle and direction selector on the mailing list view page (#4024) and the
+ * **Sync Now** entry point on the committee Settings tab (#4027). Default false: an unflagged
+ * evaluation hides all of them so the feature ships dark ahead of #4022's full rollout. A new
+ * consumer (e.g. #4025's committee Auto Sync drawer) reads this same constant rather than
+ * defining a duplicate.
+ *
+ * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through
+ * `FeatureFlagService.getBooleanFlag`, which never runs server-side, so it cannot gate an Express
+ * handler. The actual `sync_mode` write (via `MailingListService.updateMailingList`) and the
+ * sync-diff/sync-apply BFF endpoints stay reachable by a direct API caller while this is off — the
+ * real-time auto-sync execution kill switch is tracked separately as a server-side env-var flag in
+ * #4878. Both would need to be enabled for the feature to be fully reachable; this flag alone only
+ * controls whether Self Serve renders the Sync Settings UI.
+ */
+export const MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG = 'mailing-list-committee-sync-enabled';
 
 /**
  * **No remaining consumers — nothing in this repo reads this flag.** It gated Org Lens surfaces
@@ -203,6 +198,16 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.
  */
 export const MEETING_V2_ENABLED_DEFAULT = false;
+/**
+ * Lets a user start new newsletters in the block composer, on top of the project gate in
+ * `NEWSLETTER_BLOCKS_PROJECT_SLUGS`. Off keeps the basic editor. A draft that already has a layout
+ * stays in the composer either way, because the basic editor can't edit it safely.
+ *
+ * **UI-only** — it does not gate the BFF or any endpoint.
+ */
+export const NEWSLETTER_ENHANCED_EDITOR_FLAG = 'newsletter-enhanced-editor';
+/** What {@link NEWSLETTER_ENHANCED_EDITOR_FLAG} reads as when LaunchDarkly has not answered. */
+export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
 /**
  * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
  * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat

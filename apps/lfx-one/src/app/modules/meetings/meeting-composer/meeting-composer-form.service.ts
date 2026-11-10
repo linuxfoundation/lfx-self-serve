@@ -279,6 +279,10 @@ export class MeetingComposerFormService {
    */
   public readonly committeeContextUnresolved = computed<boolean>(() => this.committeeContextLoading() || this.committeeContextFailed());
   public readonly originalStartTime = signal<string | null>(null);
+  // The same start date hydration patches into the startDate control, kept alongside it so
+  // composer-date-schedule's minDate() can let a past-dated meeting's own start date stay
+  // selectable (GH-4944) without re-deriving it from the raw timestamp.
+  public readonly originalStartDate = signal<Date | null>(null);
 
   /**
    * Owner hydrated from the loaded meeting, and the baseline the save diffs the picker against.
@@ -418,6 +422,7 @@ export class MeetingComposerFormService {
     this.savedSnapshot.set(null);
     this.meeting.set(null);
     this.originalStartTime.set(null);
+    this.originalStartDate.set(null);
     this.attachments.set([]);
     this.pendingAttachmentDeletions.set([]);
     this.registrantUpdates.set({ toAdd: [], toUpdate: [], toDelete: [] });
@@ -1183,8 +1188,8 @@ export class MeetingComposerFormService {
     return new FormGroup(
       {
         meeting_type: new FormControl('', [Validators.required]),
-        visibility: new FormControl(MeetingVisibility.PUBLIC),
-        restricted: new FormControl(false),
+        visibility: new FormControl(MeetingVisibility.PRIVATE),
+        restricted: new FormControl(true),
 
         title: new FormControl('', [Validators.required]),
         // Optional meeting organizer (owner). No profile_picture control — `UserSearchResult` carries no
@@ -1337,10 +1342,12 @@ export class MeetingComposerFormService {
       );
     }
 
-    // When Board meeting type is selected, default to private + restricted access.
-    // When switching away from Board, reset to public + unrestricted defaults so the
-    // user isn't left with Board-level settings silently applied to a non-Board meeting.
-    // The user can freely override visibility and restriction after the default is applied.
+    // Selecting Board, or switching away from it, reaffirms the form's own private + restricted
+    // default — the resting state is private/restricted either way, so there's nothing left to
+    // "undo" on leaving Board. Kept as its own patch (rather than relying on the form's initial
+    // value alone) so a user who manually loosened access while on Board gets it reset on leaving,
+    // same as before this default changed. The user can freely override visibility and restriction
+    // after the default is applied.
     //
     // Both create surfaces, so a board meeting is private whichever one the organizer used. Not edit
     // mode: hydration writes `meeting_type` like any other field, so the subscription would fire
@@ -1350,10 +1357,8 @@ export class MeetingComposerFormService {
       let previousType = meetingTypeControl.value as string;
       this.formSubscriptions.add(
         meetingTypeControl.valueChanges.subscribe((currentType: string) => {
-          if (currentType === MeetingType.BOARD) {
+          if (currentType === MeetingType.BOARD || previousType === MeetingType.BOARD) {
             form.patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true });
-          } else if (previousType === MeetingType.BOARD) {
-            form.patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
           }
           previousType = currentType;
         })
@@ -1809,13 +1814,15 @@ export class MeetingComposerFormService {
 
     this.occurrence.set(occurrence);
     this.originalStartTime.set(occurrence.start_time);
+    // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
+    // zone's own DST gap, reopening the untouched form on the wrong calendar day.
+    const occurrenceStartDate = toZonedDateCarrier(start, timezone);
+    this.originalStartDate.set(occurrenceStartDate);
 
     form.patchValue({
       title: occurrence.title || meeting.title,
       description,
-      // A carrier, not `toZonedTime`: the latter can normalize the wall time when it falls in the browser
-      // zone's own DST gap, reopening the untouched form on the wrong calendar day.
-      startDate: toZonedDateCarrier(start, timezone),
+      startDate: occurrenceStartDate,
       startTime: formatTo12HourInTimezone(start, timezone),
     });
     this.setDuration(this.occurrenceBaselineDuration(occurrence, meeting));
@@ -1984,6 +1991,7 @@ export class MeetingComposerFormService {
       const utcDate = new Date(meeting.start_time);
       const meetingTimezone = meeting.timezone || getUserTimezone();
       startDate = toZonedTime(utcDate, meetingTimezone);
+      this.originalStartDate.set(startDate);
       startTime = formatTo12HourInTimezone(utcDate, meetingTimezone);
     }
 

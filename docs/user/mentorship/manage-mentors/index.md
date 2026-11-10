@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, mentors, invite, approve, decline, requests]
 last_generated: 2026-10-26
-last_updated: 2026-11-05
+last_updated: 2026-11-09
 intercom_collection: Mentorship
 ---
 
@@ -14,7 +14,7 @@ The **Mentors** tab is where you bring mentors onto a program and act on the req
 ## Before you begin
 
 - You must be a Program Admin on the program.
-- The program must be approved. You can invite mentors only while it is **Open** or **Completed**.
+- The program must be approved. You can invite mentors only while it is **Accepting**, **In Progress**, **Upcoming** or **Completed**.
 
 ## Steps
 
@@ -41,7 +41,7 @@ The **Mentors** tab is where you bring mentors onto a program and act on the req
 
 The tab is paged ten mentors at a time.
 
-On an **Open** or **Completed** program, a mentor's name links to their public mentor page when **Profile Created?** says **Yes**. The page opens in a new tab.
+On an approved program (**Accepting**, **In Progress**, **Upcoming** or **Completed**), a mentor's name links to their public mentor page when **Profile Created?** says **Yes**. The page opens in a new tab.
 
 ## Mentor status
 
@@ -62,7 +62,7 @@ On an **Open** or **Completed** program, a mentor's name links to their public m
 | "No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username." | No account uses that email address. Once they create one, invite them again.                                                      |
 | "This person's LF email address is already used by another Mentorship account, so they can't be invited."        | Their LF account's primary email address is already on a different Mentorship account, so the invitation can't be linked to them. |
 | "No one matches that search."                                                                                    | Name search only finds people already in Mentorship. Try their exact LF username or full email address.                           |
-| "Mentors can only be invited to a published program."                                                            | The program is not **Open** or **Completed**.                                                                                     |
+| "Mentors can only be invited to a published program."                                                            | The program is not approved: it is not **Accepting**, **In Progress**, **Upcoming** or **Completed**.                             |
 | "This person is already on the program."                                                                         | They are already invited to, or a mentor of, the program.                                                                         |
 | "This mentor changed. The list has been refreshed."                                                              | The mentor's status moved on before your action was saved. Check it before acting again.                                          |
 | The mentor says their invitation link does not work                                                              | Invitation links are single use. Send a new invitation.                                                                           |

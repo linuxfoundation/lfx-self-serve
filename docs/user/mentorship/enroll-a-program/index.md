@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, enroll, program, logo, terms, prerequisites, review]
 last_generated: 2026-10-26
-last_updated: 2026-10-30
+last_updated: 2026-11-09
 intercom_collection: Mentorship
 ---
 
@@ -72,7 +72,7 @@ Finally, review and accept the terms and conditions: the LFX Platform Use Agreem
 
 ## After completing
 
-You see **Program submitted for review.** The program sits at **Pending Review** until the LFX Mentorship team decides. Once approved it becomes **Open**, you invite mentors from the **Mentors** tab, and it starts taking applications.
+You see **Program submitted for review.** The program sits at **Pending Review** until the LFX Mentorship team decides. Once approved its status follows its terms (**Accepting**, **In Progress** or **Upcoming**), you invite mentors from the **Mentors** tab, and it starts taking applications.
 
 ## Troubleshooting
 

@@ -16,6 +16,7 @@ import type {
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
 import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
+import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -70,6 +71,7 @@ export class MeetingComposerHostComponent {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly lensService = inject(LensService);
+  private readonly intercomService = inject(IntercomService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -260,6 +262,13 @@ export class MeetingComposerHostComponent {
         takeUntilDestroyed()
       )
       .subscribe(() => this.lensService.clearContextLens());
+
+    // Intercom's launcher bubble floats over the drawer's footer and covers its actions, so it is hidden
+    // while the composer is open and restored when it closes or this host goes away.
+    toObservable(this.composer.isOpen)
+      .pipe(takeUntilDestroyed())
+      .subscribe((isOpen) => this.intercomService.setLauncherHidden(isOpen));
+    this.destroyRef.onDestroy(() => this.intercomService.setLauncherHidden(false));
 
     // The create toast sits above the drawer, so opening the composer retires it; only the newest survives.
     toObservable(this.composer.isOpen)

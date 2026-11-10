@@ -31,14 +31,26 @@ export interface MentorshipProgramStats {
 }
 
 /**
- * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`):
- * - `open` — published, with an open term or no terms yet
+ * Program status as the admin list shows it (upstream `admin_status`, `_` written as `-`). A published program reads
+ * from its terms (deleted terms ignored), the first match winning:
+ * - `completed` — a closed term and no open one
+ * - `accepting` — an open term inside its application window (UTC calendar days, both included)
+ * - `in-progress` — an open term inside its term window
+ * - `upcoming` — an open term whose application window has not opened, or no terms yet
+ * - `in-progress` — any other open term (applications closed but not started, ended but not closed, or undated)
+ *
+ * The rest come from the program's own status:
  * - `pending-review` — pending, awaiting review
- * - `completed` — published, with only closed terms
  * - `rejected` — rejected
  * - `hidden` — hidden
  */
 export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
+
+/** The term fields a published program's status is read from. */
+export type MentorshipProgramTermDates = Pick<
+  MentorshipUpstreamProgramTerm,
+  'status' | 'start_date_time' | 'end_date_time' | 'application_start_date' | 'application_end_date'
+>;
 
 /** A program admin's visibility change on the program-detail header: `hide` a published program, `unhide` a hidden one. */
 export type MentorshipProgramVisibilityAction = 'hide' | 'unhide';

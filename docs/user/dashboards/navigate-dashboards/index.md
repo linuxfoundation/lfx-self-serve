@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, company, company, employer]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 
@@ -25,6 +25,8 @@ Your lens selection is saved for 30 days. The next time you sign in, the app res
 
 The **Me** lens (the default view at `/`) shows your personal activity across all your projects. You see your recent contributions, upcoming meetings, earned badges, and training enrollments.
 
+In the **Meetings** section, the card labelled **Next Meeting** shows the meeting that is about to start, in progress, or coming up first. In the Me lens these are your meetings. In a project or foundation lens, they are that project's or foundation's meetings. When there is more than one upcoming meeting, the card header shows buttons such as **‹ 1 of 3 ›**. Use them to step through up to five upcoming meetings in place, and back again. The label changes to **Upcoming Meeting** once you move past the first one. The buttons are dimmed at the first and last meeting, and pressing a dimmed button does nothing. Switching lens or project, selecting **Retry**, or leaving the page takes you back to the first meeting.
+
 If you manage groups, **My Pending Actions** also shows **Join request** rows across all the groups you can manage, with the applicant's email, optional name, and group. Select **View all** to review requests in the Pending Actions drawer. **Approve** asks you to confirm the applicant and group; **Reject** lets you add optional notes. A request disappears only after your decision is saved, and the drawer stays open while the list refreshes. After the final action is resolved, the drawer shows **All caught up!** and stays open until you close it. Users without managed groups or pending requests see no join-request rows.
 
 Navigating to another page does not cancel a confirmed approval or rejection that is already being saved. If join-request discovery is too slow or unavailable, those rows are omitted for that refresh while the other pending-action sources remain available; a later refresh can load them again.
@@ -39,9 +41,9 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
 
-## Company lens
+## Org lens
 
-The **Company** lens (also called the Company lens) shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
+The **Company** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
 
 ## Switch project context
 

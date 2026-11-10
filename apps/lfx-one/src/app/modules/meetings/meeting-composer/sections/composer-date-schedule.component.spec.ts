@@ -16,6 +16,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
@@ -592,5 +593,77 @@ describe('ComposerDateScheduleComponent — chips that cannot be cleared', () =>
     clickChip('composer-early-join-chips', `${retained} min`);
 
     expect(control('early_join_time_minutes')?.value).toBe(retained);
+  });
+});
+
+/**
+ * Covers the minDate() allowance for a meeting's own past start date (GH-4944): editing an
+ * existing recurring series shows a blank Start date field with every day in the picker greyed
+ * out, because minDate was hardcoded to yesterday with no exception for a meeting whose real
+ * start date is further in the past than that. The fix lets the meeting's own originalStartDate
+ * through, mirroring editModeDateTimeValidator()'s existing allowance at the form level.
+ */
+describe('ComposerDateScheduleComponent — minDate past-date allowance (GH-4944)', () => {
+  let fixture: ComponentFixture<ComposerDateScheduleComponent>;
+  let formService: MeetingComposerFormService;
+  let getMeeting: ReturnType<typeof vi.fn>;
+
+  const mountEditing = async (startTime: string): Promise<void> => {
+    getMeeting = vi.fn().mockReturnValue(
+      of({
+        id: 'meeting-1',
+        title: 'Weekly sync',
+        organizer: true,
+        start_time: startTime,
+        timezone: 'UTC',
+        duration: 30,
+      } as Meeting)
+    );
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting,
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(ComposerDateScheduleComponent, { set: { template: '', imports: [] } });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    fixture = TestBed.createComponent(ComposerDateScheduleComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('lowers minDate to the edited series’ own start date when it already started in the past', async () => {
+    await mountEditing('2026-07-15T15:00:00Z'); // matches the reporter's case: edited in November
+
+    const minDate = (fixture.componentInstance as any).minDate();
+    expect(minDate.getFullYear()).toBe(2026);
+    expect(minDate.getMonth()).toBe(6);
+    expect(minDate.getDate()).toBe(15);
+  });
+
+  it('keeps minDate at yesterday when the edited meeting starts in the future', async () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await mountEditing(future.toISOString());
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+
+    expect((fixture.componentInstance as any).minDate().getTime()).toBe(yesterday.getTime());
   });
 });

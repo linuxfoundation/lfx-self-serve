@@ -82,6 +82,13 @@ export class CreativeSlotGridComponent {
    * operator filled by hand would still read as missing while the form above it is satisfied.
    */
   public readonly formFilled = input<Readonly<Record<string, number>>>({});
+  /**
+   * Plan groups, as `platform/channel`, the host sends no images for (#1614). campaign-service plans
+   * every slot it publishes — Google Search's three optional asset slots among them — whether or not
+   * the host has a control that could send them, and listing a slot the campaign will never carry as
+   * "Covered" claims an image that is not going anywhere. Their rows and gaps are left out.
+   */
+  public readonly excludedGroups = input<readonly string[]>([]);
 
   // === Outputs ===
   /**
@@ -190,10 +197,13 @@ export class CreativeSlotGridComponent {
    */
   private initGroups(): Signal<CreativeSlotCoverageGroup[]> {
     return computed(() => {
-      const plan = this.state().plan;
-      if (!plan) {
+      const state = this.state().plan;
+      if (!state) {
         return [];
       }
+      const excluded = new Set(this.excludedGroups());
+      const kept = ({ platform, channel }: { platform: string; channel?: string }): boolean => !excluded.has(`${platform}/${channel ?? ''}`);
+      const plan = { ...state, assignments: state.assignments.filter(kept), gaps: state.gaps.filter(kept) };
 
       // Only gaps that NAME a slot can be folded into an assignment row. A gap with no `slot_key`
       // is a requirement spanning several slots and keeps a row of its own. Upstream omits the

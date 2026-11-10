@@ -26,7 +26,6 @@ import {
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
-  MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG,
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_RUN_FAILURE_REASON,
@@ -82,7 +81,6 @@ import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlV
 import type { FileSelectEvent } from 'primeng/fileupload';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, map, Observable, of, Subscription, switchMap, take, tap, timeout } from 'rxjs';
 
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -194,9 +192,6 @@ export class MktgAgentRunComponent {
   // === Catalog lookups (route param is stable for the component's lifetime) ===
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
-  /** While Download PDF is behind its flag (#5302), the form reads the intake's Slides-only intro where it has one. */
-  private readonly pdfEnabled = inject(FeatureFlagService).getBooleanFlag(MKTG_OS_PDF_DOWNLOAD_ENABLED_FLAG, false);
-  protected readonly intakeIntro = computed(() => (this.pdfEnabled() ? this.intake?.intro : (this.intake?.introSlidesOnly ?? this.intake?.intro)) ?? '');
   protected readonly linkedinIntake = LINKEDIN_POST_INTAKE;
   private readonly assetType = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id);
   protected readonly assetName = mktgKitAssetLabel(this.assetType?.agentKey ?? '') ?? this.assetType?.itemLabel ?? this.intake?.documentName ?? 'Document';
