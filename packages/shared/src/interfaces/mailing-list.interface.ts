@@ -572,9 +572,9 @@ export interface SyncJobResultEntry {
   email: string;
   /** Whether this entry was an add or a remove */
   action: 'add' | 'remove';
-  /** Whether this entry succeeded */
-  status: 'success' | 'error';
-  /** Failure detail, present only when `status` is `error` */
+  /** Whether this entry succeeded, failed, or was skipped (e.g. a cross-list remove ITX elected not to apply) */
+  status: 'success' | 'error' | 'skipped';
+  /** Detail for `error` and `skipped` rows explaining why */
   error?: string;
 }
 

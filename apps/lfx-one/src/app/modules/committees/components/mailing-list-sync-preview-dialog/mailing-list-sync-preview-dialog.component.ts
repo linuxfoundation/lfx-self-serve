@@ -21,11 +21,16 @@ import {
 import { MailingListService } from '@services/mailing-list.service';
 import { UserService } from '@services/user.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, finalize, interval, of, Subscription, switchMap, takeWhile, tap } from 'rxjs';
+import { catchError, exhaustMap, finalize, interval, of, Subscription, takeUntil, takeWhile, tap, timer } from 'rxjs';
 import { UiProgressComponent } from '@shared/uikit/progress/progress.component';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 
 type PreviewTab = 'adds' | 'removes' | 'conflicts';
+
+// Upper bound on how long a sync-diff/sync-apply job is polled before giving up — lockDynamicDialogWhile
+// gives the user no escape hatch while a poll is active, so a stuck upstream job must not trap them
+// in an unclosable dialog forever (general-code-reviewer, PR #5489 review).
+const POLL_DEADLINE_MS = 10 * 60 * 1000;
 
 @Component({
   selector: 'lfx-mailing-list-sync-preview-dialog',
@@ -225,19 +230,29 @@ export class MailingListSyncPreviewDialogComponent {
 
   /** Polls `/sync-diff/:jobId/status` every ~2s until the job reaches a terminal state. */
   private pollSyncDiffStatus(jobId: string, ticker: Subscription): void {
+    let reachedTerminalState = false;
+
     interval(2000)
       .pipe(
-        switchMap(() => this.mailingListService.getSyncDiffStatus(this.mailingListUid, jobId)),
+        // exhaustMap (not switchMap) so a slow status request isn't cancelled by the next 2s tick —
+        // switchMap would abort the in-flight request and silently restart it forever, never letting
+        // a slow-but-healthy job reach a terminal state (greptile-apps, cursor/Bugbot, copilot, #5489 review).
+        exhaustMap(() => this.mailingListService.getSyncDiffStatus(this.mailingListUid, jobId)),
         tap((status) => {
           this.diffProcessedCount.set(status.processed_count);
           this.diffTotalCount.set(status.total_count);
         }),
         takeWhile((status: SyncDiffJobStatus) => status.status === 'pending' || status.status === 'ongoing', true),
+        takeUntil(timer(POLL_DEADLINE_MS)),
         finalize(() => {
           ticker.unsubscribe();
           this.loadingDiff.set(false);
+          if (!reachedTerminalState) {
+            this.loadError.set('The sync preview is taking longer than expected. Please close this dialog and try again.');
+          }
         }),
         catchError((error) => {
+          reachedTerminalState = true;
           this.loadError.set(error?.error?.error ?? 'Could not load the sync preview. Please try again.');
           return of(null);
         }),
@@ -247,12 +262,15 @@ export class MailingListSyncPreviewDialogComponent {
         if (!status) return;
 
         if (status.status === 'failed') {
+          reachedTerminalState = true;
           this.loadError.set(status.error_message ?? 'Could not load the sync preview. Please try again.');
           return;
         }
 
-        if (status.status !== 'completed' || !status.diff) return;
-        this.applyLoadedDiff(status.diff);
+        if (status.status === 'completed' && status.diff) {
+          reachedTerminalState = true;
+          this.applyLoadedDiff(status.diff);
+        }
       });
   }
 
@@ -288,19 +306,29 @@ export class MailingListSyncPreviewDialogComponent {
 
   /** Polls `/sync-apply/:jobId/status` every ~2s until the job reaches a terminal state. */
   private pollSyncApplyStatus(jobId: string, ticker: Subscription): void {
+    let reachedTerminalState = false;
+
     interval(2000)
       .pipe(
-        switchMap(() => this.mailingListService.getSyncApplyStatus(this.mailingListUid, jobId)),
+        // exhaustMap (not switchMap) so a slow status request isn't cancelled by the next 2s tick —
+        // switchMap would abort the in-flight request and silently restart it forever, never letting
+        // a slow-but-healthy job reach a terminal state (greptile-apps, cursor/Bugbot, copilot, #5489 review).
+        exhaustMap(() => this.mailingListService.getSyncApplyStatus(this.mailingListUid, jobId)),
         tap((status) => {
           this.applyProcessedCount.set(status.processed_count);
           this.applyTotalCount.set(status.total_count);
         }),
         takeWhile((status: SyncApplyJobStatus) => status.status === 'pending' || status.status === 'ongoing', true),
+        takeUntil(timer(POLL_DEADLINE_MS)),
         finalize(() => {
           ticker.unsubscribe();
           this.applying.set(false);
+          if (!reachedTerminalState) {
+            this.applyError.set('Applying changes is taking longer than expected. Please close this dialog and try again.');
+          }
         }),
         catchError((error) => {
+          reachedTerminalState = true;
           this.applyError.set(error?.error?.error ?? 'Could not apply the sync changes. Please try again.');
           return of(null);
         }),
@@ -309,14 +337,17 @@ export class MailingListSyncPreviewDialogComponent {
       .subscribe((status) => {
         if (!status) return;
 
-        if (status.status === 'failed' && !status.results) {
-          this.applyError.set(status.error_message ?? 'Could not apply the sync changes. Please try again.');
-          return;
-        }
+        if (status.status !== 'completed' && status.status !== 'failed') return;
+        reachedTerminalState = true;
 
-        if (status.status === 'completed' || status.status === 'failed') {
-          this.applyResult.set(status);
+        // A "failed" job can still carry partial `results` (some adds/removes succeeded before the
+        // job errored out) — always surface the failure via applyError regardless of whether results
+        // are present, instead of silently falling into the success view (greptile-apps, cursor/Bugbot,
+        // copilot, #5489 review). applyResult is still set so any partial results remain visible.
+        if (status.status === 'failed') {
+          this.applyError.set(status.error_message ?? 'The sync job failed partway through.');
         }
+        this.applyResult.set(status);
       });
   }
 
@@ -329,6 +360,9 @@ export class MailingListSyncPreviewDialogComponent {
   private friendlyOutcome(result: SyncJobResultEntry, isReverseSync: boolean): string {
     if (result.status === 'error') {
       return result.error || 'Could not complete this change.';
+    }
+    if (result.status === 'skipped') {
+      return result.error || 'Skipped — this change was not applied.';
     }
     const destination = isReverseSync ? 'the committee' : 'the mailing list';
     return result.action === 'add' ? `Added to ${destination}.` : `Removed from ${destination}.`;

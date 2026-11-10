@@ -5,10 +5,19 @@
   @if (applyResult(); as result) {
     <!-- Results view -->
     <div class="flex flex-col gap-4">
-      <p class="text-[12.5px] text-gray-500 -mt-1">
-        Sync applied to <span class="font-semibold text-gray-700">{{ mailingListName }}</span
-        >.
-      </p>
+      @if (result.status === 'failed') {
+        <div
+          class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-600"
+          data-testid="sync-preview-apply-failed-banner">
+          <i class="fa-light fa-triangle-exclamation"></i>
+          <span>{{ applyError() }}</span>
+        </div>
+      } @else {
+        <p class="text-[12.5px] text-gray-500 -mt-1">
+          Sync applied to <span class="font-semibold text-gray-700">{{ mailingListName }}</span
+          >.
+        </p>
+      }
 
       @if (addedResults().length > 0) {
         <div class="flex flex-col gap-2">
@@ -45,12 +54,8 @@
   } @else if (loadingDiff() || applying()) {
     <!-- Progress bar once the job has reported a total; elapsed-time fallback before the first poll response arrives. -->
     <div class="flex flex-col items-center justify-center gap-3 py-12" data-testid="sync-preview-loading">
-      @if (applying() ? applyTotalCount() > 0 : diffTotalCount() > 0) {
-        <lfx-ui-progress
-          class="w-full max-w-xs"
-          [value]="applying() ? applyProcessedCount() : diffProcessedCount()"
-          [max]="applying() ? applyTotalCount() : diffTotalCount()"
-          [label]="applying() ? 'Applying changes' : 'Loading sync preview'" />
+      @if (applying() && applyTotalCount() > 0) {
+        <lfx-ui-progress class="w-full max-w-xs" [value]="applyProcessedCount()" [max]="applyTotalCount()" label="Applying changes" />
       } @else {
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-500"></i>
         <p class="text-[12.5px] text-gray-500">

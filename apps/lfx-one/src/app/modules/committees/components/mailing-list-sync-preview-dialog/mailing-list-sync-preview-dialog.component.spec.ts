@@ -5,11 +5,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { signal } from '@angular/core';
 import { MailingListSyncMode, SyncMemberType } from '@lfx-one/shared/enums';
-import { MailingListSyncPreviewDialogData, SyncDiff } from '@lfx-one/shared/interfaces';
+import { MailingListSyncPreviewDialogData, SyncApplyJobStatus, SyncDiff, SyncDiffJobStatus } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { UserService } from '@services/user.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { of } from 'rxjs';
 
 import { MailingListSyncPreviewDialogComponent } from './mailing-list-sync-preview-dialog.component';
@@ -28,9 +28,27 @@ const DIFF: SyncDiff = {
 
 async function setup(options: { diff?: SyncDiff | null; impersonating?: boolean; committeeUid?: string }): Promise<{
   fixture: ComponentFixture<MailingListSyncPreviewDialogComponent>;
-  applySyncDiff: ReturnType<typeof vi.fn>;
+  startSyncApply: ReturnType<typeof vi.fn>;
 }> {
-  const applySyncDiff = vi.fn(() => of({ added: [], removed: [] }));
+  const diffStatus: SyncDiffJobStatus = {
+    job_id: 'diff-job-1',
+    status: 'completed',
+    processed_count: 3,
+    total_count: 3,
+    diff: (options.diff === undefined ? DIFF : options.diff) ?? undefined,
+  };
+  const applyStatus: SyncApplyJobStatus = {
+    job_id: 'apply-job-1',
+    status: 'completed',
+    processed_count: 3,
+    total_count: 3,
+    added_count: 2,
+    removed_count: 1,
+    error_count: 0,
+    results: [],
+  };
+
+  const startSyncApply = vi.fn(() => of({ job_id: 'apply-job-1' }));
 
   await TestBed.configureTestingModule({
     imports: [MailingListSyncPreviewDialogComponent],
@@ -50,8 +68,10 @@ async function setup(options: { diff?: SyncDiff | null; impersonating?: boolean;
       {
         provide: MailingListService,
         useValue: {
-          getSyncDiff: vi.fn(() => of(options.diff === undefined ? DIFF : options.diff)),
-          applySyncDiff,
+          startSyncDiff: vi.fn(() => of({ job_id: 'diff-job-1' })),
+          getSyncDiffStatus: vi.fn(() => of(diffStatus)),
+          startSyncApply,
+          getSyncApplyStatus: vi.fn(() => of(applyStatus)),
         },
       },
       { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
@@ -59,10 +79,26 @@ async function setup(options: { diff?: SyncDiff | null; impersonating?: boolean;
   }).compileComponents();
 
   const fixture = TestBed.createComponent(MailingListSyncPreviewDialogComponent);
+  // Trigger the initial render (runs ngOnInit) before awaiting stability — in zoneless Angular,
+  // whenStable() hangs forever on the pending initial-render task until detectChanges() fires once.
+  fixture.detectChanges();
+  await fixture.whenStable();
+  // The diff-status poll runs on a 2s interval() — advance fake timers one tick so the first
+  // (and, per the mock, terminal) status response resolves deterministically instead of leaving
+  // the dialog stuck on loadingDiff().
+  vi.advanceTimersByTime(2000);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, applySyncDiff };
+  return { fixture, startSyncApply };
 }
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('MailingListSyncPreviewDialogComponent diff selection', () => {
   it('loads the diff and selects everything by default', async () => {
@@ -125,18 +161,18 @@ describe('MailingListSyncPreviewDialogComponent impersonation', () => {
   });
 
   it('does not apply when impersonating even if apply() is called directly', async () => {
-    const { fixture, applySyncDiff } = await setup({ impersonating: true });
+    const { fixture, startSyncApply } = await setup({ impersonating: true });
 
     fixture.componentInstance.apply();
 
-    expect(applySyncDiff).not.toHaveBeenCalled();
+    expect(startSyncApply).not.toHaveBeenCalled();
   });
 
   it('allows apply when not impersonating', async () => {
-    const { fixture, applySyncDiff } = await setup({ impersonating: false });
+    const { fixture, startSyncApply } = await setup({ impersonating: false });
 
     fixture.componentInstance.apply();
 
-    expect(applySyncDiff).toHaveBeenCalledWith('ml-1', expect.objectContaining({ committee_uid: 'committee-1' }));
+    expect(startSyncApply).toHaveBeenCalledWith('ml-1', expect.objectContaining({ committee_uid: 'committee-1' }));
   });
 });
