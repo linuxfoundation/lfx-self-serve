@@ -3856,45 +3856,6 @@ export class ImplementationTabComponent implements OnInit {
     return null;
   });
 
-  /**
-   * The label of the first `campaignForm` control that fails its validators, for the reason Create is
-   * disabled when the form is invalid (#5491). Walks the controls in declaration order, which is
-   * roughly the order the form renders them. A control with no entry here is named from its key.
-   */
-  private firstInvalidCampaignControlLabel(): string {
-    const key = Object.keys(this.campaignForm.controls).find((name) => this.campaignForm.get(name)?.invalid) ?? '';
-    switch (key) {
-      case 'budgetUsd':
-        return 'the daily budget';
-      case 'headlines':
-        return 'a Search headline';
-      case 'descriptions':
-        return 'a Search description';
-      case 'demandGenCreative':
-        return 'the Demand Gen creative';
-      case 'performanceMaxCreative':
-        return 'the Performance Max creative';
-      case 'displayCreative':
-        return 'the Display creative';
-      case 'searchAssets':
-        return 'the Search assets';
-      case 'demandGenVideoCreative':
-        return 'the Demand Gen video creative';
-      case 'demandGenAdGroups':
-        return 'a Demand Gen ad group';
-      case 'demandGenAds':
-        return 'a Demand Gen ad';
-      case 'displayAdGroups':
-        return 'a Display ad group';
-      case 'displayAudiences':
-        return 'the Display audiences';
-      case '':
-        return 'a field';
-      default:
-        return `the ${key.replace(/([A-Z])/g, ' $1').toLowerCase()} field`;
-    }
-  }
-
   protected readonly availableGeoTargets = computed(() => {
     const selected = new Set(this.linkedInGeoTargets().map((g) => g.urn));
     return this.allKnownGeos.filter((g) => !selected.has(g.urn));
@@ -6477,18 +6438,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Bring the message beside Create Campaign into view once the form is back (#5491).
-   *
-   * The create swaps the long form for the short progress card, which can scroll the page up, so the
-   * form can come back with the message beside the button at its foot out of view, and a refusal
-   * looks as though nothing happened. Runs after the form has rendered again; a browser-only hook, so SSR never
-   * runs it.
-   */
-  private revealCreateMessage(): void {
-    afterNextRender(() => this.createMessage()?.nativeElement.scrollIntoView({ block: 'center' }), { injector: this.injector });
-  }
-
-  /**
    * Check the pasted URLs of a Google image field in the browser once the operator leaves it.
    *
    * Advisory only: it never blocks Create. campaign-service downloads every pasted URL and checks its
@@ -6835,6 +6784,57 @@ export class ImplementationTabComponent implements OnInit {
    */
   private acceptedMetaGeos(codes: readonly string[]): string[] {
     return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  }
+
+  /**
+   * The label of the first `campaignForm` control that fails its validators, for the reason Create is
+   * disabled when the form is invalid (#5491). Walks the controls in declaration order, which is
+   * roughly the order the form renders them. A control with no entry here is named from its key.
+   */
+  private firstInvalidCampaignControlLabel(): string {
+    const key = Object.keys(this.campaignForm.controls).find((name) => this.campaignForm.get(name)?.invalid) ?? '';
+    switch (key) {
+      case 'budgetUsd':
+        return 'the daily budget';
+      case 'headlines':
+        return 'a Search headline';
+      case 'descriptions':
+        return 'a Search description';
+      case 'demandGenCreative':
+        return 'the Demand Gen creative';
+      case 'performanceMaxCreative':
+        return 'the Performance Max creative';
+      case 'displayCreative':
+        return 'the Display creative';
+      case 'searchAssets':
+        return 'the Search assets';
+      case 'demandGenVideoCreative':
+        return 'the Demand Gen video creative';
+      case 'demandGenAdGroups':
+        return 'a Demand Gen ad group';
+      case 'demandGenAds':
+        return 'a Demand Gen ad';
+      case 'displayAdGroups':
+        return 'a Display ad group';
+      case 'displayAudiences':
+        return 'the Display audiences';
+      case '':
+        return 'a field';
+      default:
+        return `the ${key.replace(/([A-Z])/g, ' $1').toLowerCase()} field`;
+    }
+  }
+
+  /**
+   * Bring the message beside Create Campaign into view once the form is back (#5491).
+   *
+   * The create swaps the long form for the short progress card, which can scroll the page up, so the
+   * form can come back with the message beside the button at its foot out of view, and a refusal
+   * looks as though nothing happened. Runs after the form has rendered again; a browser-only hook, so SSR never
+   * runs it.
+   */
+  private revealCreateMessage(): void {
+    afterNextRender(() => this.createMessage()?.nativeElement.scrollIntoView({ block: 'center' }), { injector: this.injector });
   }
 
   /**
