@@ -2323,7 +2323,7 @@ export class OrgLensProjectDetailService {
         'Meeting Attendance',
         projectName,
         this.countCaption(meetings, { prefix: 'Our company has no meeting attendance for this project.', emphasis: '', suffix: '' }, (n) => ({
-          prefix: 'Org reps attended ',
+          prefix: 'Company reps attended ',
           emphasis: `${n}`,
           suffix: ` project ${this.plural(n, 'meeting', 'meetings')}.`,
         })),

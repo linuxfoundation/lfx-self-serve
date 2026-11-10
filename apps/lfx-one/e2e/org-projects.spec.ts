@@ -205,7 +205,7 @@ async function gotoOrgProjectsPage(
   await expect(page).not.toHaveURL(/auth0\.com/);
 }
 
-test.describe('Org Projects', () => {
+test.describe('Company Projects', () => {
   test('renders the projects table with stubbed org data', async ({ page }) => {
     await gotoOrgProjectsPage(page);
 

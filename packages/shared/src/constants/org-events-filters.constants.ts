@@ -38,15 +38,15 @@ export const ORG_EVENTS_ATTRIBUTION_LABEL = 'Counted by';
 /** Tooltip on the "Counted by" filter, per option. */
 export const ORG_EVENTS_ATTRIBUTION_TOOLTIP: Readonly<Record<OrgEventsAttribution, string>> = {
   verified: 'Registered or spoke with a company email address on record, or their LF account matches someone on the company roster.',
-  self_reported: 'Linked only because they named the organization on their registration or talk submission.',
-  all: 'Everyone linked to the organization, including people who only named it on their registration or talk submission.',
+  self_reported: 'Linked only because they named the company on their registration or talk submission.',
+  all: 'Everyone linked to the company, including people who only named it on their registration or talk submission.',
 };
 
 /** Phrase a caption or tooltip adds for the attribution it counts. */
 export const ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE: Readonly<Record<OrgEventsAttribution, string>> = {
   verified: 'Company email on record or LF account on the company roster.',
-  self_reported: 'Linked only because they named the organization on their registration or talk submission.',
-  all: 'Everyone linked to the organization, including people who only named it on their registration or talk submission.',
+  self_reported: 'Linked only because they named the company on their registration or talk submission.',
+  all: 'Everyone linked to the company, including people who only named it on their registration or talk submission.',
 };
 
 /** "Count" options, default first. */

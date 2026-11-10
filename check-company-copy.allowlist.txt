@@ -11,7 +11,6 @@
 5	apps/lfx-one/src/app/modules/dashboards/health-metrics-events/components/events-speakers/events-speakers.component.html
 1	apps/lfx-one/src/app/modules/dashboards/health-metrics-non-members/components/non-members-people/non-members-people.component.html
 2	apps/lfx-one/src/app/modules/dashboards/org/org-profile/org-profile-edit.component.html
-1	apps/lfx-one/src/app/modules/events/org-events-dashboard/org-events-dashboard.component.html
 3	apps/lfx-one/src/app/modules/formations/components/project-application-form/project-application-form.component.html
 1	apps/lfx-one/src/app/modules/meetings/components/guest-form/guest-form.component.html
 1	apps/lfx-one/src/app/modules/profile/components/affiliation-timeline-dialog/affiliation-timeline-dialog.component.html

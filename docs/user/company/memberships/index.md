@@ -63,17 +63,17 @@ Each row is one foundation membership. Select the foundation name to open its me
 | **Member Since**      | The month and year the membership started, or a dash (**—**) when that date is missing                                                                                                          |
 | **Board Members**     | How many board seats this membership has                                                                                                                                                        |
 | **Committee Members** | How many committee seats this membership has                                                                                                                                                    |
-| **Org Projects**      | How many projects your company is involved in at that foundation. A number above 0 opens the **Org Projects** panel. **0** is text and does not open the panel                                  |
+| **Company Projects**  | How many projects your company is involved in at that foundation. A number above 0 opens the **Company Projects** panel. **0** is text and does not open the panel                              |
 
-The line under the foundation name is not the **Org Projects** count. **Org Projects** is the last column.
+The line under the foundation name is not the **Company Projects** count. **Company Projects** is the last column.
 
-## What does the Org Projects panel show?
+## What does the Company Projects panel show?
 
-The **Org Projects** panel lists the projects your company is involved in at that foundation. It opens from a number in the **Org Projects** column.
+The **Company Projects** panel lists the projects your company is involved in at that foundation. It opens from a number in the **Company Projects** column.
 
-The panel title is **Org Projects**. Under it is the foundation name, a middle dot, the count, and the word **project** or **projects**.
+The panel title is **Company Projects**. Under it is the foundation name, a middle dot, the count, and the word **project** or **projects**.
 
-1. Select the number in **Org Projects**.
+1. Select the number in **Company Projects**.
 2. To narrow the list, use **Search projects...**.
 3. Select a Linux Foundation (LF) project name to open that project's detail page. The panel closes. See [What is a project detail page?](../projects/#what-is-a-project-detail-page). A project that is not an LF project is shown as text and is not a link.
 
@@ -223,15 +223,15 @@ When there are no agreements, the tab says **No membership agreements found.** W
 
 A failed load keeps you on the same tab and tells you to retry. It is not the same as an empty list.
 
-| What you see                                                       | What to do                                     |
-| ------------------------------------------------------------------ | ---------------------------------------------- |
-| **Failed to load memberships**                                     | Select **Retry** on **Active**                 |
-| **Failed to load expired memberships**                             | Select **Retry** on **Expired**                |
-| **Failed to load discover opportunities**                          | Select **Retry** on **Discover**               |
-| **Failed to load membership detail**                               | Select **Retry** on the detail page            |
-| **Failed to load documents**                                       | Select **Retry** on **Documentation**          |
-| **Couldn't load Board Seats** or **Couldn't load Committee Seats** | Select **Retry** in that section               |
-| **Failed to load projects.**                                       | Select **Retry** in the **Org Projects** panel |
+| What you see                                                       | What to do                                         |
+| ------------------------------------------------------------------ | -------------------------------------------------- |
+| **Failed to load memberships**                                     | Select **Retry** on **Active**                     |
+| **Failed to load expired memberships**                             | Select **Retry** on **Expired**                    |
+| **Failed to load discover opportunities**                          | Select **Retry** on **Discover**                   |
+| **Failed to load membership detail**                               | Select **Retry** on the detail page                |
+| **Failed to load documents**                                       | Select **Retry** on **Documentation**              |
+| **Couldn't load Board Seats** or **Couldn't load Committee Seats** | Select **Retry** in that section                   |
+| **Failed to load projects.**                                       | Select **Retry** in the **Company Projects** panel |
 
 A dash (**—**) on the three **Active** cards, while the table says **Failed to load memberships**, means the counts did not load either.
 

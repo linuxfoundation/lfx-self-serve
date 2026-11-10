@@ -34,7 +34,7 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
     cacheKeys.length = 0;
   });
 
-  it('shapes the foundation-projects detail rows behind the Org Projects count, with LF maintainer roles from their own read', async () => {
+  it('shapes the foundation-projects detail rows behind the Company Projects count, with LF maintainer roles from their own read', async () => {
     execute.mockImplementation(async (sql: string) =>
       sql.includes('ORG_MAINTAINER_ROLES')
         ? { rows: [{ PROJECT_ID: 'p-1', MAINTAINER_ROLES: 2 }] }

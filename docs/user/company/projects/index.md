@@ -171,7 +171,7 @@ A blank name shows **Workspace name is required.** A save or delete that did not
 
 A project detail page shows how the selected company takes part in one project and how it compares with other companies there. You open it by selecting a project name on Projects. Its address is `/company/<company>/projects/<project>`.
 
-You can also open it from a project in the [Company Overview dashboard](../company-overview/) and from the **Org Projects** panel on [Memberships](../memberships/#what-does-the-org-projects-panel-show).
+You can also open it from a project in the [Company Overview dashboard](../company-overview/) and from the **Company Projects** panel on [Memberships](../memberships/#what-does-the-company-projects-panel-show).
 
 The trail at the top reads **Projects** followed by the project name. Select **Projects** to go back to the list.
 
@@ -318,7 +318,7 @@ When Projects or a project detail page fails to load, it shows a message naming 
 
 - [Choose and switch a company](../choose-a-company/) — pick the company these projects belong to
 - [Company Overview dashboard](../company-overview/) — the **Dashboard**, whose project links open a project detail page
-- [Memberships](../memberships/) — the company's foundation memberships, and the **Org Projects** panel for each one
+- [Memberships](../memberships/) — the company's foundation memberships, and the **Company Projects** panel for each one
 - [Manage Company Lens Access](../manage-company-lens-access/) — who is an Admin, and who can manage workspaces
 - [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected company
 - [Company FAQ](../faq/) — short answers about the Company lens
