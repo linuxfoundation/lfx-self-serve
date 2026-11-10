@@ -722,6 +722,24 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
       expect(byTestId(dismissAllId('meetings'))).toBeNull();
     });
 
+    it('dismisses only the ready RSVP in a section that also holds one still loading', async () => {
+      // Rows load in feed order: the first meeting resolves, the second never does.
+      meetingService.getMeeting.mockReturnValueOnce(of(meeting)).mockReturnValueOnce(NEVER);
+      await render([row('RSVP', 'RSVP ready', { meetingUid: 'meeting-1' }), row('RSVP', 'RSVP loading', { meetingUid: 'meeting-2' })]);
+
+      (byTestId(dismissAllId('meetings')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(document.body.querySelector('.p-confirmdialog-message')?.textContent).toContain('Dismiss 1 item from Meetings');
+
+      const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+      expect(accept).not.toBeNull();
+      accept?.click();
+      fixture.detectChanges();
+
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+      expect(hiddenActions.dismissAction).toHaveBeenCalledWith(expect.objectContaining({ text: 'RSVP ready' }));
+    });
+
     it('with a single dismissible section shows Dismiss all without repeating the section title or count', async () => {
       await render([row('Survey', 'Survey A')]);
 
