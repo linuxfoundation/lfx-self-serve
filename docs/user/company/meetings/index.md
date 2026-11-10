@@ -14,7 +14,7 @@ This article covers the company's **Meetings** page in the Company lens. Your ow
 
 ## What is the Company lens Meetings page?
 
-The Company lens Meetings page shows how the selected company's employees take part in Linux Foundation project meetings over a time range: how many attend, where they spend that time, and how their attendance adds to the company's influence on each project. Its address is `/org/<company>/meetings`.
+The Company lens Meetings page shows how the selected company's employees take part in Linux Foundation project meetings over a time range: how many attend, where they spend that time, and how their attendance adds to the company's influence on each project. Its address is `/company/<company>/meetings`.
 
 The page heading is **Meetings**, and the line under it is **How your company's employees engage across Linux Foundation projects.** The page shows totals for the company only. It does not list people or individual meetings.
 
@@ -36,7 +36,7 @@ You open **Meetings** from the Company lens sidebar, under **Company Engagement*
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## How do I change the time range on Meetings?
 
@@ -106,7 +106,7 @@ Each section loads on its own, so one section can be empty or fail while the oth
 ## Related sections
 
 - [Projects and project detail](../projects/) — each project's page, with the company's influence cards
-- [Org Overview dashboard](../company-overview/) — the **Meetings This Week** tile and the **Governance Participation** column
+- [Company Overview dashboard](../company-overview/) — the **Meetings This Week** tile and the **Governance Participation** column
 - [Groups](../groups/) — the working groups and committees where the company's employees hold seats
 - [Meetings](../../meetings/) — your own meetings, which you join and manage
 - [Company FAQ](../faq/) — short answers about the Company lens

@@ -21,7 +21,7 @@ Other users don't see the navigation item. If they open the page's address anywa
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Switch to the **Projects**, **Foundation**, or **Company** lens and select the project, foundation, or company.
-3. Select **Crowdfunding Initiatives** from the left navigation sidebar. In the **Company** lens it is directly below **Projects**, and the page address is `/org/<company>/initiatives`.
+3. Select **Crowdfunding Initiatives** from the left navigation sidebar. In the **Company** lens it is directly below **Projects**, and the page address is `/company/<company>/initiatives`.
 
 ## What the page shows
 

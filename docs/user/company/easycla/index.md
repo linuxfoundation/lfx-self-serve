@@ -22,7 +22,7 @@ EasyCLA is in the Company lens sidebar, just above **Company Profile**.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Switch to the **Company** lens and select the company.
-3. Open **EasyCLA**, or go directly to `/org/<company>/easycla`.
+3. Open **EasyCLA**, or go directly to `/company/<company>/easycla`.
 
 A CLA Manager, or an initial CLA Manager designee, who has no other Company lens role on that company sees **EasyCLA** and nothing else in the sidebar. The rest of the Company lens stays closed to them.
 
@@ -50,7 +50,7 @@ A CLA Manager role that was just added or just removed can take about 30 minutes
 - **You don't have an EasyCLA role at this company.** The page then offers **contact support** if you need EasyCLA assistance. That button opens support. It is not the reason the page is empty.
 - **Something went wrong fetching this company's corporate CLAs.** Refresh the page to try again. That failure is not a statement about your role.
 
-If you have an admin or viewer role on any company, the company switcher lists only the companies where you have that role, and leaves out companies where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. See [Why is a company missing from the switcher?](../choose-a-company/#why-is-an-company-missing-from-the-switcher).
+If you have an admin or viewer role on any company, the company switcher lists only the companies where you have that role, and leaves out companies where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. See [Why is a company missing from the switcher?](../choose-a-company/#why-is-a-company-missing-from-the-switcher).
 
 ## What does the EasyCLA list show?
 

@@ -10,7 +10,7 @@ intercom_collection: Dashboards
 
 The Involvement section of the Foundation overview shows how one company takes part in the foundation you selected: its membership tier, active contributors, maintainers, event attendees and speakers, certified employees and training enrollments. Selecting any card except **Membership Tier** opens a panel with a chart over time and, for most cards, a breakdown by project or program. The section is headed with the company's name, such as **Acme's Involvement**.
 
-These steps apply to board members and executive directors in the **Foundation** lens. The Company lens has its own Involvement cards, which total all foundations; see [How is this different from the Org Overview?](#how-is-this-different-from-the-company-overview).
+These steps apply to board members and executive directors in the **Foundation** lens. The Company lens has its own Involvement cards, which total all foundations; see [How is this different from the Company Overview?](#how-is-this-different-from-the-company-overview).
 
 ## Which company and foundation does the section show?
 
@@ -68,9 +68,9 @@ When one of the cards fails to load, the section shows a single message in place
 | **You do not have access to this company**                  | Access to the company's figures is granted by its own Company Lens administrators. Ask them for access, or select **Contact support** |
 | **Access could not be verified**                            | Your access could not be checked right now. This is temporary and does not change your permissions. Select **Retry**                  |
 
-## How is this different from the Org Overview?
+## How is this different from the Company Overview?
 
-The Involvement section on the Foundation overview covers one foundation, and every card except **Membership Tier** opens a panel. The [Org Overview](../../company/company-overview/), the Dashboard of the **Company** lens, totals the company's involvement across all Linux Foundation foundations. Its cards count differently, and only its three **Education** cards, **People with training activity**, **Certified people** and **Courses taken**, open another page.
+The Involvement section on the Foundation overview covers one foundation, and every card except **Membership Tier** opens a panel. The [Company Overview](../../company/company-overview/), the Dashboard of the **Company** lens, totals the company's involvement across all Linux Foundation foundations. Its cards count differently, and only its three **Education** cards, **People with training activity**, **Certified people** and **Courses taken**, open another page.
 
 The **Company Dependency** card in the Foundation overview's health metrics is a different card: it shows how concentrated the foundation's contributions are across companies. See [Company Dependency](../foundation-health-metrics/#company-dependency).
 
@@ -78,5 +78,5 @@ The **Company Dependency** card in the Foundation overview's health metrics is a
 
 - [Foundation Health Metrics](../foundation-health-metrics/) — the health cards on the Foundation overview, including Company Dependency
 - [Navigate Your Dashboard](../navigate-dashboards/) — switch lenses and the foundation you are viewing
-- [Org Overview dashboard](../../company/company-overview/) — the company's involvement across all foundations, in the Company lens
+- [Company Overview dashboard](../../company/company-overview/) — the company's involvement across all foundations, in the Company lens
 - [Company FAQ](../../company/faq/) — short answers about the Company lens

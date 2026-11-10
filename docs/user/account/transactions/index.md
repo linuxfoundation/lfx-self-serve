@@ -57,7 +57,7 @@ If you have no transactions, the page shows the message "No transactions found. 
 
 ## Your company's activity
 
-Company-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Company Lens (route: `/org/memberships`).
+Company-level financial commitments — including annual membership dues — are separate from your personal transaction history. To view your company's membership status and fees, go to the **Memberships** section in Company Lens (route: `/company/memberships`).
 
 ### What you can see in Memberships
 
@@ -67,8 +67,8 @@ Company-level financial commitments — including annual membership dues — are
 
 For other company-level financial activity, see the related Company Lens pages:
 
-- **Event sponsorships** — visible on the [Events](../../events/) page in Company Lens (`/org/events`)
-- **Corporate training packages** — visible on the [Training & Certification](../../trainings/) page in Company Lens (`/org/training`)
+- **Event sponsorships** — visible on the [Events](../../events/) page in Company Lens (`/company/events`)
+- **Corporate training packages** — visible on the [Training & Certification](../../trainings/) page in Company Lens (`/company/training`)
 
 ### Who can access this
 

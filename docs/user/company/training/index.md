@@ -12,7 +12,7 @@ These steps apply to anyone who can open a company in the Company lens, such as 
 
 ## What is the Training & Certification page?
 
-The Training & Certification page shows the Linux Foundation training courses and certifications that the selected company's people enrolled in or completed over a time range, grouped by course, foundation, project, level or format. Its address is `/org/<company>/training`.
+The Training & Certification page shows the Linux Foundation training courses and certifications that the selected company's people enrolled in or completed over a time range, grouped by course, foundation, project, level or format. Its address is `/company/<company>/training`.
 
 The sidebar item is **Training & Certification**. The page heading is **Training & Certifications —** followed by the company's name, and the line under it is **Training enrollments and certifications across your company.** The page has, from top to bottom:
 
@@ -34,7 +34,7 @@ You open **Training & Certification** from the Company lens sidebar, under **Com
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## What do the cards on Training & Certification count?
 
@@ -117,6 +117,6 @@ An empty table also shows **Browse courses**, which opens the Linux Foundation t
 ## Related sections
 
 - [People](../people/) — the **Trainees** tab lists each trainee, with the same cards and filters
-- [Org Overview dashboard](../company-overview/) — the **People with training activity**, **Certified people** and **Courses taken** Education tiles, which open this page
+- [Company Overview dashboard](../company-overview/) — the **People with training activity**, **Certified people** and **Courses taken** Education tiles, which open this page
 - [Choose and switch a company](../choose-a-company/) — pick the company the page shows
 - [Company FAQ](../faq/) — short answers about the Company lens

@@ -455,7 +455,7 @@ describe('ParticipatingOrgsComponent', () => {
 
     expect(text('participating-orgs-tabs')).toContain('All (6)');
     expect(text('participating-orgs-tabs')).toContain('Members (5)');
-    expect(text('stat-card-Contributing Orgs')).toContain('3');
+    expect(text('stat-card-Contributing Companies')).toContain('3');
     expect(text('stat-card-Members')).toContain('2 contributing');
   });
 

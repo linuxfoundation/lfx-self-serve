@@ -299,8 +299,8 @@ export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 export const ORG_EASYCLA_RETURN_ORG_PARAM = 'company';
 
 /**
- * The pre-rename name of {@link ORG_EASYCLA_RETURN_ORG_PARAM} (`?org=`, #5064). Never written; still read, because
- * signing trips opened before the rename return on it, and the legacy `/org/easycla` redirect carries it over.
+ * The pre-rename name of {@link ORG_EASYCLA_RETURN_ORG_PARAM} (`?org=`, #5064). Still written into signing return URLs
+ * (with the `/org` root) so a rollback or an older replica can route them; this release 301s them to `/company` + `?company=`.
  */
 export const ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM = 'org';
 

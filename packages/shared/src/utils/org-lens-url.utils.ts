@@ -105,7 +105,9 @@ export function normalizeOrgSegment(raw: string): string {
  * safe default across a rolling deploy or a rollback. Sibling of `orgEasyclaReturnPath`.
  */
 export function legacyOrgEasyclaReturnPath(claGroupId: string): string {
-  return `${ORG_EASYCLA_PATH}/${encodeURIComponent(claGroupId)}`;
+  // Minted with the pre-rename `/org` root on purpose: a return URL is fixed when signing starts and is used days
+  // later, possibly by a replica or a rollback that does not route `/company` yet. This release 301s it to `/company`.
+  return `/${ORG_LENS_LEGACY_URL_ROOT}/easycla/${encodeURIComponent(claGroupId)}`;
 }
 
 /**
@@ -122,7 +124,8 @@ export function legacyOrgEasyclaReturnPath(claGroupId: string): string {
  * address from the request Host, and the two hand-offs must not disagree on where they land.
  */
 export function orgEasyclaReturnPath(orgUid: string, claGroupId: string): string {
-  return `/${ORG_LENS_URL_ROOT}/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
+  // Pre-rename `/org` root, for the same rollback-safety reason as `legacyOrgEasyclaReturnPath`; the server 301s it to `/company`.
+  return `/${ORG_LENS_LEGACY_URL_ROOT}/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
 }
 
 /**
@@ -199,7 +202,8 @@ const LEGACY_DOCS_SINGLE_PAGES: Readonly<Record<string, string>> = {
  */
 export function legacyDocsRedirectTarget(pathAndQuery: string): string | null {
   const queryStart = pathAndQuery.indexOf('?');
-  const path = queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart);
+  // The docs resolver ignores case and a trailing slash, so old links in those forms still reach a page; match the same way.
+  const path = (queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart)).toLowerCase().replace(/\/+$/, '');
   const query = queryStart === -1 ? '' : pathAndQuery.slice(queryStart);
   const movedPage = LEGACY_DOCS_SINGLE_PAGES[path];
   if (movedPage) {

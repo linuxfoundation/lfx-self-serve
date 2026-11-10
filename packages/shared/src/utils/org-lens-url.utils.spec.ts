@@ -117,27 +117,27 @@ describe('orgLensDestinationKey', () => {
 
 describe('orgEasyclaReturnPath', () => {
   it('addresses the CLA Group under the organization, as the /company/:orgSegment/easycla/:claGroupId route expects', () => {
-    expect(orgEasyclaReturnPath('0014100000Te2ovAAB', 'cla-group-uuid-1')).toBe('/company/0014100000Te2ovAAB/easycla/cla-group-uuid-1');
+    expect(orgEasyclaReturnPath('0014100000Te2ovAAB', 'cla-group-uuid-1')).toBe('/org/0014100000Te2ovAAB/easycla/cla-group-uuid-1');
   });
 
   // Both values reach the address as single path segments whatever they hold.
   it('encodes both segments', () => {
-    expect(orgEasyclaReturnPath('a/b', 'c?d')).toBe('/company/a%2Fb/easycla/c%3Fd');
+    expect(orgEasyclaReturnPath('a/b', 'c?d')).toBe('/org/a%2Fb/easycla/c%3Fd');
   });
 
   it('is the leftover address plus the organization segment', () => {
     expect(ORG_EASYCLA_PATH).toBe('/company/easycla');
-    expect(orgEasyclaReturnPath('0014100000Te2ovAAB', 'g')).toBe('/company/0014100000Te2ovAAB/easycla/g');
+    expect(orgEasyclaReturnPath('0014100000Te2ovAAB', 'g')).toBe('/org/0014100000Te2ovAAB/easycla/g');
   });
 });
 
 describe('legacyOrgEasyclaReturnPath', () => {
   it('builds the leftover shape under the legacy mount, with no organization in the path', () => {
-    expect(legacyOrgEasyclaReturnPath('c1ab2e7d-0000-4000-8000-000000000001')).toBe('/company/easycla/c1ab2e7d-0000-4000-8000-000000000001');
+    expect(legacyOrgEasyclaReturnPath('c1ab2e7d-0000-4000-8000-000000000001')).toBe('/org/easycla/c1ab2e7d-0000-4000-8000-000000000001');
   });
 
   it('encodes the CLA Group id so it cannot append a segment', () => {
-    expect(legacyOrgEasyclaReturnPath('g/../x?y')).toBe('/company/easycla/g%2F..%2Fx%3Fy');
+    expect(legacyOrgEasyclaReturnPath('g/../x?y')).toBe('/org/easycla/g%2F..%2Fx%3Fy');
   });
 });
 
@@ -195,6 +195,8 @@ describe('legacyDocsRedirectTarget', () => {
     ['/docs/organization/people', '/docs/company/people'],
     ['/docs/organization/faq', '/docs/company/faq'],
     ['/docs/dashboards/organization-involvement', '/docs/dashboards/company-involvement'],
+    ['/docs/dashboards/organization-involvement/', '/docs/dashboards/company-involvement'],
+    ['/docs/Organization/Org-Overview', '/docs/company/company-overview'],
     ['/docs/organization/projects', '/docs/company/projects'],
     ['/docs/organization/easycla?x=1', '/docs/company/easycla?x=1'],
   ])('moves %s to %s', (from, to) => {

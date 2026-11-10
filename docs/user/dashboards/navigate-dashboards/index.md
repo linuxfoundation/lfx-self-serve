@@ -41,9 +41,9 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
 
-## Org lens
+## Company lens
 
-The **Company** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
+The **Company** lens shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
 
 ## Switch project context
 

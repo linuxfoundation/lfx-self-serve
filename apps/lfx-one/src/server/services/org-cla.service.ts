@@ -9,7 +9,7 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
   SALESFORCE_ID_PATTERN,
@@ -818,7 +818,7 @@ export class OrgClaService {
         return_url: isServerFeatureEnabled(ServerFeatureFlag.OrgEasyclaReturnInPath)
           ? claReturnUrl(req, orgEasyclaReturnPath(orgUid, request.claGroupId), { [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE })
           : claReturnUrl(req, legacyOrgEasyclaReturnPath(request.claGroupId), {
-              [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
+              [ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM]: orgUid,
               [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
             }),
         authority_acked: request.authorityAcked,

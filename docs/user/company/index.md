@@ -1,6 +1,6 @@
 ---
 title: Company
-description: Overview of the Company lens in LFX Self Serve, what each of its pages shows, who can open it, and an index of every Company lens guide — choosing a company, the Org Overview dashboard, Memberships, Projects and project detail, Crowdfunding Initiatives and Donations, People, Code Contributions, Events, Training & Certification, Meetings, Groups, managing Company Lens access, EasyCLA for corporate CLAs, the Company Profile, and the company's involvement in a foundation.
+description: Overview of the Company lens in LFX Self Serve, what each of its pages shows, who can open it, and an index of every Company lens guide — choosing a company, the Company Overview dashboard, Memberships, Projects and project detail, Crowdfunding Initiatives and Donations, People, Code Contributions, Events, Training & Certification, Meetings, Groups, managing Company Lens access, EasyCLA for corporate CLAs, the Company Profile, and the company's involvement in a foundation.
 audience: [all]
 product_area: Company
 tags:
@@ -40,7 +40,7 @@ These guides are for anyone who can open a company in the Company lens, such as 
 
 You can see how the selected company takes part in Linux Foundation foundations and projects, and, with the right role, change some of it. Each sidebar page covers one part, in this order:
 
-- **Dashboard**, the Org Overview, shows the company's involvement and its foundations and projects
+- **Dashboard**, the Company Overview, shows the company's involvement and its foundations and projects
 - **Memberships** shows the company's foundation memberships and, for each one, its key contacts, board and committee seats, and agreements
 - **Projects** shows the projects in the company's shared workspaces, its influence on each one, how it ranks against other companies, and how each company's leaderboard score breaks down
 - **Crowdfunding Initiatives** shows the crowdfunding initiatives run on behalf of the company, if you are an Admin granted directly on it
@@ -77,7 +77,7 @@ See [Choose and switch a company](./choose-a-company/) for what you land on firs
 ## Related sections
 
 - [Choose and switch a company](./choose-a-company/) — pick the company you are viewing, switch to another, and read the company in a page address
-- [Org Overview dashboard](./company-overview/) — what each card on the Company lens Dashboard shows and where its links go
+- [Company Overview dashboard](./company-overview/) — what each card on the Company lens Dashboard shows and where its links go
 - [Memberships](./memberships/) — the company's foundation memberships, their key contacts, board and committee seats, and agreements
 - [Projects and project detail](./projects/) — the company's projects, workspaces, and each project's influence, leaderboards and score breakdowns
 - [Lens-scoped Initiatives](../crowdfunding/lens-initiatives/) — crowdfunding initiatives run on behalf of the company, for its directly granted Admins

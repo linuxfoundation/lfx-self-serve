@@ -211,7 +211,7 @@ export class FoundationHealthComponent {
   }
 
   private initializeCompanyBusFactorCard() {
-    return computed(() => this.transformCompanyBusFactor(this.getMetricConfig('Organization Dependency')));
+    return computed(() => this.transformCompanyBusFactor(this.getMetricConfig('Company Dependency')));
   }
 
   private initializeActiveContributorsCard() {

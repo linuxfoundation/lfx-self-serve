@@ -55,7 +55,7 @@ Go to **app.lfx.dev** — the Me lens is the default view on login, or select **
 
 ## Your company's activity
 
-The **Org Overview** is the **Dashboard** of the Company lens: a one-page summary of how the selected company takes part in Linux Foundation foundations and projects, instead of your personal activity. Its address is `/org/<company>/overview`. See [Org Overview dashboard](../company/company-overview/) for what each card and tile shows.
+The **Company Overview** is the **Dashboard** of the Company lens: a one-page summary of how the selected company takes part in Linux Foundation foundations and projects, instead of your personal activity. Its address is `/company/<company>/overview`. See [Company Overview dashboard](../company/company-overview/) for what each card and tile shows.
 
 ### Company scope
 
@@ -64,7 +64,7 @@ Pages in Company Lens that count contributors — **People** (Contributors and A
 - **Insights company** (the default) counts only the company shown on your company's LFX Insights page, and only in the repositories LFX Insights counts, so the numbers line up with that page.
 - **All related companies (N)** counts every company linked to your company account — subsidiaries, acquisitions and duplicate records — in every repository. N is how many of those companies have code activity in the past two years.
 
-Your choice stays in the page address (`?orgScope=all`) and carries to the other pages with the dropdown when you move between them from the sidebar, the Projects list or a project's detail page. The Org Overview has no dropdown: its **Active Contributors** card always counts the Insights company (every related company if your company has no LFX Insights company with code activity in the past two years), and links from the Overview open the other pages with the Insights company selected. Maintainer roles, board and committee seats, events and training are counted the same way under both options. On **All Employees** the choice changes code contributions, so someone whose only activity is code outside the Insights company is listed only under **All related companies**. All Employees counts code from the same data as **People → Contributors**, so with the employment filter set to **All employees** its **Code Contributors** card shows the same number as Contributors for the same time range, project type, company scope and team-member choice. If your company has no LFX Insights company with code activity in the past two years, the dropdown is disabled and every related company is counted.
+Your choice stays in the page address (`?orgScope=all`) and carries to the other pages with the dropdown when you move between them from the sidebar, the Projects list or a project's detail page. The Company Overview has no dropdown: its **Active Contributors** card always counts the Insights company (every related company if your company has no LFX Insights company with code activity in the past two years), and links from the Overview open the other pages with the Insights company selected. Maintainer roles, board and committee seats, events and training are counted the same way under both options. On **All Employees** the choice changes code contributions, so someone whose only activity is code outside the Insights company is listed only under **All related companies**. All Employees counts code from the same data as **People → Contributors**, so with the employment filter set to **All employees** its **Code Contributors** card shows the same number as Contributors for the same time range, project type, company scope and team-member choice. If your company has no LFX Insights company with code activity in the past two years, the dropdown is disabled and every related company is counted.
 
 On the **Projects** list the choice changes the **Contributors** column only; influence, health, participants and maintainers are the same under both options. On a project's detail page, contributors' first and most recent activity dates come from every related company. Under **Insights company**, the influence level next to **Our Technical Influence** and **Our Ecosystem Influence** is the Insights company's own; if it has no leaderboard ranking on the project, no level is shown, even when a related company has one.
 
@@ -72,7 +72,7 @@ On the **Projects** list the choice changes the **Contributors** column only; in
 
 ### Navigation
 
-On a larger screen, selecting **Company** in the lens switcher opens the Org Overview of the selected company. On a phone or small screen, selecting **Company** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that company is CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), you land on its **EasyCLA** page instead.
+On a larger screen, selecting **Company** in the lens switcher opens the Company Overview of the selected company. On a phone or small screen, selecting **Company** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that company is CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), you land on its **EasyCLA** page instead.
 
 ### Who can access this
 
@@ -84,7 +84,7 @@ If you do not have access, the Company lens shows a message instead of your comp
 - **You do not have access to the Company Lens**: your employer is a Linux Foundation member, but you have not been granted access to it.
 - **You do not have access to this company**: the link you opened is for a company you do not have access to.
 
-For the other messages, such as **Some companies could not be loaded**, see [What do the messages on the Org Overview mean?](../company/company-overview/#what-do-the-messages-on-the-company-overview-mean).
+For the other messages, such as **Some companies could not be loaded**, see [What do the messages on the Company Overview mean?](../company/company-overview/#what-do-the-messages-on-the-company-overview-mean).
 
 If you are a CLA Manager or an initial CLA Manager designee, see [Why can't I see my company in the Company lens?](../company/faq/#why-can-t-i-see-my-company-in-the-company-lens).
 

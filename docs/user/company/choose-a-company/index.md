@@ -32,7 +32,7 @@ Open the company switcher at the top of the sidebar and select another company. 
 1. Select the company switcher at the top of the sidebar.
 2. Select the company you want. On a keyboard, use the arrow keys to move through the list and press Enter to select.
 
-After a switch, the browser's Back button returns you to the company you were viewing before. If the address you switched from had no company in it, such as `/org` or `/org/projects`, Back takes you to the page you visited before that one instead. If you switched from a page that says why a link did not open a company, Back returns you to that page. An **Employees** selection on a page does not carry over to the new company, because it was a list of the previous company's people.
+After a switch, the browser's Back button returns you to the company you were viewing before. If the address you switched from had no company in it, such as `/company` or `/company/projects`, Back takes you to the page you visited before that one instead. If you switched from a page that says why a link did not open a company, Back returns you to that page. An **Employees** selection on a page does not carry over to the new company, because it was a list of the previous company's people.
 
 ## What does my role in the company switcher mean?
 
@@ -59,12 +59,12 @@ Messages in the switcher:
 
 ## What does the company in a page address mean?
 
-Every Company lens page address names the company it shows, in the form `/org/<company>/<page>`. For example, `app.lfx.dev/org/<company>/projects` opens the **Projects** page of that company.
+Every Company lens page address names the company it shows, in the form `/company/<company>/<page>`. For example, `app.lfx.dev/company/<company>/projects` opens the **Projects** page of that company.
 
 - `<company>` is the company's short name, in lowercase letters, numbers, and hyphens. A company without a short name is addressed by its 18-character account ID, which starts with `001`.
-- `/org/<company>` on its own opens that company's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager or initial CLA Manager designee.
+- `/company/<company>` on its own opens that company's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager or initial CLA Manager designee.
 - A link you share names the company, so the person who opens it sees the same company, as long as they have access to it.
-- An older address without a company, such as `/org/projects`, still opens. It shows the company you have selected, which may not be the one the sender was viewing. The address usually fills in that company's name when the page loads, but not always, so before you share a link, check that it reads `/org/<company>/<page>`.
+- An older address without a company, such as `/company/projects`, still opens. It shows the company you have selected, which may not be the one the sender was viewing. The address usually fills in that company's name when the page loads, but not always, so before you share a link, check that it reads `/company/<company>/<page>`.
 
 Opening an address for a company you have access to switches your selection to that company, as if you had picked it in the switcher.
 

@@ -31,9 +31,10 @@ export function legacyDocsRedirect(data: LegacyRedirectData): UrlTree {
 
 /** Matches the moved docs section (`organization` and anything beneath it) and the renamed dashboards page under the `docs` route. */
 export function legacyDocsMatcher(segments: UrlSegment[]): UrlMatchResult | null {
-  const movedDashboardsPage = segments.length === 2 && segments[0].path === 'dashboards' && segments[1].path === 'organization-involvement';
+  const first = segments[0]?.path.toLowerCase();
+  const movedDashboardsPage = segments.length === 2 && first === 'dashboards' && segments[1].path.toLowerCase() === 'organization-involvement';
 
-  return segments[0]?.path === 'organization' || movedDashboardsPage ? { consumed: segments } : null;
+  return first === 'organization' || movedDashboardsPage ? { consumed: segments } : null;
 }
 
 interface LegacyRedirectData {

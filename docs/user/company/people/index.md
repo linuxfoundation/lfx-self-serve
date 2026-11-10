@@ -12,7 +12,7 @@ These steps apply to anyone who can open a company in the Company lens, such as 
 
 ## What is the People page?
 
-The People page lists the selected company's employees and how each one takes part in the Linux Foundation: board and committee seats, key contact roles, code contributions and maintainer roles, events, and training. Its address is `/org/<company>/people`.
+The People page lists the selected company's employees and how each one takes part in the Linux Foundation: board and committee seats, key contact roles, code contributions and maintainer roles, events, and training. Its address is `/company/<company>/people`.
 
 The page heading is **People —** followed by the company's name. The line under it is **All employee involvement with the Linux Foundation — board, committees, maintainership, code, training, and events.** The page has eight tabs:
 
@@ -40,7 +40,7 @@ You open **People** from the Company lens sidebar, under **Company Engagement**,
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, People is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, People is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## What does the All Employees tab show?
 
@@ -194,7 +194,7 @@ A tab that finds nobody says so in its table, and a tab that fails to load names
 
 - [Code Contributions](../code-contributions/) — the company's repositories and commits, with the same time range
 - [Choose and switch a company](../choose-a-company/) — pick the company these people belong to
-- [Org Overview dashboard](../company-overview/) — the **Dashboard**, with the company's involvement at a glance
+- [Company Overview dashboard](../company-overview/) — the **Dashboard**, with the company's involvement at a glance
 - [Memberships](../memberships/) — the foundation memberships behind the board, committee and key contact seats, and the steps for editing a single key contact
 - [Events and Event Attendees](../company-events/) — the **Event Attendees** filters, defaults and what each option counts
 - [Manage Company Lens Access](../manage-company-lens-access/) — the **Company Lens Access** tab

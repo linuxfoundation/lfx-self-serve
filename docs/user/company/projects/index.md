@@ -12,7 +12,7 @@ These steps apply to anyone who can open a company in the Company lens, such as 
 
 ## What is the Projects page?
 
-The Projects page lists the open source projects in one of the selected company's workspaces, with each project's health, the company's influence on it, and how many of its people contribute and participate. Most are projects the company is involved in. Someone who can edit the company, such as an Admin, can also add projects it has no activity in yet. Its address is `/org/<company>/projects`.
+The Projects page lists the open source projects in one of the selected company's workspaces, with each project's health, the company's influence on it, and how many of its people contribute and participate. Most are projects the company is involved in. Someone who can edit the company, such as an Admin, can also add projects it has no activity in yet. Its address is `/company/<company>/projects`.
 
 The page heading is **Projects —** followed by the company's name. The line under it is **The open source projects your company influences, contributes to, and depends on.** The sidebar item that opens it is **Projects**.
 
@@ -28,7 +28,7 @@ You open **Projects** from the Company lens sidebar once a company is selected. 
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, Projects is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, Projects is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## What does each column in the Projects table show?
 
@@ -169,9 +169,9 @@ A blank name shows **Workspace name is required.** A save or delete that did not
 
 ## What is a project detail page?
 
-A project detail page shows how the selected company takes part in one project and how it compares with other companies there. You open it by selecting a project name on Projects. Its address is `/org/<company>/projects/<project>`.
+A project detail page shows how the selected company takes part in one project and how it compares with other companies there. You open it by selecting a project name on Projects. Its address is `/company/<company>/projects/<project>`.
 
-You can also open it from a project in the [Org Overview dashboard](../company-overview/) and from the **Org Projects** panel on [Memberships](../memberships/#what-does-the-org-projects-panel-show).
+You can also open it from a project in the [Company Overview dashboard](../company-overview/) and from the **Org Projects** panel on [Memberships](../memberships/#what-does-the-org-projects-panel-show).
 
 The trail at the top reads **Projects** followed by the project name. Select **Projects** to go back to the list.
 
@@ -317,7 +317,7 @@ When Projects or a project detail page fails to load, it shows a message naming 
 ## Related sections
 
 - [Choose and switch a company](../choose-a-company/) — pick the company these projects belong to
-- [Org Overview dashboard](../company-overview/) — the **Dashboard**, whose project links open a project detail page
+- [Company Overview dashboard](../company-overview/) — the **Dashboard**, whose project links open a project detail page
 - [Memberships](../memberships/) — the company's foundation memberships, and the **Org Projects** panel for each one
 - [Manage Company Lens Access](../manage-company-lens-access/) — who is an Admin, and who can manage workspaces
 - [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected company

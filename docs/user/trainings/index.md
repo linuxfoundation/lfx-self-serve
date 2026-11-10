@@ -36,7 +36,7 @@ Completing certain training programs qualifies you for LFX badges. After you com
 
 ## Your company's activity
 
-The **Training & Certification** page in Company Lens (route: `/org/training`) gives you visibility into training and certification activity across your company. Rather than showing your individual enrollments, this view aggregates data for all members associated with your company.
+The **Training & Certification** page in Company Lens (route: `/company/training`) gives you visibility into training and certification activity across your company. Rather than showing your individual enrollments, this view aggregates data for all members associated with your company.
 
 ### What you can see
 
@@ -46,7 +46,7 @@ The **Training & Certification** page in Company Lens (route: `/org/training`) g
 
 ### Overview Education tiles
 
-On the Org Overview, the three Education tiles (**People with training activity**, **Certified people** and **Courses taken**) show the same numbers as the Training & Certification page when it opens with its defaults (Past 2 years, no filters), with their unit, window and as-of date. The tiles show only that headline and its sub-line; they have no chart. Select a tile to open that page.
+On the Company Overview, the three Education tiles (**People with training activity**, **Certified people** and **Courses taken**) show the same numbers as the Training & Certification page when it opens with its defaults (Past 2 years, no filters), with their unit, window and as-of date. The tiles show only that headline and its sub-line; they have no chart. Select a tile to open that page.
 
 ### Time range, filters and group by
 
@@ -95,7 +95,7 @@ Learners linked to your company who are not on its people list appear in a separ
 
 ### Navigation
 
-Switch to the **Org** lens from the lens selector at the top of LFX Self Serve, then select **Training & Certification** from the left navigation sidebar (route: `/org/training`).
+Switch to the **Company** lens from the lens selector at the top of LFX Self Serve, then select **Training & Certification** from the left navigation sidebar (route: `/company/training`).
 
 ### Who can access this
 

@@ -8,7 +8,7 @@ last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone with access to at least one company in the Company lens. The Events page, People → Event Attendees and the **Event Attendees** and **Event Speakers** cards on the [Org Overview](../company-overview/) all use the same definitions, so the same selection gives the same number on each of them. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee with no other role on a company sees only its **EasyCLA** page, not these pages.
+These steps apply to anyone with access to at least one company in the Company lens. The Events page, People → Event Attendees and the **Event Attendees** and **Event Speakers** cards on the [Company Overview](../company-overview/) all use the same definitions, so the same selection gives the same number on each of them. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee with no other role on a company sees only its **EasyCLA** page, not these pages.
 
 ## What is counted
 
@@ -73,7 +73,7 @@ Open **People** and then **Event Attendees**. The filters are **Range**, **Found
 - A person with a roster profile opens the person drawer when you select their name. A person without one is shown by name only.
 - Select a row to see the events that person registered for or attended in the selected range.
 
-## Org Overview
+## Company Overview
 
 The Overview cards always use the defaults: **Employee match**, **All** (registered or attended) and the last 2 years. They have no filters. Their headline counts each person once, so it is not the sum of the monthly points in the chart. To see other selections, including **Self-reported only** and **All**, open the Events page or People → Event Attendees.
 

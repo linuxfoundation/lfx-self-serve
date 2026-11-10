@@ -36,7 +36,7 @@ The card's number is how many companies are in that group, with **Contribution c
 Select the card to open the **Company Dependency** drawer:
 
 1. The same count, next to a description of the group of companies whose contributors performed 51% or more of all contributions.
-2. A bar chart of **Contribution Share (%)** with two bars: the group, labelled with its size and share, such as **3 Orgs (54%)**, and everyone else, such as **120 Other Orgs**.
+2. A bar chart of **Contribution Share (%)** with two bars: the group, labelled with its size and share, such as **3 Companies (54%)**, and everyone else, such as **120 Other Companies**.
 3. **Looking for detailed contribution metrics?**, which links to the foundation's contribution patterns, activity breakdowns and participation trends in LFX Insights.
 
 This card is about the foundation's contributors as a whole. For one company's involvement in the foundation, see [Company involvement in a foundation](../company-involvement/).

@@ -12,11 +12,11 @@ These steps apply to anyone who can open a company in the Company lens, such as 
 
 ## What is the Memberships page?
 
-The Memberships page lists the selected company's foundation memberships: which are active, which have expired, and which foundations it can join. Its address is `/org/<company>/memberships`.
+The Memberships page lists the selected company's foundation memberships: which are active, which have expired, and which foundations it can join. Its address is `/company/<company>/memberships`.
 
 The page heading is **Membership —** followed by the company's name. The sidebar item that opens it is **Memberships**. The page has three tabs: **Active**, **Expired**, and **Discover**.
 
-From the [Org Overview dashboard](../company-overview/), **View all on Memberships page ›** also opens this list.
+From the [Company Overview dashboard](../company-overview/), **View all on Memberships page ›** also opens this list.
 
 ## How do I open Memberships?
 
@@ -28,7 +28,7 @@ You open **Memberships** from the Company lens sidebar once a company is selecte
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, Memberships is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, Memberships is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## What do the summary cards count?
 
@@ -118,7 +118,7 @@ When there are no rows, the tab says **No new opportunities available right now*
 
 ## What does a membership detail page show?
 
-A membership detail page is one foundation membership for the selected company. You open it by selecting the foundation name on the **Active** tab. Its address is `/org/<company>/memberships/<foundation>`.
+A membership detail page is one foundation membership for the selected company. You open it by selecting the foundation name on the **Active** tab. Its address is `/company/<company>/memberships/<foundation>`.
 
 **Back to Memberships** returns to the list. The heading is the foundation name. The line under it is the membership tier, the status **Active** or **Expired**, and **Member since** followed by the month and year.
 
@@ -238,7 +238,7 @@ A dash (**—**) on the three **Active** cards, while the table says **Failed to
 ## Related sections
 
 - [Choose and switch a company](../choose-a-company/) — pick the company these memberships belong to
-- [Org Overview dashboard](../company-overview/) — the **Dashboard**, including **View all on Memberships page ›**
+- [Company Overview dashboard](../company-overview/) — the **Dashboard**, including **View all on Memberships page ›**
 - [Projects and project detail](../projects/) — the company's projects, and each project's influence and leaderboards
 - [Manage Company Lens Access](../manage-company-lens-access/) — who is an Admin, and who can edit the company
 - [EasyCLA](../easycla/) — corporate CLAs (Contributor License Agreements) for the selected company

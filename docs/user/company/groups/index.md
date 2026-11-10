@@ -12,7 +12,7 @@ These steps apply to anyone who can open a company in the Company lens, such as 
 
 ## What is the Groups page?
 
-The Groups page lists the groups across Linux Foundation projects where the selected company's employees hold seats, such as working groups, committees and special interest groups (SIGs), with how many of its people sit on each one. Its address is `/org/<company>/groups`.
+The Groups page lists the groups across Linux Foundation projects where the selected company's employees hold seats, such as working groups, committees and special interest groups (SIGs), with how many of its people sit on each one. Its address is `/company/<company>/groups`.
 
 The page heading is **Groups —** followed by the company's name, and the line under it is **Where your employees hold seats across Linux Foundation projects.** Groups in the **Board** category, a foundation's governing board, are not listed here: those seats are on the company's [Memberships](../memberships/) page.
 
@@ -34,7 +34,7 @@ You open **Groups** from the Company lens sidebar, under **Company Engagement**,
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## What do the tiles on Groups count?
 

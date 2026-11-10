@@ -12,7 +12,7 @@ These steps apply to anyone who can open a company in the Company lens, such as 
 
 ## What is the Code Contributions page?
 
-The Code Contributions page shows the selected company's code contributions to open source projects over a time range: which repositories its contributors worked in, how much they contributed, and each of their commits. Its address is `/org/<company>/contributions`.
+The Code Contributions page shows the selected company's code contributions to open source projects over a time range: which repositories its contributors worked in, how much they contributed, and each of their commits. Its address is `/company/<company>/contributions`.
 
 The page heading is **Code Contributions**. The line under it is **Commits, contributors, and collaborators across your projects.** Three cards at the top count:
 
@@ -34,7 +34,7 @@ You open **Code Contributions** from the Company lens sidebar, under **Company E
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, Code Contributions is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, Code Contributions is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## What do the Repositories and Commits tabs show?
 
@@ -119,5 +119,5 @@ When the filters match nothing, the table says so. When the page fails to load, 
 - [People](../people/) — the company's employees, contributors and maintainers, with the same time range
 - [Projects and project detail](../projects/) — each project's contributors and the company's influence on it
 - [Choose and switch a company](../choose-a-company/) — pick the company this page shows
-- [Org Overview dashboard](../company-overview/) — the **Dashboard**, with the company's **Active Contributors**
+- [Company Overview dashboard](../company-overview/) — the **Dashboard**, with the company's **Active Contributors**
 - [Company FAQ](../faq/) — short answers about the Company lens

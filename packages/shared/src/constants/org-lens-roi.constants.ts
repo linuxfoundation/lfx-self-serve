@@ -11,7 +11,7 @@ export const ORG_LENS_ROI_METHODS = ['logit', 'direct'] as const;
 export const ORG_LENS_ROI_DEFAULT_METHOD = 'logit';
 
 /**
- * Why an organization has or hasn't got figures. `unmapped` is permanent; `not_estimated` is
+ * Why a company has or hasn't got figures. `unmapped` is permanent; `not_estimated` is
  * mapped-but-unestimated and must not be described to viewers as arriving on a later run.
  */
 export const ORG_LENS_ROI_COVERAGE_REASONS = ['covered', 'unmapped', 'not_estimated'] as const;
@@ -28,7 +28,7 @@ export const ORG_LENS_ROI_METHOD_LABELS: Record<(typeof ORG_LENS_ROI_METHODS)[nu
  */
 export const ORG_LENS_ROI_METHOD_DESCRIPTIONS: Record<(typeof ORG_LENS_ROI_METHODS)[number], string> = {
   logit:
-    'Pools evidence across your other projects and across the project’s other organizations, which steadies short or sparse histories. Its markups are the least related to how much a pair spends.',
+    'Pools evidence across your other projects and across the project’s other companies, which steadies short or sparse histories. Its markups are the least related to how much a pair spends.',
   direct:
     'Ranks pairs on their raw activity rate alone. It saturates for pairs that are active every month and keeps a heavier top tail, so it is best read as a robustness check on the logistic figures.',
 };
@@ -154,21 +154,21 @@ export const ORG_LENS_ROI_DONUT_REMAINDER_COLOR = lfxColors.gray[400];
  * than simplifying it into something stronger than the model supports.
  *
  * `investment` carries the page's standing privacy commitment — rates identical for every
- * organization, no pay data — which is asserted by e2e. Do not weaken it.
+ * company, no pay data — which is asserted by e2e. Do not weaken it.
  */
 export const ORG_LENS_ROI_MODEL_OVERVIEW = {
   whatTheseAre:
-    'These figures put a dollar value on what your organization puts into Linux Foundation projects, and on the economic return associated with those projects. Both are modelled estimates, useful for comparison and for seeing the scale of an investment — not audited accounting figures.',
+    'These figures put a dollar value on what your company puts into Linux Foundation projects, and on the economic return associated with those projects. Both are modelled estimates, useful for comparison and for seeing the scale of an investment — not audited accounting figures.',
   dataSources:
     'Everything is derived from records the Linux Foundation already holds: code and community contribution history, leadership meeting attendance, memberships, event attendance and sponsorship, and training.',
   investment:
-    'Money spent directly — membership fees, sponsorships, event tickets, courses — is counted as recorded. Staff time is estimated from activity records, converted to full-time-equivalent effort, and priced at flat benchmark rates that are the same for every organization. No salary, payroll, or invoice data is used.',
+    'Money spent directly — membership fees, sponsorships, event tickets, courses — is counted as recorded. Staff time is estimated from activity records, converted to full-time-equivalent effort, and priced at flat benchmark rates that are the same for every company. No salary, payroll, or invoice data is used.',
   markup:
-    'Value is inferred from behavior rather than asked for. An organization that keeps investing in a project, year after year and across several kinds of contribution, reveals that it values the project at least at what that participation costs. How persistently it contributes yields a markup — a strategic importance factor, the perceived value per dollar of efficiently allocated cost. That ranking is turned into dollars using the LF Research survey on contribution ROI.',
+    'Value is inferred from behavior rather than asked for. A company that keeps investing in a project, year after year and across several kinds of contribution, reveals that it values the project at least at what that participation costs. How persistently it contributes yields a markup — a strategic importance factor, the perceived value per dollar of efficiently allocated cost. That ranking is turned into dollars using the LF Research survey on contribution ROI.',
   returnAndRoi:
     'Applying the markup to the cost of your contribution portfolio gives Total Return. Set against Total Investment, that gives ROI as a percentage and the benefit-cost ratio as a multiple — always exactly one more than ROI.',
   limits:
-    'The model values contributing to open source, not using it. Most organizations that benefit from these projects never contribute, so these figures understate the total value the projects create.',
+    'The model values contributing to open source, not using it. Most companies that benefit from these projects never contribute, so these figures understate the total value the projects create.',
 } as const;
 
 /** The research the markup calibration is anchored to, linked from the model overview. */
@@ -188,9 +188,9 @@ export const ORG_LENS_ROI_DOCS_URL = '';
  */
 export const ORG_LENS_ROI_KPI_EXPLANATION = {
   totalExpenditure:
-    'We count your organization’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every organization. No salary, payroll, or invoice data is used.',
+    'We count your company’s public contribution activity — commits, community participation, meetings, events, memberships, and training — and price it at standard rates that are the same for every company. No salary, payroll, or invoice data is used.',
   totalReturn:
-    'The modelled economic value your organization received back from the projects it contributed to, estimated from the wider project ecosystem rather than measured from your own systems.',
+    'The modelled economic value your company received back from the projects it contributed to, estimated from the wider project ecosystem rather than measured from your own systems.',
   profit:
     'Total return less investment — what the modelled return is worth after the modelled cost of earning it. Negative for a project that returned less than it cost, which is a real and reasonably common outcome rather than a data problem.',
   roi: 'Net return divided by investment, shown as a percentage. 100% means you got back your investment again on top of it. Blank when there is no investment to divide by.',
@@ -218,7 +218,7 @@ export const ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT = 5;
 export const ORG_LENS_ROI_PROJECT_PICKER_MAX_MATCHES = 20;
 
 /**
- * Per-view drawing ceilings. "All" is a legitimate selection on an organization with hundreds of
+ * Per-view drawing ceilings. "All" is a legitimate selection on a company with hundreds of
  * projects, and no view stays readable at that size — so each draws its leading N and discloses the
  * shortfall, rather than the selection being silently capped at the picker. The three differ
  * because legibility does: bars degrade by height, flows by link crossings, points barely at all.
@@ -239,12 +239,12 @@ export const ORG_LENS_ROI_PROJECT_SANKEY_MEASURE_LABELS: Record<(typeof ORG_LENS
 };
 
 /** The single node every investment flow passes through, on its way out to the projects. */
-export const ORG_LENS_ROI_SANKEY_ORG_NODE = 'Your organization';
+export const ORG_LENS_ROI_SANKEY_ORG_NODE = 'Your company';
 
 /**
  * Sankey identifies a node by its key, so the keys are type-prefixed ids and display names are
  * supplied separately. Keying on the name alone merged two projects sharing one, and let a project
- * named after a contribution category — or after the organization node — join that node and form a
+ * named after a contribution category — or after the company node — join that node and form a
  * cycle.
  */
 export const ORG_LENS_ROI_SANKEY_ORG_NODE_KEY = 'org';
@@ -317,7 +317,7 @@ export const ORG_LENS_ROI_VALUE_DRIVER_CATEGORIES = [
 ] as const;
 
 /**
- * The decomposition is shown only for organizations with at least this many projects. lf-dbt#3163
+ * The decomposition is shown only for companies with at least this many projects. lf-dbt#3163
  * recommends it (docs/lfx_roi/user-guide/interpreting-results.md): below it the two markup methods
  * stop agreeing on category values. The warehouse table does not enforce it, so the BFF does.
  */
@@ -347,7 +347,7 @@ export const ORG_LENS_ROI_VALUE_DRIVERS_COPY = {
   typical:
     'Typical is the average across all company-project pairs LFX models. A bar at 0 means your portfolio is typical for that driver, not that the driver provides no value.',
   association:
-    'These are associations, not proven causes. Each category is built from measurable activity that tends to go with higher return, not from anything your organization reported.',
+    'These are associations, not proven causes. Each category is built from measurable activity that tends to go with higher return, not from anything your company reported.',
   fit: 'The model explains only part of the variation in return, and the bars show that explained part.',
   methodDifference: 'Direct cost savings (shared R&D) can differ noticeably between the two estimation methods. The other categories mostly agree.',
   directional: 'Value driver decomposition can be sensitive to small portfolios. Treat these results as directional.',

@@ -12,7 +12,7 @@ These steps apply to anyone who can open a company in the Company lens, such as 
 
 ## What is the Company Profile page?
 
-The Company Profile page shows the selected company's details: its logo, name, description, website, number of employees, industry, sector and addresses. Anyone who can open the company in the Company lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Its address is `/org/<company>/profile`.
+The Company Profile page shows the selected company's details: its logo, name, description, website, number of employees, industry, sector and addresses. Anyone who can open the company in the Company lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Its address is `/company/<company>/profile`.
 
 The top card shows:
 
@@ -34,7 +34,7 @@ You open **Company Profile** from the Company lens sidebar, once a company is se
 
 If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
-When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+When you cannot open the company, the page is replaced by the same access message as the other Company lens pages, such as **You do not have access to this company**. Those messages are covered in [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## Who can edit the company profile?
 

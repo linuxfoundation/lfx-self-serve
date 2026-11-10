@@ -1,6 +1,6 @@
 ---
-title: Org Overview dashboard
-description: What each card on the Company lens Dashboard (the Org Overview) shows, how its numbers are counted, and where its links go.
+title: Company Overview dashboard
+description: What each card on the Company lens Dashboard (the Company Overview) shows, how its numbers are counted, and where its links go.
 audience: [all]
 product_area: Company
 tags: [company, org, org-lens, dashboard, overview, involvement, foundations, projects, governance, meetings]
@@ -8,11 +8,11 @@ last_updated: 2026-11-06
 intercom_collection: Company
 ---
 
-These steps apply to anyone with access to at least one company in the Company lens, such as a company admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not the Org Overview. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone with access to at least one company in the Company lens, such as a company admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not the Company Overview. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
-## What is the Org Overview?
+## What is the Company Overview?
 
-The Org Overview is the **Dashboard** of the Company lens: a one-page summary of how the selected company takes part in Linux Foundation (LF) foundations and projects. On a larger screen, it opens when you select **Company** in the lens switcher, and from **Dashboard** at the top of the sidebar. On a phone or small screen, selecting **Company** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla). Its address is `/org/<company>/overview`.
+The Company Overview is the **Dashboard** of the Company lens: a one-page summary of how the selected company takes part in Linux Foundation (LF) foundations and projects. On a larger screen, it opens when you select **Company** in the lens switcher, and from **Dashboard** at the top of the sidebar. On a phone or small screen, selecting **Company** in the navigation menu only shows that lens's menu: select **Dashboard** in it to open the page. If your only role on that company is CLA Manager or initial CLA Manager designee, you land on its **EasyCLA** page instead. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla). Its address is `/company/<company>/overview`.
 
 The page has three parts, from top to bottom:
 
@@ -74,9 +74,9 @@ Select the arrow at the start of a foundation's row to expand it. The expanded r
 
 If the company has no active projects in that foundation, the expanded row says **No projects from this foundation are currently active for your org.**
 
-## Where do the links on the Org Overview go?
+## Where do the links on the Company Overview go?
 
-The Org Overview links to the **Memberships**, **Projects** and **Training & Certification** pages of the same company. The other Involvement cards and the summary tiles do not link anywhere.
+The Company Overview links to the **Memberships**, **Projects** and **Training & Certification** pages of the same company. The other Involvement cards and the summary tiles do not link anywhere.
 
 1. **View all on Memberships page ›**, at the right of the Foundations and Projects heading, opens the **Memberships** page.
 2. Selecting a foundation's row opens the **Memberships** page. The **Outside LF** row does not open anything.
@@ -85,9 +85,9 @@ The Org Overview links to the **Memberships**, **Projects** and **Training & Cer
 
 On a keyboard, move to a foundation or project row and press Enter or Space to open it.
 
-## What do the messages on the Org Overview mean?
+## What do the messages on the Company Overview mean?
 
-The Org Overview shows a message in place of the page or a section when there is nothing to show, you cannot open a company, or something did not load.
+The Company Overview shows a message in place of the page or a section when there is nothing to show, you cannot open a company, or something did not load.
 
 | Message                                        | What it means and what to do                                                                                                                                                                                                                                                                                                                                                             |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,11 +99,11 @@ The Org Overview shows a message in place of the page or a section when there is
 | **No engagement yet**                          | Shown next to the Involvement heading. The company is involved in no foundation, or the count of its foundations did not load. If you expected foundations, reload the page                                                                                                                                                                                                              |
 | **Couldn't load Foundations and Projects.**    | The Foundations and Projects section did not load. Select **Retry**. The Involvement cards above it are not affected                                                                                                                                                                                                                                                                     |
 
-If a link shows a message such as **You do not have access to this company** in place of the dashboard, the link did not open a company. The company may not exist, you may not have access to it, or the lookup may have failed for a moment. See [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-an-company).
+If a link shows a message such as **You do not have access to this company** in place of the dashboard, the link did not open a company. The company may not exist, you may not have access to it, or the lookup may have failed for a moment. See [What happens when a link does not open a company?](../choose-a-company/#what-happens-when-a-link-does-not-open-a-company).
 
 ## Related sections
 
-- [Choose and switch a company](../choose-a-company/) — pick the company the Org Overview shows
+- [Choose and switch a company](../choose-a-company/) — pick the company the Company Overview shows
 - [Projects and project detail](../projects/) — the company's projects, and each project's influence and leaderboards
 - [Training & Certification](../training/) — the page the three **Education** cards open
 - [Company involvement in a foundation](../../dashboards/company-involvement/) — similar cards for one foundation, on the Foundation lens overview, which open detail panels
