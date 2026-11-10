@@ -2162,7 +2162,7 @@ describe('ProfileController.sendEmailVerification — enumeration-safe (lfx-self
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
     expect(next).not.toHaveBeenCalled();
-    // A linked address was not sent a code, so it must not be logged as a successful send.
+    // A legacy upstream conflict is masked, but must not be logged as a successful send.
     expect(vi.mocked(logger.success)).toHaveBeenCalledTimes(linked ? 0 : 1);
     expect(vi.mocked(logger.warning)).toHaveBeenCalledTimes(linked ? 1 : 0);
     const warnings = vi.mocked(logger.warning).mock.calls.map(([, , message, metadata]) => ({ message, metadata }));
@@ -2260,6 +2260,7 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
     expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
     expect(JSON.stringify(res.json.mock.calls)).not.toContain('lf-fixture-owner');
     expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'Email already linked to another account');
+    expect(logger.debug).not.toHaveBeenCalled();
     expect(emailVerificationSvc.resolveEmailToUsername).not.toHaveBeenCalled();
     expect(emailVerificationSvc.resolveEmailToSub).not.toHaveBeenCalled();
     expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
@@ -2297,15 +2298,21 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
     expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
   });
 
-  it('still exposes a conflict only after the OTP succeeds', async () => {
+  it('still exposes a conflict only after the OTP succeeds, without resolving or logging the holder', async () => {
     emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
-    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked' });
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked', message: 'linked to lf-fixture-owner' });
     emailVerificationSvc.resolveEmailToUsername.mockResolvedValue('lf-fixture-owner');
-    isIdentityAlreadyLinkedErrorMock.mockReturnValue(true);
+    emailVerificationSvc.resolveEmailToSub.mockResolvedValue('auth0|lf-fixture-owner');
+    isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
+    const req = verificationReq();
     const res = buildRes();
-    await controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+    await controller.verifyAndLinkEmail(req, res, vi.fn());
     expect(res.status).toHaveBeenCalledExactlyOnceWith(409);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'email already linked' }));
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
+    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'Email already linked to another account');
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.resolveEmailToUsername).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.resolveEmailToSub).not.toHaveBeenCalled();
     expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
   });
 

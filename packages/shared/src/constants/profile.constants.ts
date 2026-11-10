@@ -264,7 +264,7 @@ export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';
 /** Non-identifying guidance for wrong, expired or otherwise failed OTP verification; proven conflicts use EMAIL_ALREADY_LINKED_MESSAGE. */
 export const EMAIL_VERIFICATION_FAILED_MESSAGE = 'Verification failed. Please try again or request a new code.';
 
-/** Minimum upstream-to-response duration for send-code and unsuccessful OTP verification. */
+/** Minimum upstream-to-response duration for send-code replies and non-outage OTP failures. */
 export const EMAIL_VERIFICATION_MIN_RESPONSE_MS = 1500;
 
 /** Send-code rate-limit window shared by the per-user and per-target limiters. */

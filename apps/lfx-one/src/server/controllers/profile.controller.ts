@@ -2273,7 +2273,10 @@ export class ProfileController {
       const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp, userManagementToken);
 
       if (!otpResponse.success) {
-        logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+        const isLinkedConflict = isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message);
+        if (!isLinkedConflict) {
+          logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+        }
 
         if (otpResponse.error === 'Service temporarily unavailable') {
           res.status(503).json({
@@ -2286,8 +2289,7 @@ export class ProfileController {
 
         // auth-service validates the code before any ownership lookup, so a conflict here means the
         // caller proved the inbox. Reply with fixed copy — never the upstream text, which could name
-        // the owning account — and keep the same floor as every other unsuccessful verification.
-        const isLinkedConflict = isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message);
+        // the owning account — and keep the same floor as generic 400 failures (outages return above).
         if (isLinkedConflict) {
           this.logLinkedEmailConflict(req, 'verify_and_link_email');
         }
@@ -2330,14 +2332,7 @@ export class ProfileController {
 
       if (!linkResponse.success) {
         if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
-          // Resolve the owning account for support/debugging only — never returned to the client.
-          const linkedTo =
-            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
-
-          logger.warning(req, 'verify_and_link_email', 'Email already linked to another account', {
-            email,
-            linked_to: linkedTo,
-          });
+          this.logLinkedEmailConflict(req, 'verify_and_link_email');
 
           // Never forward the upstream message here — it could name the owning account.
           res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
@@ -2532,7 +2527,7 @@ export class ProfileController {
     );
   }
 
-  /** Hold unsuccessful send-code and verification responses until the shared upstream-to-response floor. */
+  /** Hold upstream send-code replies and non-outage OTP failures until the shared upstream-to-response floor. */
   private async holdUntilFloor(startedAt: number): Promise<void> {
     const remainingMs = EMAIL_VERIFICATION_MIN_RESPONSE_MS - (Date.now() - startedAt);
     if (remainingMs > 0) {
