@@ -62,6 +62,16 @@ describe('counts, filter, search', () => {
     expect(countPipelineRows(rows)).toMatchObject({ prospect: 1, engaged: 2, archived: 0, total: 3 });
   });
 
+  it('filters to the live stages for in_pipeline', () => {
+    const mixed = [
+      row({ uid: 'a', stage: 'prospect' }),
+      row({ uid: 'b', stage: 'disengaged' }),
+      row({ uid: 'c', stage: 'archived' }),
+      row({ uid: 'd', stage: 'on_hold' }),
+    ];
+    expect(filterPipelineRowsByStage(mixed, 'in_pipeline').map((r) => r.uid)).toEqual(['a', 'd']);
+  });
+
   it('filters by stage and keeps all for "all"', () => {
     expect(filterPipelineRowsByStage(rows, 'engaged')).toHaveLength(2);
     expect(filterPipelineRowsByStage(rows, 'all')).toHaveLength(3);
@@ -76,19 +86,24 @@ describe('counts, filter, search', () => {
 
 describe('getPipelineLaunch', () => {
   it('reads Not set for an empty date', () => {
-    expect(getPipelineLaunch(null, NOW)).toEqual({ dateLabel: 'Not set', relativeLabel: '', soon: false });
+    expect(getPipelineLaunch(null, NOW)).toEqual({ dateLabel: 'Not set', relativeLabel: '', soon: false, overdue: false });
   });
 
   it('shows days within two weeks and flags the next 30 days', () => {
-    expect(getPipelineLaunch('2026-11-18T00:00:00Z', NOW)).toEqual({ dateLabel: 'Nov 18, 2026', relativeLabel: 'In 8 days', soon: true });
+    expect(getPipelineLaunch('2026-11-18T00:00:00Z', NOW)).toEqual({ dateLabel: 'Nov 18, 2026', relativeLabel: 'In 8 days', soon: true, overdue: false });
   });
 
   it('shows weeks beyond two weeks and is not soon past 30 days', () => {
     expect(getPipelineLaunch('2027-01-12T00:00:00Z', NOW)).toMatchObject({ relativeLabel: 'In 9 weeks', soon: false });
   });
 
-  it('gives no relative hint for a past date', () => {
-    expect(getPipelineLaunch('2026-10-01T00:00:00Z', NOW)).toMatchObject({ relativeLabel: '', soon: false });
+  it('marks a past date Overdue, but not for an archived project', () => {
+    expect(getPipelineLaunch('2026-10-01T00:00:00Z', NOW)).toMatchObject({ dateLabel: 'Oct 1, 2026', relativeLabel: 'Overdue', soon: false, overdue: true });
+    expect(getPipelineLaunch('2026-10-01T00:00:00Z', NOW, false)).toMatchObject({ relativeLabel: '', overdue: false });
+  });
+
+  it('does not call today overdue', () => {
+    expect(getPipelineLaunch('2026-11-10T00:00:00Z', NOW)).toMatchObject({ relativeLabel: 'Today', overdue: false });
   });
 });
 
@@ -99,12 +114,22 @@ describe('sortPipelineRows', () => {
     row({ uid: 'c', name: 'Charlie', announcement_date: '2026-11-18T00:00:00Z' }),
   ];
 
-  it('sorts launch ascending with Not set last', () => {
-    expect(sortPipelineRows(rows, { key: 'expected_launch', direction: 'asc' }).map((r) => r.uid)).toEqual(['c', 'a', 'b']);
+  it('sorts launch ascending: upcoming soonest first, then past (most recent first), then Not set', () => {
+    const withPast = [
+      ...rows,
+      row({ uid: 'p1', name: 'Past old', announcement_date: '2026-01-01T00:00:00Z' }),
+      row({ uid: 'p2', name: 'Past recent', announcement_date: '2026-11-01T00:00:00Z' }),
+    ];
+    expect(sortPipelineRows(withPast, { key: 'expected_launch', direction: 'asc' }, NOW).map((r) => r.uid)).toEqual(['c', 'a', 'p2', 'p1', 'b']);
   });
 
-  it('keeps Not set last when descending', () => {
-    expect(sortPipelineRows(rows, { key: 'expected_launch', direction: 'desc' }).map((r) => r.uid)).toEqual(['a', 'c', 'b']);
+  it('keeps upcoming, past and Not set in that order when descending', () => {
+    const withPast = [
+      ...rows,
+      row({ uid: 'p1', name: 'Past old', announcement_date: '2026-01-01T00:00:00Z' }),
+      row({ uid: 'p2', name: 'Past recent', announcement_date: '2026-11-01T00:00:00Z' }),
+    ];
+    expect(sortPipelineRows(withPast, { key: 'expected_launch', direction: 'desc' }, NOW).map((r) => r.uid)).toEqual(['a', 'c', 'p1', 'p2', 'b']);
   });
 
   it('sorts by every column without throwing', () => {
@@ -127,13 +152,27 @@ describe('pills, stat cards, people', () => {
 
   it('hides Disengaged and Confidential pills at zero', () => {
     const ids = buildPipelinePillOptions(counts).map((pill) => pill.id);
-    expect(ids).toEqual(['all', 'prospect', 'exploratory', 'engaged', 'on_hold', 'archived']);
+    expect(ids).toEqual(['in_pipeline', 'all', 'prospect', 'exploratory', 'engaged', 'on_hold', 'archived']);
   });
 
   it('shows Disengaged when it has rows and labels Prospect as Draft', () => {
     const pills = buildPipelinePillOptions({ ...counts, disengaged: 2 });
     expect(pills.map((pill) => pill.id)).toContain('disengaged');
     expect(pills.find((pill) => pill.id === 'prospect')?.label).toBe('Draft (0)');
+  });
+
+  it('puts In pipeline first, counting only the live stages', () => {
+    const pills = buildPipelinePillOptions({
+      ...countPipelineRows([]),
+      prospect: 2,
+      exploratory: 3,
+      engaged: 1,
+      on_hold: 1,
+      disengaged: 9,
+      archived: 5,
+      total: 21,
+    });
+    expect(pills.slice(0, 2).map((pill) => pill.label)).toEqual(['In pipeline (7)', 'All (21)']);
   });
 
   it('builds five stat cards and marks the selected one', () => {

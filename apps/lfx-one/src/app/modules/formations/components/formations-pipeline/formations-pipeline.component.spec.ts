@@ -83,18 +83,47 @@ describe('FormationsPipelineComponent (#5475)', () => {
   beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => undefined));
   afterEach(() => vi.restoreAllMocks());
 
-  it('reads once with no foundation or search and sorts by expected launch, Not set last', async () => {
+  it('opens on the live pipeline (Draft, Exploratory, Engaged, On hold), upcoming launches first, Not set last', async () => {
     await render();
 
     expect(getFormationPipeline).toHaveBeenCalledWith(null);
-    expect(rowIds()).toEqual(['d', 'c', 'a', 'b']);
+    expect(rowIds()).toEqual(['d', 'a', 'b']);
+    expect(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-in_pipeline"]')?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps Archived and Disengaged out of the default view until their pill is chosen', async () => {
+    await render(of(response([...ROWS, row({ uid: 'e', name: 'Echo', stage: 'disengaged' })])));
+    expect(rowIds()).not.toContain('c');
+    expect(rowIds()).not.toContain('e');
+
+    await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+    expect(rowIds()).toEqual(['c']);
+    await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-all"]'));
+    expect(rowIds()).toHaveLength(5);
+  });
+
+  it('shows Overdue, amber, for a past launch on a live row but not on an archived one', async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'o', name: 'Late', stage: 'engaged', announcement_date: '2020-01-01T00:00:00Z' }),
+          row({ uid: 'z', name: 'Done', stage: 'archived', announcement_date: '2020-01-01T00:00:00Z' }),
+        ])
+      )
+    );
+    expect(q('formations-pipeline-launch-o')?.getAttribute('data-overdue')).toBe('true');
+    expect(q('formations-pipeline-launch-o')?.textContent).toContain('Overdue');
+
+    await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+    expect(q('formations-pipeline-launch-z')?.getAttribute('data-overdue')).toBe('false');
+    expect(q('formations-pipeline-launch-z')?.textContent).not.toContain('Overdue');
   });
 
   it('builds pills with counts, hiding Disengaged and Confidential at zero', async () => {
     await render();
 
     const pills = [...fixture.nativeElement.querySelectorAll('[data-testid="formations-pipeline-pills"] button')].map((el: Element) => el.textContent?.trim());
-    expect(pills).toEqual(['All (4)', 'Draft (1)', 'Exploratory (1)', 'Engaged (1)', 'On hold (0)', 'Archived (1)']);
+    expect(pills).toEqual(['In pipeline (3)', 'All (4)', 'Draft (1)', 'Exploratory (1)', 'Engaged (1)', 'On hold (0)', 'Archived (1)']);
   });
 
   it('filters the rows by a stage pill and by a stat card, and clears on the second click', async () => {
@@ -103,8 +132,8 @@ describe('FormationsPipelineComponent (#5475)', () => {
     await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-engaged"]'));
     expect(rowIds()).toEqual(['a']);
 
-    await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-all"]'));
-    expect(rowIds()).toHaveLength(4);
+    await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-in_pipeline"]'));
+    expect(rowIds()).toHaveLength(3);
 
     const card = fixture.nativeElement.querySelector('[data-testid="formations-pipeline-stats"] button');
     expect(card).not.toBeNull();
@@ -112,6 +141,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
 
   it('sorts on every column and keeps Not set last', async () => {
     await render();
+    await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-all"]'));
 
     for (const key of ['project', 'stage', 'expected_launch', 'formation_date', 'legal_entity', 'ed_pm', 'opportunity_owner', 'updated']) {
       await click(q(`formations-pipeline-sort-${key}`)!.querySelector('button'));
@@ -166,7 +196,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
       fixture.componentInstance['filterForm'].controls.search.setValue('alph');
       await vi.advanceTimersByTimeAsync(200);
       fixture.detectChanges();
-      expect(rowIds()).toHaveLength(4);
+      expect(rowIds()).toHaveLength(3);
 
       await vi.advanceTimersByTimeAsync(150);
       fixture.detectChanges();

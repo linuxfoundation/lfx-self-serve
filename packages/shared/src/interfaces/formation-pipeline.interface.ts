@@ -8,8 +8,8 @@ import type { UserInfo } from './project.interface';
 /** Short stage keys the pipeline API and UI use; one per non-`Active` {@link ProjectStage}. */
 export type FormationPipelineStage = 'prospect' | 'exploratory' | 'engaged' | 'on_hold' | 'disengaged' | 'confidential' | 'archived';
 
-/** Stage pill/stat-card selection: one stage, or every stage. */
-export type FormationPipelineStageFilter = FormationPipelineStage | 'all';
+/** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages: Draft, Exploratory, Engaged, On hold), or `all`. */
+export type FormationPipelineStageFilter = FormationPipelineStage | 'in_pipeline' | 'all';
 
 /** Per-stage row counts plus the total, taken before any stage selection or UI search. */
 export type FormationPipelineCounts = Record<FormationPipelineStage, number> & { total: number };
@@ -74,6 +74,8 @@ export interface FormationPipelineLaunch {
   relativeLabel: string;
   /** True when the launch is within the next 30 days. */
   soon: boolean;
+  /** True when the date has passed and the project is not Archived: shown as "Overdue", amber like `soon`. */
+  overdue: boolean;
 }
 
 /** Upstream `project` index document fields the pipeline reads. */

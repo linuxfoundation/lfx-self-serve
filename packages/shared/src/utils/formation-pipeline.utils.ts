@@ -5,6 +5,7 @@ import {
   FORMATION_PIPELINE_COPY,
   FORMATION_PIPELINE_CSV_FILENAME_PREFIX,
   FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES,
+  FORMATION_PIPELINE_LIVE_STAGES,
   FORMATION_PIPELINE_LAUNCH_SOON_DAYS,
   FORMATION_PIPELINE_STAGE_LABELS,
   FORMATION_PIPELINE_STAGE_SEVERITY,
@@ -69,7 +70,14 @@ export function matchesPipelineSearch(name: string, search: string | null | unde
 
 /** Rows in the selected stage; `all` keeps every row. */
 export function filterPipelineRowsByStage(rows: readonly FormationPipelineRow[], stage: FormationPipelineStageFilter): FormationPipelineRow[] {
-  return stage === 'all' ? [...rows] : rows.filter((row) => row.stage === stage);
+  if (stage === 'all') return [...rows];
+  if (stage === 'in_pipeline') return rows.filter((row) => FORMATION_PIPELINE_LIVE_STAGES.includes(row.stage));
+  return rows.filter((row) => row.stage === stage);
+}
+
+/** Rows in the live pipeline (Draft, Exploratory, Engaged, On hold). */
+export function countLivePipelineRows(counts: FormationPipelineCounts): number {
+  return FORMATION_PIPELINE_LIVE_STAGES.reduce((sum, stage) => sum + counts[stage], 0);
 }
 
 /** The calendar day of an ISO date or timestamp, as UTC midnight; `null` when absent or unparseable. */
@@ -78,24 +86,27 @@ function toUtcDay(value: string | null | undefined): Date | null {
 }
 
 /** Expected-launch cell content: the date, an "In N days/weeks" hint, and whether it falls within the next 30 days. */
-export function getPipelineLaunch(announcementDate: string | null | undefined, now: Date = new Date()): FormationPipelineLaunch {
+export function getPipelineLaunch(announcementDate: string | null | undefined, now: Date = new Date(), overdueApplies = true): FormationPipelineLaunch {
   const day = toUtcDay(announcementDate);
   if (!day) {
-    return { dateLabel: FORMATION_PIPELINE_COPY.notSet, relativeLabel: '', soon: false };
+    return { dateLabel: FORMATION_PIPELINE_COPY.notSet, relativeLabel: '', soon: false, overdue: false };
   }
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const days = Math.round((day.getTime() - today) / MS_PER_DAY);
   const dateLabel = formatIsoDateLabel((announcementDate as string).slice(0, 10));
   if (days < 0) {
-    return { dateLabel, relativeLabel: '', soon: false };
+    // A passed date on a project that has not been archived is overdue; an archived one just shows its date.
+    return overdueApplies
+      ? { dateLabel, relativeLabel: FORMATION_PIPELINE_COPY.overdue, soon: false, overdue: true }
+      : { dateLabel, relativeLabel: '', soon: false, overdue: false };
   }
   const soon = days <= FORMATION_PIPELINE_LAUNCH_SOON_DAYS;
-  if (days === 0) return { dateLabel, relativeLabel: 'Today', soon };
-  if (days < 14) return { dateLabel, relativeLabel: `In ${days} ${days === 1 ? 'day' : 'days'}`, soon };
+  if (days === 0) return { dateLabel, relativeLabel: 'Today', soon, overdue: false };
+  if (days < 14) return { dateLabel, relativeLabel: `In ${days} ${days === 1 ? 'day' : 'days'}`, soon, overdue: false };
   const weeks = Math.floor(days / 7);
-  if (weeks <= 26) return { dateLabel, relativeLabel: `In ${weeks} weeks`, soon };
+  if (weeks <= 26) return { dateLabel, relativeLabel: `In ${weeks} weeks`, soon, overdue: false };
   const months = Math.floor(days / 30);
-  return { dateLabel, relativeLabel: `In ${months} months`, soon };
+  return { dateLabel, relativeLabel: `In ${months} months`, soon, overdue: false };
 }
 
 /** Name of a person, or `''`. */
@@ -149,15 +160,26 @@ function sortValue(row: FormationPipelineRow, key: FormationPipelineSort['key'])
   }
 }
 
-/** Sorts a copy of `rows`. Rows with no value in the sort column come last in either direction; ties fall back to name. */
-export function sortPipelineRows(rows: readonly FormationPipelineRow[], sort: FormationPipelineSort): FormationPipelineRow[] {
+/**
+ * Sorts a copy of `rows`. Rows with no value in the sort column come last in either direction; ties fall back to name.
+ * The launch column groups first — upcoming dates, then past ones, then unset — whatever the direction; ascending means
+ * soonest first among upcoming and most recently passed first among past.
+ */
+export function sortPipelineRows(rows: readonly FormationPipelineRow[], sort: FormationPipelineSort, now: Date = new Date()): FormationPipelineRow[] {
   const factor = sort.direction === 'asc' ? 1 : -1;
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return [...rows].sort((a, b) => {
     const left = sortValue(a, sort.key);
     const right = sortValue(b, sort.key);
     if (left === null && right !== null) return 1;
     if (left !== null && right === null) return -1;
     if (left !== null && right !== null && left !== right) {
+      if (sort.key === 'expected_launch') {
+        const leftUpcoming = (left as number) >= today;
+        const rightUpcoming = (right as number) >= today;
+        if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1;
+        return (leftUpcoming ? (left as number) - (right as number) : (right as number) - (left as number)) * factor;
+      }
       const order = typeof left === 'number' && typeof right === 'number' ? left - right : compareText(String(left), String(right));
       if (order !== 0) return order * factor;
     }
@@ -165,7 +187,7 @@ export function sortPipelineRows(rows: readonly FormationPipelineRow[], sort: Fo
   });
 }
 
-/** Stage pills: `All` plus every stage, with counts. Disengaged and Confidential appear only when they hold rows. */
+/** Stage pills: `In pipeline` (the default), `All`, then every stage, with counts. Disengaged and Confidential appear only when they hold rows. */
 export function buildPipelinePillOptions(counts: FormationPipelineCounts): FilterPillOption[] {
   const stagePills = FORMATION_PIPELINE_STAGES.filter((stage) => counts[stage] > 0 || !FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES.includes(stage)).map(
     (stage) => ({
@@ -173,7 +195,11 @@ export function buildPipelinePillOptions(counts: FormationPipelineCounts): Filte
       label: `${FORMATION_PIPELINE_STAGE_LABELS[stage]} (${counts[stage]})`,
     })
   );
-  return [{ id: 'all', label: `${FORMATION_PIPELINE_COPY.allStages} (${counts.total})` }, ...stagePills];
+  return [
+    { id: 'in_pipeline', label: `${FORMATION_PIPELINE_COPY.inPipeline} (${countLivePipelineRows(counts)})` },
+    { id: 'all', label: `${FORMATION_PIPELINE_COPY.allStages} (${counts.total})` },
+    ...stagePills,
+  ];
 }
 
 /** Stat strip cards for the five headline stages; each card's `action` is the stage key it filters by. */
@@ -217,7 +243,7 @@ export function toPipelineTableRow(row: FormationPipelineRow, now: Date = new Da
     ...row,
     stageLabel: FORMATION_PIPELINE_STAGE_LABELS[row.stage],
     stageSeverity: FORMATION_PIPELINE_STAGE_SEVERITY[row.stage],
-    launch: getPipelineLaunch(row.announcement_date, now),
+    launch: getPipelineLaunch(row.announcement_date, now, row.stage !== 'archived'),
     formationDateLabel: formationDay ? formatIsoDateLabel(formationDay) : '',
     legalEntityLabel: row.legal_entity_name?.trim() ?? '',
     edLine: ed,

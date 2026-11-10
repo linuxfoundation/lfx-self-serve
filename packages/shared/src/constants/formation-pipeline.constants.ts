@@ -4,7 +4,12 @@
 import { ProjectStage } from '../enums/project-stage.enum';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import type { TagSeverity } from '../interfaces/components.interface';
-import type { FormationPipelineSort, FormationPipelineSortKey, FormationPipelineStage } from '../interfaces/formation-pipeline.interface';
+import type {
+  FormationPipelineSort,
+  FormationPipelineSortKey,
+  FormationPipelineStage,
+  FormationPipelineStageFilter,
+} from '../interfaces/formation-pipeline.interface';
 
 /** Browser-facing BFF path of the pipeline read. */
 export const FORMATION_PIPELINE_API_PATH = '/api/formations/pipeline';
@@ -62,6 +67,12 @@ export const FORMATION_PIPELINE_STAGE_SEVERITY: Record<FormationPipelineStage, T
   archived: 'secondary',
 };
 
+/** The live pipeline: what the formation team is actively working. The default view; Disengaged, Confidential and Archived are opt-in. */
+export const FORMATION_PIPELINE_LIVE_STAGES: readonly FormationPipelineStage[] = ['prospect', 'exploratory', 'engaged', 'on_hold'];
+
+/** The stage selection the page opens on. */
+export const FORMATION_PIPELINE_DEFAULT_STAGE: FormationPipelineStageFilter = 'in_pipeline';
+
 /** Stages whose pill shows only while they hold at least one row. */
 export const FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES: readonly FormationPipelineStage[] = ['disengaged', 'confidential'];
 
@@ -87,7 +98,7 @@ export const FORMATION_PIPELINE_STAT_CAPTIONS = {
 /** A launch inside this many days is flagged amber. */
 export const FORMATION_PIPELINE_LAUNCH_SOON_DAYS = 30;
 
-/** Default table sort: soonest launch first, unset launches last. */
+/** Default table sort: upcoming launches soonest first, then past ones, then unset. */
 export const FORMATION_PIPELINE_DEFAULT_SORT: FormationPipelineSort = { key: 'expected_launch', direction: 'asc' };
 
 /** Table rows per page. */
@@ -98,6 +109,8 @@ export const FORMATION_PIPELINE_COPY = {
   description: 'Every project the formation team is bringing into The Linux Foundation, by stage.',
   notSet: 'Not set',
   allStages: 'All',
+  inPipeline: 'In pipeline',
+  overdue: 'Overdue',
   allFoundations: 'All foundations',
   searchPlaceholder: 'Search projects',
   exportLabel: 'Export CSV',

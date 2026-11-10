@@ -20,6 +20,7 @@ import {
   FORMATION_PIPELINE_COLUMNS,
   FORMATION_PIPELINE_COPY,
   FORMATION_PIPELINE_DEFAULT_SORT,
+  FORMATION_PIPELINE_DEFAULT_STAGE,
   FORMATION_PIPELINE_PAGE_SIZE,
   FORMATION_PIPELINE_STAGES,
 } from '@lfx-one/shared/constants';
@@ -89,7 +90,7 @@ export class FormationsPipelineComponent {
   protected readonly loading = signal(true);
   /** `forbidden` is the BFF's 403 (not on the formation team); `failed` is anything else. */
   protected readonly loadError = signal<'forbidden' | 'failed' | null>(null);
-  protected readonly stage = signal<FormationPipelineStageFilter>('all');
+  protected readonly stage = signal<FormationPipelineStageFilter>(FORMATION_PIPELINE_DEFAULT_STAGE);
   protected readonly sort = signal<FormationPipelineSort>(FORMATION_PIPELINE_DEFAULT_SORT);
   private readonly knownFoundations = signal<ReadonlyMap<string, string>>(new Map());
 
@@ -101,7 +102,7 @@ export class FormationsPipelineComponent {
   private readonly searchedRows = computed(() => this.response().rows.filter((row) => matchesPipelineSearch(row.name, this.searchTerm())));
   /** Stage counts over the searched rows, so the pills and stat cards agree with the table. */
   protected readonly counts = computed(() => countPipelineRows(this.searchedRows()));
-  protected readonly isFiltered = computed(() => this.stage() !== 'all' || !!this.searchTerm().trim() || !!this.foundationUid());
+  protected readonly isFiltered = computed(() => this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE || !!this.searchTerm().trim() || !!this.foundationUid());
   protected readonly foundationOptions = computed(() => [
     { label: this.copy.allFoundations, value: null },
     ...[...this.knownFoundations()].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label)),
@@ -136,13 +137,13 @@ export class FormationsPipelineComponent {
   });
 
   protected onStageChange(stage: string): void {
-    this.stage.set(FORMATION_PIPELINE_STAGES.find((candidate) => candidate === stage) ?? 'all');
+    this.stage.set(this.toStageFilter(stage));
   }
 
-  /** A stat card filters to its stage; selecting the active card again clears it. */
+  /** A stat card filters to its stage; selecting the active card again returns to the default view. */
   protected onStatAction(action: string): void {
-    const next = FORMATION_PIPELINE_STAGES.find((candidate) => candidate === action) ?? 'all';
-    this.stage.set(this.stage() === next ? 'all' : next);
+    const next = this.toStageFilter(action);
+    this.stage.set(this.stage() === next ? FORMATION_PIPELINE_DEFAULT_STAGE : next);
   }
 
   protected onHeaderClick(key: FormationPipelineSortKey): void {
@@ -165,7 +166,7 @@ export class FormationsPipelineComponent {
 
   protected resetFilters(): void {
     this.filterForm.reset({ search: '', foundation: null });
-    this.stage.set('all');
+    this.stage.set(FORMATION_PIPELINE_DEFAULT_STAGE);
   }
 
   protected onRetry(): void {
@@ -175,6 +176,14 @@ export class FormationsPipelineComponent {
   /** Downloads the filtered rows (every page) as CSV. `downloadCsv` is browser-only and a no-op on the server. */
   protected exportCsv(): void {
     downloadCsv(getPipelineCsvFilename(), buildPipelineCsvRows(this.displayRows()));
+  }
+
+  /** A pill or card id as a stage selection; anything unrecognized is the default view. */
+  private toStageFilter(id: string): FormationPipelineStageFilter {
+    if (id === 'all') {
+      return 'all';
+    }
+    return FORMATION_PIPELINE_STAGES.find((candidate) => candidate === id) ?? FORMATION_PIPELINE_DEFAULT_STAGE;
   }
 
   private initSearchTerm(): Signal<string> {
