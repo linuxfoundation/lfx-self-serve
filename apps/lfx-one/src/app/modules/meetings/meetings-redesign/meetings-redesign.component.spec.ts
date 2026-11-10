@@ -345,7 +345,7 @@ describe('MeetingsRedesignComponent', () => {
     const tabs = query(fixture, 'meetings-redesign-tabs');
     expect(tabs?.contains(query(fixture, 'meetings-redesign-search'))).toBe(true);
     expect(tabs?.contains(query(fixture, 'meetings-home-filters-button'))).toBe(true);
-    expect(query(fixture, 'ui-tab-upcoming')?.className).toContain('text-[13px]');
+    expect(query(fixture, 'ui-tab-upcoming')?.className).toContain('pb-[14px]');
   });
 
   it('folds the right column into a two-column grid and hides the description at 1024px and below', async () => {

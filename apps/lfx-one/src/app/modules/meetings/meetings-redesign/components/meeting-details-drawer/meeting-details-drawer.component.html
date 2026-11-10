@@ -8,7 +8,9 @@
     <div class="sticky top-0 z-[5] -mx-[32px] -mt-[24px] bg-white px-[32px] pb-[12px] pt-[24px]">
       <lfx-meeting-details-header [compact]="compact()" />
       @if (showFades()) {
-        <span class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white to-transparent" aria-hidden="true"></span>
+        <span
+          class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
+          aria-hidden="true"></span>
       }
     </div>
 
@@ -35,6 +37,7 @@
                 class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
                 role="img"
                 tabindex="0"
+                variant="solid"
                 [tone]="visibilityTones[badge.kind]"
                 [attr.aria-label]="badge.title + ': ' + description"
                 [lfxUiTooltip]="description"
@@ -42,7 +45,7 @@
                 ><i [class]="badge.icon" aria-hidden="true"></i>{{ badge.title }}</lfx-ui-badge
               >
             } @else {
-              <lfx-ui-badge [tone]="visibilityTones[badge.kind]" [attr.data-testid]="'meeting-details-visibility-' + badge.kind"
+              <lfx-ui-badge variant="solid" [tone]="visibilityTones[badge.kind]" [attr.data-testid]="'meeting-details-visibility-' + badge.kind"
                 ><i [class]="badge.icon" aria-hidden="true"></i>{{ badge.title }}</lfx-ui-badge
               >
             }
@@ -151,7 +154,9 @@
               (valueChange)="selectTab($event)"
               data-testid="meeting-details-tabs" />
             @if (showFades()) {
-              <span class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-white to-transparent" aria-hidden="true"></span>
+              <span
+                class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
+                aria-hidden="true"></span>
             }
           </div>
         }

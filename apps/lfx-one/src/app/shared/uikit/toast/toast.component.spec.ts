@@ -81,6 +81,16 @@ describe('UiToastComponent', () => {
     expect(toast().classList).toContain('shadow-modal');
   });
 
+  it.each([
+    ['default', ['min-h-[56px]', 'gap-[12px]', 'pl-[16px]', 'pr-[12px]'], ['gap-[10px]']],
+    ['error', ['min-h-[56px]', 'gap-[12px]', 'pl-[16px]', 'pr-[12px]'], ['gap-[10px]']],
+    ['dark', ['gap-[10px]', 'pl-[14px]', 'pr-[16px]'], ['min-h-[56px]', 'gap-[12px]']],
+  ] as const)('gives the %s variant its box spacing', async (variant, present, absent) => {
+    await setup((instance) => instance.variant.set(variant));
+    expect(Array.from(toast().classList)).toEqual(expect.arrayContaining([...present, 'py-[12px]']));
+    absent.forEach((cls) => expect(toast().classList).not.toContain(cls));
+  });
+
   it('hugs its content up to the 420px library width, then wraps', async () => {
     await setup();
     expect(toast().classList).toContain('w-fit');
