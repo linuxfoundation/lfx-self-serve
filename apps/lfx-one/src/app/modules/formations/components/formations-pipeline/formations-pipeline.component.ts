@@ -37,9 +37,11 @@ import {
   buildPipelineCsv,
   buildPipelinePillOptions,
   buildPipelineStatCards,
+  countPipelineRows,
   emptyPipelineCounts,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
+  matchesPipelineSearch,
   sortPipelineRows,
   toPipelineTableRow,
 } from '@lfx-one/shared/utils';
@@ -49,8 +51,8 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
 /**
  * The Pipeline tab of the LF-root Formations page (#5475): every non-Active project by stage for the formation team,
  * with stage stat cards and pills, a foundation filter, name search, sortable columns and a CSV export. The stage
- * selection, sort and pagination are client-side over the one response; the foundation and the name search go to the
- * BFF, whose stage counts follow them.
+ * selection, name search, sort and pagination are client-side over the one response; only the foundation goes to the
+ * BFF (a change switches to the new read, cancelling any one in flight).
  */
 @Component({
   selector: 'lfx-formations-pipeline',
@@ -96,17 +98,20 @@ export class FormationsPipelineComponent {
   private readonly foundationUid: Signal<string | null> = this.initFoundationUid();
   private readonly response: Signal<FormationPipelineResponse> = this.initResponse();
 
-  protected readonly counts = computed(() => this.response().counts);
+  /** The foundation's rows narrowed by the name search, client-side: no refetch while the rows are already loaded. */
+  private readonly searchedRows = computed(() => this.response().rows.filter((row) => matchesPipelineSearch(row.name, this.searchTerm())));
+  /** Stage counts over the searched rows, so the pills and stat cards agree with the table. */
+  protected readonly counts = computed(() => countPipelineRows(this.searchedRows()));
   protected readonly isFiltered = computed(() => this.stage() !== 'all' || !!this.searchTerm().trim() || !!this.foundationUid());
   protected readonly foundationOptions = computed(() => [
     { label: this.copy.allFoundations, value: null },
     ...[...this.knownFoundations()].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label)),
   ]);
   protected readonly pillOptions: Signal<FilterPillOption[]> = computed(() => buildPipelinePillOptions(this.counts()));
-  protected readonly statCards: Signal<StatCardItem[]> = computed(() => buildPipelineStatCards(this.counts(), this.response().rows, this.stage()));
+  protected readonly statCards: Signal<StatCardItem[]> = computed(() => buildPipelineStatCards(this.counts(), this.searchedRows(), this.stage()));
   protected readonly displayRows: Signal<FormationPipelineTableRow[]> = computed(() => {
     const now = new Date();
-    return sortPipelineRows(filterPipelineRowsByStage(this.response().rows, this.stage()), this.sort()).map((row) => toPipelineTableRow(row, now));
+    return sortPipelineRows(filterPipelineRowsByStage(this.searchedRows(), this.stage()), this.sort()).map((row) => toPipelineTableRow(row, now));
   });
   /** Paginator offset; any change to the displayed list returns to page one. */
   protected readonly first = linkedSignal({ source: this.displayRows, computation: () => 0 });
@@ -204,11 +209,11 @@ export class FormationsPipelineComponent {
   private initResponse(): Signal<FormationPipelineResponse> {
     const empty: FormationPipelineResponse = { rows: [], counts: emptyPipelineCounts() };
     return toSignal(
-      combineLatest([this.refresh$, toObservable(this.searchTerm), toObservable(this.foundationUid)]).pipe(
-        switchMap(([, search, foundationUid]) => {
+      combineLatest([this.refresh$, toObservable(this.foundationUid)]).pipe(
+        switchMap(([, foundationUid]) => {
           this.loadError.set(null);
           this.loading.set(true);
-          return this.formationService.getFormationPipeline(foundationUid, search).pipe(
+          return this.formationService.getFormationPipeline(foundationUid).pipe(
             tap((response) => this.rememberFoundations(response, foundationUid)),
             catchError((error: unknown) => {
               console.error('[FormationsPipeline] Failed to load the pipeline', error);

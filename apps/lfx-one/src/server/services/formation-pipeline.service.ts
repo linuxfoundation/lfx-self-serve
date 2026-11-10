@@ -14,7 +14,6 @@ import type {
   FormationPipelineQuery,
   FormationPipelineResponse,
   FormationPipelineRow,
-  Project,
   QueryServiceResponse,
   UpstreamFormationQueueRow,
   UpstreamPipelineProject,
@@ -32,7 +31,6 @@ import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
-import { ProjectService } from './project.service';
 
 /**
  * The formation team's project pipeline (#5475): every non-Active project by stage, read through
@@ -42,7 +40,6 @@ export class FormationPipelineService {
   private readonly microserviceProxy = new MicroserviceProxyService();
   private readonly accessCheckService = new AccessCheckService();
   private readonly natsService = new NatsService();
-  private readonly projectService = new ProjectService();
 
   /**
    * `GET /api/formations/pipeline`. Reads, in order: `type=project` for every pipeline stage (counts need them all,
@@ -119,44 +116,91 @@ export class FormationPipelineService {
   }
 
   /**
-   * Parent projects by uid. With `foundationUid` the walk continues up the chain (a pipeline row's parent is often an
-   * Active project that is itself under the foundation) until the chain ends, reaches the root, or hits the depth cap.
-   * The `project` document carries only its direct parent, so there is no ancestor array to read instead.
+   * Parent projects by uid, one level of the hierarchy per round, each round batched (`filters_or=uid:…`, up to 100 uids
+   * per read) rather than read per row. With `foundationUid` the walk continues up the chain (a pipeline row's parent is
+   * often an Active project under the foundation) until it ends, reaches the root, or hits the depth cap. The `project`
+   * document carries only its direct parent, so there is no ancestor array to read instead.
+   *
+   * A failed read fails the request. A parent query-service returns no document for is logged (a formation-team member
+   * holds `global_owner` on every project, so a missing parent is a data problem); its rows stay in "All foundations" with
+   * no name and drop out only when a foundation filter is on. Reaching the depth cap is logged too.
    */
   private async resolveParents(
     req: Request,
     projects: readonly UpstreamPipelineProject[],
     rootUid: string | null,
     foundationUid?: string
-  ): Promise<Map<string, Project>> {
-    const known = new Map<string, Project>();
-    let frontier = new Set(projects.map((project) => collapseRootParentUid(project.parent_uid || null, rootUid)).filter((uid): uid is string => !!uid));
+  ): Promise<Map<string, UpstreamPipelineProject>> {
+    // Pipeline rows that are themselves parents are already in hand.
+    const known = new Map<string, UpstreamPipelineProject>(projects.map((project) => [project.uid, project]));
+    const missing = new Set<string>();
+    let frontier = new Set(
+      projects.map((project) => collapseRootParentUid(project.parent_uid || null, rootUid)).filter((uid): uid is string => !!uid && !known.has(uid))
+    );
+    let depth = 0;
 
-    for (let depth = 0; depth < (foundationUid ? FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH : 1) && frontier.size > 0; depth++) {
-      const fetched = await this.projectService.getProjectsByIds(req, frontier);
-      const next = new Set<string>();
-      for (const [uid, project] of fetched) {
-        known.set(uid, project);
-        const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid);
-        if (foundationUid && parentUid && !known.has(parentUid) && !fetched.has(parentUid)) {
-          next.add(parentUid);
-        }
-      }
-      for (const uid of frontier) {
-        if (!fetched.has(uid)) {
-          logger.warning(req, 'get_formation_pipeline', 'Parent project not returned by query-service', {
-            parent_uid: uid,
-            foundation_scoped: !!foundationUid,
+    while (frontier.size > 0) {
+      if (depth >= (foundationUid ? FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH : 1)) {
+        if (foundationUid) {
+          logger.warning(req, 'get_formation_pipeline', 'Parent walk stopped at the depth cap', {
+            parent_uids: [...frontier],
+            max_depth: FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH,
           });
+        }
+        break;
+      }
+      const fetched = await this.fetchProjectsByUids(req, [...frontier]);
+      const next = new Set<string>();
+      for (const uid of frontier) {
+        const parent = fetched.get(uid) ?? known.get(uid);
+        if (!parent) {
+          missing.add(uid);
+          continue;
+        }
+        known.set(uid, parent);
+        const grandparentUid = collapseRootParentUid(parent.parent_uid || null, rootUid);
+        if (foundationUid && grandparentUid && !known.has(grandparentUid) && !missing.has(grandparentUid)) {
+          next.add(grandparentUid);
         }
       }
       frontier = next;
+      depth++;
+    }
+
+    for (const uid of missing) {
+      logger.warning(req, 'get_formation_pipeline', 'Parent project not returned by query-service', { parent_uid: uid, foundation_scoped: !!foundationUid });
     }
     return known;
   }
 
+  /** `type=project` documents for the uids, in batches of the filters_or limit. Any failed read throws. */
+  private async fetchProjectsByUids(req: Request, uids: readonly string[]): Promise<Map<string, UpstreamPipelineProject>> {
+    const batches = await Promise.all(
+      chunkArray(uids, QUERY_SERVICE_FILTERS_OR_BATCH_SIZE).map((batch) =>
+        fetchAllQueryResources<UpstreamPipelineProject>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamPipelineProject>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'project',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              // page_size must exceed the batch: query-service emits a page_token whenever hits == page_size.
+              page_size: batch.length + 1,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+    return new Map(batches.flat().map((project) => [project.uid, project]));
+  }
+
   /** Whether a project is a known pipeline stage and, when `foundationUid` is set, is that foundation or sits under it. */
-  private inScope(project: UpstreamPipelineProject, parents: ReadonlyMap<string, Project>, rootUid: string | null, query: FormationPipelineQuery): boolean {
+  private inScope(
+    project: UpstreamPipelineProject,
+    parents: ReadonlyMap<string, UpstreamPipelineProject>,
+    rootUid: string | null,
+    query: FormationPipelineQuery
+  ): boolean {
     if (!getPipelineStageKey(project.stage)) {
       return false;
     }
@@ -175,7 +219,7 @@ export class FormationPipelineService {
     return false;
   }
 
-  private toRow(project: UpstreamPipelineProject, parents: ReadonlyMap<string, Project>, rootUid: string | null): FormationPipelineRow {
+  private toRow(project: UpstreamPipelineProject, parents: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): FormationPipelineRow {
     const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid);
     return {
       uid: project.uid,

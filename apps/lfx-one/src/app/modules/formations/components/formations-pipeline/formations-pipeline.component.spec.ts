@@ -7,7 +7,7 @@ import { provideRouter } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import type { FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
 import { countPipelineRows } from '@lfx-one/shared/utils';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationsPipelineComponent } from './formations-pipeline.component';
@@ -86,7 +86,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
   it('reads once with no foundation or search and sorts by expected launch, Not set last', async () => {
     await render();
 
-    expect(getFormationPipeline).toHaveBeenCalledWith(null, '');
+    expect(getFormationPipeline).toHaveBeenCalledWith(null);
     expect(rowIds()).toEqual(['d', 'c', 'a', 'b']);
   });
 
@@ -151,7 +151,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(getFormationPipeline).toHaveBeenLastCalledWith('f2', '');
+    expect(getFormationPipeline).toHaveBeenLastCalledWith('f2');
     expect(fixture.componentInstance['foundationOptions']().map((option: { label: string }) => option.label)).toEqual([
       'All foundations',
       'Foundation One',
@@ -159,18 +159,45 @@ describe('FormationsPipelineComponent (#5475)', () => {
     ]);
   });
 
-  it('sends a debounced name search to the BFF', async () => {
+  it('filters by name client-side after a debounce, with counts following, and makes no second read', async () => {
     vi.useFakeTimers();
     try {
       await render();
-      fixture.componentInstance['filterForm'].controls.search.setValue('fleet');
-      await vi.advanceTimersByTimeAsync(350);
+      fixture.componentInstance['filterForm'].controls.search.setValue('alph');
+      await vi.advanceTimersByTimeAsync(200);
       fixture.detectChanges();
+      expect(rowIds()).toHaveLength(4);
 
-      expect(getFormationPipeline).toHaveBeenLastCalledWith(null, 'fleet');
+      await vi.advanceTimersByTimeAsync(150);
+      fixture.detectChanges();
+      expect(rowIds()).toEqual(['a']);
+      expect(fixture.componentInstance['counts']()).toMatchObject({ engaged: 1, total: 1 });
+      expect(getFormationPipeline).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('cancels an in-flight foundation read when the foundation changes again', async () => {
+    const first = new Subject<FormationPipelineResponse>();
+    const second = new Subject<FormationPipelineResponse>();
+    await render(of(response(ROWS)));
+    getFormationPipeline.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    fixture.componentInstance['filterForm'].controls.foundation.setValue('f1');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.componentInstance['filterForm'].controls.foundation.setValue('f2');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    second.next(response([row({ uid: 'z', name: 'Zed' })]));
+    second.complete();
+    first.next(response([row({ uid: 'stale', name: 'Stale' })]));
+    fixture.detectChanges();
+
+    expect(rowIds()).toEqual(['z']);
+    expect(first.observed).toBe(false);
   });
 
   it('exports the filtered rows across all pages as CSV with the dated file name and neutralized formulas', async () => {

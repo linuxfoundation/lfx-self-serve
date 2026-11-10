@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -377,6 +377,38 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
       fixture.detectChanges();
       await fixture.whenStable();
       expect(getFormationsQueue).not.toHaveBeenCalled();
+    });
+
+    it('fires the Formations read and shows no empty state while access is pending, once access answers no', async () => {
+      const access = new Subject<boolean>();
+      const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable() });
+      expect(getFormationsQueue).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.textContent).not.toContain('No formations yet');
+
+      access.next(false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+    });
+
+    it('fires the Formations read when the access check errors (it fails closed to no)', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: of(false) });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const real = TestBed.inject(ProjectApplicationService);
+      vi.mocked(real.getAccess).mockRestore();
+      const http = TestBed.inject(HttpTestingController);
+      const failing = TestBed.createComponent(FormationsQueueComponent);
+      getFormationsQueue.mockClear();
+      failing.detectChanges();
+      http.match((request) => request.url.endsWith('/access')).forEach((request) => request.flush('boom', { status: 500, statusText: 'Server Error' }));
+      failing.detectChanges();
+      await failing.whenStable();
+      failing.detectChanges();
+
+      expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+      expect(query(failing, 'formations-queue-pipeline')).toBeNull();
+      expect(fixture).toBeTruthy();
     });
 
     it('opens ?tab=pipeline directly', async () => {

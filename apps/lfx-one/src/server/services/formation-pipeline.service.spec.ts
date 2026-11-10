@@ -11,13 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
 const checkSingleAccess = vi.fn();
-const getProjectsByIds = vi.fn();
 
-vi.mock('./project.service', () => ({
-  ProjectService: class {
-    public getProjectsByIds = (...args: unknown[]) => getProjectsByIds(...args);
-  },
-}));
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
     public checkSingleAccess = (...args: unknown[]) => checkSingleAccess(...args);
@@ -38,6 +32,7 @@ vi.mock('./nats.service', () => ({
 }));
 
 const { FormationPipelineService } = await import('./formation-pipeline.service');
+const { logger } = await import('./logger.service');
 const { resetRootProjectUidCacheForTests } = await import('../helpers/root-project.helper');
 
 const req = { path: '/api/formations/pipeline' } as Request;
@@ -60,25 +55,26 @@ interface Fixtures {
 
 function mockUpstream({ projects = [], settings = [], checklistUids = [], parents = {} }: Fixtures): void {
   proxyRequest.mockImplementation(async (_req: unknown, _service: string, _path: string, _method: string, params: Record<string, unknown>) => {
-    if (params['type'] === 'project') return resources(projects);
+    if (params['type'] === 'project') {
+      const filters = params['filters_or'] as string[];
+      if (filters[0].startsWith('stage:')) return resources(projects);
+      return resources(filters.map((filter) => parents[filter.slice(4)]).filter(Boolean));
+    }
     if (params['type'] === 'project_settings') return resources(settings);
     if (params['type'] === 'formation') return resources(checklistUids.map((uid) => ({ project_uid: uid })));
     throw new Error(`unexpected read ${String(params['type'])}`);
   });
-  getProjectsByIds.mockImplementation(
-    async (_req: unknown, uids: Set<string>) => new Map([...uids].filter((uid) => parents[uid]).map((uid) => [uid, parents[uid]]))
-  );
 }
 
 describe('FormationPipelineService.getPipeline', () => {
   let service: InstanceType<typeof FormationPipelineService>;
 
   beforeEach(() => {
+    vi.mocked(logger.warning).mockClear();
     natsRequest.mockReset();
     natsRequest.mockResolvedValue({ data: '' });
     resetRootProjectUidCacheForTests();
     proxyRequest.mockReset();
-    getProjectsByIds.mockReset();
     checkSingleAccess.mockReset();
     checkSingleAccess.mockResolvedValue(true);
     service = new FormationPipelineService();
@@ -91,7 +87,6 @@ describe('FormationPipelineService.getPipeline', () => {
 
     expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'formation', access: 'member' });
     expect(proxyRequest).not.toHaveBeenCalled();
-    expect(getProjectsByIds).not.toHaveBeenCalled();
     expect(natsRequest).not.toHaveBeenCalled();
   });
 
@@ -100,7 +95,7 @@ describe('FormationPipelineService.getPipeline', () => {
 
     await service.getPipeline(req, allStages);
 
-    const params = proxyRequest.mock.calls.find((call) => call[4]?.type === 'project')?.[4];
+    const params = proxyRequest.mock.calls.find((call) => call[4]?.type === 'project' && call[4].filters_or[0].startsWith('stage:'))?.[4];
     expect(params.filters_or).toEqual([
       'stage:Prospect',
       'stage:Formation - Exploratory',
@@ -235,5 +230,57 @@ describe('FormationPipelineService.getPipeline', () => {
     const { rows } = await service.getPipeline(req, { ...allStages, foundationUid: 'F' });
 
     expect(rows).toEqual([]);
+  });
+
+  it('reads each level of parents in batches, not one read per row', async () => {
+    const many = Array.from({ length: 150 }, (_, i) => project({ uid: `c${i}`, name: `N${String(i).padStart(3, '0')}`, parent_uid: `p${i}` }));
+    const parents = Object.fromEntries(many.map((_, i) => [`p${i}`, { uid: `p${i}`, name: `P${i}` }]));
+    mockUpstream({ projects: many, parents });
+
+    await service.getPipeline(req, allStages);
+
+    const parentReads = proxyRequest.mock.calls.filter((call) => call[4]?.type === 'project' && call[4].filters_or[0].startsWith('uid:'));
+    expect(parentReads).toHaveLength(2);
+    expect(parentReads[0][4].filters_or).toHaveLength(100);
+    expect(parentReads[1][4].filters_or).toHaveLength(50);
+  });
+
+  it('fails the request when a parent read fails instead of dropping rows', async () => {
+    mockUpstream({ projects: [project({ uid: 'a', parent_uid: 'p' })] });
+    const ok = proxyRequest.getMockImplementation() as (...args: unknown[]) => Promise<unknown>;
+    proxyRequest.mockImplementation(async (...args: unknown[]) => {
+      const params = args[4] as Record<string, unknown>;
+      if (params['type'] === 'project' && (params['filters_or'] as string[])[0].startsWith('uid:')) throw new Error('boom');
+      return ok(...args);
+    });
+
+    await expect(service.getPipeline(req, { ...allStages, foundationUid: 'F' })).rejects.toThrow();
+  });
+
+  it('keeps a row whose parent has no document in All foundations, warns with the uid, and drops it under a foundation filter', async () => {
+    mockUpstream({ projects: [project({ uid: 'a', parent_uid: 'ghost' })] });
+
+    const all = await service.getPipeline(req, allStages);
+    expect(all.rows.map((row) => row.uid)).toEqual(['a']);
+    expect(all.rows[0].parent).toEqual({ uid: 'ghost', name: '' });
+    expect(logger.warning).toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.objectContaining({ parent_uid: 'ghost' }));
+
+    const scoped = await service.getPipeline(req, { ...allStages, foundationUid: 'F' });
+    expect(scoped.rows).toEqual([]);
+  });
+
+  it('warns with the uid when the ancestry walk reaches the depth cap', async () => {
+    const chain: Record<string, { uid: string; name: string; parent_uid: string }> = {};
+    for (let i = 0; i < 12; i++) chain[`x${i}`] = { uid: `x${i}`, name: `X${i}`, parent_uid: `x${i + 1}` };
+    mockUpstream({ projects: [project({ uid: 'a', parent_uid: 'x0' })], parents: chain });
+
+    await service.getPipeline(req, { ...allStages, foundationUid: 'F' });
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'get_formation_pipeline',
+      'Parent walk stopped at the depth cap',
+      expect.objectContaining({ parent_uids: ['x8'] })
+    );
   });
 });
