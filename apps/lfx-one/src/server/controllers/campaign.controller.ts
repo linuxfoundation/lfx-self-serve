@@ -21,6 +21,7 @@ import {
 } from '@lfx-one/shared/utils/campaign-google-criteria.utils';
 import {
   googleAdGroupDemographicExclusionsRefusal,
+  googleDemandGenDemographicsMalformed,
   googleDemandGenDemographicsRefusal,
   googleDisplayDemographicsCarried,
   googleDisplayDemographicsRefusal,
@@ -6314,8 +6315,10 @@ export class CampaignController {
    * The first of `GOOGLE_CUTOVER_ONLY_CREATE_FIELDS` a Google create carries while this deployment
    * cannot honour it (see `createCampaign`), else `null`.
    *
-   * The bidding plan and creative entries (`normalized`) count only when the cutover's own
-   * normalizers would send them (see the constant). For every other entry, only a NON-EMPTY value
+   * The bidding plan and creative entries (`normalized`) count when the cutover's own normalizers
+   * would send them (see the constant), or when the raw value is one the cutover's refusals name on
+   * the raw body though the normalizers drop it (a malformed Demand Gen demographics object, or a
+   * Demand Gen or Display ad group or ad list that is not a list). For every other entry, only a NON-EMPTY value
    * counts: absent, `null`, an empty string, `false` and an empty list ask for nothing, and the
    * legacy creator serves those
    * requests exactly as asked, so refusing one would be over-refusal. Any other present value — a
@@ -6339,10 +6342,22 @@ export class CampaignController {
     }
     // The Display audiences (#5262) under their request key, whenever the builder would send a list.
     if (Object.keys(this.googleDisplayAudiences(body)).length > 0) sent[GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY] = true;
+    // A raw value the normalizers drop but the cutover's own refusals name on the RAW body counts too: a
+    // `demandGenDemographics` that is malformed or names user lists, and a split or ad list that is not a
+    // list (`googleDemandGenAdGroupsRefusal`, `googleDemandGenAdsRefusal`, `googleDisplayAdGroupsRefusal`).
+    // Read only from what would be sent, each would vanish here and the legacy creator would create
+    // without what was asked for. The Demand Gen audience and the Display audiences are refused on their
+    // raw shape before this runs, whatever the cutover.
     // An empty string asks for nothing too: the display paths are the only string fields here. So
     // does `false`: `searchPartners` is the only boolean, and false is Google Search alone.
     const asked = (value: unknown): boolean =>
       value !== undefined && value !== null && value !== '' && value !== false && !(Array.isArray(value) && value.length === 0);
+    // Each on `asked`'s terms first, so an empty list or string still asks for nothing here.
+    const demographics = raw[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY];
+    if (asked(demographics) && googleDemandGenDemographicsMalformed(demographics)) sent[GOOGLE_DEMAND_GEN_DEMOGRAPHICS_REQUEST_KEY] = true;
+    for (const key of [GOOGLE_DEMAND_GEN_AD_GROUPS_REQUEST_KEY, GOOGLE_DEMAND_GEN_ADS_REQUEST_KEY, GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY]) {
+      if (asked(raw[key]) && !Array.isArray(raw[key])) sent[key] = true;
+    }
     return (
       GOOGLE_CUTOVER_ONLY_CREATE_FIELDS.find((entry) => {
         if ('normalized' in entry) return entry.field in sent;

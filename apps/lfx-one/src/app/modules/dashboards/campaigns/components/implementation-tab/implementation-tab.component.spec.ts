@@ -17815,6 +17815,45 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(payload['headlines']).toEqual(['Join us', 'Register now']);
   });
 
+  /**
+   * PR #5389 review: JS `trim()` keeps a trailing U+0085 that Go's `strings.TrimSpace` strips, so the
+   * payload carries "Join us\u0085" and campaign-service refuses it as a repeat of "Join us".
+   */
+  it.each([
+    ['Demand Gen', 'includeDemandGen', 'demandGenCreative'],
+    ['Display', 'includeDisplay', 'displayCreative'],
+  ] as const)('seeds one %s headline for two that Go trims to the same line, a trailing U+0085 included', (_label, channel, key) => {
+    seed(brief({ google_search: { headlines: ['Join us', 'Join us\u0085', '\u0085join US', 'Register now'], descriptions: [] } }));
+    show(channel);
+
+    const payload = component()['googleCreativePayload']()[key] as Record<string, unknown>;
+    expect(JSON.parse(JSON.stringify(payload['headlines']))).toEqual(['Join us', 'Register now']);
+  });
+
+  it('seeds one Performance Max headline for two that Go trims to the same line, a trailing U+0085 included', () => {
+    seed(brief({ google_search: { headlines: ['Join us', 'Join us\u0085', 'Register now'], descriptions: [] } }));
+
+    const pmax = component()['campaignForm'].controls['performanceMaxCreative'].getRawValue();
+    expect(lines(pmax['headlines'])).toEqual(['Join us', 'Register now']);
+  });
+
+  it('skips a long headline candidate that repeats a seeded line once Go trims a U+0085', () => {
+    const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'Join us\u0085', 'D7'];
+    seed(brief({ google_search: { headlines: [], descriptions }, google_display: { headlines: ['Join us'] } }));
+
+    expect(group('displayCreative')['longHeadline']).toBe('D7');
+
+    // And the other way round: the seeded headline carries the U+0085, the candidate does not.
+    seed(
+      brief({
+        google_search: { headlines: [], descriptions: ['D1', 'D2', 'D3', 'D4', 'D5', 'Join us', 'D7'] },
+        google_display: { headlines: ['Join us\u0085'] },
+      })
+    );
+
+    expect(group('displayCreative')['longHeadline']).toBe('D7');
+  });
+
   it('skips a long headline candidate that repeats a seeded line in another case', () => {
     // The five descriptions take D1-D5; "join us" repeats the seeded headline "Join us" in another case.
     const descriptions = ['D1', 'D2', 'D3', 'D4', 'D5', 'join us', 'D7'];
@@ -20626,6 +20665,29 @@ describe('ImplementationTabComponent performance max audience signal', () => {
     });
   });
 
+  /**
+   * PR #5393 review: the block reads the channel box from the form, which is not a signal, and the signal
+   * value does not change on a switch, so the block must read the form's revision to follow the switch.
+   */
+  it.each([
+    ['denied', false, 'ready', 'restricted'],
+    ['unanswered', null, 'failed', 'failed'],
+  ] as const)('follows a channel switch away and back with access %s', async (_label, enabled, read, kind) => {
+    await setup();
+    const c = holdSignal(enabled, read);
+    expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe(kind);
+
+    for (const away of [{ includeSearch: true }, { includeDisplay: true }]) {
+      c['campaignForm'].patchValue({ includePerformanceMax: false, ...away });
+      fixture.detectChanges();
+      expect(c['performanceMaxAudienceSignalBlock']()).toBeNull();
+
+      c['campaignForm'].patchValue({ includePerformanceMax: true, includeSearch: false, includeDisplay: false });
+      fixture.detectChanges();
+      expect(c['performanceMaxAudienceSignalBlock']()?.kind).toBe(kind);
+    }
+  });
+
   it('clears the block only once the channel capability is answered no, which drops Performance Max', async () => {
     await setup();
     const c = holdSignal(null, 'failed');
@@ -21191,6 +21253,164 @@ describe('ImplementationTabComponent demand gen demographics', () => {
     expect(c['campaignForm'].controls.demandGenDemographics.value).toEqual({ parentalStatuses: ['PARENT'] });
     expect(c['campaignForm'].controls.demandGenAdGroups.at(0).controls.demographics.value).toEqual({});
   });
+
+  /** PR #5390 review: the payload trims the Audience, so a blank one is none and holds nothing back. */
+  it('reads a whitespace-only Audience as none, offering the picker and the demographics', () => {
+    const c = seedDemandGen();
+    restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenAudience: '   ' });
+    c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
+    fixture.detectChanges();
+
+    expect(c['googleDemandGenAudiencePayload']()).toEqual({});
+    expect(query('implementation-demand-gen-demographics-held-by-audience-single')).toBeNull();
+    expect(query('implementation-demand-gen-demographics-targeting-single')).not.toBeNull();
+    expect(query('implementation-demand-gen-audience-picked-single')).toBeNull();
+    expect(query('implementation-demand-gen-audience-picker-single')).not.toBeNull();
+  });
+
+  /** PR #5390 review: a restored value no box offers cannot be unticked, so Clear is the way out of its refusal. */
+  it('clears a restored value no box offers, releasing Create, and moves focus to the first box', async () => {
+    const focused: HTMLElement[] = [];
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+      focused.push(this);
+    });
+    const c = seedDemandGen();
+    expect(query('implementation-demand-gen-demographics-clear-single')).toBeNull();
+    restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenDemographics: { genders: ['NOPE'] } });
+    c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
+    fixture.detectChanges();
+    expect(c['demandGenDemographicsError']()).toContain('cannot target the gender');
+    expect(c['canSubmit']()).toBe(false);
+
+    (query('implementation-demand-gen-demographics-clear-single')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(c['campaignForm'].controls.demandGenDemographics.value).toEqual({});
+    expect(c['demandGenDemographicsError']()).toBeNull();
+    expect(c['canSubmit']()).toBe(true);
+    expect(query('implementation-demand-gen-demographics-clear-single')).toBeNull();
+    expect(focused.at(-1)).toBe(query('implementation-demand-gen-demographics-targeting-single')?.querySelector('input'));
+  });
+
+  it("clears one named group's demographics alone, and moves focus to its Audience's Remove when one is picked", async () => {
+    const focused: HTMLElement[] = [];
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+      focused.push(this);
+    });
+    const c = seedDemandGen();
+    split(c, ['Retargeting', 'Prospecting']);
+    c['onDemandGenDemographicsChange'](0, { genders: ['NOPE'] });
+    c['onDemandGenDemographicsChange'](1, { genders: ['FEMALE'] });
+    c['campaignForm'].controls.demandGenAdGroups.at(0).controls.audience.setValue(AUDIENCE_A);
+    fixture.detectChanges();
+
+    (query('implementation-demand-gen-demographics-clear-0')?.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(c['campaignForm'].controls.demandGenAdGroups.at(0).controls.demographics.value).toEqual({});
+    expect(c['campaignForm'].controls.demandGenAdGroups.at(1).controls.demographics.value).toEqual({ genders: ['FEMALE'] });
+    expect(query('implementation-demand-gen-demographics-held-by-audience-0')).not.toBeNull();
+    expect(focused.at(-1)).toBe(fixture.nativeElement.querySelector('#demand-gen-audience-0-remove'));
+  });
+
+  /** PR #5390 review: upstream takes both spellings, but only one has a box, so a restore shows the box's. */
+  it("restores each accepted spelling as its box's, single and per group, keeping an unknown value for the refusal", () => {
+    const c = seedDemandGen();
+    restoreGoogleDraft(fixture, c, {
+      includeDemandGen: true,
+      demandGenDemographics: { ageRanges: ['AGE_RANGE_25_34', '25-34', 'NOPE'], genders: ['female'] },
+      demandGenAdGroups: [
+        {
+          name: 'Retargeting',
+          format: 'image',
+          creative: {},
+          videoCreative: {},
+          demographics: { incomeRanges: ['INCOME_RANGE_UNDETERMINED', 'income_range_90_up'] },
+        },
+      ],
+    });
+
+    expect(c['campaignForm'].controls.demandGenDemographics.value).toEqual({ ageRanges: ['25-34', 'NOPE'], genders: ['FEMALE'] });
+    expect(c['campaignForm'].controls.demandGenAdGroups.at(0).controls.demographics.value).toEqual({ incomeRanges: ['UNDETERMINED', 'INCOME_RANGE_90_UP'] });
+    c['campaignForm'].controls.demandGenCreative.patchValue(IMAGE_COMPLETE);
+    fixture.detectChanges();
+    expect((query('implementation-demand-gen-demographics-single-ageRanges-25-34')?.querySelector('input') as HTMLInputElement).checked).toBe(true);
+    expect(c['demandGenDemographicsError']()).toContain('NOPE');
+  });
+
+  it("restores Display's targeting and the demographic exclusions in their boxes' spellings too", () => {
+    const c = seedDemandGen();
+    restoreGoogleDraft(fixture, c, {
+      googleDisplayDemographics: { ageRanges: ['AGE_RANGE_18_24'], parentalStatuses: ['not_a_parent'] },
+      googleExcludedAgeRanges: ['AGE_RANGE_65_UP', '65+'],
+      googleExcludedGenders: ['male'],
+      googleExcludedIncomeRanges: ['INCOME_RANGE_UNDETERMINED'],
+      googleExcludedParentalStatuses: ['parent', 'NOPE'],
+    });
+
+    expect(c['googleDisplayDemographics']()).toEqual({ ageRanges: ['18-24'], parentalStatuses: ['NOT_A_PARENT'] });
+    expect(c['googleExcludedAgeRanges']()).toEqual(['65+']);
+    expect(c['googleExcludedGenders']()).toEqual(['MALE']);
+    expect(c['googleExcludedIncomeRanges']()).toEqual(['UNDETERMINED']);
+    expect(c['googleExcludedParentalStatuses']()).toEqual(['PARENT', 'NOPE']);
+  });
+
+  /** The #5393 fix round's Demand Gen audience gate, for the demographics: `demandGenEnabled` null hides the checkbox. */
+  describe.each([['pending'], ['failed']] as const)('with the Demand Gen capability unanswered (read %s)', (read) => {
+    function holdDemographics(): Record<string, any> {
+      const c = seedDemandGen();
+      restoreGoogleDraft(fixture, c, { includeDemandGen: true, demandGenDemographics: LIVE_AGES });
+      fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'brief-1', message: null, approved: true });
+      fixture.componentRef.setInput('createCapabilityRead', read);
+      fixture.componentRef.setInput('googleCreativeEnabled', null);
+      fixture.componentRef.setInput('demandGenEnabled', null);
+      fixture.detectChanges();
+      return c;
+    }
+
+    it('keeps the block with its Retry and Clear, and Create held, though selectedGoogleChannels drops Demand Gen', () => {
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+      const c = holdDemographics();
+
+      expect(c['selectedGoogleChannels']()).not.toContain('demand-gen');
+      expect(query('implementation-include-demand-gen')).toBeNull();
+      expect(c['demandGenDemographicsBlock']()?.kind).toBe(read);
+      expect(c['canSubmit']()).toBe(false);
+      expect(query('implementation-demand-gen-demographics-block-clear')).not.toBeNull();
+      expect(query('implementation-demand-gen-demographics-block-retry') !== null).toBe(read === 'failed');
+      if (read === 'failed') {
+        (query('implementation-demand-gen-demographics-block-retry')?.querySelector('button') as HTMLButtonElement).click();
+        expect(retried).toHaveBeenCalledTimes(1);
+      }
+    });
+
+    it('falls back to the Search checkbox on Clear, the Demand Gen checkbox being hidden and Create disabled', async () => {
+      const focused: HTMLElement[] = [];
+      vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+        focused.push(this);
+      });
+      const c = holdDemographics();
+
+      (query('implementation-demand-gen-demographics-block-clear')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(c['demandGenDemographicsBlock']()).toBeNull();
+      expect(focused.at(-1)).toBe(query('implementation-include-search'));
+    });
+
+    it('clears the block only once the Demand Gen capability is answered no', () => {
+      const c = holdDemographics();
+      expect(c['demandGenDemographicsBlock']()?.kind).toBe(read);
+
+      fixture.componentRef.setInput('demandGenEnabled', false);
+      fixture.detectChanges();
+      expect(c['demandGenDemographicsBlock']()).toBeNull();
+    });
+  });
 });
 
 /**
@@ -21467,6 +21687,62 @@ describe('ImplementationTabComponent display audiences', () => {
     expect(draft['displayAdGroups'][0].audiences.audienceSegments).toEqual([LIST]);
   });
 
+  /** PR #5388 review: the draft carries the names the picks were made under, so a restored pick keeps its name. */
+  it('restores a pick by the name it was picked under after a search that does not list it', async () => {
+    await setup((type, q) => (type === 'user_interest' && q !== '' ? of({ ...ENTRIES['user_interest'], audiences: [], truncated: false }) : of(ENTRIES[type])));
+    const c = seedDisplay();
+    let draft: Record<string, any> = {};
+    fixture.componentInstance.draftChange.subscribe((d) => (draft = d as Record<string, any>));
+    pick(c, null, 'userInterests', INTEREST);
+    // The pick's own emission carries the name, not only a later one.
+    expect(draft['displayAudienceNames']).toEqual({ [INTEREST]: 'Cloud Computing' });
+
+    // A teardown loses the tab's names; the restore brings them back, strings only.
+    c['displayAudiencePickedNames'].set(new Map());
+    restoreGoogleDraft(fixture, c, {
+      includeDisplay: true,
+      displayAudiences: { userInterests: [INTEREST] },
+      displayAudienceNames: { [INTEREST]: 'Cloud Computing', [CUSTOM]: 7 },
+    });
+    c['displayInterestSearchForm'].controls.q.setValue('devops');
+    c['onDisplayInterestSearch']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect([...c['displayAudiencePickedNames']().entries()]).toEqual([[INTEREST, 'Cloud Computing']]);
+    expect(query('implementation-display-audience-remove-single-userInterests-0')?.getAttribute('aria-label')).toBe('Remove Cloud Computing');
+  });
+
+  it('shows a restored pick by resource name when the draft carries no name for it', async () => {
+    await setup((type, q) => (type === 'user_interest' && q !== '' ? of({ ...ENTRIES['user_interest'], audiences: [], truncated: false }) : of(ENTRIES[type])));
+    const c = seedDisplay();
+    restoreGoogleDraft(fixture, c, { includeDisplay: true, displayAudiences: { userInterests: [INTEREST] } });
+    c['displayInterestSearchForm'].controls.q.setValue('devops');
+    c['onDisplayInterestSearch']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(query('implementation-display-audience-remove-single-userInterests-0')?.getAttribute('aria-label')).toBe(`Remove ${INTEREST}`);
+  });
+
+  /** PR #5388 review: a new brief clears the interest search with the picks, so the picker lists the first interests again. */
+  it('clears the interest search when the form resets for a brief', async () => {
+    await setup();
+    const c = seedDisplay();
+    c['displayInterestSearchForm'].controls.q.setValue('devops');
+    c['onDisplayInterestSearch']();
+    fixture.detectChanges();
+    expect(readAudiences).toHaveBeenLastCalledWith('tlf', 'user_interest', 'devops');
+
+    // A new brief object re-runs the seed, which resets the Google fields first.
+    seedDisplay();
+    await fixture.whenStable();
+
+    expect(c['displayInterestSearchForm'].controls.q.value).toBe('');
+    expect(c['displayInterestQuery']()).toBe('');
+    expect(readAudiences).toHaveBeenLastCalledWith('tlf', 'user_interest', '');
+  });
+
   describe('a draft holding audiences the request cannot carry', () => {
     function hold(
       enabled: boolean | null,
@@ -21562,6 +21838,54 @@ describe('ImplementationTabComponent display audiences', () => {
       await setup();
       const c = hold(true, 'ready');
       expect(c['displayAudiencesBlock']()).toBeNull();
+    });
+
+    /** The #5393 fix round's gate, for Display: `googleChannelsEnabled` null hides the Display checkbox. */
+    describe.each([['pending'], ['failed']] as const)('with the channel capability unanswered (read %s)', (read) => {
+      function holdUnanswered(): Record<string, any> {
+        const c = hold(null, read);
+        fixture.componentRef.setInput('googleChannelsEnabled', null);
+        fixture.componentRef.setInput('googleCreativeEnabled', null);
+        fixture.detectChanges();
+        return c;
+      }
+
+      it('keeps the block with its Retry and Remove, and Create held, though selectedGoogleChannels drops Display', async () => {
+        await setup();
+        const c = holdUnanswered();
+
+        expect(c['selectedGoogleChannels']()).not.toContain('display');
+        expect(query('implementation-include-display')).toBeNull();
+        expect(c['displayAudiencesBlock']()?.kind).toBe(read);
+        expect(query('implementation-display-audiences-block-list')?.textContent).toContain('Excluded:');
+        expect(c['canSubmit']()).toBe(false);
+        expect(query('implementation-display-audiences-block-remove')).not.toBeNull();
+        expect(query('implementation-display-audiences-block-retry') !== null).toBe(read === 'failed');
+      });
+
+      it('falls back to the Search checkbox on Remove, the Display checkbox being hidden and Create disabled', async () => {
+        await setup();
+        const focused: HTMLElement[] = [];
+        vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function (this: HTMLElement) {
+          focused.push(this);
+        });
+        const c = holdUnanswered();
+
+        (query('implementation-display-audiences-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(c['displayAudiencesBlock']()).toBeNull();
+        expect(focused.at(-1)).toBe(query('implementation-include-search'));
+      });
+
+      it('clears the block only once the channel capability is answered no', async () => {
+        await setup();
+        const c = holdUnanswered();
+        fixture.componentRef.setInput('googleChannelsEnabled', false);
+        fixture.detectChanges();
+        expect(c['displayAudiencesBlock']()).toBeNull();
+      });
     });
   });
 });

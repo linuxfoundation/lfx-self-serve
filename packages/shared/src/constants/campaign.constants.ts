@@ -4897,7 +4897,9 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
   // every field trims to nothing. A value campaign-service would never receive is not a request
-  // the legacy creator fails, so refusing it would be over-refusal.
+  // the legacy creator fails, so refusing it would be over-refusal. The exception is a raw value the
+  // cutover's own refusals name though the normalizers drop it (a malformed `demandGenDemographics`, or
+  // an ad group or ad list that is not a list): that one counts (`unservedGoogleCriteriaField`).
   { field: 'biddingStrategy', label: 'bidding strategy', normalized: true },
   { field: 'cpcBid', label: 'max CPC bid', normalized: true },
   { field: 'targetCpa', label: 'target CPA', normalized: true },
