@@ -934,9 +934,11 @@ describe('OrgLensPeopleService person-key company emails', () => {
       const insert = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAIL_KEYS VALUES (?, ?, ?)');
       insert.run(ACCOUNT, 'person_key', personKey);
       insert.run(ACCOUNT, 'lf_username', ' MixedUser ');
+      insert.run(ACCOUNT, 'lf_username_none', 'emptyuser');
       insert.run('other-account', 'person_key', 'person-elsewhere');
 
-      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toEqual({ personKeys: [personKey], usernames: ['mixeduser'] });
+      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toEqual({ personKeys: [personKey], usernames: ['mixeduser'], noneUsernames: ['emptyuser'] });
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-company-email-keys:v2')!)).toBe(true);
     });
 
     it('answers null and warns, storing nothing, when the keys read fails', async () => {

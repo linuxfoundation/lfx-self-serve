@@ -115,18 +115,24 @@ export interface OrgPersonCompanyEmailRow {
   ADDRESS_SOURCE: string | null;
 }
 
-/** One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAIL_KEYS`: an identity at the account with at least one company address. */
+/**
+ * One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAIL_KEYS`: what the drawer's lookup answers for one identity at the
+ * account. KEY_TYPE `person_key` (a roster person key holding an address), `lf_username` (the username's lookup finds an
+ * address) or `lf_username_none` (the username names exactly one roster person, who holds no address).
+ */
 export interface OrgPeopleCompanyEmailKeyRow {
   KEY_TYPE: string | null;
   KEY_VALUE: string | null;
 }
 
-/** The account's identities with at least one company address, as cached for the All Employees Company email filter. */
+/** The account's company-email keys, as cached for the All Employees Company email filter. */
 export interface OrgCompanyEmailKeys {
-  /** PERSON_KEY values as stored. */
+  /** PERSON_KEY values (as stored) holding at least one address. */
   personKeys: string[];
-  /** LOWER(TRIM(LF_USERNAME)) values. */
+  /** LOWER(TRIM(LF_USERNAME)) values whose drawer lookup finds at least one address. */
   usernames: string[];
+  /** LOWER(TRIM(LF_USERNAME)) values naming exactly one roster person, who holds no address ("none on file"). */
+  noneUsernames: string[];
 }
 
 /** A person's employment at the account — current or former; the Employment filter's `all` is not a classification. */

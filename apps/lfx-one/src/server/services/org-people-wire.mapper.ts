@@ -110,10 +110,11 @@ export function toWireResponse(
 
 /**
  * Stamp each All Employees row with what the person drawer's company-email lookup answers for it, from the account's
- * company-email keys: a stored row with a warehouse person key `has` an address when its key or its LF username is in
- * the keys, else `none` on file; a live-only row (looked up by username) `has` one when its username is, else
- * `unconfirmed`; a `cdp:` row is always `unconfirmed`, as the drawer answers it without any lookup. `null` keys (the
- * read failed) leave every row unannotated.
+ * company-email keys: a stored row is read by its person key only, so it `has` an address when that key is in the
+ * keys, else `none` on file; a `cdp:` row is always `unconfirmed`, as the drawer answers it without any lookup; a
+ * live-only row is read by its username, so it `has` one when the username's lookup finds one, `none` when the username
+ * names one roster person without any, else (or without a username) `unconfirmed`. `null` keys (the read failed) leave
+ * every row unannotated.
  */
 export function withCompanyEmailStatus(response: OrgAllEmployeesResponse, keys: OrgCompanyEmailKeys | null): OrgAllEmployeesResponse {
   if (!keys) {
@@ -121,12 +122,14 @@ export function withCompanyEmailStatus(response: OrgAllEmployeesResponse, keys: 
   }
   const personKeys = new Set(keys.personKeys);
   const usernames = new Set(keys.usernames);
+  const noneUsernames = new Set(keys.noneUsernames);
   const statusOf = (row: OrgAllEmployeeRow): OrgAllEmployeeCompanyEmailStatus => {
     if (row.personKey.startsWith('cdp:')) return 'unconfirmed';
+    if (!row.personKey.startsWith('live-')) return personKeys.has(row.personKey) ? 'has' : 'none';
     const username = row.lfUsername?.trim().toLowerCase();
     if (username && usernames.has(username)) return 'has';
-    if (row.personKey.startsWith('live-')) return 'unconfirmed';
-    return personKeys.has(row.personKey) ? 'has' : 'none';
+    if (username && noneUsernames.has(username)) return 'none';
+    return 'unconfirmed';
   };
   return { ...response, rows: response.rows.map((row) => ({ ...row, companyEmailStatus: statusOf(row) })) };
 }

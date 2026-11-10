@@ -513,12 +513,16 @@ describe('OrgLensPeopleController All Employees company email status', () => {
     ...EMPTY_ROSTER,
     rows: [
       row('person-has', null),
-      row('person-by-username', 'Known'),
+      // A stored row is read by person key only, so a username in the keys does not make it `has`.
+      row('person-username-only', 'Known'),
       row('person-none', 'nobody'),
       row('cdp:member-has-username', 'known'),
       row('cdp:member-unconfirmed', null),
       row('live-has', 'known'),
+      // The username names one roster person with no address: the drawer answers "No … email on file".
+      row('live-known-empty', 'EmptyUser'),
       row('live-unconfirmed', 'stranger'),
+      row('live-no-username', null),
     ],
   };
   const statuses = (res: Response): Record<string, string | undefined> =>
@@ -533,7 +537,7 @@ describe('OrgLensPeopleController All Employees company email status', () => {
     vi.clearAllMocks();
     getLive.mockResolvedValue(roster);
     getFormerEmployees.mockResolvedValue(roster);
-    getCompanyEmailKeys.mockResolvedValue({ personKeys: ['person-has', 'cdp:member-unconfirmed'], usernames: ['known'] });
+    getCompanyEmailKeys.mockResolvedValue({ personKeys: ['person-has', 'cdp:member-unconfirmed'], usernames: ['known'], noneUsernames: ['emptyuser'] });
   });
 
   it.each([
@@ -547,13 +551,15 @@ describe('OrgLensPeopleController All Employees company email status', () => {
     expect(getCompanyEmailKeys).toHaveBeenCalledTimes(1);
     expect(statuses(res)).toEqual({
       'person-has': 'has',
-      'person-by-username': 'has',
+      'person-username-only': 'none',
       'person-none': 'none',
       // The drawer answers a cdp: row without any lookup, so neither its key nor its username in the keys counts.
       'cdp:member-has-username': 'unconfirmed',
       'cdp:member-unconfirmed': 'unconfirmed',
       'live-has': 'has',
+      'live-known-empty': 'none',
       'live-unconfirmed': 'unconfirmed',
+      'live-no-username': 'unconfirmed',
     });
   });
 

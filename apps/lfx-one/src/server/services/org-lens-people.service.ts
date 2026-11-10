@@ -480,15 +480,16 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * The account's identities with at least one company address (ORG_PEOPLE_COMPANY_EMAIL_KEYS), for the All Employees
-   * Company email filter: one keyed read per account, org-cached. `null` when the read fails (logged; never cached), so
-   * the roster is served without statuses rather than failing.
+   * What the drawer's company-email lookup answers for each identity at the account (ORG_PEOPLE_COMPANY_EMAIL_KEYS), for
+   * the All Employees Company email filter: one keyed read per account, org-cached. `null` when the read fails (logged;
+   * never cached), so the roster is served without statuses rather than failing. `v2`: adds the usernames whose lookup
+   * finds no address (`lf_username_none`).
    */
   public async getCompanyEmailKeys(req: Request, accountId: string): Promise<OrgCompanyEmailKeys | null> {
     try {
       return await withOrgCache(
         accountId,
-        'people-company-email-keys:v1',
+        'people-company-email-keys:v2',
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchCompanyEmailKeys(accountId),
         isCompanyEmailKeys
@@ -1112,11 +1113,12 @@ export class OrgLensPeopleService {
       WHERE ACCOUNT_ID = ?
     `;
     const result = await this.snowflakeService.execute<OrgPeopleCompanyEmailKeyRow>(query, [accountId]);
-    const keys: OrgCompanyEmailKeys = { personKeys: [], usernames: [] };
+    const keys: OrgCompanyEmailKeys = { personKeys: [], usernames: [], noneUsernames: [] };
     for (const row of result.rows) {
       if (!row.KEY_VALUE) continue;
       if (row.KEY_TYPE === 'person_key') keys.personKeys.push(row.KEY_VALUE);
       else if (row.KEY_TYPE === 'lf_username') keys.usernames.push(row.KEY_VALUE.trim().toLowerCase());
+      else if (row.KEY_TYPE === 'lf_username_none') keys.noneUsernames.push(row.KEY_VALUE.trim().toLowerCase());
     }
     return keys;
   }
@@ -1510,11 +1512,11 @@ function isCompanyEmailsResponse(value: unknown): boolean {
   );
 }
 
-/** A stored company-email keys read: two string arrays. */
+/** A stored company-email keys read: three string arrays. */
 function isCompanyEmailKeys(value: unknown): boolean {
   const keys = value as Partial<OrgCompanyEmailKeys> | null;
   const isStrings = (list: unknown): boolean => Array.isArray(list) && list.every((item) => typeof item === 'string');
-  return !!keys && isStrings(keys.personKeys) && isStrings(keys.usernames);
+  return !!keys && isStrings(keys.personKeys) && isStrings(keys.usernames) && isStrings(keys.noneUsernames);
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */
