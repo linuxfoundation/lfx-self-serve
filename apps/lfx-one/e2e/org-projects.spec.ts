@@ -142,7 +142,7 @@ async function stubOrgContext(
         personas: ['contributor'],
         personaProjects: {},
         projects: [],
-        companies: hasAccess
+        organizations: hasAccess
           ? [
               {
                 accountId: TEST_ACCOUNT_ID,
@@ -233,7 +233,7 @@ test.describe('Org Projects', () => {
     await expect(contributors).toHaveAttribute('aria-label', /View 1 contributor for Kubernetes/);
     await contributors.click();
 
-    await expect(page).toHaveURL(/\/org\/projects\/kubernetes\?(?:.*&)?card=contributors/);
+    await expect(page).toHaveURL(/\/company\/projects\/kubernetes\?(?:.*&)?card=contributors/);
   });
 
   test('Participants count links to the project detail page without a drawer param', async ({ page }) => {
@@ -242,7 +242,7 @@ test.describe('Org Projects', () => {
 
     await page.getByTestId('org-projects-participants-kubernetes').click();
 
-    await expect(page).toHaveURL(/\/org\/projects\/kubernetes(?:\?|$)/);
+    await expect(page).toHaveURL(/\/company\/projects\/kubernetes(?:\?|$)/);
     expect(page.url()).not.toContain('card=');
   });
 

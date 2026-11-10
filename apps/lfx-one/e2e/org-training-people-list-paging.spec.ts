@@ -231,7 +231,7 @@ test.describe('Org Overview — Education tiles', () => {
       await expect(card).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
       await card.click();
-      await expect(page).toHaveURL(/\/org\/(?:[^/]+\/)?training(?:\?.*)?$/);
+      await expect(page).toHaveURL(/\/company\/(?:[^/]+\/)?training(?:\?.*)?$/);
       await expect(page.getByTestId('org-training-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
       await page.goBack();
@@ -239,7 +239,7 @@ test.describe('Org Overview — Education tiles', () => {
       await expect(action).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
       await action.focus();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/org\/(?:[^/]+\/)?training(?:\?.*)?$/);
+      await expect(page).toHaveURL(/\/company\/(?:[^/]+\/)?training(?:\?.*)?$/);
     });
   }
 });

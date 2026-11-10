@@ -110,7 +110,7 @@ export async function stubAccountContext(page: Page): Promise<void> {
     personas: ['contributor'],
     personaProjects: {},
     projects: [],
-    companies: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
+    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
     isRootWriter: false,
   });
 
@@ -301,7 +301,7 @@ export function signOption(overrides: Record<string, unknown> = {}) {
     cclaEnabled: true,
     iclaEnabled: true,
     matchTypes: ['project'],
-    companies: [],
+    organizations: [],
     ...overrides,
   };
 }

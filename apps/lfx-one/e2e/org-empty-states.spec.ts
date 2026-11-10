@@ -120,7 +120,7 @@ async function stubOrgIdentity(page: Page, stubs: IdentityStubs): Promise<{ role
   );
 
   await page.route('**/api/user/personas*', (route) =>
-    fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], companies: stubs.personaOrgs ?? [], isRootWriter: false })
+    fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: stubs.personaOrgs ?? [], isRootWriter: false })
   );
 
   await page.route('**/api/analytics/org-lens-account-context*', (route) => fulfillJson(route, []));
@@ -159,18 +159,18 @@ const HELD_ORG = { uid: ORG_A_UID, slug: ORG_A_SLUG, name: ORG_A_NAME };
 async function gotoOverview(page: Page): Promise<void> {
   await page.goto('/company/overview', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
-  await expect(page).toHaveURL(/\/org\/overview(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+  await expect(page).toHaveURL(/\/company\/overview(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
 }
 
 /** The one page-level block on /company/overview: `company-overview-no-access-*` roots are kept for every state it renders. */
 function overviewState(page: Page) {
   return {
-    root: page.getByTestId('company-overview-no-access-state'),
-    title: page.getByTestId('company-overview-no-access-title'),
-    description: page.getByTestId('company-overview-no-access-description'),
-    primary: page.getByTestId('company-overview-no-access-primary'),
-    retry: page.getByTestId('company-overview-no-access-retry'),
-    secondary: page.getByTestId('company-overview-no-access-secondary'),
+    root: page.getByTestId('org-overview-no-access-state'),
+    title: page.getByTestId('org-overview-no-access-title'),
+    description: page.getByTestId('org-overview-no-access-description'),
+    primary: page.getByTestId('org-overview-no-access-primary'),
+    retry: page.getByTestId('org-overview-no-access-retry'),
+    secondary: page.getByTestId('org-overview-no-access-secondary'),
   };
 }
 
@@ -192,7 +192,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await gotoOverview(page);
 
       // FR-016 rule (1): the resolved entry is authoritative — the page renders for A.
-      await expect(page.getByTestId('company-overview-title')).toContainText(ORG_A_NAME, { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-title')).toContainText(ORG_A_NAME, { timeout: SETTLE_TIMEOUT });
       await expect(overviewState(page).root).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText('Some companies could not be loaded');
 
@@ -220,7 +220,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       // FR-009: nothing about what failed (no count, no names) and no revocation reading.
       await expect(state.description).toContainText('nothing has been removed from your access');
       await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
-      await expect(page.getByTestId('company-overview-loading')).toHaveCount(0);
+      await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
     });
 
     test('S3c: a transport failure of the lookup renders could-not-load, and Retry re-issues the lookup', async ({ page }) => {
@@ -285,8 +285,8 @@ test.describe('Company Lens empty states (spec 053)', () => {
       // Secondary: the documentation (#5447 — never support).
       await expect(state.secondary).toContainText('How affiliations and access work');
       await expect(state.retry).toHaveCount(0);
-      await expect(page.getByTestId('company-overview-loading')).toHaveCount(0);
-      await expect(page.getByTestId('company-overview-empty-state')).toHaveCount(0);
+      await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
+      await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);
       // Following the primary must reach its destination, not just render (SC-004).
       await state.primary.click();
       await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
@@ -372,7 +372,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
         await page.goto(`/company/${slug}/overview`, { waitUntil: 'domcontentloaded' });
         skipWhenAuthMissing(page);
 
-        await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+        await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
         // Spec 050's outer hook survives; the state block inside it is the shared component.
         await expect(page.getByTestId('org-not-found')).toBeVisible({ timeout: SETTLE_TIMEOUT });
         const root = page.getByTestId('org-not-found-state');
@@ -404,7 +404,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await page.goto(`/company/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       const root = page.getByTestId('org-not-found-state');
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'wrong-organization');
@@ -444,7 +444,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await page.goto(`/company/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       const root = page.getByTestId('org-not-found-state');
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'could-not-load');
@@ -464,7 +464,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await page.goto(`/company/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       const root = page.getByTestId('org-not-found-state');
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'staff-check-failed');
@@ -487,7 +487,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await page.goto(`/company/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       const root = page.getByTestId('org-not-found-state');
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'could-not-load');
@@ -509,7 +509,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await page.goto(`/company/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       const root = page.getByTestId('org-not-found-state');
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'not-found-staff');
@@ -534,7 +534,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await page.goto(`/company/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       const root = page.getByTestId('org-not-found-state');
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'not-found-staff');
@@ -552,9 +552,9 @@ test.describe('Company Lens empty states (spec 053)', () => {
 
       await gotoOverview(page);
 
-      await expect(page.getByTestId('company-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
-      await expect(page.getByTestId('company-overview-empty-description-staff')).toBeVisible();
-      await expect(page.getByTestId('company-overview-empty-description-staff')).toContainText('Search for a company');
+      await expect(page.getByTestId('org-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toBeVisible();
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toContainText('Search for a company');
       await expect(overviewState(page).root).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
       await expect(page.locator('body')).not.toContainText('You do not have access to this company');
@@ -578,7 +578,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
 
       await gotoOverview(page);
 
-      await expect(page.getByTestId('company-overview-empty-description-staff')).toHaveCount(0);
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toHaveCount(0);
       const trigger = page.getByTestId('org-selector');
       await expect(trigger).toBeVisible({ timeout: SETTLE_TIMEOUT });
       // One company and no catalogue: the navbar card is static — it names the org and offers no switch.
@@ -632,7 +632,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       const state = overviewState(page);
       await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(state.root).toHaveAttribute('data-state', 'contractor-no-grant');
-      await expect(page.getByTestId('company-overview-title')).toHaveCount(0);
+      await expect(page.getByTestId('org-overview-title')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText('You do not have access to any companies');
       // The copy depends only on the caller. (The header switcher still shows their own persona org.)
       await expect(state.root).not.toContainText(ORG_A_NAME);
@@ -644,7 +644,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
       await page.goto(`/company/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      await expect(page).toHaveURL(/\/company\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       const root = page.getByTestId('org-not-found-state');
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'contractor-no-grant');
@@ -682,7 +682,7 @@ test.describe('Company Lens empty states (spec 053)', () => {
 
       await gotoOverview(page);
 
-      await expect(page.getByTestId('company-overview-title')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-title')).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(overviewState(page).root).toHaveCount(0);
     });
   });

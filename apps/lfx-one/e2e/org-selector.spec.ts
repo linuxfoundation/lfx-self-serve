@@ -351,14 +351,14 @@ test.describe('Org Selector — /company/overview empty state without redirect (
     // The page must NOT bounce back to / when the user is already inside /company/*.
     // Wait for the page to fully settle (data-loaded=true) so the empty-state — gated on `loaded` —
     // can render. This also asserts the FOEC guard: empty-state never appears mid-load.
-    const root = page.getByTestId('company-overview-page');
+    const root = page.getByTestId('org-overview-page');
     await expect(root).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(root).toHaveAttribute('data-loaded', 'true', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.locator('main')).toHaveCount(1);
     expect(page.url()).toContain('/company/overview');
     await expect(root).toHaveAttribute('data-empty', 'true');
-    await expect(page.getByTestId('company-overview-empty-state')).toBeVisible();
-    await expect(page.getByTestId('company-overview-empty-title')).toHaveText('No company selected');
+    await expect(page.getByTestId('org-overview-empty-state')).toBeVisible();
+    await expect(page.getByTestId('org-overview-empty-title')).toHaveText('No company selected');
   });
 });
 
@@ -367,17 +367,17 @@ test.describe('Org Selector — /company/overview empty state without redirect (
 // matrix walks the rest so a page-level <main> cannot come back on a route the
 // overview assertion never visits.
 const SINGLE_MAIN_ROUTES: { name: string; path: string; stayOn: RegExp; root: string }[] = [
-  { name: 'company-overview', path: '/company/overview', stayOn: /\/org\/overview/, root: 'company-overview-page' },
-  { name: 'org-people', path: '/company/people', stayOn: /\/org\/people/, root: 'org-people-page' },
-  { name: 'org-contributions', path: '/company/contributions', stayOn: /\/org\/contributions/, root: 'org-contributions-page' },
-  { name: 'company-events', path: '/company/events', stayOn: /\/org\/events/, root: 'company-events-page' },
-  { name: 'org-training', path: '/company/training', stayOn: /\/org\/training/, root: 'org-training-page' },
-  { name: 'org-meetings', path: '/company/meetings', stayOn: /\/org\/meetings/, root: 'org-meetings-page' },
-  { name: 'org-groups', path: '/company/groups', stayOn: /\/org\/groups/, root: 'org-groups-page' },
-  { name: 'org-profile', path: '/company/profile', stayOn: /\/org\/profile/, root: 'org-profile-page' },
-  { name: 'org-projects', path: '/company/projects', stayOn: /\/org\/projects(?:\/|$|\?)/, root: 'org-projects-page' },
-  { name: 'org-roi', path: '/company/roi', stayOn: /\/org\/roi(?:\/|$|\?)/, root: 'org-roi-page' },
-  { name: 'org-roi-project-detail', path: '/company/roi/projects/cascade', stayOn: /\/org\/roi\/projects\//, root: 'org-roi-project-detail-page' },
+  { name: 'org-overview', path: '/company/overview', stayOn: /\/company\/overview/, root: 'org-overview-page' },
+  { name: 'org-people', path: '/company/people', stayOn: /\/company\/people/, root: 'org-people-page' },
+  { name: 'org-contributions', path: '/company/contributions', stayOn: /\/company\/contributions/, root: 'org-contributions-page' },
+  { name: 'org-events', path: '/company/events', stayOn: /\/company\/events/, root: 'org-events-page' },
+  { name: 'org-training', path: '/company/training', stayOn: /\/company\/training/, root: 'org-training-page' },
+  { name: 'org-meetings', path: '/company/meetings', stayOn: /\/company\/meetings/, root: 'org-meetings-page' },
+  { name: 'org-groups', path: '/company/groups', stayOn: /\/company\/groups/, root: 'org-groups-page' },
+  { name: 'org-profile', path: '/company/profile', stayOn: /\/company\/profile/, root: 'org-profile-page' },
+  { name: 'org-projects', path: '/company/projects', stayOn: /\/company\/projects(?:\/|$|\?)/, root: 'org-projects-page' },
+  { name: 'org-roi', path: '/company/roi', stayOn: /\/company\/roi(?:\/|$|\?)/, root: 'org-roi-page' },
+  { name: 'org-roi-project-detail', path: '/company/roi/projects/cascade', stayOn: /\/company\/roi\/projects\//, root: 'org-roi-project-detail-page' },
   { name: 'foundation-projects', path: '/foundation/projects', stayOn: /\/foundation\/projects/, root: 'foundation-projects-page' },
 ];
 
@@ -439,7 +439,7 @@ test.describe('Org Selector — /company/overview no-access state (S15)', () => 
           personas: ['contributor'],
           personaProjects: {},
           projects: [],
-          companies: [],
+          organizations: [],
           isRootWriter: false,
         }),
       })
@@ -451,16 +451,16 @@ test.describe('Org Selector — /company/overview no-access state (S15)', () => 
     // hasNoOrgAccess settles to true once the stubbed (empty) role-grants resolve — independent of the
     // org-selector list fetch, which never fires for a zero-grants user. The no-access branch must win
     // over the loading skeleton.
-    const root = page.getByTestId('company-overview-page');
+    const root = page.getByTestId('org-overview-page');
     await expect(root).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(root).toHaveAttribute('data-no-access', 'true', { timeout: DATA_LOAD_TIMEOUT });
     expect(page.url()).toContain('/company/overview');
-    await expect(page.getByTestId('company-overview-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('company-overview-no-access-title')).toHaveText('No company linked to your account');
-    await expect(page.getByTestId('company-overview-no-access-secondary')).toContainText('How affiliations and access work');
+    await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
+    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No company linked to your account');
+    await expect(page.getByTestId('org-overview-no-access-secondary')).toContainText('How affiliations and access work');
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
-    await expect(page.getByTestId('company-overview-loading')).toHaveCount(0);
-    await expect(page.getByTestId('company-overview-empty-state')).toHaveCount(0);
+    await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
+    await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);
   });
 });
 
@@ -570,7 +570,7 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
           personas: ['contributor'],
           personaProjects: {},
           projects: [],
-          companies: [],
+          organizations: [],
           isRootWriter: false,
         }),
       })
@@ -625,7 +625,7 @@ test.describe('Org Selector — LF-team caller with zero assigned orgs (S17)', (
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ personas: ['contributor'], personaProjects: {}, projects: [], companies: [], isRootWriter: false }),
+        body: JSON.stringify({ personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false }),
       })
     );
     // Unsearched view is empty for this caller: catalogue reach opens by typing, never by opening.

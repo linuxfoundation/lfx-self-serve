@@ -450,7 +450,7 @@ test.describe('Company Lens ROI Metrics — portfolio summary', () => {
   test('renders the no-company empty state when no account is selected', async ({ page }) => {
     await stubOrgLensContext(page, { hasAccess: true });
     await page.route('**/api/user/personas*', (route) =>
-      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], companies: [], isRootWriter: false, isLFStaff: true })
+      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false, isLFStaff: true })
     );
     await page.route('**/api/nav/org-items*', (route) => fulfillJson(route, { items: [], next_page_token: null, upstream_failed: false, total: 0 }));
     await page.goto('/', { waitUntil: 'domcontentloaded' });
