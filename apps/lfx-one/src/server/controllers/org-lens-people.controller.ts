@@ -6,6 +6,7 @@ import {
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   EMAIL_REGEX,
   ORG_EMPLOYMENT_OPTIONS,
+  ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGES,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
@@ -13,8 +14,10 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgAllEmployeesResponse, OrgEmploymentFilter, OrgLensTimeRange, OrgProjectScope, ReassignCommitteeMemberBody } from '@lfx-one/shared/interfaces';
 import {
+  agreedUsername,
   isFilterSafeIdentifier,
   isFilterSafeUsername,
+  isKeyContactRecordId,
   isOrgLensTimeRange,
   normalizeLegacyOrgLensTimeRange,
   parseOrgEmploymentFilter,
@@ -37,6 +40,7 @@ import { OrgPeopleContributorsService } from '../services/org-people-contributor
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
+import { withCompanyEmailStatus } from '../services/org-people-wire.mapper';
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
@@ -84,12 +88,16 @@ export class OrgLensPeopleController {
         org_scope: orgScope,
       });
 
-      // The summary behind the Event Attendees tile does not depend on the roster, so both reads run together.
+      // The summary behind the Event Attendees tile and the company-email keys do not depend on the roster, so the reads run together.
       const rosterRead = live
         ? this.directoryService.getLive(req, orgUid, range, filters, teamMembers, orgScope)
         : this.service.getAllEmployees(orgUid, range, filters, teamMembers, orgScope);
-      const [roster, eventAttendeesTotal] = await Promise.all([rosterRead, this.readEventAttendeesTotal(req, orgUid, range, filters.projectScope)]);
-      const response = this.withEventAttendeesTotal(roster, eventAttendeesTotal);
+      const [roster, eventAttendeesTotal, companyEmailKeys] = await Promise.all([
+        rosterRead,
+        this.readEventAttendeesTotal(req, orgUid, range, filters.projectScope),
+        this.service.getCompanyEmailKeys(req, orgUid),
+      ]);
+      const response = withCompanyEmailStatus(this.withEventAttendeesTotal(roster, eventAttendeesTotal), companyEmailKeys);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -128,7 +136,11 @@ export class OrgLensPeopleController {
         org_scope: orgScope,
       });
 
-      const response = await this.service.getFormerEmployees(orgUid, range, filters, teamMembers, orgScope);
+      const [roster, companyEmailKeys] = await Promise.all([
+        this.service.getFormerEmployees(orgUid, range, filters, teamMembers, orgScope),
+        this.service.getCompanyEmailKeys(req, orgUid),
+      ]);
+      const response = withCompanyEmailStatus(roster, companyEmailKeys);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -245,6 +257,43 @@ export class OrgLensPeopleController {
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
         company_email_count: result.companyEmails.length,
+        company_emails_status: result.companyEmailsStatus,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-key-contact/company-emails?ids=<record ids> — company addresses for a key
+   * contact the drawer opens without a person key: the addresses on their corporate key-contact records (`ids`: 1–50
+   * comma-separated Salesforce record ids), merged with their LF username's. Both the username and the records' current
+   * contact emails are derived here from the org's key-contact assignments, never taken from the client (the request
+   * logger records the query string): a record address is shown only while it is still the email of the contact the
+   * record names now, as a record can be reassigned to someone else under the same id. When that read fails no record
+   * address is shown. Never keyed on an address. An invalid or empty id list is a 400; any other query param is ignored.
+   */
+  public async getCompanyEmailsByKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const operation = 'get_org_lens_people_company_emails_by_key_contact';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      const keyContactIds = parseKeyContactIds(getStringQueryParam(req, 'ids'), operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, key_contact_count: keyContactIds.length });
+
+      const { username, currentEmails } = await this.resolveKeyContactIdentity(req, orgUid, keyContactIds, operation);
+      const result = await this.service.getCompanyEmailsByKeyContacts(req, orgUid, keyContactIds, username, currentEmails);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        with_username: username !== null,
+        current_email_count: currentEmails.size,
+        company_email_count: result.companyEmails.length,
+        record_only_email_count: result.keyContactRecordEmails?.length ?? 0,
         company_emails_status: result.companyEmailsStatus,
       });
 
@@ -649,6 +698,36 @@ export class OrgLensPeopleController {
       : { ...response, eventAttendeesTotal, stats: { ...response.stats, eventAttendees: eventAttendeesTotal } };
   }
 
+  /**
+   * Who the org's key-contact assignments with these record ids name now (the per-caller cached read the Key Contacts
+   * tab has already warmed): the lower-cased contact emails of the assignments found, which bind the record addresses
+   * to the record's current holder, and the LF username they agree on — `null` when they agree on none or when any
+   * requested id has no assignment (agreement over a subset would let an email-grouped opener reach one member's LF
+   * addresses — the DR-010 guard). A failed read (logged, counts only) answers no emails and no username.
+   */
+  private async resolveKeyContactIdentity(
+    req: Request,
+    orgUid: string,
+    keyContactIds: readonly string[],
+    operation: string
+  ): Promise<{ username: string | null; currentEmails: ReadonlySet<string> }> {
+    try {
+      const ids = new Set(keyContactIds);
+      const { assignments } = await this.keyContactsService.getKeyContacts(req, orgUid);
+      const held = assignments.filter((assignment) => ids.has(assignment.contactUid));
+      const currentEmails = new Set(held.map((assignment) => assignment.email?.trim().toLowerCase() ?? '').filter(Boolean));
+      const everyIdHeld = new Set(held.map((assignment) => assignment.contactUid)).size === ids.size;
+      return { username: everyIdHeld ? agreedUsername(held.map((assignment) => assignment.username)) : null, currentEmails };
+    } catch (error) {
+      logger.warning(req, operation, 'key contacts read failed; showing no record addresses', {
+        org_uid: orgUid,
+        key_contact_count: keyContactIds.length,
+        err: error,
+      });
+      return { username: null, currentEmails: new Set() };
+    }
+  }
+
   private assertPersonKey(personKey: string | undefined, operation: string): asserts personKey is string {
     if (!personKey || typeof personKey !== 'string') {
       throw ServiceValidationError.forField('personKey', 'personKey path parameter is required', { operation });
@@ -734,4 +813,16 @@ function parseContributorsEmployment(raw: string | undefined, operation: string)
     );
   }
   return employment;
+}
+
+/**
+ * Validate the key-contact company-email `ids` query param: comma-separated 18-character Salesforce record ids,
+ * deduplicated, 1 to {@link ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS} of them; anything else is a 400.
+ */
+function parseKeyContactIds(raw: string | undefined, operation: string): string[] {
+  const ids = [...new Set((raw ?? '').split(',').map((id) => id.trim()))];
+  if (!raw || ids.length > ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS || !ids.every(isKeyContactRecordId)) {
+    throw ServiceValidationError.forField('ids', `ids must be 1-${ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS} comma-separated Salesforce record ids`, { operation });
+  }
+  return ids;
 }
