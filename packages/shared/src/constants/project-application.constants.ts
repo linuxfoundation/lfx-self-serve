@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ProjectStage } from '../enums/project-stage.enum';
+import { FORMATION_PIPELINE_TAB_ID } from './formation-pipeline.constants';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   ProjectApplicationOption,
@@ -253,6 +254,7 @@ export const MY_FORMATIONS_PAGE_TAB_OPTIONS: FilterPillOption[] = [
 
 /** Page-level tabs on the foundation Formations queue (The Linux Foundation + formation team only). */
 export const FORMATIONS_QUEUE_PAGE_TAB_OPTIONS: FilterPillOption[] = [
+  { id: FORMATION_PIPELINE_TAB_ID, label: 'Pipeline' },
   { id: PROJECT_APPLICATION_TABS.formations, label: 'Formations' },
   { id: PROJECT_APPLICATION_TABS.proposals, label: 'Project proposals' },
 ];
