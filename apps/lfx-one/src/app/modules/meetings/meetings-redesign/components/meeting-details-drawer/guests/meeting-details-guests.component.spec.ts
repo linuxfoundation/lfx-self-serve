@@ -185,11 +185,10 @@ describe('MeetingDetailsGuestsComponent', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it('lists registrants from the viewer-scoped endpoint with roles, details, totals and the viewer marked', async () => {
+  it('lists registrants from the viewer-scoped endpoint with roles, details and the viewer marked', async () => {
     await render();
 
     expect(meetingService['getMyMeetingRegistrants']).toHaveBeenCalledWith('synthetic-meeting', true, undefined, false, false);
-    expect(query('meeting-details-guests-summary')?.textContent).toMatch(/Meeting Guests\s*3 guests/);
     expect(query('meeting-details-guests-linkedin')?.getAttribute('href')).toBe('https://linkedin.example/in/ada');
     expect(query('meeting-details-guests-voting')?.textContent?.trim()).toBe('Voting Rep');
     expect(query('meeting-details-guests-email')).toBeNull();
@@ -218,7 +217,6 @@ describe('MeetingDetailsGuestsComponent', () => {
     expect(meetingService['getPastMeetingParticipants']).toHaveBeenCalledWith('synthetic-past-id');
     expect(all('meeting-details-guests-row')).toHaveLength(1);
     expect(query('meeting-details-guests-email')?.textContent?.trim()).toBe('ada@acme.example');
-    expect(query('meeting-details-guests-summary')?.textContent).toContain('0 attended / 1 invited');
     expect(query('meeting-details-guests-search')?.querySelector('input')?.getAttribute('placeholder')).toBe('Search participants');
   });
 

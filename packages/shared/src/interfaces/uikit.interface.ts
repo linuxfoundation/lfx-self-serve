@@ -257,6 +257,9 @@ export type UiButtonSize = 'tiny' | 'small' | 'default' | 'large';
 /** Which trigger edge a uikit menu lines up with: `start` extends toward the end, `end` extends back toward the start. */
 export type UiMenuAlign = 'start' | 'end';
 
+/** Which host edge a uikit popover lines up with; `center` centers it under the host. */
+export type UiPopoverAlign = UiMenuAlign | 'center';
+
 /** Size of a uikit switch (segmented control): `tiny` 24px, `small` 32px or `medium` 40px tall. */
 export type UiSwitchSize = UiControlSize;
 
