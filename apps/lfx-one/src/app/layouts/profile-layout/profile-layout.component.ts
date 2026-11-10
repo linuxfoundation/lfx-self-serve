@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
@@ -16,6 +16,7 @@ import {
   EMAIL_CALLBACK_STATUS_PARAM,
   EMAIL_LINKED_SUPPORT_TITLE,
   EMAIL_LINKED_SUPPORT_TOAST_KEY,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   normalizeTShirtSize,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
@@ -92,6 +93,8 @@ export class ProfileLayoutComponent {
   // Private injections
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
   private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
@@ -212,7 +215,7 @@ export class ProfileLayoutComponent {
       if (isPlatformBrowser(this.platformId) && params['success'] === 'profile_token_obtained') {
         this.handleProfileAuthReturn();
         // Only read alongside the authorization flag, which on its own never implies an email outcome.
-        this.handleEmailCallbackStatus(params[EMAIL_CALLBACK_STATUS_PARAM]);
+        this.handleEmailCallbackStatus(params[EMAIL_CALLBACK_STATUS_PARAM], params[EMAIL_LINKED_SUPPORT_CONTEXT_PARAM]);
         this.clearAuthQueryParams();
       }
 
@@ -424,9 +427,9 @@ export class ProfileLayoutComponent {
    * The marker is presentation-only (no email, code, or token), so unknown values are ignored and
    * no outcome changes identity state locally — already-connected re-fetches the canonical list, while
    * already-linked and retry outcomes leave identities untouched. Already-linked goes to the layout's
-   * keyed sticky toast, whose Contact support action opens a chat pre-filled without an address (#5511).
+   * keyed sticky toast after rendering; its private, one-shot context supplies only the proven address.
    */
-  private handleEmailCallbackStatus(status: unknown): void {
+  private handleEmailCallbackStatus(status: unknown, supportHandle?: unknown): void {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
@@ -435,14 +438,29 @@ export class ProfileLayoutComponent {
       this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
       this.userService.refreshUserIdentities();
     } else if (status === EMAIL_CALLBACK_ALREADY_LINKED_STATUS) {
-      this.messageService.add({
-        key: EMAIL_LINKED_SUPPORT_TOAST_KEY,
-        severity: 'warn',
-        summary: EMAIL_LINKED_SUPPORT_TITLE,
-        detail: EMAIL_ALREADY_LINKED_MESSAGE,
-        sticky: true,
-        data: { supportMessage: buildLinkedEmailSupportMessage() },
-      });
+      const subject = this.userService.user()?.sub;
+      // MessageService does not replay: the layout's keyed Toast must subscribe before we publish.
+      afterNextRender(
+        () => {
+          this.userService
+            .consumeLinkedEmailSupportContext(supportHandle)
+            .pipe(
+              takeUntilDestroyed(this.destroyRef),
+              filter(() => this.userService.user()?.sub === subject && !this.userService.impersonating())
+            )
+            .subscribe(({ email }) => {
+              this.messageService.add({
+                key: EMAIL_LINKED_SUPPORT_TOAST_KEY,
+                severity: 'warn',
+                summary: EMAIL_LINKED_SUPPORT_TITLE,
+                detail: EMAIL_ALREADY_LINKED_MESSAGE,
+                sticky: true,
+                data: { supportMessage: buildLinkedEmailSupportMessage(email) },
+              });
+            });
+        },
+        { injector: this.injector }
+      );
     } else if (status === EMAIL_CALLBACK_RETRY_REQUIRED_STATUS) {
       this.messageService.add({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
     }

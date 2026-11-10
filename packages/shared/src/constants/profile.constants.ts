@@ -12,6 +12,10 @@ import { CdpIdentityType, EmailVerificationCallbackStatus, EmailVerificationStat
  */
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
 
+/** Opaque one-shot handle for an already-linked callback's private support context; never an email. */
+export const EMAIL_LINKED_SUPPORT_CONTEXT_PARAM = 'email_support_context';
+export const EMAIL_LINKED_SUPPORT_HANDLE_PATTERN = /^[a-f0-9]{64}$/;
+
 /**
  * sessionStorage key for the one-shot Linux.com forward re-auth redirect guard.
  * Written by ProfileLinuxEmailComponent before its automatic Flow C redirect so a

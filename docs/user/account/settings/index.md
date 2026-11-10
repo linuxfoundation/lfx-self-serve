@@ -55,6 +55,8 @@ If the code doesn't arrive, the **No code yet?** guidance asks you to check the 
 
 Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. If the address is already connected to your account, you see **This email is already connected to your account.** rather than a new address being added. Verifying may first ask you to authorize changes to your profile. When you return, LFX may show one of these notices: **Already connected** if the email is already part of your account; **Email already linked** if the code was correct but the address is linked to an LFX account — this notice stays until you close it, and its **Contact support** button opens a support chat with an editable message already filled in (a new code won't change this); or **Email not verified** if verification did not finish — in that case start email verification again and select **Send Code** to request a new code. If authorization completes and a new address is linked successfully, you return without a separate email-verification notice.
 
+The already-linked notice after authorization normally pre-fills the address you verified too. If that short-lived context has expired or is unavailable, the chat still opens with a general editable message; add the address before sending.
+
 ### Password
 
 _Keep your account secure by using a strong password and enabling two-factor authentication._

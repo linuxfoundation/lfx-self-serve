@@ -35,6 +35,30 @@ describe('UserService', () => {
     service = TestBed.inject(UserService);
   });
 
+  describe('consumeLinkedEmailSupportContext', () => {
+    it('posts the opaque handle and returns only the authenticated response', () => {
+      const post = vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(of({ email: 'linked@example.test' }));
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+      expect(post).toHaveBeenCalledExactlyOnceWith('/api/profile/auth/email-support-context', { handle: 'a'.repeat(64) });
+      expect(next).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+    });
+
+    it.each([undefined, null, '', 'not-a-handle', ['a'.repeat(64)]])('does not request missing or malformed context %j', (handle) => {
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext(handle).subscribe(next);
+      expect(TestBed.inject(HttpClient).post).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledExactlyOnceWith({});
+    });
+
+    it('degrades a failed/expired-context request to the generic draft', () => {
+      vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('unavailable')));
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+      expect(next).toHaveBeenCalledExactlyOnceWith({});
+    });
+  });
+
   it('refreshes identities only after a successful primary-email change, without rewriting session claims', () => {
     const response$ = new Subject<{ message: string }>();
     const put = vi.mocked(TestBed.inject(HttpClient).put).mockReturnValue(response$);

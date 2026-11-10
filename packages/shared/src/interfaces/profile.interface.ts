@@ -669,6 +669,17 @@ export type EmailVerificationStatus = 'already_connected';
  */
 export type EmailVerificationCallbackStatus = EmailVerificationStatus | 'retry_required' | 'already_linked';
 
+/** Private, short-lived callback context. Contains only the caller's proven address, never an OTP/token. */
+export interface LinkedEmailSupportContext {
+  email: string;
+  expiresAt: number;
+}
+
+/** One-shot authenticated response; unavailable/expired context returns an empty object. */
+export interface LinkedEmailSupportDraft {
+  email?: string;
+}
+
 /**
  * Response from NATS email OTP verification request. A new-address success carries the identity
  * token for linking; an own-account success carries only `status` and no tokens.

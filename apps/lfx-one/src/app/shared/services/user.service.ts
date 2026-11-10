@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
-import { USER_MEETINGS_INCLUDE_ATTENDANCE, USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
+import { EMAIL_LINKED_SUPPORT_HANDLE_PATTERN, USER_MEETINGS_INCLUDE_ATTENDANCE, USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
   ChangePasswordRequest,
@@ -19,6 +19,7 @@ import {
   EnrichedIdentity,
   Impersonator,
   LinuxAliasData,
+  LinkedEmailSupportDraft,
   Meeting,
   MeetingInviteEmail,
   MeetingRegistrationRemovalResult,
@@ -750,6 +751,15 @@ export class UserService {
    */
   public patchProjectAffiliation(projectId: string, body: ProjectAffiliationPatchBody): Observable<{ success: boolean }> {
     return this.http.patch<{ success: boolean }>(`/api/profile/project-affiliations/${projectId}`, body);
+  }
+
+  /** Consume the callback's private, user/attempt-bound address; missing context keeps support available. */
+  public consumeLinkedEmailSupportContext(handle: unknown): Observable<LinkedEmailSupportDraft> {
+    if (typeof handle !== 'string' || !EMAIL_LINKED_SUPPORT_HANDLE_PATTERN.test(handle)) return of({});
+    return this.http.post<LinkedEmailSupportDraft>('/api/profile/auth/email-support-context', { handle }).pipe(
+      take(1),
+      catchError(() => of({}))
+    );
   }
 
   /**

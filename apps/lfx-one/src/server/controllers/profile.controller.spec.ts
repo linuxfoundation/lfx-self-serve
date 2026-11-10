@@ -13,6 +13,7 @@ import {
   EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
   EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
   EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
@@ -47,6 +48,7 @@ const {
   meetingPrefSvc,
   socialVerificationSvc,
   authStateSvc,
+  linkedEmailSupportSvc,
   auth0Svc,
   auth0ToCdpProviderMap,
   cdpPlatformToTypeMap,
@@ -131,6 +133,7 @@ const {
     getPendingSocialConnect: vi.fn(),
     clearPendingSocialConnect: vi.fn(),
   },
+  linkedEmailSupportSvc: { issue: vi.fn(), consume: vi.fn() },
   authStateSvc: {
     issue: vi.fn(),
     consume: vi.fn(),
@@ -151,6 +154,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   EMAIL_VERIFICATION_SENT_MESSAGE,
   EMAIL_VERIFICATION_FAILED_ERROR,
@@ -255,6 +259,7 @@ vi.mock('../services/profile-auth.service', () => ({
     return profileAuthSvc;
   }),
 }));
+vi.mock('../services/linked-email-support.service', () => ({ linkedEmailSupportService: linkedEmailSupportSvc }));
 vi.mock('../services/auth-state.service', () => ({
   authStateService: authStateSvc,
 }));
@@ -278,7 +283,7 @@ function buildReq(overrides: Record<string, unknown> = {}): any {
 }
 
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn(), redirect: vi.fn() };
+  return { set: vi.fn().mockReturnThis(), status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn(), redirect: vi.fn() };
 }
 
 describe('ProfileController.uploadProfilePicture', () => {
@@ -3297,12 +3302,16 @@ describe('ProfileController — already-connected email (#4253)', () => {
 
       beforeEach(() => {
         isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
+        linkedEmailSupportSvc.issue.mockResolvedValue('a'.repeat(64));
       });
 
       function expectAlreadyLinkedOutcome(req: any, res: any): void {
         expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledTimes(1);
         expect(req.appSession.pendingEmailVerification).toBeUndefined();
-        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(alreadyLinkedRedirect);
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`${alreadyLinkedRedirect}&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${'a'.repeat(64)}`);
+        expect(linkedEmailSupportSvc.issue).toHaveBeenCalledExactlyOnceWith('auth0|user-1', ownedEmail);
+        expect(JSON.stringify(res.redirect.mock.calls)).not.toContain(ownedEmail);
+        expect(JSON.stringify(res.redirect.mock.calls)).not.toContain('654321');
         expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Email already linked to another account');
         expect(emailVerificationSvc.resolveEmailToUsername).not.toHaveBeenCalled();
         expect(emailVerificationSvc.resolveEmailToSub).not.toHaveBeenCalled();
@@ -3345,6 +3354,14 @@ describe('ProfileController — already-connected email (#4253)', () => {
         expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
       });
 
+      it('keeps the fixed notice when support-context storage is unavailable', async () => {
+        linkedEmailSupportSvc.issue.mockResolvedValueOnce(undefined);
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+        const res = buildRes();
+        await controller.handleProfileAuthCallback(callbackReq(), res);
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(alreadyLinkedRedirect);
+      });
+
       it('keeps an invalid or expired code on the generic retry marker', async () => {
         emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'expired otp', message: 'upstream-specific message' });
         const req = callbackReq();
@@ -3353,6 +3370,7 @@ describe('ProfileController — already-connected email (#4253)', () => {
         await controller.handleProfileAuthCallback(req, res);
 
         expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+        expect(linkedEmailSupportSvc.issue).not.toHaveBeenCalled();
         expectNoWrites();
       });
     });
@@ -3380,5 +3398,36 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
       expect(req.appSession.pendingEmailVerification).toEqual({ email: ownedEmail, otp: '654321' });
     });
+  });
+});
+
+describe('ProfileController.consumeLinkedEmailSupportContext', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+  });
+  it('returns only this authenticated user/attempt address with no-store caching', async () => {
+    linkedEmailSupportSvc.consume.mockResolvedValueOnce('linked@example.test');
+    const res = buildRes();
+    await new ProfileController().consumeLinkedEmailSupportContext(
+      buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: { handle: 'a'.repeat(64) } }),
+      res
+    );
+    expect(linkedEmailSupportSvc.consume).toHaveBeenCalledExactlyOnceWith('synthetic-user', 'a'.repeat(64));
+    expect(res.set).toHaveBeenCalledExactlyOnceWith('Cache-Control', 'no-store');
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+  });
+  it('returns no address for missing, expired or consumed context', async () => {
+    linkedEmailSupportSvc.consume.mockResolvedValueOnce(undefined);
+    const res = buildRes();
+    await new ProfileController().consumeLinkedEmailSupportContext(buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: {} }), res);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({});
+  });
+  it.each([false, true])('rejects missing identity or impersonation before reading context (impersonating=%s)', async (impersonating) => {
+    isImpersonatingMock.mockReturnValue(impersonating);
+    const res = buildRes();
+    await new ProfileController().consumeLinkedEmailSupportContext(buildReq({ oidc: impersonating ? { user: { sub: 'synthetic-user' } } : undefined }), res);
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(403);
+    expect(linkedEmailSupportSvc.consume).not.toHaveBeenCalled();
   });
 });
