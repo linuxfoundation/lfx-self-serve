@@ -127,3 +127,9 @@ export const FORMATION_PIPELINE_COLUMNS: readonly { key: FormationPipelineSortKe
 
 /** `formation-pipeline-YYYY-MM-DD.csv` filename prefix and extension. */
 export const FORMATION_PIPELINE_CSV_FILENAME_PREFIX = 'formation-pipeline-';
+
+/** How far up the parent chain a foundation-scoped pipeline read walks before giving up; a real hierarchy is a handful deep. */
+export const FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH = 8;
+
+/** Longest `q` name search the pipeline API accepts. */
+export const FORMATION_PIPELINE_SEARCH_MAX_LENGTH = 100;

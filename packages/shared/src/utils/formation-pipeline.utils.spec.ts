@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { FormationPipelineRow } from '../interfaces/formation-pipeline.interface';
 import {
   buildPipelineCsv,
+  chunkArray,
   buildPipelinePillOptions,
   buildPipelineStatCards,
   countPipelineRows,
@@ -156,5 +157,12 @@ describe('buildPipelineCsv', () => {
 
   it('names the file by day', () => {
     expect(getPipelineCsvFilename(NOW)).toBe('formation-pipeline-2026-11-10.csv');
+  });
+});
+
+describe('chunkArray', () => {
+  it('splits into batches of at most size', () => {
+    expect(chunkArray([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(chunkArray([], 2)).toEqual([]);
   });
 });

@@ -29,6 +29,16 @@ import { formatIsoDateLabel, parseIsoDateAsUtcMidnight, timeAgo } from './date-t
 
 const MS_PER_DAY = 86_400_000;
 
+/** Splits `items` into arrays of at most `size` (a size below 1 is treated as 1). */
+export function chunkArray<T>(items: readonly T[], size: number): T[][] {
+  const step = Math.max(1, size);
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += step) {
+    batches.push(items.slice(i, i + step));
+  }
+  return batches;
+}
+
 /** Maps an upstream `stage` string to its pipeline key; `null` for `Active` and anything unrecognized. */
 export function getPipelineStageKey(stage: string | null | undefined): FormationPipelineStage | null {
   return FORMATION_PIPELINE_STAGES.find((key) => FORMATION_PIPELINE_STAGE_UPSTREAM[key] === stage) ?? null;

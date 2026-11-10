@@ -12,6 +12,7 @@ import {
   updateFormationItemAssignment,
   updateFormationItemStatus,
 } from '../controllers/formation.controller';
+import { getFormationPipeline } from '../controllers/formation-pipeline.controller';
 import { requireAuditor } from '../middleware/require-auditor.middleware';
 import { requireLiveFormation } from '../middleware/require-live-formation.middleware';
 
@@ -56,6 +57,10 @@ router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 // LF staff land by default — narrows to LF's own formations instead: parentless rows plus tlf's
 // direct children (GH-2699, superseding GH-2378's treat-tlf-as-everything behaviour).
 router.get('/formations', requireAuditor, getFormationsQueue);
+
+// Formation pipeline (#5475): every non-Active project by stage. Formation-team membership is the only guard,
+// enforced in the service before any upstream read — deliberately not `requireAuditor`.
+router.get('/formations/pipeline', getFormationPipeline);
 
 // Queue drill-down checklist read (LFXV2-3386, #2690 review): the same controller and response as
 // `GET /projects/:slug/formation` above, but auditor-gated like the queue itself. The drill-down
