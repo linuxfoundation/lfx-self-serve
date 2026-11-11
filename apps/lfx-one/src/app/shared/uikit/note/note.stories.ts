@@ -10,7 +10,7 @@ const meta: Meta<UiNoteComponent> = {
   title: 'Uikit/Note',
   component: UiNoteComponent,
   decorators: [moduleMetadata({ imports: [UiButtonComponent] })],
-  args: { variant: 'info', fill: false, size: 'default', plain: false, label: '', icon: '', announce: false },
+  args: { variant: 'info', fill: false, size: 'default', plain: false, label: '', icon: '', announce: false, disabled: false },
   render: (args) => ({ props: args, template: `<lfx-ui-note ${argsToTemplate(args)}>Meetings are moving to the new scheduler next week.</lfx-ui-note>` }),
 };
 export default meta;
@@ -24,6 +24,9 @@ export const ErrorState: Story = { name: 'Error', args: { variant: 'error', anno
 export const Violet: Story = { args: { variant: 'violet', label: 'Beta:' } };
 export const Filled: Story = { args: { fill: true } };
 export const Small: Story = { args: { size: 'small' } };
+/** Small with a tag in the label slot, as for a verdict. */
+export const SmallWithLabel: Story = { args: { size: 'small', variant: 'error', label: 'Needs action:' } };
+export const Disabled: Story = { args: { disabled: true } };
 /** 24px with 12px text, inside rows, cards and data blocks. */
 export const Tiny: Story = { args: { size: 'tiny' } };
 /** Coloured icon and text only, for a status line inside another component. */

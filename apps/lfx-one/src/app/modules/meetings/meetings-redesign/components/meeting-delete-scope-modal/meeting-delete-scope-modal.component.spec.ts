@@ -59,8 +59,8 @@ describe('MeetingDeleteScopeModalComponent', () => {
     expect(query('meetings-home-delete-scope-info')?.textContent).toContain('Synthetic Project');
     expect(query('meeting-dialog-context-when')?.textContent?.trim()).toBe(formatMeetingWhenFull(data.row));
     expect(query('meetings-home-delete-scope-note')?.textContent).toContain('applies to all registrants of this meeting');
-    expect(query('meetings-home-delete-scope-note')?.className).toContain('text-ui-danger-700');
-    expect(query('meetings-home-delete-scope-note')?.className).not.toContain('ring-1');
+    expect(query('meetings-home-delete-scope-note')?.className).toContain('text-ui-danger-800');
+    expect(query('meetings-home-delete-scope-note')?.className).not.toContain('bg-ui-danger-50');
     button('meetings-home-delete-scope-continue').click();
 
     expect(close).toHaveBeenCalledWith({ deleteType: 'occurrence', occurrenceId: SECOND.occurrence_id });
