@@ -40,9 +40,9 @@ import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
-import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
 import { toStoredRow, toWireResponse } from './org-people-wire.mapper';
+import { OrgPeopleKeyContactsService } from './org-people-key-contacts.service';
 import { withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -200,7 +200,7 @@ function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmpl
  *
  * Merges the stored Snowflake roster — one time range of `ORG_PEOPLE_ALL_RANGES`, or the unranged
  * `ORG_PEOPLE_ALL` roster the reassign pickers read; the source of activity counts — with three LIVE
- * sources — committee/board seats, key contacts, and the org's writers/auditors — so a person who was
+ * sources — committee/board seats, key contacts on active memberships, and the org's writers/auditors — so a person who was
  * added since the last dbt build still appears. Records match on their verified LF username
  * (`resolveMergeKey`); the lowercased email is the key only for a record without one, such as a pending
  * invite or an unresolved seat, and key contacts always match on email. The two kinds of key never
@@ -213,13 +213,13 @@ function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmpl
 export class OrgPeopleDirectoryService {
   private readonly peopleService: OrgLensPeopleService;
   private readonly boardCommitteeService: OrgLensBoardCommitteeService;
-  private readonly keyContactsService: OrgLensKeyContactsService;
+  private readonly keyContactsService: OrgPeopleKeyContactsService;
   private readonly accessService: OrgLensAccessService;
 
   public constructor() {
     this.peopleService = new OrgLensPeopleService();
     this.boardCommitteeService = new OrgLensBoardCommitteeService();
-    this.keyContactsService = new OrgLensKeyContactsService();
+    this.keyContactsService = new OrgPeopleKeyContactsService();
     this.accessService = new OrgLensAccessService();
   }
 
@@ -348,7 +348,7 @@ export class OrgPeopleDirectoryService {
     const [snowflake, seats, keyContacts, access, former] = await Promise.allSettled([
       orgScope === null ? null : this.peopleService.getAllEmployeesInternal(accountId, range, projectScope, orgScope),
       lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
-      this.keyContactsService.getEmployees(req, accountId),
+      this.keyContactsService.getActiveEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
       lfEngagement ? this.peopleService.getFormerUsernames(accountId) : Promise.resolve([]),
     ]);

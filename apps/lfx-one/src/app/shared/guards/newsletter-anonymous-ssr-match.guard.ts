@@ -6,21 +6,26 @@ import { inject, PLATFORM_ID, REQUEST_CONTEXT } from '@angular/core';
 import { CanMatchFn, UrlSegment } from '@angular/router';
 import { AuthContext } from '@lfx-one/shared/interfaces';
 
+import { UserService } from '../services/user.service';
+
 /**
- * Server-side only: matches the newsletter permalink `/newsletters/:projectSlug/:id` for an anonymous
- * request, so SSR renders the chrome-less share preview (subject-only Open Graph tags, #4940) for
- * link-preview crawlers instead of the authenticated app shell, which the server-side `authGuard` would
- * otherwise wave through. The middleware lets that two-segment path through as optional-auth. In the
- * browser this never matches, so a signed-out visitor falls through to the shell's `authGuard` and is
- * sent to login as before; a signed-in visitor never matches and gets the reader.
+ * Matches the newsletter permalink `/newsletters/:projectSlug/:id` for a signed-out visitor, so the
+ * chrome-less share page renders instead of the authenticated app shell:
+ * - on the server, link-preview crawlers get its subject-only Open Graph tags (#4940) — the middleware
+ *   lets that two-segment path through as optional-auth, and the server-side `authGuard` would
+ *   otherwise wave the shell through;
+ * - in the browser, a signed-out reader gets the member-benefit email prompt instead of the login
+ *   redirect (#5235).
+ *
+ * A signed-in visitor never matches and gets the reader. `my` is never a project slug.
  */
 export const newsletterAnonymousSsrMatchGuard: CanMatchFn = (_route, segments: UrlSegment[]) => {
-  if (!isPlatformServer(inject(PLATFORM_ID))) {
+  if (segments.length !== 3 || segments[1].path === 'my') {
     return false;
   }
 
-  if (segments.length !== 3 || segments[1].path === 'my') {
-    return false;
+  if (!isPlatformServer(inject(PLATFORM_ID))) {
+    return !inject(UserService).authenticated();
   }
 
   const reqContext = inject(REQUEST_CONTEXT, { optional: true }) as { auth?: AuthContext } | null;

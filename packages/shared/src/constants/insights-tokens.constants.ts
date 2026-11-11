@@ -60,11 +60,8 @@ export const INSIGHTS_TOKEN_ELIGIBLE: InsightsTokenEligibility = { canCreate: tr
 /** Fail-closed eligibility the browser uses when the eligibility request itself fails. */
 export const INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE: InsightsTokenEligibility = { canCreate: false, checkFailed: true };
 
-/**
- * LFX Insights documentation, linked from the token group and reveal dialog.
- * TODO: Temporary link, not the final API docs. Replace it with the public API reference once it is published.
- */
-export const INSIGHTS_PUBLIC_API_DOCS_URL = 'https://insights.linuxfoundation.org/docs/introduction/what-is-insights/';
+/** LFX Insights API documentation, linked from the token group and reveal dialog. */
+export const INSIGHTS_PUBLIC_API_DOCS_URL = 'https://insights.linuxfoundation.org/docs/api';
 
 /** How long the reveal dialog shows "Copied" before reverting to "Copy". */
 export const INSIGHTS_TOKEN_COPIED_RESET_MS = 2000;

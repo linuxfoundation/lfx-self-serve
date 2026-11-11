@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgTrainingStats } from '@lfx-one/shared/interfaces';
+import type { OrgTraineeDetailRow, OrgTraineeOutsideLearner, OrgTraineeRow, OrgTraineesResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
-import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 
 export const ORG_TRAINING_URL = '/org/training';
 export const DATA_LOAD_TIMEOUT = 30_000;
@@ -206,4 +206,168 @@ export async function gotoOrgTrainingPage(page: Page, url: string = ORG_TRAINING
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
+}
+
+// ─── Synthetic Trainees / paging fixtures (no warehouse, no real people) ───────────────────────────────────────────────
+
+export const SYNTHETIC_TRAINEE_COUNT = 60;
+export const SYNTHETIC_OUTSIDE_LEARNER_COUNT = 55;
+export const SYNTHETIC_FORMER_ON_LIST = { people: 2, pairs: 3 };
+const SYNTHETIC_FOUNDATION_ID = 'foundation-1';
+
+const pad = (index: number): string => String(index).padStart(3, '0');
+
+/** Current employees on the people list with training in the range: `Trainee 001` … */
+export function syntheticTrainees(count: number = SYNTHETIC_TRAINEE_COUNT): OrgTraineeRow[] {
+  return Array.from({ length: count }, (_, index) => ({
+    personKey: `person-${pad(index + 1)}`,
+    lfid: `trainee${pad(index + 1)}`,
+    cdpMemberId: null,
+    name: `Trainee ${pad(index + 1)}`,
+    title: 'Engineer',
+    email: `trainee${pad(index + 1)}@example.org`,
+  }));
+}
+
+/** One course per trainee, alternating certified and enrolled, all under one foundation so a foundation pick keeps every row. */
+export function syntheticTraineeDetails(trainees: readonly OrgTraineeRow[] = syntheticTrainees()): OrgTraineeDetailRow[] {
+  return trainees.map((trainee, index) => ({
+    personKey: trainee.personKey,
+    status: index % 2 === 0 ? 'Certified' : 'Enrolled',
+    courseOrCertId: `${index % 2 === 0 ? 'certified' : 'enrolled'}:course-${index % 5}`,
+    courseId: `course-${index % 5}`,
+    courseName: `Synthetic Course ${index % 5}`,
+    foundationId: SYNTHETIC_FOUNDATION_ID,
+    foundationName: 'CNCF',
+    projectId: 'project-1',
+    projectName: 'Synthetic Project',
+    courseLevel: 'Advanced',
+    productType: index % 4 === 0 ? 'Certification' : 'Training',
+    courseFormat: 'Online',
+    activityTs: new Date(Date.UTC(2026, 9, 1 + (index % 28))).toISOString(),
+  }));
+}
+
+/** Learners outside the people list: opaque keys, name and status only. */
+export function syntheticOutsideLearners(count: number = SYNTHETIC_OUTSIDE_LEARNER_COUNT): OrgTraineeOutsideLearner[] {
+  return Array.from({ length: count }, (_, index) => ({
+    personKey: `outside:${pad(index + 1)}`,
+    name: `Outside Learner ${pad(index + 1)}`,
+    status: index % 3 === 0 ? 'Certified' : 'Enrolled',
+  }));
+}
+
+/** The stats strip for the fixtures above: people = the trainees, the outside tile = the outside list. */
+export function syntheticTrainingStats(range: OrgTrainingStats['range'] = '730d'): OrgTrainingStats {
+  const trainees = SYNTHETIC_TRAINEE_COUNT;
+  return {
+    range,
+    asOf: '2026-10-30T09:48:21.094Z',
+    rosterMembers: 400,
+    rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
+    peopleWithTrainingActivity: trainees + SYNTHETIC_FORMER_ON_LIST.people,
+    learnersOutsidePeopleList: SYNTHETIC_OUTSIDE_LEARNER_COUNT,
+    coursesTaken: trainees + SYNTHETIC_FORMER_ON_LIST.pairs,
+    certifications: 10,
+    certifiedPeople: 9,
+    trainingsCompleted: 20,
+    completionRatePct: 46,
+    coursesInProgress: 33,
+    peopleInTraining: 31,
+  };
+}
+
+export interface OrgTrainingApiGuard {
+  /** `/lens/training/*` and `/lens/people/trainees` requests no stub answered (must stay empty), and every other unstubbed /api request. */
+  readonly unstubbedTrainingRequests: string[];
+  readonly unstubbedApiRequests: string[];
+}
+
+/**
+ * Registers the lowest-precedence `/api/**` fallback (Playwright runs the LAST registered matching route first, so register this
+ * BEFORE the stubs): a request no stub answers is recorded and answered 503, so it never reaches the BFF or the warehouse.
+ */
+export async function guardUnstubbedApi(page: Page): Promise<OrgTrainingApiGuard> {
+  const guard: OrgTrainingApiGuard = { unstubbedTrainingRequests: [], unstubbedApiRequests: [] };
+  await page.route('**/api/**', (route) => {
+    const url = new URL(route.request().url());
+    const entry = `${route.request().method()} ${url.pathname}${url.search}`;
+    (/\/lens\/(training|people\/trainees)/.test(url.pathname) ? guard.unstubbedTrainingRequests : guard.unstubbedApiRequests).push(entry);
+    return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'unstubbed in e2e' }) });
+  });
+  return guard;
+}
+
+export interface TraineesStubOptions {
+  trainees?: OrgTraineeRow[];
+  details?: OrgTraineeDetailRow[];
+  outsideLearners?: OrgTraineeOutsideLearner[];
+}
+
+/** Answers `/lens/people/trainees` (echoing the requested range) and replaces the stats with the synthetic ones above. */
+export async function stubOrgTraineesRoutes(page: Page, options: TraineesStubOptions = {}): Promise<void> {
+  const trainees = options.trainees ?? syntheticTrainees();
+  const details = options.details ?? syntheticTraineeDetails(trainees);
+  const outsideLearners = options.outsideLearners ?? syntheticOutsideLearners();
+  const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+
+  await page.route(
+    (url) => url.pathname === `/api/orgs/${MOCK_ACCOUNT_ID}/lens/people/trainees`,
+    (route) => {
+      const range = (new URL(route.request().url()).searchParams.get('range') ?? '730d') as OrgTraineesResponse['timeRange'];
+      return route.fulfill(
+        json({
+          accountId: MOCK_ACCOUNT_ID,
+          timeRange: range,
+          trainees,
+          details,
+          outsideLearners,
+          formerOnPeopleList: SYNTHETIC_FORMER_ON_LIST,
+          asOf: '2026-10-30T09:48:21.094Z',
+        } satisfies OrgTraineesResponse)
+      );
+    }
+  );
+
+  await page.route(
+    (url) => url.pathname === `/api/orgs/${MOCK_ACCOUNT_ID}/lens/training/stats`,
+    (route) => route.fulfill(json(syntheticTrainingStats((new URL(route.request().url()).searchParams.get('range') ?? '730d') as OrgTrainingStats['range'])))
+  );
+}
+
+/** Opens `url` with the default training stubs, then the Trainees/stats overrides, behind the unstubbed-request guard. */
+export async function gotoOrgPageWithTrainees(page: Page, url: string, options: TraineesStubOptions = {}): Promise<OrgTrainingApiGuard> {
+  await seedSelectedOrgCookie(page);
+  const guard = await guardUnstubbedApi(page);
+  // The org selector bootstraps from this list; a 503 from the guard would clear the selected organization.
+  await page.route('**/api/nav/org-items*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            uid: MOCK_ACCOUNT_ID,
+            accountId: MOCK_ACCOUNT_ID,
+            name: SYNTHETIC_ORG_LEGAL_NAME,
+            logoUrl: null,
+            primaryDomain: SYNTHETIC_ORG_DOMAIN,
+            isMember: true,
+          },
+        ],
+        next_page_token: null,
+        upstream_failed: false,
+        total: 1,
+      }),
+    })
+  );
+  await stubOrgTrainingRoutes(page);
+  await stubOrgTraineesRoutes(page, options);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  return guard;
 }

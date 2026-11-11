@@ -30,7 +30,7 @@ function personDrawerStub() {
     error: signal(false),
     emailError: signal(false),
     emailsLoading: signal(false),
-    identityUnavailable: signal(false),
+    companyEmailsUnavailableReason: signal(null),
     companyEmailsResolved: signal(false),
     detail: signal(null),
     companyEmails: signal([]),
@@ -138,6 +138,23 @@ describe('OrgTrainingComponent', () => {
     // The 12-month window notes are replaced by the range selector.
     expect(el.querySelector('[data-testid="org-certifications-window-note"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-training-level-filter"]')).toBeNull();
+  });
+
+  it('shows the three people-list tiles first and reveals the other stats on the link, as People › Trainees does', async () => {
+    const { el, fixture } = await render(null, { stats: STATS });
+    const shown = (): string[] =>
+      [...el.querySelectorAll<HTMLElement>('[data-testid^="org-training-stat-"][role="note"]')]
+        .filter((node) => !node.classList.contains('hidden'))
+        .map((node) => node.getAttribute('data-testid')!);
+    const toggle = (): HTMLElement => el.querySelector<HTMLElement>('[data-testid="org-training-stats-toggle"]')!;
+
+    expect(shown()).toEqual(['org-training-stat-people-with-training-activity', 'org-training-stat-courses-taken', 'org-training-stat-certified-people']);
+    expect(toggle().textContent).toContain('Show 7 more stats');
+
+    toggle().click();
+    fixture.detectChanges();
+    expect(shown()).toHaveLength(10);
+    expect(toggle().textContent).toContain('Show fewer stats');
   });
 
   it('puts the one filter bar, with the name search first in its row, inside the content card and none above the stats', async () => {

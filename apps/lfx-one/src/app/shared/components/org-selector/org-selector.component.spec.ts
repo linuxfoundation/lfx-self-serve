@@ -4,7 +4,9 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { Account, OrgItem } from '@lfx-one/shared/interfaces';
+import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
+import { Account, OrgItem, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
@@ -34,6 +36,7 @@ describe('OrgSelectorComponent.selectItem', () => {
   let isOnNotFound: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<OrgSelectorComponent>;
   let retrying: WritableSignal<boolean>;
+  let familiesLoading: WritableSignal<boolean>;
   let retry: ReturnType<typeof vi.fn>;
   let resetAndReload: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn>;
@@ -48,6 +51,7 @@ describe('OrgSelectorComponent.selectItem', () => {
     navigateToSelectedOrg = vi.fn();
     isOnNotFound = vi.fn(() => false);
     retrying = signal(false);
+    familiesLoading = signal(false);
     retry = vi.fn();
     resetAndReload = vi.fn();
     refreshList = vi.fn();
@@ -58,7 +62,31 @@ describe('OrgSelectorComponent.selectItem', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount, setAccount, refreshCanonicalRecord, getStoredUid: () => null } },
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount,
+            setAccount,
+            refreshCanonicalRecord,
+            getStoredUid: () => null,
+            // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+            orgListPinUid: () => {
+              const uid = selectedAccount().uid;
+              return uid && !isOrgRollUpSegment(uid) ? uid : null;
+            },
+            // Roll-up entry off by default: these suites cover the single-organization labelling
+            // and the static-card rules, which #4132 must leave exactly as they were.
+            canSelectRollUp: signal(false),
+            rollUpFamiliesLoading: familiesLoading,
+            rollUpFamiliesIncomplete: signal(false),
+            eligibleRollUpFamilies: signal([]),
+            selectedRollUpRootUid: signal(null),
+            selectedRollUpFamily: signal(null),
+            isRollUp: signal(false),
+            rollUpOrganizationCount: signal(0),
+            selectRollUp: vi.fn(() => false),
+          },
+        },
         {
           provide: OrgNavigationService,
           useValue: {
@@ -185,6 +213,22 @@ describe('OrgSelectorComponent.selectItem', () => {
     retryList();
     expect(retry).toHaveBeenCalledTimes(2);
   });
+
+  // Retry's grants reload triggers a families refetch; a click during it would reload the grants
+  // again and cancel that refetch, so the control stays busy until the families answer.
+  it('stays busy while the families refetch Retry triggered is in flight', () => {
+    const retryList = (): void => (fixture.componentInstance as unknown as { retryList(): void }).retryList();
+    const label = (): string => (fixture.componentInstance as unknown as { listRetryLabel(): string }).listRetryLabel();
+
+    familiesLoading.set(true);
+    expect(label()).toBe('Retrying…');
+    retryList();
+    expect(retry).not.toHaveBeenCalled();
+
+    familiesLoading.set(false);
+    retryList();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
 });
 
 /** The navbar variant's single-organization static card and its plain-language role description. */
@@ -217,7 +261,25 @@ describe('OrgSelectorComponent navbar card', () => {
         provideNoopAnimations(),
         {
           provide: AccountContextService,
-          useValue: { selectedAccount: signal(acme), setAccount: vi.fn(), refreshCanonicalRecord: vi.fn(), getStoredUid: () => null },
+          useValue: {
+            selectedAccount: signal(acme),
+            setAccount: vi.fn(),
+            refreshCanonicalRecord: vi.fn(),
+            getStoredUid: () => null,
+            // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+            orgListPinUid: () => acme.uid ?? null,
+            // The roll-up entry is off here: these suites pin the single-organization labelling and
+            // the static-card rules, which #4132 must leave exactly as they were.
+            canSelectRollUp: signal(false),
+            rollUpFamiliesLoading: signal(false),
+            rollUpFamiliesIncomplete: signal(false),
+            eligibleRollUpFamilies: signal([]),
+            selectedRollUpRootUid: signal(null),
+            selectedRollUpFamily: signal(null),
+            isRollUp: signal(false),
+            rollUpOrganizationCount: signal(0),
+            selectRollUp: vi.fn(() => false),
+          },
         },
         {
           provide: OrgNavigationService,
@@ -277,5 +339,351 @@ describe('OrgSelectorComponent navbar card', () => {
   it('marks a direct role as direct only when the viewer also holds inherited access', async () => {
     expect((await createCard({ writers: [UID_A] })).navbarRoleTooltip()).not.toContain('Granted directly');
     expect((await createCard({ writers: [UID_A], inheritedWriters: [UID_PARENT] })).navbarRoleTooltip()).toContain('Granted directly');
+  });
+});
+
+/**
+ * lfx-self-serve#4132 — the pinned family roll-up entries, one per Salesforce family the caller
+ * holds two or more organizations in. Each entry is a *view mode*, not a grant: it must appear only
+ * for such a family, carry no persona badge, and leave the existing rows and their `(Original)` /
+ * `(Inherited)` labelling alone.
+ */
+describe('OrgSelectorComponent family roll-ups', () => {
+  const UID_A = '0014100000MgaAAAAA';
+  const UID_B = '0014100000MgbBBBBB';
+  const UID_C = '0014100000MgcCCCCC';
+  const UID_D = '0014100000MgdDDDDD';
+  const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
+  const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
+  const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
+  const acmeFamily: OrgRollUpFamily = { rootUid: UID_A, name: 'Acme', orgUids: [UID_A, UID_B, 'x', 'y'] };
+  const charlieFamily: OrgRollUpFamily = { rootUid: UID_C, name: 'Charlie', orgUids: [UID_C, UID_D] };
+  /** What `AccountContextService` holds while Acme's roll-up is the selection. */
+  const acmeRollUp: Account = orgRollUpAccount(UID_A, 'Acme');
+
+  interface RollUpView {
+    activateOption(active: HTMLElement): boolean;
+    displayName(): string;
+    showRollUpRow(): boolean;
+    rollUpRows(): { rootUid: string; name: string; subtitle: string; organizationCount: number; isSelected: boolean }[];
+    isRollUpSelected(): boolean;
+    isSingleOrg(): boolean;
+    listIncomplete(): boolean;
+    rollUpTriggerSubtitle(): string;
+    selectRollUp(rootUid: string): void;
+  }
+
+  const selectRollUpSpy = vi.fn();
+  const navigateSpy = vi.fn();
+  const rollUpHomeSpy = vi.fn();
+  const setAccountSpy = vi.fn();
+  let onNotFound: ReturnType<typeof vi.fn>;
+
+  const create = async (opts: {
+    families: OrgRollUpFamily[];
+    /** The family whose roll-up is selected, if any. */
+    selectedRootUid?: string | null;
+    /** The selected roll-up's organization count, as the service reports it. */
+    count?: number;
+    items?: OrgItem[];
+    accepted?: boolean;
+    onNotFound?: boolean;
+    /** The current selection. Defaults to Acme; pass a roll-up account to make either row a real switch. */
+    selected?: Account;
+    /** The families answer landed as a lower bound or unknown. */
+    familiesIncomplete?: boolean;
+    /** The families answer for the current grants has not landed (or was incomplete). */
+    familiesUnsettled?: boolean;
+  }): Promise<RollUpView> => {
+    selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
+    navigateSpy.mockReset();
+    rollUpHomeSpy.mockReset();
+    setAccountSpy.mockReset();
+    onNotFound = vi.fn(() => opts.onNotFound ?? false);
+    const selectedRootUid = opts.selectedRootUid ?? null;
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgSelectorComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount: signal(opts.selected ?? acme),
+            setAccount: setAccountSpy,
+            refreshCanonicalRecord: vi.fn(),
+            getStoredUid: () => null,
+            // Mirrors the real accessor: the selection, else the cookie, and never a roll-up segment.
+            orgListPinUid: () => {
+              const uid = (opts.selected ?? acme).uid;
+              return uid && !isOrgRollUpSegment(uid) ? uid : null;
+            },
+            canSelectRollUp: signal(opts.families.length > 0),
+            rollUpFamiliesLoading: signal(false),
+            rollUpFamiliesIncomplete: signal(opts.familiesIncomplete ?? false),
+            rollUpFamiliesUnsettled: signal(opts.familiesUnsettled ?? false),
+            eligibleRollUpFamilies: signal(opts.families),
+            selectedRollUpRootUid: signal(selectedRootUid),
+            selectedRollUpFamily: signal(opts.families.find((family) => family.rootUid === selectedRootUid) ?? null),
+            isRollUp: signal(selectedRootUid !== null),
+            rollUpOrganizationCount: signal(opts.count ?? 0),
+            selectRollUp: selectRollUpSpy,
+          },
+        },
+        {
+          provide: OrgNavigationService,
+          useValue: {
+            items: signal(opts.items ?? [rowA, rowB]),
+            loading: signal(false),
+            loaded: signal(true),
+            hasMore: signal(false),
+            upstreamFailed: signal(false),
+            searchTerm: () => signal(''),
+            setSearchTerm: vi.fn(),
+            resetAndReload: vi.fn(),
+            loadNextPage: vi.fn(),
+          },
+        },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(false),
+            writerSet: signal(new Set<string>()),
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set<string>()),
+            inheritedAuditorSet: signal(new Set<string>()),
+            parentNameByUid: signal(new Map<string, string>()),
+          },
+        },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, navigateToRollUpHome: rollUpHomeSpy, isOnNotFound: onNotFound } },
+        { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
+        { provide: LensService, useValue: { previewingMenuLens: signal(false) } },
+      ],
+    })
+      .overrideComponent(OrgSelectorComponent, { set: { template: '' } })
+      .compileComponents();
+    const fixture = TestBed.createComponent(OrgSelectorComponent);
+    fixture.componentRef.setInput('enabled', false);
+    await fixture.whenStable();
+    return fixture.componentInstance as unknown as RollUpView;
+  };
+
+  it('offers one entry per eligible family and hides the block when there is none', async () => {
+    const view = await create({ families: [acmeFamily, charlieFamily] });
+    expect(view.showRollUpRow()).toBe(true);
+    expect(view.rollUpRows().map((row) => row.rootUid)).toEqual([UID_A, UID_C]);
+    expect((await create({ families: [], items: [rowA] })).showRollUpRow()).toBe(false);
+  });
+
+  it('names each entry after its family and describes its own set', async () => {
+    const [acmeRow, charlieRow] = (await create({ families: [acmeFamily, charlieFamily] })).rollUpRows();
+    expect(acmeRow).toEqual(
+      expect.objectContaining({ name: 'All Acme Organizations', subtitle: 'Combined view of related organizations · 4 organizations', organizationCount: 4 })
+    );
+    expect(charlieRow).toEqual(expect.objectContaining({ name: 'All Charlie Organizations', organizationCount: 2 }));
+  });
+
+  /**
+   * Cursor on PR #4415. The trigger shows a cookie-restored roll-up while the grants and families
+   * load, but the row keyed on eligibility alone — and in the conglomerate case the count sits at 1
+   * through that window, so the panel offered only organizations and picking one silently left
+   * roll-up mode.
+   */
+  it('keeps the selected roll-up row while its family is not offered yet', async () => {
+    const view = await create({ families: [charlieFamily], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) });
+
+    expect(view.showRollUpRow()).toBe(true);
+    expect(view.rollUpRows()).toEqual([
+      { rootUid: UID_A, name: ROLLUP_ACCOUNT_NAME, subtitle: 'Combined view of related organizations', organizationCount: 0, isSelected: true },
+      expect.objectContaining({ rootUid: UID_C, isSelected: false }),
+    ]);
+  });
+
+  // The service renames the selection once the family lands, so the trigger reads the selection
+  // and agrees with every page heading.
+  it('names the trigger from the selection', async () => {
+    expect((await create({ families: [acmeFamily], selectedRootUid: UID_A, selected: acmeRollUp })).displayName()).toBe('All Acme Organizations');
+    expect((await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) })).displayName()).toBe(ROLLUP_ACCOUNT_NAME);
+  });
+
+  // A failed families request hides every roll-up row; the notice says the list is incomplete and
+  // its Retry re-runs the grants, which re-fetches the families.
+  it('raises the incomplete-list notice when the families answer is incomplete', async () => {
+    expect((await create({ families: [] })).listIncomplete()).toBe(false);
+    expect((await create({ families: [], familiesIncomplete: true })).listIncomplete()).toBe(true);
+  });
+
+  it('marks only the selected family as selected', async () => {
+    const rows = (await create({ families: [acmeFamily, charlieFamily], selectedRootUid: UID_C, count: 2 })).rollUpRows();
+    expect(rows.map((row) => row.isSelected)).toEqual([false, true]);
+  });
+
+  /**
+   * A conglomerate's siblings commonly arrive as inherited grants rather than org-items rows, so the
+   * list can hold a single row while the caller holds several organizations. The static card would
+   * then leave no way to open the panel the roll-up lives in.
+   */
+  it('keeps the trigger openable when a roll-up is offered but the list holds one row', async () => {
+    const view = await create({ families: [acmeFamily], items: [rowA] });
+    expect(view.isSingleOrg()).toBe(false);
+  });
+
+  /**
+   * #4133 requires a new pick to land on the family's overview. Not an organization switch, which
+   * keeps the current page: Org Profile is single-org by definition (#4125), so carrying the page
+   * across could address a page with no roll-up rendering.
+   */
+  it('selects the picked family and lands on its overview rather than keeping the page', async () => {
+    const view = await create({ families: [acmeFamily, charlieFamily] });
+    view.selectRollUp(UID_C);
+    expect(selectRollUpSpy).toHaveBeenCalledWith(UID_C);
+    expect(rollUpHomeSpy).toHaveBeenCalledWith(UID_C);
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  // Mirrors `selectItem`'s FR-014 contract: re-picking what is already selected navigates nowhere.
+  it('does not re-navigate when that family is already selected', async () => {
+    const view = await create({ families: [acmeFamily], selectedRootUid: UID_A, count: 4, selected: acmeRollUp });
+    view.selectRollUp(UID_A);
+    expect(selectRollUpSpy).not.toHaveBeenCalled();
+    expect(rollUpHomeSpy).not.toHaveBeenCalled();
+  });
+
+  // Switching between two families' roll-ups is a real switch, not a re-pick.
+  it('switches from one family roll-up to another', async () => {
+    const view = await create({ families: [acmeFamily, charlieFamily], selectedRootUid: UID_A, count: 4, selected: acmeRollUp });
+    view.selectRollUp(UID_C);
+    expect(selectRollUpSpy).toHaveBeenCalledWith(UID_C);
+    expect(rollUpHomeSpy).toHaveBeenCalledWith(UID_C);
+  });
+
+  // The service re-derives eligibility; a refusal must leave the address alone rather than
+  // navigating to a mode the caller does not qualify for.
+  it('navigates nowhere when the service refuses the selection', async () => {
+    const view = await create({ families: [charlieFamily], accepted: false });
+    view.selectRollUp(UID_C);
+    expect(selectRollUpSpy).toHaveBeenCalledTimes(1);
+    expect(rollUpHomeSpy).not.toHaveBeenCalled();
+  });
+
+  // Regression, PR #4415 review: the same-selection shortcut skipped `selectItem`'s not-found
+  // recovery, so a roll-up caller who reached the dead end could not click their way out of it.
+  it('recovers from the not-found dead end when the selected roll-up is re-picked', async () => {
+    const view = await create({ families: [acmeFamily], selectedRootUid: UID_A, count: 4, onNotFound: true });
+    view.selectRollUp(UID_A);
+    expect(rollUpHomeSpy).toHaveBeenCalledWith(UID_A);
+  });
+
+  // Regression, PR #4415 review: the count is rendered during the optimistic restore window, where
+  // the grants have not landed and it can still read 1.
+  it('agrees with the noun at one organization', async () => {
+    const view = await create({ families: [], selectedRootUid: UID_A, count: 1 });
+    expect(view.rollUpTriggerSubtitle()).toBe('1 organization');
+  });
+
+  /**
+   * Regression, PR #4415 review (high severity). Keyboard activation resolved the focused option by
+   * its DOM index into `displayedRows()`. The pinned roll-ups are real `[role=option]`s rendered
+   * before that loop, so every index was off: Enter on a roll-up selected an organization, Enter on
+   * an organization selected the next, and the last row did nothing.
+   */
+  describe('keyboard activation resolves the focused option by identity', () => {
+    const optionEl = (dataset: Record<string, string>): HTMLElement => {
+      const el = document.createElement('button');
+      el.setAttribute('role', 'option');
+      Object.entries(dataset).forEach(([key, value]) => (el.dataset[key] = value));
+      return el;
+    };
+
+    it('activates the focused family roll-up, not another family', async () => {
+      const view = await create({ families: [acmeFamily, charlieFamily] });
+      expect(view.activateOption(optionEl({ optionKind: 'rollup', familyRoot: UID_C }))).toBe(true);
+      expect(selectRollUpSpy).toHaveBeenCalledWith(UID_C);
+    });
+
+    it('activates nothing for a roll-up option naming no family', async () => {
+      const view = await create({ families: [acmeFamily] });
+      expect(view.activateOption(optionEl({ optionKind: 'rollup' }))).toBe(false);
+      expect(selectRollUpSpy).not.toHaveBeenCalled();
+    });
+
+    // The bug's signature: with a roll-up present, this used to land on rowB.
+    it('activates the focused organization, not the one after it', async () => {
+      const view = await create({ families: [acmeFamily], selectedRootUid: UID_A, count: 4, selected: acmeRollUp });
+      expect(view.activateOption(optionEl({ optionKind: 'org', orgUid: UID_A }))).toBe(true);
+      expect(setAccountSpy).toHaveBeenCalledTimes(1);
+      expect((setAccountSpy.mock.calls[0][0] as Account).uid).toBe(UID_A);
+      expect(selectRollUpSpy).not.toHaveBeenCalled();
+    });
+
+    // The last row used to fall off the end of `displayedRows()` and activate nothing.
+    it('activates the final organization', async () => {
+      const view = await create({ families: [acmeFamily], selectedRootUid: UID_A, count: 4, selected: acmeRollUp });
+      expect(view.activateOption(optionEl({ optionKind: 'org', orgUid: UID_B }))).toBe(true);
+      expect((setAccountSpy.mock.calls[0][0] as Account).uid).toBe(UID_B);
+    });
+
+    it('activates nothing for an option naming no known organization', async () => {
+      const view = await create({ families: [acmeFamily], selectedRootUid: UID_A, count: 4, selected: acmeRollUp });
+      expect(view.activateOption(optionEl({ optionKind: 'org', orgUid: 'nope' }))).toBe(false);
+      expect(setAccountSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Copilot on PR #5167. A restored roll-up's row comes from the families answer, which can land
+   * after the organization list. Opening the panel in between focused the first organization and
+   * ended the retry, so the selected roll-up row never received initial focus once it rendered.
+   */
+  describe('initial focus on a restored roll-up', () => {
+    interface FocusView {
+      pendingInitialFocus: boolean;
+      listboxOptions: () => HTMLElement[];
+      focusInitialOption(): void;
+    }
+
+    const orgOption = (): HTMLElement => {
+      const el = document.createElement('button');
+      el.setAttribute('role', 'option');
+      el.setAttribute('aria-selected', 'false');
+      return el;
+    };
+
+    const runInitialFocus = async (view: RollUpView): Promise<boolean> => {
+      const focus = view as unknown as FocusView;
+      focus.listboxOptions = () => [orgOption(), orgOption()];
+      focus.pendingInitialFocus = true;
+      focus.focusInitialOption();
+      await Promise.resolve();
+      return focus.pendingInitialFocus;
+    };
+
+    it('keeps the retry armed while the selected roll-up row is still owed', async () => {
+      const view = await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null), familiesUnsettled: true });
+      expect(await runInitialFocus(view)).toBe(true);
+    });
+
+    // Bugbot on PR #5167: a partial or failed answer leaves the families unsettled but renders no
+    // roll-up row, so waiting on it let a later page of organizations pull focus back.
+    it('ends the retry when the families answer landed incomplete', async () => {
+      const view = await create({
+        families: [],
+        selectedRootUid: UID_A,
+        selected: orgRollUpAccount(UID_A, null),
+        familiesUnsettled: true,
+        familiesIncomplete: true,
+      });
+      expect(await runInitialFocus(view)).toBe(false);
+    });
+
+    it('ends the retry once the families have settled', async () => {
+      const view = await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) });
+      expect(await runInitialFocus(view)).toBe(false);
+    });
+
+    it('ends the retry for an organization selection once the list has loaded', async () => {
+      const view = await create({ families: [], familiesUnsettled: true });
+      expect(await runInitialFocus(view)).toBe(false);
+    });
   });
 });

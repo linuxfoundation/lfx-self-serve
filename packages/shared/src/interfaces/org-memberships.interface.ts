@@ -115,7 +115,7 @@ export interface OrgMembershipKeyContactPerson {
   avatarUrl?: string | null;
   /**
    * LF username, the only key the drawer may look company addresses up on; `email` is display-only.
-   * Null means "not available from this view", not "no company address".
+   * Null means the drawer has nothing to look an address up on, not "no company address".
    */
   username?: string | null;
 }
@@ -152,7 +152,7 @@ export interface KeyContactEmployee {
   avatarUrl?: string | null;
   /**
    * LF username from the key_contact document, the drawer's only address-lookup key for these rows.
-   * Null means "not available from this view", not "no company address".
+   * Null means the drawer has nothing to look an address up on, not "no company address".
    */
   lfUsername?: string | null;
   /** Distinct active key-contact roles this person holds across the org's memberships, sorted. Empty for a person surfaced by a non-key-contact source. */

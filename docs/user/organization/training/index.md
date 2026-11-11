@@ -1,14 +1,14 @@
 ---
 title: Training & Certification
-description: How to read the Organization lens Training & Certification page — its nine cards, the Certifications and Trainings tabs, the time range, Group by and More filters, what Clear all resets, and the people behind each number.
+description: How to read the Organization lens Training & Certification page — its ten cards, the Certifications and Trainings tabs, the time range, Group by and More filters, what Clear all resets, and the people behind each number.
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, training, certification, certifications, trainings, courses, group-by, filters, time-range]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Training & Certification**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Training & Certification**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 ## What is the Training & Certification page?
 
@@ -16,7 +16,7 @@ The Training & Certification page shows the Linux Foundation training courses an
 
 The sidebar item is **Training & Certification**. The page heading is **Training & Certifications —** followed by the organization's name, and the line under it is **Training enrollments and certifications across your organization.** The page has, from top to bottom:
 
-1. Nine cards that count the organization's learners and courses.
+1. Ten cards that count the organization's learners and courses.
 2. Two tabs, **Certifications** (the default) and **Trainings**, over one table.
 3. A filter bar above the table: a name search, the time range, **Group by** and **More filters**.
 4. A note under the table that says what its numbers count.
@@ -38,21 +38,22 @@ When you cannot open the organization, the page is replaced by the same access m
 
 ## What do the cards on Training & Certification count?
 
-The nine cards count the organization's learners and their courses for the selected time range and filters, except **Training-program roster members**, which is today's count and follows neither. Courses are counted as person-course pairs: one person in one course, counted once even when they retook it. Point at or select a card to see its full definition, unit and the date its data is as of.
+The page opens with three cards, **People with training activity**, **Courses taken** and **Certified people**. Select **Show 7 more stats** for the others, and **Show fewer stats** to hide them again; the values are the same either way. The ten cards count the organization's learners and their courses for the selected time range and filters, except **Training-program roster members**, which is today's count and follows neither. Courses are counted as person-course pairs: one person in one course, counted once even when they retook it. Point at or select a card to see its full definition, unit and the date its data is as of.
 
-| Card                                | What it counts                                                                                                                                                                                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Training-program roster members** | Today's count of the people the organization's LF Education (Linux Foundation training) program lists, including people who never enrolled in a course. It says **No LF Education training program on record for this organization** when there is none |
-| **People with training activity**   | People with an enrollment or a certificate in the time range. It also counts learners linked to the organization who are not on its people list, while no foundation, project, course, level or format is selected                                      |
-| **Courses taken**                   | Person-course pairs with an enrollment or a certificate in the time range. It equals **Certifications** plus **Trainings completed** plus **Courses in progress**                                                                                       |
-| **Certifications**                  | Courses taken of certification products that ended in a certificate in the time range                                                                                                                                                                   |
-| **Certified people**                | People on the organization's people list holding a certification certificate dated in the time range                                                                                                                                                    |
-| **Trainings completed**             | Courses taken of training products that ended in a certificate in the time range                                                                                                                                                                        |
-| **Completion rate**                 | **Certifications** plus **Trainings completed**, divided by **Courses taken**                                                                                                                                                                           |
-| **Courses in progress**             | Courses enrolled in the time range with no certificate in the time range                                                                                                                                                                                |
-| **People in training**              | People with at least one course in progress                                                                                                                                                                                                             |
+| Card                                | What it counts                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Training-program roster members** | Today's count of the people the organization's LF Education (Linux Foundation training) program lists, including people who never enrolled in a course. It says **No LF Education training program on record for this organization** when there is none                                                                                      |
+| **People with training activity**   | People on the organization's people list with an enrollment or a certificate in the time range. With the default time range and no filters, it equals the **Trainees** card on People › All Employees for the same time range, which counts current employees, plus any former employees still on the people list with training in the range |
+| **Learners not on the people list** | People linked to the organization who are not on its people list, with an enrollment or a certificate in the time range. Shown as a dash (**—**) and not counted while a foundation, project, course, level or format is selected. Not part of the other cards                                                                               |
+| **Courses taken**                   | Person-course pairs with an enrollment or a certificate in the time range. It equals **Certifications** plus **Trainings completed** plus **Courses in progress**                                                                                                                                                                            |
+| **Certifications**                  | Courses taken of certification products that ended in a certificate in the time range                                                                                                                                                                                                                                                        |
+| **Certified people**                | People on the organization's people list holding a certification certificate dated in the time range                                                                                                                                                                                                                                         |
+| **Trainings completed**             | Courses taken of training products that ended in a certificate in the time range                                                                                                                                                                                                                                                             |
+| **Completion rate**                 | **Certifications** plus **Trainings completed**, divided by **Courses taken**                                                                                                                                                                                                                                                                |
+| **Courses in progress**             | Courses enrolled in the time range with no certificate in the time range                                                                                                                                                                                                                                                                     |
+| **People in training**              | People with at least one course in progress                                                                                                                                                                                                                                                                                                  |
 
-Except for **Training-program roster members** and **People with training activity**, the cards count people on the organization's people list only. **Courses in progress** and **People in training** are not a snapshot of today: they are judged by the time range alone. An enrollment in the range with no certificate in the range counts as in progress, even if it has since been abandoned. An enrollment from before the range does not.
+Except for **Training-program roster members** and **Learners not on the people list**, the cards count people on the organization's people list only. **Courses in progress** and **People in training** are not a snapshot of today: they are judged by the time range alone. An enrollment in the range with no certificate in the range counts as in progress, even if it has since been abandoned. An enrollment from before the range does not.
 
 If the cards cannot load, they are replaced by **Couldn't load training stats** and a **Retry** button. The table is not affected.
 
@@ -116,6 +117,6 @@ An empty table also shows **Browse courses**, which opens the Linux Foundation t
 ## Related sections
 
 - [People](../people/) — the **Trainees** tab lists each trainee, with the same cards and filters
-- [Org Overview dashboard](../org-overview/) — the **Certified Employees** and **Training Enrollments** cards
+- [Org Overview dashboard](../org-overview/) — the **People with training activity**, **Certified people** and **Courses taken** Education tiles, which open this page
 - [Choose and switch an organization](../choose-an-organization/) — pick the organization the page shows
 - [Organization FAQ](../faq/) — short answers about the Organization lens

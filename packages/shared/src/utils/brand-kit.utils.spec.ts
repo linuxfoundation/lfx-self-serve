@@ -19,6 +19,7 @@ import {
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_DRAFT_HEADER,
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS,
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
   BRAND_KIT_QUESTIONS_HEADER,
   BRAND_KIT_REQUIRED_HEADINGS,
@@ -26,15 +27,20 @@ import {
 import { BrandKitChapters, BrandKitEnvelope, BrandKitRedraftFormPayload, BrandKitTokens } from '../interfaces/brand-kit.interface';
 import { brandKitBuiltFrom } from './brand-kit-book.utils';
 import { brandKitReportV2Envelope, brandKitReportV2Fixture } from './__fixtures__/brand-kit-report-v2.fixture';
+import { BRAND_KIT_FIXTURE_LOCKUP_SVG } from './__fixtures__/brand-kit-revision.fixture';
 import {
   brandKitBookPages,
   brandKitFontStack,
   brandKitGoogleFontsUrl,
   brandKitLogoFileKind,
+  brandKitLogoImage,
   brandKitQuestionsId,
   brandKitRevisionOf,
   brandKitSvgDataUrl,
+  brandKitSvgIsMonochrome,
   brandKitSvgWithViewBox,
+  brandKitSvgAspect,
+  brandKitSvgViewBox,
   brandKitSymbolImage,
   brandKitVoiceOfFramework,
   brandKitWebsiteHost,
@@ -407,6 +413,28 @@ describe('validateBrandKitLogoFiles', () => {
     const result = validateBrandKitLogoFiles([{ name: 'big.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_FILE_CHARS + 1) }]);
     expect(result.valid).toBe(false);
     expect(result.errors.join(' ')).toContain('link');
+  });
+
+  it('refuses a ZIP over 150 KB of bytes where the request is trusted, and only a ZIP', () => {
+    expect(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS).toBe(204_800);
+    const over = validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }]);
+    expect(over).toEqual({
+      valid: false,
+      errors: ['logoFiles[0].base64: a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send'],
+    });
+    expect(validateBrandKitLogoFiles([{ name: 'package.zip', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS) }])).toEqual({ valid: true, errors: [] });
+    expect(validateBrandKitLogoFiles([{ name: 'logo.png', base64: 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1) }])).toEqual({ valid: true, errors: [] });
+  });
+
+  it('reads the ZIP name as the rest of the check does — trimmed, any case — and refuses a ZIP sent as text outright', () => {
+    const sentence = 'a ZIP must stay under 150 KB (SVG files only); the full logo package linked on a brand page is usually too large to send';
+    const over = 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS + 1);
+    expect(validateBrandKitLogoFiles([{ name: 'package.zip ', base64: over }])).toEqual({ valid: false, errors: [`logoFiles[0].base64: ${sentence}`] });
+    expect(validateBrandKitLogoFiles([{ name: 'PACKAGE.ZIP', base64: over }])).toEqual({ valid: false, errors: [`logoFiles[0].base64: ${sentence}`] });
+    // A package is bytes: as text its length says nothing about the cap, so any length is refused.
+    for (const text of ['PK', 'A'.repeat(BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS), over]) {
+      expect(validateBrandKitLogoFiles([{ name: 'package.zip', text }])).toEqual({ valid: false, errors: ['logoFiles[0].text: a ZIP goes as base64'] });
+    }
   });
 
   it('takes no files as valid', () => {
@@ -980,6 +1008,15 @@ describe('the kit of a revision', () => {
   });
 });
 
+/** A synthetic lockup with a design tool's export structure (as the Agentic AI Foundation's primary is written). */
+const BRAND_KIT_EXPORTED_LOCKUP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 838 203" height="203" width="838">' +
+  '<g clip-path="url(#clip0_synthetic)">' +
+  '<path fill="black" d="M91 55C91 35 75 19 55 19C35 19 19 35 19 55C19 75 35 91 55 91C75 91 91 75 91 55Z"></path>' +
+  '<path fill="black" d="M91 147C91 127 75 111 55 111C35 111 19 127 19 147C19 167 35 183 55 183C75 183 91 167 91 147Z"></path>' +
+  '<path fill="black" d="M140 60H190V140H140Z"></path>' +
+  '</g><defs><clipPath id="clip0_synthetic"><rect fill="white" height="203" width="838"></rect></clipPath></defs></svg>';
+
 describe('the book', () => {
   it('lays out 16 pages: the cover, the contents, the chapter pages and the back cover, with running heads', () => {
     const pages = brandKitBookPages();
@@ -1001,7 +1038,101 @@ describe('the book', () => {
     const symbol = brandKitSymbolImage({ primary: { ref: 'logo.svg', svg: SVG }, stacked: null, symbol: null, reversed: null }, '0 0 60 60');
     expect(symbol?.ref).toBe('logo.svg');
     expect(symbol?.src).toContain(encodeURIComponent('viewBox="0 0 60 60"'));
+    // The crop's aspect is the viewBox's; a file's is its root viewBox's; a PNG's or a viewBox-less SVG's is unknown.
+    expect(symbol?.aspect).toBe(1);
+    expect(brandKitLogoImage({ ref: 'logo.svg', svg: SVG })?.aspect).toBe(200 / 60);
+    expect(brandKitLogoImage({ ref: 'logo.png', svg: null })?.aspect).toBeNull();
+    expect(brandKitLogoImage({ ref: 'bare.svg', svg: '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h1"/></svg>' })?.aspect).toBeNull();
+    expect(brandKitSvgViewBox('<svg viewBox=" 0,0 120 , 36 "/>')).toEqual({ width: 120, height: 36 });
+    expect(brandKitSvgViewBox('<svg viewBox="0 0 0 36"/>')).toBeNull();
+    expect(brandKitSvgAspect('0 0 60 60')).toBe(1);
+    expect(brandKitSvgAspect('nonsense')).toBeNull();
     expect(brandKitSymbolImage({ primary: { ref: 'logo.png', svg: null }, stacked: null, symbol: null, reversed: null }, '0 0 60 60')).toBeNull();
+  });
+
+  it('derives only from one resolvable ink with no background: default black and rendered white count, backgrounds, gradients, sheets and two inks are not derivable', () => {
+    const cases: [string, boolean][] = [
+      // One explicit fill.
+      ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M0 0h10v10z"/></svg>', true],
+      // Default black only: an unpainted shape is black.
+      ['<svg viewBox="0 0 10 10"><path d="M0 0h10v10z"/><circle cx="5" cy="5" r="2"/></svg>', true],
+      // Default black beside one colour = two inks.
+      ['<svg viewBox="0 0 10 10"><path d="M0 0h5v10z"/><rect fill="#F37625" x="5" width="5" height="10"/></svg>', false],
+      // A white background rect under a black mark: inverting would set the mark in a white box.
+      ['<svg viewBox="0 0 10 10"><rect fill="#fff" width="10" height="10"/><path d="M2 2h6v6z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><rect fill="white" width="100%" height="100%"/><path fill="#000" d="M2 2h6v6z"/></svg>', false],
+      // Rendered white is an ink like any other (the editor's rule): a dark tile with a white glyph or knock-out, in either
+      // order, is two inks, since reversing it would turn the tile white and lose the glyph; so is a white stroke on a dark path.
+      ['<svg viewBox="0 0 10 10"><rect fill="#000" rx="2" width="8" height="8" x="1" y="1"/><path fill="#FFF" d="M4 4h2v2z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><circle fill="#4D4E4E" cx="5" cy="5" r="5"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#000" stroke="white" stroke-width="1" d="M1 1h8v8z"/></svg>', false],
+      // A white mark alone is one ink.
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="white" d="M0 0h2v2z"/></svg>', true],
+      // A rendered full-canvas rect in the mark's own ink is a background too: a second ink; alone, it is one ink.
+      ['<svg viewBox="0 0 10 10"><rect fill="#4D4E4E" width="10" height="10"/><path fill="#4D4E4E" d="M2 2h6v6z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M2 2h6v6z"/><rect fill="#fff" width="10" height="10"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><rect fill="#4D4E4E" width="10" height="10"/></svg>', true],
+      // An exporter's lockup as Figma writes it: the root's fill="none" inherited, the marks black, a <g clip-path>
+      // and the clip's white full-canvas rect in <defs> (not drawn): one ink, derivable.
+      [BRAND_KIT_EXPORTED_LOCKUP_SVG, true],
+      // Stroke only.
+      ['<svg viewBox="0 0 10 10"><path fill="none" stroke="#4D4E4E" stroke-width="2" d="M0 0h10"/></svg>', true],
+      // A gradient, a pattern, currentColor: unresolvable.
+      ['<svg viewBox="0 0 10 10"><defs><linearGradient id="g"/></defs><rect fill="url(#g)" width="10" height="10"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path fill="currentColor" d="M0 0h10"/></svg>', false],
+      // A <style> sheet or a class attribute: the paint cannot be read from the markup.
+      ['<svg viewBox="0 0 10 10"><style>.a{fill:#4D4E4E}</style><path class="a" d="M0 0h10v10z"/></svg>', false],
+      ['<svg viewBox="0 0 10 10"><path class="mark" d="M0 0h10v10z"/></svg>', false],
+      // Inherited paint: one ink through a group; a group ink beside an own ink is two.
+      ['<svg viewBox="0 0 10 10"><g fill="#4D4E4E"><path d="M0 0h5v5z"/><rect x="5" width="5" height="5"/></g></svg>', true],
+      ['<svg viewBox="0 0 10 10"><g fill="#4D4E4E"><path d="M0 0h5v5z"/><rect fill="#767576" x="5" width="5" height="5"/></g></svg>', false],
+      // Inline style paints read like attributes; none draws nothing.
+      ['<svg viewBox="0 0 10 10"><path style="fill: #4d4e4e; stroke: none" d="M0 0h10"/><rect style="fill:#4D4E4E" width="2" height="2"/></svg>', true],
+      // A <use> or an image cannot be resolved; a mask or a filter on a shape neither.
+      ['<svg viewBox="0 0 10 10"><defs><path id="p" d="M0 0h10"/></defs><use href="#p"/></svg>', false],
+      [
+        '<svg viewBox="0 0 10 10"><defs><mask id="m"><rect fill="#fff" width="10" height="10"/></mask></defs><path fill="#4D4E4E" mask="url(#m)" d="M0 0h10v10z"/></svg>',
+        false,
+      ],
+      // An exporter's clip path (a white rectangle the size of the viewBox inside <clipPath>) is not drawn: not a background,
+      // and its paint is not the artwork's.
+      [
+        '<svg viewBox="0 0 120 36"><g clip-path="url(#c)"><path fill="#000" d="M4 4h40v28z"/></g><defs><clipPath id="c"><rect width="120" height="36" fill="white"/></clipPath></defs></svg>',
+        true,
+      ],
+      [
+        '<svg viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#F37625"/></linearGradient></defs><path fill="#4D4E4E" d="M0 0h10v10z"/></svg>',
+        true,
+      ],
+      // The shared fixture lockup draws three inks.
+      [BRAND_KIT_FIXTURE_LOCKUP_SVG, false],
+      // One ink spelled four ways is one ink; a short hex white is the same ink as a long one, and a second beside the dark.
+      [
+        '<svg viewBox="0 0 10 10"><path fill="black" d="M0 0h10"/><path fill="#000" d="M0 2h10"/><path fill="#000000" d="M0 4h10"/><path fill="rgb(0, 0, 0)" d="M0 6h10"/></svg>',
+        true,
+      ],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#ffffff" d="M0 0h2v2z"/></svg>', true],
+      ['<svg viewBox="0 0 10 10"><path fill="#FFF" d="M4 4h2v2z"/><path fill="#4d4e4e" d="M0 0h10"/><path fill="#4D4E4E" d="M0 5h10"/></svg>', false],
+      // Nothing drawn: nothing a filter could flatten.
+      ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"/>', true],
+    ];
+    for (const [svg, expected] of cases) expect(brandKitSvgIsMonochrome(svg), svg).toBe(expected);
+    expect(brandKitSvgIsMonochrome(SVG)).toBe(true);
+  });
+
+  it('reads a hostile document in one pass: an unclosed tag of 100k dashes, comments and a quoted ">" cost their length', () => {
+    // A 200 kB "<A" followed by dashes (CodeQL's polynomial-regex case) must return well under the budget.
+    const hostile = `<svg viewBox="0 0 10 10"><A${'-'.repeat(100_000)}${' '.repeat(100_000)}`;
+    const start = performance.now();
+    expect(brandKitSvgIsMonochrome(hostile)).toBe(true);
+    expect(performance.now() - start).toBeLessThan(50);
+    // Comments, the xml declaration and a ">" inside an attribute value are stepped over, not read as tags.
+    expect(
+      brandKitSvgIsMonochrome(
+        '<?xml version="1.0"?><!-- <rect fill="#F37625" width="10" height="10"/> --><svg viewBox="0 0 10 10"><path aria-label="a > b" fill="#4D4E4E" d="M0 0h10"/></svg>'
+      )
+    ).toBe(true);
+    expect(brandKitSvgIsMonochrome('<svg viewBox="0 0 10 10"><path fill="#4D4E4E" d="M0 0h10"/><path fill="#F37625" d="M0 5h10"/></svg>')).toBe(false);
   });
 
   it('builds the Google Fonts link for the typeface and its weights, and the CSS stack with the site’s fallback', () => {

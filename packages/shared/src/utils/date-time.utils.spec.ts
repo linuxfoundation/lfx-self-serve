@@ -15,6 +15,7 @@ import {
   getLongTimezoneName,
   getTimezoneAbbreviation,
   isLocalDateOnlyString,
+  isSameMinute,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
@@ -453,6 +454,45 @@ describe('toZonedDateCarrier', () => {
     expect(carrier.getMonth()).toBe(instant.getMonth());
     expect(carrier.getDate()).toBe(instant.getDate());
     expect(carrier.getHours()).toBe(12);
+  });
+});
+
+/**
+ * Pins the exact boundary a `<= 60_000` millisecond tolerance gets wrong (GH-4944 review feedback):
+ * a genuine one-minute edit -- the smallest increment a time picker supports -- must count as a
+ * real change, not get folded into "unchanged" alongside round-tripping seconds/ms noise.
+ */
+describe('isSameMinute', () => {
+  it('treats sub-minute differences as the same minute (round-tripping noise)', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:45.000Z')).toBe(true);
+  });
+
+  it('treats an exact one-minute difference as a real change', () => {
+    // The exact boundary a `<= 60_000` ms tolerance let through.
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:01:00.000Z')).toBe(false);
+  });
+
+  it('treats identical instants as the same minute', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:00.000Z')).toBe(true);
+  });
+
+  // Pins the DST fall-back collision review feedback caught: truncating with the local-time
+  // `setSeconds` (rather than `setUTCSeconds`) reads and reconstructs through the host's
+  // wall-clock fields, and the repeated local hour during a fall-back can make two UTC instants
+  // a full hour apart reconstruct to the same result. 2027-11-07 05:30Z and 06:30Z are both
+  // 1:30 AM America/New_York (once EDT, once EST, an hour apart in UTC) -- a real one-hour Start
+  // time edit, not sub-minute noise, and must not be treated as unchanged.
+  describe('across a DST fall-back transition', () => {
+    const originalTz = process.env.TZ;
+
+    afterEach(() => {
+      process.env.TZ = originalTz;
+    });
+
+    it('does not collapse two UTC instants an hour apart that share a local wall-clock reading', () => {
+      process.env.TZ = 'America/New_York';
+      expect(isSameMinute('2027-11-07T05:30:00.000Z', '2027-11-07T06:30:00.000Z')).toBe(false);
+    });
   });
 });
 

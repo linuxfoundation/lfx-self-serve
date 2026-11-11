@@ -61,36 +61,7 @@
         tooltipPosition="top"
         dataTest="org-people-event-attendees-participation-filter" />
     </div>
-    <lfx-more-filters-toggle
-      [(expanded)]="moreFiltersExpanded"
-      [count]="hiddenFilterCount()"
-      controls="org-people-event-attendees-more-filters"
-      dataTest="org-people-event-attendees-more-filters-toggle" />
   </div>
-  <!-- Secondary filter, behind "More filters" -->
-  <div
-    id="org-people-event-attendees-more-filters"
-    class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4"
-    [class.hidden]="!moreFiltersExpanded()"
-    data-testid="org-people-event-attendees-more-filters">
-    <div class="w-full md:w-56">
-      <lfx-select
-        [form]="filterForm"
-        control="attribution"
-        size="small"
-        [options]="attributionOptions"
-        styleClass="w-full"
-        [ariaLabel]="attributionLabel"
-        [tooltip]="attributionTooltip()"
-        tooltipPosition="top"
-        dataTest="org-people-event-attendees-attribution-filter" />
-    </div>
-  </div>
-
-  @if (attributionUnavailable()) {
-    <p class="text-xs text-gray-500" role="status" data-testid="org-people-event-attendees-attribution-unavailable">{{ attributionUnavailableNote }}</p>
-  }
-
   @if (fetchError()) {
     <div role="alert" data-testid="org-people-event-attendees-error">
       <lfx-empty-state
@@ -120,11 +91,6 @@
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().attendees | number }}</div>
           <div class="mt-1 text-xs text-gray-500">Attendees</div>
           <div class="mt-0.5 text-[11px] text-gray-400" data-testid="org-people-event-attendees-attendees-caption">{{ attendeesCaption() }}</div>
-          @if (notListedCount() > 0) {
-            <div class="mt-0.5 text-[11px] text-gray-500" data-testid="org-people-event-attendees-not-listed">
-              {{ notListedCount() | number }} counted, not listed
-            </div>
-          }
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-event-attendees-stat-events">
           <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().events | number }}</div>

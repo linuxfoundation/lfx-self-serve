@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-table
-  [value]="documents()"
+  [value]="rows()"
   [paginator]="hasDocuments()"
   [rows]="10"
   [rowsPerPageOptions]="[10, 25, 50]"
@@ -138,7 +138,17 @@
 
       <!-- Group / Meeting column -->
       <td>
-        <span class="text-xs text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+        @if (doc.sourceLink; as link) {
+          <a
+            [routerLink]="link.commands"
+            [state]="link.kind === 'group' ? (groupLinkState() ?? undefined) : undefined"
+            class="lfx-table-name-link text-xs"
+            [attr.data-testid]="testIdPrefix() + '-source-link-' + doc.id">
+            {{ doc.groupOrMeetingName }}
+          </a>
+        } @else {
+          <span class="text-xs text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+        }
       </td>
 
       <!-- Source column — folders are containers, not content; suppress the tag. -->

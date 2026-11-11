@@ -86,6 +86,8 @@ export interface BackendOrgDonation {
   initiative_slug?: string;
   donor_name: string;
   donor_email: string;
+  /** True when the donor hid their name; CF then sends donor_name "Anonymous" and an empty donor_email. */
+  anonymous?: boolean;
   amount_cents: number;
   frequency?: string;
   status: string;
@@ -109,6 +111,8 @@ export interface BackendTransaction {
   donor_username?: string;
   initiative_id?: string;
   kind?: 'one-time' | 'recurring';
+  /** True for an individual donor who hid their name; CF already sends donor_name "Anonymous". */
+  anonymous?: boolean;
 }
 
 /** Raw snake_case response from GET /crowdfunding/me/payment-account on the upstream crowdfunding service. */
@@ -139,6 +143,12 @@ export interface BackendMyTransaction {
   donor_name?: string;
   donor_type?: 'organization' | 'individual';
   donor_logo_url?: string;
+  /** True when the caller hid their name on public donor lists (lfx-crowdfunding#466). */
+  anonymous?: boolean;
+  /** CF donation id of a one-time row, when CF matched the ledger row to its own record. */
+  donation_id?: string;
+  /** CF subscription id of a recurring row, when CF matched the ledger row to its own record. */
+  subscription_id?: string;
 }
 
 export interface BackendMyTransactionListResponse {
@@ -172,6 +182,8 @@ export interface BackendSubscription {
   next_charge_date?: string;
   paused_at?: string;
   total_contributed_cents?: number;
+  /** True when the donor hid their name on every charge of this subscription (lfx-crowdfunding#466). */
+  anonymous?: boolean;
 }
 
 export interface BackendSubscriptionListResponse {
@@ -240,4 +252,10 @@ export interface BackendAnnouncement {
   description: string;
   created_on: string;
   updated_on: string;
+}
+
+/** Raw response of PATCH /crowdfunding/me/donations/{id} and PATCH /crowdfunding/me/subscriptions/{id} (lfx-crowdfunding#466). */
+export interface BackendAnonymityResponse {
+  id: string;
+  anonymous: boolean;
 }

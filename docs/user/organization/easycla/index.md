@@ -4,17 +4,17 @@ description: View and manage an organization's corporate CLAs in the Organizatio
 audience: [all]
 product_area: Organization
 tags: [organization, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-11-03
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open **EasyCLA** for an organization in the Organization lens: an organization admin, a viewer, Linux Foundation staff with access to that organization, or a CLA (Contributor License Agreement) Manager or initial CLA Manager designee whose only Organization lens page is EasyCLA.
+These steps apply to anyone who can open **EasyCLA** for an organization in the Organization lens: an organization admin, a viewer, or a CLA (Contributor License Agreement) Manager or initial CLA Manager designee whose only Organization lens page is EasyCLA.
 
 **EasyCLA** lists the corporate CLAs (Contributor License Agreements) the selected organization holds. A CLA is the agreement that covers contributions to a Linux Foundation project that requires one. A **CCLA** (Corporate CLA) is the agreement a company signs so its people can contribute under the company's name. EasyCLA answers: which corporate CLAs does this organization hold, who can change each one, and what still needs a signature?
 
 Signing hands off to DocuSign. Self Serve prepares the agreement and does not run the DocuSign ceremony. See [What does Self Serve leave to DocuSign?](#what-does-self-serve-leave-to-docusign).
 
-For what a CLA is, and for the project and corporate consoles outside Self Serve, see the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla). Your own signed agreements, as a contributor, are on [CLAs](../../account/my-clas/).
+For what a CLA is, see the [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla). Your own signed agreements, as a contributor, are on [CLAs](../../account/my-clas/).
 
 ## Where do I find EasyCLA?
 
@@ -35,7 +35,6 @@ You can open EasyCLA when you have an Organization lens role on that organizatio
 | Who you are                                                       | What you can see                                                                                                                                            | What you can change                                                                                        |
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Organization admin or viewer                                      | Every corporate CLA of the company                                                                                                                          | Only a corporate CLA you are named on as a CLA Manager. The company's other corporate CLAs stay read-only. |
-| Linux Foundation staff with access to the organization            | That organization's EasyCLA page                                                                                                                            | Only a corporate CLA you are named on as a CLA Manager                                                     |
 | CLA Manager with no other Organization lens role                  | EasyCLA only. The rest of the Organization lens stays closed.                                                                                               | Only the corporate CLAs you are named on                                                                   |
 | Initial CLA Manager designee with no other Organization lens role | EasyCLA only. Once the corporate CLA you were nominated for is signed, you keep EasyCLA as its CLA Manager. The rest of the Organization lens stays closed. | Nothing, except signing the corporate CLA you were nominated for                                           |
 | Someone with no EasyCLA role at the organization                  | The page title **We couldn't load your CLAs**, with the reason in the text under the title                                                                  | Nothing on this page                                                                                       |
@@ -51,7 +50,7 @@ A CLA Manager role that was just added or just removed can take about 30 minutes
 - **You don't have an EasyCLA role at this organization.** The page then offers **contact support** if you need EasyCLA assistance. That button opens support. It is not the reason the page is empty.
 - **Something went wrong fetching this organization's corporate CLAs.** Refresh the page to try again. That failure is not a statement about your role.
 
-Companies you cannot open in the Organization lens are still managed in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself decide who appears in the organization selector: Linux Foundation staff can open organizations that are not members.
+If you have an admin or viewer role on any organization, the organization switcher lists only the organizations where you have that role, and leaves out organizations where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. See [Why is an organization missing from the switcher?](../choose-an-organization/#why-is-an-organization-missing-from-the-switcher).
 
 ## What does the EasyCLA list show?
 
@@ -225,5 +224,4 @@ Sending the agreement by email also leaves the signature to the signatory. Self 
 
 - [Organization FAQ](../faq/) — short answers about switching organizations and, for EasyCLA, editing, missing companies, access after removal, and a first CLA Manager
 - [CLAs](../../account/my-clas/) — your own Individual CLA (ICLA) and your coverage under an employer's corporate CLA
-- [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts, consoles, and troubleshooting outside Self Serve
-- [Corporate CLA Console](https://corporate.lfcla.com) — corporate CLAs for a company you cannot open in the Organization lens
+- [EasyCLA documentation](https://docs.linuxfoundation.org/lfx/easycla) — CLA concepts

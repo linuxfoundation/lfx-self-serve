@@ -3,7 +3,8 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { provideRouter } from '@angular/router';
+import { By } from '@angular/platform-browser';
+import { provideRouter, RouterLink } from '@angular/router';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
 import type { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
@@ -13,7 +14,7 @@ import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
 import type { MockInstance } from 'vitest';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MailingListTableComponent } from './mailing-list-table.component';
 
@@ -77,6 +78,34 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
     await fixture.whenStable();
     fixture.detectChanges();
   };
+
+  describe('status pills', () => {
+    const pill = (id: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="filter-pill-${id}"]`);
+
+    beforeEach(async () => {
+      await render([baseList]);
+      fixture.componentRef.setInput('statusFilterOptions', [
+        { id: 'public', label: 'Public (3)', color: 'green' },
+        { id: 'private', label: 'Private (1)', color: 'purple' },
+      ]);
+      fixture.detectChanges();
+    });
+
+    it('shows a Public and a Private pill with their counts', () => {
+      expect(pill('public')?.textContent?.trim()).toBe('Public (3)');
+      expect(pill('private')?.textContent?.trim()).toBe('Private (1)');
+    });
+
+    it('filters by the selected pill and clears it when selected again', () => {
+      const form = fixture.componentInstance.searchForm();
+
+      pill('private')?.click();
+      expect(form.value.status).toBe('private');
+
+      pill('private')?.click();
+      expect(form.value.status).toBeNull();
+    });
+  });
 
   describe('canJoin / mySubscriptionLabel', () => {
     it('marks a public list the user has not joined as joinable', async () => {
@@ -239,6 +268,67 @@ describe('MailingListTableComponent — join/leave UI (PR #3211 review)', () => 
       fixture.componentInstance['onLeave'](new Event('click'), fixture.componentInstance['tableRows']()[0]);
 
       expect(confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('linked group links', () => {
+    const linked: GroupsIOMailingList = {
+      ...baseList,
+      is_foundation: false,
+      committees: [
+        { uid: 'committee-1', name: 'Technical Steering Committee' },
+        { uid: 'committee-2', name: 'Marketing' },
+      ],
+    };
+
+    const renderMaintainer = async (list: GroupsIOMailingList): Promise<void> => {
+      await render([list]);
+      fixture.componentRef.setInput('isMaintainer', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('links each linked group name to its group details page, not a bordered tag', async () => {
+      await renderMaintainer(linked);
+
+      const first: HTMLAnchorElement | null = fixture.nativeElement.querySelector('[data-testid="mailing-list-group-link-list-1-committee-1"]');
+      const second: HTMLAnchorElement | null = fixture.nativeElement.querySelector('[data-testid="mailing-list-group-link-list-1-committee-2"]');
+
+      expect(first?.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(first?.getAttribute('href')).toContain('/committee-1');
+      expect(first?.getAttribute('href')).toContain('project=test-project');
+      expect(second?.getAttribute('href')).toContain('/committee-2');
+      const tagTexts = Array.from(fixture.nativeElement.querySelectorAll('lfx-tag') as NodeListOf<HTMLElement>).map((tag) => tag.textContent?.trim());
+      expect(tagTexts).not.toContain('Technical Steering Committee');
+    });
+
+    it('returns to Mailing Lists from the group page', async () => {
+      await renderMaintainer(linked);
+
+      const link = fixture.debugElement.query(By.css('[data-testid="mailing-list-group-link-list-1-committee-1"]')).injector.get(RouterLink);
+      expect(link.state).toEqual({ backLabel: 'Mailing Lists', backPath: '/mailing-lists', fromMeLens: false });
+    });
+
+    it('keeps the name of a linked group that has no uid as plain text, without dropping it from the visible entries', async () => {
+      await renderMaintainer({
+        ...linked,
+        committees: [
+          { uid: '', name: 'Orphan Group' },
+          { uid: 'committee-2', name: 'Marketing' },
+        ],
+      });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="mailing-list-group-text-list-1-0"]')?.textContent?.trim()).toBe('Orphan Group');
+      expect(fixture.nativeElement.querySelector('[data-testid="mailing-list-group-link-list-1-committee-2"]')).not.toBeNull();
+    });
+
+    it('shows a dash when the list has no linked groups', async () => {
+      await renderMaintainer(baseList);
+
+      expect(fixture.nativeElement.querySelector('[data-testid^="mailing-list-group-link-"]')).toBeNull();
+      const dashes = Array.from(fixture.nativeElement.querySelectorAll('td span.text-gray-400') as NodeListOf<HTMLElement>).map((el) => el.textContent?.trim());
+      expect(dashes).toContain('-');
     });
   });
 });

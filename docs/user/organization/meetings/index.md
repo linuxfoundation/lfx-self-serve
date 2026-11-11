@@ -4,11 +4,11 @@ description: How to read the Organization lens Meetings page — how many of the
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, meetings, attendance, influence, ecosystem-influence, time-range]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer) or Linux Foundation staff. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Meetings**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer). A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Meetings**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 This article covers the organization's **Meetings** page in the Organization lens. Your own meetings, which you join and manage, are covered in [Meetings](../../meetings/).
 

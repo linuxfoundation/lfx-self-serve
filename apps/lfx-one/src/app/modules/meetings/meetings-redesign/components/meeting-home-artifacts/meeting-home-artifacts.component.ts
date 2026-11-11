@@ -5,8 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MEETINGS_HOME_SUMMARY_ARTIFACT } from '@lfx-one/shared/constants';
-import { Meeting, MeetingHomeArtifact, MeetingHomeRow, PastMeeting, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import { getPastMeetingSummaryContent } from '@lfx-one/shared/utils';
+import { Meeting, MeetingHomeArtifact, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
+import { getPastMeetingSummaryContent, isPastMeetingSummaryAwaitingApproval } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
@@ -19,7 +19,7 @@ import { MeetingsHomeStore } from '../../services/meetings-home.store';
 /**
  * Recording and AI Summary buttons of a past meetings home row, each shown only when the past feed has it.
  * @description Recording opens the feed's share link in a new tab, and its split half copies it. AI Summary fetches the
- * summary on click and opens its dialog. Both stay labelled at every width.
+ * summary on click and opens its dialog; an organizer sees "Review summary" until it is approved. Both stay labelled at every width.
  */
 @Component({
   selector: 'lfx-meeting-home-artifacts',
@@ -47,6 +47,15 @@ export class MeetingHomeArtifactsComponent {
     const meeting: Meeting | PastMeeting = this.row().meeting;
     return 'has_ai_summary' in meeting && meeting.has_ai_summary === true;
   });
+  /** The organizer's summary awaits approval: the Last card's copy, else false once the feed's summary was approved this session, else the feed. */
+  protected readonly summaryPending: Signal<boolean> = computed(() => {
+    const row = this.row();
+    const lastSummary = this.store.lastMeeting()?.key === row.key ? this.store.lastMeetingSummary() : null;
+    if (lastSummary) return isPastMeetingSummaryAwaitingApproval(lastSummary);
+    const meeting: Partial<PastMeeting> = row.meeting;
+    if (meeting.ai_summary_uid && this.store.approvedSummaries().get(row.key) === meeting.ai_summary_uid) return false;
+    return meeting.ai_summary_awaiting_approval === true;
+  });
 
   protected openRecording(shareUrl: string): void {
     this.dialogs.openRecording(shareUrl);
@@ -62,8 +71,7 @@ export class MeetingHomeArtifactsComponent {
       // The dialog leaves the visibility check to its caller.
       const visible = getPastMeetingSummaryContent(row.meeting, summary) !== null;
       // The Last meeting card shows this summary too when the row is the last meeting.
-      const onChange = row.key === this.store.lastMeeting()?.key ? (change: PastMeetingSummary) => this.store.setLastMeetingSummary(change) : undefined;
-      if (visible) this.dialogs.openSummary(row, summary, onChange);
+      if (visible) this.dialogs.openSummary(row, summary, (change) => this.store.applySummaryChange(row.key, change));
       return visible;
     });
   }

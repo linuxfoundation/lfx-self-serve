@@ -170,16 +170,19 @@ export class KeyContactsComponent {
     event.stopPropagation();
     // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
     const username = agreedUsername(group.assignments.map((a) => a.username));
+    const assignments = this.drawerAssignments(group, username);
     this.drawer.open({
       name: group.displayName,
       title: group.title,
       initials: group.initials,
       avatarUrl: group.avatarUrl,
       username,
+      // A key contact usually has no person key: the drawer reads the company addresses on these roles' records.
+      keyContactIds: assignments.map((a) => a.contactUid),
       // This tab already holds the person's roles, so the drawer renders them straight away instead of
       // re-deriving them from an identity lookup — and opens on the one tab guaranteed to have content,
       // since a key contact often has no roster person behind them for the activity tabs.
-      keyContactAssignments: this.drawerAssignments(group, username),
+      keyContactAssignments: assignments,
       defaultTab: 'key-contacts',
     });
   }
@@ -247,6 +250,7 @@ export class KeyContactsComponent {
           email: group.email,
           initials: this.deriveInitials(first.firstName, first.lastName),
           username: agreedUsername(group.assignments.map((a) => a.username)),
+          keyContactIds: group.assignments.map((a) => a.contactUid),
         },
         roles,
         orgUid,

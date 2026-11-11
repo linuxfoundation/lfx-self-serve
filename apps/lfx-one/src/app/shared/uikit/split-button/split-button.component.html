@@ -34,14 +34,19 @@
     type="button"
     [class]="chevronClasses()"
     [disabled]="disabled()"
-    [attr.aria-label]="secondaryTooltip() || null"
+    [attr.aria-label]="secondaryLabel() ? null : secondaryTooltip() || null"
     [lfxUiTooltip]="secondaryTooltip()"
-    [lfxUiTooltipDisabled]="disabled()"
+    [lfxUiTooltipDisabled]="disabled() || !secondaryTooltip()"
     (click)="secondaryTriggered.emit()"
     data-testid="ui-split-button-secondary">
     @if (variant() === 'primary') {
       <span class="absolute inset-y-0 left-0 w-px bg-ui-background-100 opacity-30" aria-hidden="true" data-testid="ui-split-button-divider"></span>
     }
-    <i [class]="'ui-icon ' + secondaryIcon()" aria-hidden="true"></i>
+    @if (secondaryIcon()) {
+      <i [class]="'ui-icon ' + secondaryIcon()" aria-hidden="true"></i>
+    }
+    @if (secondaryLabel()) {
+      <span data-testid="ui-split-button-secondary-label">{{ secondaryLabel() }}</span>
+    }
   </button>
 }

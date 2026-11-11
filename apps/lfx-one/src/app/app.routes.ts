@@ -33,8 +33,9 @@ import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
+import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
-import { cfOrgDonationsGuard, orgLensClaM3EnabledGuard } from './shared/guards/org-lens-flag.guard';
+import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
@@ -58,11 +59,9 @@ const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/or
 function orgLensPageRoutes(): Routes {
   return [
     {
-      // Componentless parent, so the dark-launch guard is declared once and later M3
-      // children (list, sign, managers, …) inherit it. A looser copy would be a way
-      // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
       path: 'easycla',
-      canMatch: [orgLensClaM3EnabledGuard],
+      // A corporate CLA belongs to one company, so the roll-up redirects to its own overview (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
         title: 'EasyCLA',
@@ -96,6 +95,8 @@ function orgLensPageRoutes(): Routes {
       // Componentless parent so both children share its data.
       path: 'initiatives',
       data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your organization.', icon: 'fa-light fa-box-dollar' },
+      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       children: [
         {
           path: '',
@@ -112,6 +113,8 @@ function orgLensPageRoutes(): Routes {
       // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
       path: 'donations',
       canMatch: [cfOrgDonationsGuard],
+      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
         title: 'Donations',
@@ -245,6 +248,8 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
+      // Single-organization by definition, so the roll-up redirects to its own overview (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       loadComponent: loadOrgProfilePage,
     },
   ];
@@ -268,9 +273,18 @@ export const routes: Routes = [
     canMatch: [voteAnonymousSsrMatchGuard],
     loadComponent: () => import('./modules/votes/vote-link-ballot/vote-link-ballot.component').then((m) => m.VoteLinkBallotComponent),
   },
-  // Anonymous SSR of the newsletter permalink (#4940): a chrome-less share preview whose Open Graph tags
-  // carry the issue subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page. The
-  // guard matches only on the server for a signed-out request; browsers fall through to the shell below.
+  // Newsletter invite / subscription-confirmation landing (#5235): chrome-less, no authGuard. Signed out,
+  // the guest modal reads the signed token from the URL fragment; signed in, the page hands over to the
+  // `/newsletters/my/:foundationSlug?invite=` confirm card. Declared ahead of the shell.
+  {
+    path: 'newsletters/invite',
+    pathMatch: 'full',
+    loadComponent: () =>
+      import('./modules/newsletters/newsletter-invite-guest/newsletter-invite-guest.component').then((m) => m.NewsletterInviteGuestComponent),
+  },
+  // Signed-out newsletter permalink: a chrome-less page. On the server its Open Graph tags carry the issue
+  // subject, so a link-preview crawler (LinkedIn, X) never unfurls the login page (#4940); in the browser a
+  // signed-out reader gets the member-benefit email prompt (#5235). Signed-in visitors fall through to the shell.
   {
     path: 'newsletters/:projectSlug/:id',
     pathMatch: 'full',

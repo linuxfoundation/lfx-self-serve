@@ -3,41 +3,7 @@
 
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
-export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
-/**
- * Dark-launch gate for the M2 My CLAs overlay (#1738) — Sign CLA, Status column,
- * kebab/actions, and Signed as. The M1 list (project / type / signed / document) stays
- * when this is off. Default false: LaunchDarkly targeting (DEV on for everyone,
- * PROD team-only until testing) is the rollout switch, not the code default.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not
- * gate the BFF; hiding Sign CLA is how the write path stays unreachable from
- * this page.
- */
-export const MY_CLAS_M2_ENABLED_FLAG = 'my-clas-m2-enabled';
 export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
-/**
- * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
- * route and sidebar entry. The org-lens prefix keeps it in the lens family; the `m3` suffix
- * follows the `MY_CLAS_M2_ENABLED_FLAG` milestone-gate precedent. Default false: a missing
- * LaunchDarkly flag keeps the module invisible. The route guard fails closed (unlike `myClasEnabledGuard`).
- *
- * Evaluated through `FeatureFlagService.getBooleanFlag`, which is the Web SDK and never runs
- * server-side, so this hides the route and nav without closing the BFF. **Turning this flag off
- * therefore stops the UI reaching the module; it does not stop a direct call to the BFF.** It is
- * not a kill switch, and it is not an authorization boundary — the routes are protected by the
- * Org Lens grant, by `blockDuringImpersonation` on the write, and by the CLA service's own
- * signing-authority and trade-compliance checks.
- *
- * The first M3 write path has now landed on these routes: corporate CLA signing (#1983), which
- * creates a signature record and a DocuSign envelope. A server-side gate was reconsidered at that
- * point, as the note here previously said it should be, and still not added — the same corporate
- * signature is requestable by the same caller through the ACS-authorized EasyCLA v4 API and the
- * Corporate CLA Console, so a gate withholds no capability while costing a GitOps round-trip and
- * a pod roll per rollout. What changed is that this is now written down as a decision about a
- * write, rather than resting on the reads being harmless.
- */
-export const ORG_LENS_CLA_M3_ENABLED_FLAG = 'org-lens-cla-m3-enabled';
 /**
  * Dark-launch gate for the Org Lens Crowdfunding Donations page (lfx-crowdfunding#415): the route (`cfOrgDonationsGuard`,
  * fail closed) and its sidebar entry. Default false. **UI-only**: the BFF stays open, and CF's auditor check on the
@@ -76,6 +42,24 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
 
 /**
+ * Dark-launch gate for the committee ↔ mailing-list sync UI across #4022's frontend surfaces:
+ * the ON/OFF toggle and direction selector on the mailing list view page (#4024) and the
+ * **Sync Now** entry point on the committee Settings tab (#4027). Default false: an unflagged
+ * evaluation hides all of them so the feature ships dark ahead of #4022's full rollout. A new
+ * consumer (e.g. #4025's committee Auto Sync drawer) reads this same constant rather than
+ * defining a duplicate.
+ *
+ * **UI-only** — this is an OpenFeature/GrowthBook flag evaluated through
+ * `FeatureFlagService.getBooleanFlag`, which never runs server-side, so it cannot gate an Express
+ * handler. The actual `sync_mode` write (via `MailingListService.updateMailingList`) and the
+ * sync-diff/sync-apply BFF endpoints stay reachable by a direct API caller while this is off — the
+ * real-time auto-sync execution kill switch is tracked separately as a server-side env-var flag in
+ * #4878. Both would need to be enabled for the feature to be fully reachable; this flag alone only
+ * controls whether Self Serve renders the Sync Settings UI.
+ */
+export const MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG = 'mailing-list-committee-sync-enabled';
+
+/**
  * **No remaining consumers — nothing in this repo reads this flag.** It gated Org Lens surfaces
  * restricted to internal audiences while their real-data backends were built, and both gates are
  * gone: Org Profile logo upload was ungated in #1887, and person-detail-drawer company emails in
@@ -86,6 +70,22 @@ export const WG_WEEKLY_BRIEF_SLACK_FLAG = 'wg-weekly-brief-slack';
  * drop. Do not add a new gate to it; a new surface should get its own flag with its own rollout.
  */
 export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
+
+/**
+ * Dark-launch gate for the Org Lens family roll-up (#4132): the All Organizations rows in the
+ * organization selector and every `/org/family-{top account id}/…` address. Default false. The
+ * per-page roll-up views ship behind this same flag, so the public release is one flip once the
+ * last page lands.
+ *
+ * Read through `OrgRollUpFlagService`, which separates "off" from "not known yet": LaunchDarkly
+ * answers for an anonymous context before the signed-in one, and a roll-up restored from the
+ * cookie or an address must ride that window out rather than be demoted by it.
+ *
+ * **UI-only** — evaluated through the OpenFeature Web SDK, which never runs server-side, so it
+ * cannot gate an Express handler: `/api/orgs/me/roll-up-set` and every other BFF route answer the same
+ * with the flag off. This flag only controls whether Self Serve offers and renders the roll-up.
+ */
+export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';
 
 /**
  * Dark-launch gate for FGA-based (`marketing_auditor` / `campaign_manager`) Marketing Impact and
@@ -144,8 +144,8 @@ export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
 
 /**
  * Default budget `FeatureFlagService.waitForReady()` gives the OpenFeature provider to reach
- * READY before a flag-gated guard falls back to its no-ready path (fail-open for
- * `myClasEnabledGuard`, fail-closed for the dark-launch guards). Doubled from the original 5s
+ * READY before a flag-gated guard falls back to its no-ready path (fail-closed for the
+ * dark-launch guards). Doubled from the original 5s
  * (GH-1351 follow-up) after DEV/PROD reproductions showed LaunchDarkly occasionally taking longer
  * than 5s to stream READY, which the fail-closed guards were surfacing as a user-visible redirect
  * even though LD wasn't actually down — just slow. Also drives
@@ -206,6 +206,8 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
  * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
+ *
+ * {@link MEETINGS_REDESIGN_FLAG} also enables v2: the UI reads both through `meetingsV2EnabledSignal`.
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
 /**
@@ -215,10 +217,21 @@ export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
  */
 export const MEETING_V2_ENABLED_DEFAULT = false;
 /**
+ * Lets a user start new newsletters in the block composer, on top of the project gate in
+ * `NEWSLETTER_BLOCKS_PROJECT_SLUGS`. Off keeps the basic editor. A draft that already has a layout
+ * stays in the composer either way, because the basic editor can't edit it safely.
+ *
+ * **UI-only** — it does not gate the BFF or any endpoint.
+ */
+export const NEWSLETTER_ENHANCED_EDITOR_FLAG = 'newsletter-enhanced-editor';
+/** What {@link NEWSLETTER_ENHANCED_EDITOR_FLAG} reads as when LaunchDarkly has not answered. */
+export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
+/**
  * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
  * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat
  * `/meetings` route in the Me lens; `/foundation/meetings`, `/project/meetings` and the org lens stay on
- * the existing page whatever this reads.
+ * the existing page whatever this reads. It also turns on the v2 composer at every entry point (see
+ * {@link MEETING_V2_ENABLED_FLAG}).
  *
  * **UI-only** — evaluated through `FeatureFlagService` in the browser, so the server renders a loading
  * state and the browser picks the page. A provider that is not ready within `FEATURE_FLAG_READY_TIMEOUT_MS` means

@@ -248,7 +248,13 @@
               <article [class]="card" data-testid="brand-kit-web-view-colorway">
                 <div class="h-32" [class]="sample" [ngClass]="{ 'border border-gray-200': colorway.light }" [style.background]="colorway.ground">
                   <div class="flex h-full w-full items-center justify-center" [style.filter]="colorway.logoFilter || null">
-                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: colorway.logo, what: 'Logo' }" />
+                    @if (colorway.missing) {
+                      <span [class]="colorway.light ? 'text-xs text-gray-500' : 'text-xs text-white/80'" data-testid="brand-kit-web-view-colorway-missing">{{
+                        colorway.missing
+                      }}</span>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: colorway.logo, what: 'Logo' }" />
+                    }
                   </div>
                 </div>
                 <span class="text-sm text-gray-800">{{ colorway.name }}</span>
@@ -575,9 +581,21 @@
         <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-icons">
             <h3 [class]="cardTitle">Iconography</h3>
-            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
+            <!-- The board's sample icons in the kit's colours; the rules and the recommended set stay under them. -->
+            <lfx-mktg-brand-kit-icon-samples [colours]="v.iconColours" />
+            <!--
+              The tester's hand test (round 1): a clear gap between the strip and the first rule (the card's 8 px gap + mt-3), and
+              the rules close together: each rule's comment affordance (a block under the text until now, so every rule was two
+              rows tall) floats at the right end of the rule's first line with the text flowing beside it, so it never adds a
+              row (a rule is as tall as its text, or the 28 px button); its empty count takes no room until a thread exists;
+              while its composer is open it goes back to a block under the text (edit mode). The ::after clearfix keeps the
+              float inside its list item without losing the list marker.
+            -->
+            <ul class="mt-3 flex list-disc flex-col gap-0.5 pl-5 text-sm leading-snug text-gray-800">
               @for (rule of v.visual.icons.rules; track $index) {
-                <li class="group/commentfield" data-mktg-comment-group>
+                <li
+                  class="group/commentfield after:block after:clear-both after:content-[''] [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:float-none [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:block [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:ml-0 [&>lfx-mktg-field-comments]:float-right [&>lfx-mktg-field-comments]:ml-2 [&_[data-testid=mktg-field-comment-count].invisible]:hidden"
+                  data-mktg-comment-group>
                   {{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.rules[' + $index + ']' }" />
                 </li>
               }
@@ -618,7 +636,8 @@
             </div>
             <div class="flex flex-col items-start gap-2 rounded-lg border border-gray-200 bg-white p-5">
               <span class="font-sans" [class]="label">Buttons</span>
-              <span class="rounded-md px-4 py-2 text-sm font-medium text-white" [style.background]="v.accent">Primary button</span>
+              <!-- The renderer's Primary button: the kit's dark fill with white text, never text on the accent. -->
+              <span class="rounded-md px-4 py-2 text-sm font-medium text-white" [style.background]="v.dark">Primary button</span>
               <span class="rounded-md border px-4 py-2 text-sm font-medium" [style.border-color]="v.dark" [style.color]="v.dark">Secondary</span>
             </div>
             <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5">
@@ -914,10 +933,10 @@
     typeface and logo.
   </p>
 
-  <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->
+  <!-- The portrait book Download PDF prints; the screen view stays unchanged. -->
   @if (printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" />
+      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" [approval]="printApproval()" />
     </div>
   }
 </section>

@@ -12,6 +12,7 @@ vi.mock('./validation.helper', () => ({
     return typeof value === 'string' ? value : undefined;
   },
 }));
+// vi.mock is hoisted above the static imports, so these factories load the real modules with dynamic imports.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-events-filters.constants')),
   ...(await import('../../../../../packages/shared/src/constants/org-lens-time-range.constants')),
@@ -38,7 +39,6 @@ function buildReq(query: Record<string, unknown>): Request {
 describe('parseOrgEventsFilters', () => {
   it('defaults every missing param', () => {
     expect(parseOrgEventsFilters(buildReq({}), 'op')).toEqual({
-      attribution: 'all',
       participation: 'all',
       scope: 'activity',
       foundation: '',
@@ -47,21 +47,18 @@ describe('parseOrgEventsFilters', () => {
   });
 
   it('reads each param', () => {
-    const filters = parseOrgEventsFilters(
-      buildReq({ attribution: 'company_email', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' }),
-      'op'
-    );
+    const filters = parseOrgEventsFilters(buildReq({ participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' }), 'op');
 
-    expect(filters).toEqual({ attribution: 'company_email', participation: 'attended', scope: 'all', foundation: 'foundation-one', range: '90d' });
+    expect(filters).toEqual({ participation: 'attended', scope: 'all', foundation: 'foundation-one', range: '90d' });
   });
 
-  it('reads the registered or attended participation', () => {
-    expect(parseOrgEventsFilters(buildReq({ participation: 'all' }), 'op').participation).toBe('all');
-    expect(parseOrgEventsFilters(buildReq({ participation: 'registered' }), 'op').participation).toBe('registered');
+  it('ignores a legacy attribution param', () => {
+    const filters = parseOrgEventsFilters(buildReq({ attribution: 'self_reported' }), 'op');
+
+    expect(filters).not.toHaveProperty('attribution');
   });
 
   it.each([
-    ['attribution', { attribution: 'everyone' }],
     ['participation', { participation: 'maybe' }],
     ['eventScope', { eventScope: 'some' }],
     ['range', { range: '5d' }],
@@ -72,29 +69,21 @@ describe('parseOrgEventsFilters', () => {
 });
 
 describe('SQL fragments', () => {
-  it('derives the ORG_EVENTS columns from the typed option', () => {
-    expect(orgEventsCountColumn('company_email', 'registered')).toBe('REGISTERED_COUNT_COMPANY_EMAIL');
-    expect(orgEventsCountColumn('account', 'attended')).toBe('ATTENDED_COUNT_ACCOUNT');
-    expect(orgEventsCountColumn('all', 'registered')).toBe('REGISTERED_COUNT_ALL');
-    expect(orgEventsCountColumn('company_email', 'all')).toBe('ALL_COUNT_COMPANY_EMAIL');
-    expect(orgEventsCountColumn('account', 'all')).toBe('ALL_COUNT_ACCOUNT');
-    expect(orgEventsCountColumn('all', 'all')).toBe('ALL_COUNT_ALL');
-    expect(orgEventsFootprintColumn('all')).toBe('HAS_FOOTPRINT_ALL');
+  it('derives the ORG_EVENTS count columns from the participation', () => {
+    expect(orgEventsCountColumn('registered')).toBe('REGISTERED_COUNT_VERIFIED');
+    expect(orgEventsCountColumn('attended')).toBe('ATTENDED_COUNT_VERIFIED');
+    expect(orgEventsCountColumn('all')).toBe('ALL_COUNT_VERIFIED');
+    expect(orgEventsFootprintColumn()).toBe('HAS_FOOTPRINT_VERIFIED');
   });
 
-  it('builds the attendee predicate as the one dbt conjunction flag of the pair', () => {
-    expect(orgEventsAttendeePredicate('company_email', 'registered')).toBe('IS_COUNTED_REGISTERED_COMPANY_EMAIL = TRUE');
-    expect(orgEventsAttendeePredicate('account', 'attended')).toBe('IS_COUNTED_ATTENDED_ACCOUNT = TRUE');
-    expect(orgEventsAttendeePredicate('all', 'registered')).toBe('IS_COUNTED_REGISTERED_ALL = TRUE');
-    expect(orgEventsAttendeePredicate('company_email', 'all')).toBe('IS_COUNTED_ALL_COMPANY_EMAIL = TRUE');
-    expect(orgEventsAttendeePredicate('account', 'all')).toBe('IS_COUNTED_ALL_ACCOUNT = TRUE');
-    expect(orgEventsAttendeePredicate('all', 'all')).toBe('IS_COUNTED_ALL_ALL = TRUE');
+  it('builds the attendee predicate as the one dbt conjunction flag of the participation', () => {
+    expect(orgEventsAttendeePredicate('registered')).toBe('IS_COUNTED_REGISTERED_VERIFIED = TRUE');
+    expect(orgEventsAttendeePredicate('attended')).toBe('IS_COUNTED_ATTENDED_VERIFIED = TRUE');
+    expect(orgEventsAttendeePredicate('all')).toBe('IS_COUNTED_ALL_VERIFIED = TRUE');
   });
 
-  it('builds the speaker predicate as the one dbt conjunction flag of the attribution', () => {
-    expect(orgEventsSpeakerPredicate('company_email')).toBe('IS_COUNTED_SPEAKER_COMPANY_EMAIL = TRUE');
-    expect(orgEventsSpeakerPredicate('account')).toBe('IS_COUNTED_SPEAKER_ACCOUNT = TRUE');
-    expect(orgEventsSpeakerPredicate('all')).toBe('IS_COUNTED_SPEAKER_ALL = TRUE');
+  it('builds the speaker predicate as the one dbt conjunction flag', () => {
+    expect(orgEventsSpeakerPredicate()).toBe('IS_COUNTED_SPEAKER_VERIFIED = TRUE');
   });
 
   it('windows a bounded range inline and leaves all time open', () => {

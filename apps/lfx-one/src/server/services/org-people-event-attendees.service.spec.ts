@@ -48,45 +48,40 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
-import type { CompactOrgEventAttendeesRawCache, OrgEventsFilters } from '@lfx-one/shared/interfaces';
+import type { CompactOrgEventAttendeesRawCache, OrgEventAttendeesResponse, OrgEventsFilters } from '@lfx-one/shared/interfaces';
 
 import { OrgPeopleEventAttendeesService } from './org-people-event-attendees.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 const ACCOUNT = 'acct-a';
 
-const DEFAULT_PICK: Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'> = {
+const DEFAULT_PICK: Pick<OrgEventsFilters, 'range' | 'participation'> = {
   range: '730d',
-  attribution: 'company_email',
   participation: 'registered',
 };
 
 let service: OrgPeopleEventAttendeesService;
-let hasCoverage: boolean;
 
 /** The cache key of the compact read for a pick. */
-function compactKey(pick: Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'> = DEFAULT_PICK): string {
-  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v3:${pick.range}:${pick.attribution}:${pick.participation}`)!;
+function compactKey(pick: Pick<OrgEventsFilters, 'range' | 'participation'> = DEFAULT_PICK): string {
+  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v7:${pick.range}:${pick.participation}`)!;
 }
 
 /**
- * Two listed people at the same event plus a second event, so a round trip has to survive the event
+ * Two people at the same event plus a second event, so a round trip has to survive the event
  * dictionary rather than just echoing rows back.
  */
 function mockWarehouse(): void {
   execute.mockImplementation(async (query: string) => {
-    if (query.includes('TIME_RANGE')) {
+    if (query.includes('ORG_EVENT_PARTICIPATION_SUMMARY')) {
       return {
-        rows: [{ ATTENDEES_COUNT: 5, LISTED_ATTENDEES_COUNT: 2, SPEAKERS_COUNT: 1, EVENTS_COUNT: 2, FOUNDATIONS_COUNT: 1 }],
+        rows: [{ ATTENDEES_COUNT: 5, SPEAKERS_COUNT: 1, EVENTS_COUNT: 2, FOUNDATIONS_COUNT: 1 }],
       };
     }
-    if (query.includes('HAS_COMPANY_EMAIL_COVERAGE')) {
-      return { rows: [{ HAS_COMPANY_EMAIL_COVERAGE: hasCoverage }] };
-    }
-    if (query.includes('SELECT DISTINCT FOUNDATION_ID')) {
+    if (query.includes('SELECT DISTINCT p.FOUNDATION_ID')) {
       return { rows: [{ FOUNDATION_ID: 'foundation-one', FOUNDATION_NAME: 'Foundation One' }] };
     }
-    if (query.includes('SELECT DISTINCT EVENT_ID')) {
+    if (query.includes('SELECT DISTINCT p.EVENT_ID')) {
       return { rows: [{ EVENT_ID: 'event-one', EVENT_NAME: 'Community Summit', EVENT_DATE: '2026-04-10' }] };
     }
     return {
@@ -152,7 +147,6 @@ beforeEach(() => {
   execute.mockReset();
   cacheValues.clear();
   ValkeyService.resetInstance();
-  hasCoverage = true;
   mockWarehouse();
   service = new OrgPeopleEventAttendeesService();
 });
@@ -163,12 +157,11 @@ afterEach(() => {
 });
 
 describe('OrgPeopleEventAttendeesService response', () => {
-  it('returns person × event rows keyed by participantRef, the dbt summary and the served attribution', async () => {
+  it('returns person × event rows keyed by participantRef and the dbt summary', async () => {
     const response = await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
 
     expect(response.accountId).toBe(ACCOUNT);
-    expect(response.servedAttribution).toBe('company_email');
-    expect(response.summary).toEqual({ attendeesCount: 5, listedAttendeesCount: 2, speakersCount: 1, eventsCount: 2, foundationsCount: 1 });
+    expect(response.summary).toEqual({ attendeesCount: 5, speakersCount: 1, eventsCount: 2, foundationsCount: 1 });
     expect(response.details.map((row) => [row.participantRef, row.eventId])).toEqual([
       [1, 'event-one'],
       [2, 'event-one'],
@@ -178,16 +171,24 @@ describe('OrgPeopleEventAttendeesService response', () => {
     expect(response.eventOptions).toEqual([{ eventId: 'event-one', eventName: 'Community Summit' }]);
   });
 
-  it('labels a listed person with no name neutrally and keeps a roster-less person non-linkable', async () => {
+  it('labels a person with no name neutrally and keeps a roster-less person non-linkable', async () => {
     const { details } = await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
 
     expect(details[0]).toMatchObject({ personKey: 'person-one', displayName: 'Ada Lovelace', jobTitle: 'Engineer', isSpeaker: true });
     expect(details[1]).toMatchObject({ personKey: null, displayName: 'Registered attendee', jobTitle: null, isSpeaker: false });
   });
 
+  it('reads no listable predicate and no listed count: everyone credited is listed (lfx-self-serve#5158)', async () => {
+    await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
+
+    const queries = execute.mock.calls.map(([query]) => query as string);
+    expect(queries.some((query) => query.includes('IS_LISTABLE') || query.includes('LISTED_ATTENDEES_COUNT'))).toBe(false);
+    expect(queries.find((query) => query.includes('SELECT p.PARTICIPANT_REF'))).not.toMatch(/HAS_COMPANY_EMAIL\b(?!_)/);
+  });
+
   it('carries no address on any field, whatever the warehouse sent', async () => {
     execute.mockImplementation(async (query: string) => {
-      if (query.includes('TIME_RANGE') || query.includes('HAS_COMPANY_EMAIL_COVERAGE') || query.includes('SELECT DISTINCT')) {
+      if (query.includes('ORG_EVENT_PARTICIPATION_SUMMARY') || query.includes('SELECT DISTINCT')) {
         return { rows: [] };
       }
       return {
@@ -219,11 +220,11 @@ describe('OrgPeopleEventAttendeesService response', () => {
     expect(JSON.stringify(response)).not.toContain('@');
   });
 
-  it('reads the summary row of the picked range, attribution and participation, with one bind per placeholder', async () => {
-    await service.getEventAttendees(ACCOUNT, { range: '90d', attribution: 'all', participation: 'attended' });
+  it('reads the summary row of the picked range and participation, with one bind per placeholder', async () => {
+    await service.getEventAttendees(ACCOUNT, { range: '90d', participation: 'attended' });
 
-    const summaryCall = execute.mock.calls.find(([query]) => (query as string).includes('TIME_RANGE'))!;
-    expect(summaryCall[1]).toEqual([ACCOUNT, '90d', 'all', 'attended']);
+    const summaryCall = execute.mock.calls.find(([query]) => (query as string).includes('ORG_EVENT_PARTICIPATION_SUMMARY'))!;
+    expect(summaryCall[1]).toEqual([ACCOUNT, '90d', 'verified', 'attended']);
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
       expect(sql.match(/\?/g)?.length ?? 0).toBe(binds.length);
     }
@@ -232,9 +233,9 @@ describe('OrgPeopleEventAttendeesService response', () => {
   it('returns zeros when the account has no summary row', async () => {
     execute.mockImplementation(async () => ({ rows: [] }));
 
-    const response = await service.getEventAttendees(ACCOUNT, { ...DEFAULT_PICK, attribution: 'all' });
+    const response = await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
 
-    expect(response.summary).toEqual({ attendeesCount: 0, listedAttendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 });
+    expect(response.summary).toEqual({ attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 });
     expect(response.details).toEqual([]);
   });
 
@@ -258,7 +259,6 @@ describe('OrgPeopleEventAttendeesService cache keys', () => {
 
   it.each([
     ['range', { range: '90d' }],
-    ['attribution', { attribution: 'all' }],
     ['participation', { participation: 'attended' }],
   ] as const)('keeps a different %s out of the same entry', async (_filter, change) => {
     await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
@@ -269,15 +269,11 @@ describe('OrgPeopleEventAttendeesService cache keys', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
-  it('keys the served attribution, so the coverage fallback never shares the company-email entry', async () => {
+  it('keys the picked range and participation and reads no coverage flag (lfx-self-serve#5315 removed the company-email fallback)', async () => {
     await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
+
     expect(cacheValues.has(compactKey())).toBe(true);
-
-    hasCoverage = false;
-    cacheValues.delete(buildOrgCacheKey(ACCOUNT, 'events-coverage:v1')!);
-    await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
-
-    expect(cacheValues.has(compactKey({ ...DEFAULT_PICK, attribution: 'account' }))).toBe(true);
+    expect(execute.mock.calls.some(([query]) => (query as string).includes('COVERAGE'))).toBe(false);
   });
 });
 
@@ -398,7 +394,7 @@ describe('OrgPeopleEventAttendeesService compact cache (GH-1906)', () => {
   });
 
   it('caches rows whose PERSON_KEY is null instead of missing forever', async () => {
-    // The detail query does not filter a null person key (listed people without a roster match have none), and the
+    // The detail query does not filter a null person key (people without a roster match have none), and the
     // uncached mapper passes it straight through; a guard demanding a string would make it a permanent miss.
     const fromMiss = await service.getEventAttendees(ACCOUNT, DEFAULT_PICK);
     expect(fromMiss.details.some((row) => row.personKey === null)).toBe(true);
@@ -437,28 +433,19 @@ function dayOffset(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** The nine row-level conjunction flags dbt computes: (registered | attended | registered or attended) AND (company email | account | any relation). */
-function countsFlags(fixture: {
-  companyEmail?: boolean;
-  accountCredited?: boolean;
-  roster?: boolean;
-  registered?: boolean;
-  attended?: boolean;
-}): Record<string, number> {
+/**
+ * The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended).
+ * Employee match is a company email or a roster LF account.
+ */
+function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; registered?: boolean; attended?: boolean }): Record<string, number> {
   const registered = fixture.registered !== false;
   const attended = fixture.attended === true;
-  const credited = {
-    COMPANY_EMAIL: fixture.companyEmail !== false,
-    ACCOUNT: fixture.accountCredited === true,
-    ALL: fixture.companyEmail !== false || fixture.accountCredited === true || fixture.roster === true,
+  const verified = fixture.companyEmail !== false || fixture.roster === true;
+  return {
+    IS_COUNTED_REGISTERED_VERIFIED: registered && verified ? 1 : 0,
+    IS_COUNTED_ATTENDED_VERIFIED: attended && verified ? 1 : 0,
+    IS_COUNTED_ALL_VERIFIED: (registered || attended) && verified ? 1 : 0,
   };
-  return Object.fromEntries(
-    Object.entries(credited).flatMap(([suffix, flag]) => [
-      [`IS_COUNTED_REGISTERED_${suffix}`, registered && flag ? 1 : 0],
-      [`IS_COUNTED_ATTENDED_${suffix}`, attended && flag ? 1 : 0],
-      [`IS_COUNTED_ALL_${suffix}`, (registered || attended) && flag ? 1 : 0],
-    ])
-  );
 }
 
 interface ParticipationFixture {
@@ -469,15 +456,17 @@ interface ParticipationFixture {
   foundationId?: string;
   foundationName?: string;
   companyEmail?: boolean;
-  accountCredited?: boolean;
   roster?: boolean;
   registered?: boolean;
   attended?: boolean;
+  /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the read must ignore it. */
   listable?: boolean;
-  /** The row's `IS_COUNTED_SPEAKER_*` flags: an ACCEPTED talk credited under that attribution. All false for a submitted-only or elsewhere-credited talk. */
-  speaker?: { companyEmail?: boolean; account?: boolean; all?: boolean };
+  /** The row's speaker flag: an ACCEPTED talk credited with an Employee match. */
+  speaker?: { verified?: boolean };
   account?: string;
 }
+
+type AttendeesPick = Partial<Pick<OrgEventsFilters, 'range' | 'participation'>>;
 
 /** The real SQL against SQLite: the boundaries of the ended-only rule, the range window and each predicate are exercised, not their spelling. */
 describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
@@ -485,6 +474,7 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
 
   function addRow(fixture: ParticipationFixture): void {
     const date = dayOffset(fixture.days);
+    const speakerVerified = fixture.speaker?.verified === true;
     const record: Record<string, string | number | null> = {
       ACCOUNT_ID: fixture.account ?? ACCOUNT,
       EVENT_ID: `event-${fixture.days}`,
@@ -503,29 +493,16 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
       FOUNDATION_ID: fixture.foundationId ?? 'foundation-one',
       FOUNDATION_NAME: fixture.foundationName ?? (fixture.foundationId === 'foundation-two' ? 'Foundation Two' : 'Foundation One'),
       ...countsFlags(fixture),
-      IS_COUNTED_SPEAKER_COMPANY_EMAIL: fixture.speaker?.companyEmail ? 1 : 0,
-      IS_COUNTED_SPEAKER_ACCOUNT: fixture.speaker?.account ? 1 : 0,
-      IS_COUNTED_SPEAKER_ALL: fixture.speaker?.all ? 1 : 0,
+      IS_COUNTED_SPEAKER_VERIFIED: speakerVerified ? 1 : 0,
       IS_LISTABLE: fixture.listable === false ? 0 : 1,
     };
     const columns = Object.keys(record);
     database.prepare(`INSERT INTO ORG_EVENT_PARTICIPATION (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).run(...Object.values(record));
   }
 
-  function setCoverage(covered: boolean): void {
-    database
-      .prepare(
-        'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, HAS_COMPANY_EMAIL_COVERAGE) VALUES (?, ?, ?, ?, ?, ?)'
-      )
-      .run(ACCOUNT, '730d', 'company_email', 'registered', 7, covered ? 1 : 0);
-  }
+  const read = (pick: AttendeesPick = {}): Promise<OrgEventAttendeesResponse> => service.getEventAttendees(ACCOUNT, { ...DEFAULT_PICK, ...pick });
 
-  const read = (
-    pick: Partial<Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'>> = {}
-  ): ReturnType<OrgPeopleEventAttendeesService['getEventAttendees']> => service.getEventAttendees(ACCOUNT, { ...DEFAULT_PICK, ...pick });
-
-  const refs = async (pick: Partial<Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'>> = {}): Promise<number[]> =>
-    (await read(pick)).details.map((row) => row.participantRef).sort((a, b) => a - b);
+  const refs = async (pick: AttendeesPick = {}): Promise<number[]> => (await read(pick)).details.map((row) => row.participantRef).sort((a, b) => a - b);
 
   beforeEach(() => {
     database = new DatabaseSync(':memory:');
@@ -534,17 +511,14 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
         ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, PERSON_KEY TEXT, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
         EVENT_NAME TEXT, EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT,
         EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
-        IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_REGISTERED_ACCOUNT INTEGER, IS_COUNTED_REGISTERED_ALL INTEGER,
-        IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_ACCOUNT INTEGER, IS_COUNTED_ATTENDED_ALL INTEGER,
-        IS_COUNTED_ALL_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_ACCOUNT INTEGER, IS_COUNTED_ALL_ALL INTEGER,
-        IS_COUNTED_SPEAKER_COMPANY_EMAIL INTEGER, IS_COUNTED_SPEAKER_ACCOUNT INTEGER, IS_COUNTED_SPEAKER_ALL INTEGER, IS_LISTABLE INTEGER
+        IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
+        IS_COUNTED_SPEAKER_VERIFIED INTEGER, IS_LISTABLE INTEGER
       )`
     );
     database.exec(
       `CREATE TABLE ORG_EVENT_PARTICIPATION_SUMMARY (
         ACCOUNT_ID TEXT, TIME_RANGE TEXT, ATTRIBUTION TEXT, PARTICIPATION TEXT,
-        ATTENDEES_COUNT INTEGER, LISTED_ATTENDEES_COUNT INTEGER, SPEAKERS_COUNT INTEGER, EVENTS_COUNT INTEGER, FOUNDATIONS_COUNT INTEGER,
-        HAS_COMPANY_EMAIL_COVERAGE INTEGER
+        ATTENDEES_COUNT INTEGER, LISTED_ATTENDEES_COUNT INTEGER, SPEAKERS_COUNT INTEGER, EVENTS_COUNT INTEGER, FOUNDATIONS_COUNT INTEGER
       )`
     );
     execute.mockReset();
@@ -564,7 +538,6 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
         );
       return { rows };
     });
-    setCoverage(true);
   });
 
   afterEach(() => {
@@ -605,17 +578,6 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(await refs({ range: 'all' })).toEqual([1, 2, 3, 4]);
   });
 
-  it('applies the attribution predicate to each way a person can be related to the company', async () => {
-    addRow({ ref: 1, days: -5, companyEmail: true });
-    addRow({ ref: 2, days: -5, companyEmail: false, accountCredited: true });
-    addRow({ ref: 3, days: -5, companyEmail: false, roster: true });
-    addRow({ ref: 4, days: -5, companyEmail: false });
-
-    expect(await refs({ attribution: 'company_email' })).toEqual([1]);
-    expect(await refs({ attribution: 'account' })).toEqual([2]);
-    expect(await refs({ attribution: 'all' })).toEqual([1, 2, 3]);
-  });
-
   it('separates registered from attended, and a rejected registration is neither', async () => {
     addRow({ ref: 1, days: -5, attended: true });
     addRow({ ref: 2, days: -5 });
@@ -625,53 +587,37 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(await refs({ participation: 'attended' })).toEqual([1]);
   });
 
-  it('lists everyone who registered or attended when Count is All, through the ALL flag of the attribution', async () => {
+  it('lists everyone who registered or attended when Count is All', async () => {
     addRow({ ref: 1, days: -5, attended: true });
     addRow({ ref: 2, days: -5 });
     addRow({ ref: 3, days: -5, registered: false });
     addRow({ ref: 4, days: -5, registered: false, attended: true });
-    addRow({ ref: 5, days: -5, companyEmail: false, accountCredited: true });
 
     expect(await refs({ participation: 'all' })).toEqual([1, 2, 4]);
-    expect(await refs({ participation: 'all', attribution: 'account' })).toEqual([5]);
-    expect(await refs({ participation: 'all', attribution: 'all' })).toEqual([1, 2, 4, 5]);
   });
 
-  it('flags a Speaker only for an accepted talk the served attribution credits', async () => {
-    const speakers = async (attribution: 'company_email' | 'account' | 'all'): Promise<number[]> =>
-      (await read({ attribution })).details
-        .filter((row) => row.isSpeaker)
-        .map((row) => row.participantRef)
-        .sort((a, b) => a - b);
-
-    // Person 1: an accepted talk credited only to the account at one event, a submitted-only talk at another. Not a company-email Speaker.
-    addRow({ ref: 1, days: -5, speaker: { account: true, all: true } });
-    addRow({ ref: 1, days: -6 });
-    // Person 2: an accepted talk credited by company email.
-    addRow({ ref: 2, days: -5, speaker: { companyEmail: true, all: true } });
-    // Person 3: no talk.
-    addRow({ ref: 3, days: -5 });
-
-    expect(await speakers('company_email')).toEqual([2]);
-    expect(await speakers('account')).toEqual([]);
-    expect(await speakers('all')).toEqual([1, 2]);
-  });
-
-  it('counts account-credited talks as Speaker under account attribution', async () => {
-    addRow({ ref: 1, days: -5, companyEmail: false, accountCredited: true, speaker: { account: true, all: true } });
-    addRow({ ref: 2, days: -5, companyEmail: false, accountCredited: true, speaker: { companyEmail: true, all: true } });
-    addRow({ ref: 3, days: -5, companyEmail: false, accountCredited: true });
-
-    const response = await read({ attribution: 'account' });
-
-    expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([1]);
-  });
-
-  it('names only listable people', async () => {
+  it('lists everyone the selection credits, whatever the legacy listable flag says', async () => {
     addRow({ ref: 1, days: -5 });
-    addRow({ ref: 2, days: -5, name: null, listable: false });
+    addRow({ ref: 2, days: -5, name: 'Roster Registrant', roster: true, listable: false });
 
-    expect(await refs()).toEqual([1]);
+    const response = await read();
+
+    expect(response.details.map((row) => [row.participantRef, row.displayName])).toEqual([
+      [1, 'Person 1'],
+      [2, 'Roster Registrant'],
+    ]);
+  });
+
+  it('leaves out people who are not an Employee match', async () => {
+    addRow({ ref: 1, days: -5 });
+    addRow({ ref: 2, days: -5, companyEmail: false, roster: true });
+    addRow({ ref: 3, days: -5, companyEmail: false });
+    addRow({ ref: 4, days: -5, speaker: { verified: true } });
+
+    const response = await read();
+
+    expect(response.details.map((row) => row.participantRef).sort((a, b) => a - b)).toEqual([1, 2, 4]);
+    expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([4]);
   });
 
   it("never reads another account's rows", async () => {
@@ -692,39 +638,27 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     expect(response.eventOptions.map((option) => option.eventId)).toEqual(['event--5']);
   });
 
-  it('serves the account attribution when the company has no company-email data', async () => {
-    database.exec('DELETE FROM ORG_EVENT_PARTICIPATION_SUMMARY');
-    setCoverage(false);
-    addRow({ ref: 1, days: -5, companyEmail: true });
-    addRow({ ref: 2, days: -5, companyEmail: false, accountCredited: true });
-
-    const response = await read();
-
-    expect(response.servedAttribution).toBe('account');
-    expect(response.details.map((row) => row.participantRef)).toEqual([2]);
-  });
-
-  it('reads the summary row of the picked range, attribution and participation only', async () => {
+  it('reads the summary row of the picked range and participation only', async () => {
     database
       .prepare(
         'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(ACCOUNT, '90d', 'all', 'attended', 11, 4, 2, 3, 1);
+      .run(ACCOUNT, '90d', 'verified', 'attended', 11, 4, 2, 3, 1);
 
-    const response = await read({ range: '90d', attribution: 'all', participation: 'attended' });
+    const response = await read({ range: '90d', participation: 'attended' });
 
-    expect(response.summary).toEqual({ attendeesCount: 11, listedAttendeesCount: 4, speakersCount: 2, eventsCount: 3, foundationsCount: 1 });
+    expect(response.summary).toEqual({ attendeesCount: 11, speakersCount: 2, eventsCount: 3, foundationsCount: 1 });
   });
 
   it('reads the registered-or-attended summary row when Count is All', async () => {
     const insertSummary = database.prepare(
       'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    insertSummary.run(ACCOUNT, '730d', 'all', 'registered', 8, 3, 2, 4, 2);
-    insertSummary.run(ACCOUNT, '730d', 'all', 'all', 13, 5, 2, 6, 3);
+    insertSummary.run(ACCOUNT, '730d', 'verified', 'registered', 8, 3, 2, 4, 2);
+    insertSummary.run(ACCOUNT, '730d', 'verified', 'all', 13, 5, 2, 6, 3);
 
-    const response = await read({ range: '730d', attribution: 'all', participation: 'all' });
+    const response = await read({ range: '730d', participation: 'all' });
 
-    expect(response.summary).toEqual({ attendeesCount: 13, listedAttendeesCount: 5, speakersCount: 2, eventsCount: 6, foundationsCount: 3 });
+    expect(response.summary).toEqual({ attendeesCount: 13, speakersCount: 2, eventsCount: 6, foundationsCount: 3 });
   });
 });

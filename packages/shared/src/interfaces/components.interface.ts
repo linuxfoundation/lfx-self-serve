@@ -747,6 +747,8 @@ export interface DrawerActionSection {
   label: string;
   /** Rows in this section, preserving the feed's relative order within the section. */
   rows: DrawerActionRow[];
+  /** Rows a section-level "Dismiss all" would dismiss — empty when the section offers none (invitations, applications, formation) or its rows are still loading. */
+  dismissibleRows: DrawerActionRow[];
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */

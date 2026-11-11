@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgEventsAttribution } from './org-events-filters.interface';
-
 /** Role badge — once-a-speaker-always-Speaker on the per-person row (Item 4 R4.1); per-event truth on the expanded row. */
 export type OrgEventAttendeeRole = 'Speaker' | 'Attendee';
 
@@ -15,15 +13,16 @@ export type OrgEventAttendeeSortDirection = 1 | -1;
 /**
  * One person × event row from `PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION` — the only grain the BFF returns. The client groups
  * rows by `participantRef` for the main table and expands to the rows themselves; `participantRef` is an opaque number, stable
- * only within one response. Only listable people are ever sent (the warehouse nulls name and title for everyone else), and no
- * field can hold an email address.
+ * only within one response. Everyone the selection credits to the organization is sent by name, with a job title only for
+ * roster employees (lfx-self-serve#5158),
+ * and no field can hold an email address.
  */
 export interface OrgEventAttendeeDetailRow {
   /** Opaque per-person id within this account (dense rank over a normalized identity key). Group key for the main row. */
   participantRef: number;
-  /** Roster person key; `null` for a listed person without a roster match — render the row non-clickable. */
+  /** Roster person key; `null` for a person without a roster match — render the row non-clickable. */
   personKey: string | null;
-  /** The listed name, or the neutral registrant label when the warehouse has none. Never an address. */
+  /** The person's name, or the neutral registrant label when the warehouse has none. Never an address. */
   displayName: string;
   jobTitle: string | null;
   eventId: string;
@@ -44,12 +43,10 @@ export interface OrgEventAttendeeDetailRow {
   isSpeaker: boolean;
 }
 
-/** Summary-row numbers for the picked (range, attribution, participation): the tiles and the "N counted, not listed" note. */
+/** Summary-row numbers for the picked (range, participation): the tiles until the rows are narrowed. */
 export interface OrgEventAttendeesSummary {
   /** Distinct people counted. */
   attendeesCount: number;
-  /** Of those, the people the rows name. `attendeesCount - listedAttendeesCount` is the not-listed number. */
-  listedAttendeesCount: number;
   speakersCount: number;
   eventsCount: number;
   foundationsCount: number;
@@ -75,14 +72,12 @@ export interface OrgEventAttendeeStatsBaseline {
   foundations: number;
 }
 
-/** Bundled GET response for `/api/orgs/:orgUid/lens/people/event-attendees?range=&attribution=&participation=`. */
+/** Bundled GET response for `/api/orgs/:orgUid/lens/people/event-attendees?range=&participation=`. */
 export interface OrgEventAttendeesResponse {
   accountId: string;
   /** Person × event rows, newest event first; the browser applies no range or ended-only filter of its own. */
   details: OrgEventAttendeeDetailRow[];
   summary: OrgEventAttendeesSummary;
-  /** The attribution the rows and summary use — `account` when `company_email` was picked but the company has no company-email data. */
-  servedAttribution: OrgEventsAttribution;
   foundationOptions: OrgEventAttendeeFoundationOption[];
   eventOptions: OrgEventAttendeeEventOption[];
 }
@@ -93,7 +88,7 @@ export interface OrgEventAttendeesResponse {
 export interface OrgEventAttendeeRowVm {
   /** Group key — one main row per `participantRef`. */
   participantRef: number;
-  /** `null` renders the row non-clickable (listed person without a roster match). */
+  /** `null` renders the row non-clickable (a person without a roster match). */
   personKey: string | null;
   name: string;
   title: string | null;

@@ -179,7 +179,7 @@ async function renderTrainingPage(
           error: signal(false),
           emailError: signal(false),
           emailsLoading: signal(false),
-          identityUnavailable: signal(false),
+          companyEmailsUnavailableReason: signal(null),
           companyEmailsResolved: signal(false),
           detail: signal(null),
           companyEmails: signal([]),
@@ -199,7 +199,9 @@ async function renderTraineesPage(
   details: OrgTraineeDetailRow[] = DETAILS,
   query: string = QUERY,
   stats: OrgTrainingStats = STATS,
-  formerOnPeopleList: OrgTraineesResponse['formerOnPeopleList'] = { people: 0, pairs: 0 }
+  formerOnPeopleList: OrgTraineesResponse['formerOnPeopleList'] = { people: 0, pairs: 0 },
+  outsideLearners: OrgTraineesResponse['outsideLearners'] = [],
+  openOutside = false
 ): Promise<HTMLElement> {
   const response: OrgTraineesResponse = {
     ...EMPTY_ORG_TRAINEES_RESPONSE,
@@ -208,6 +210,7 @@ async function renderTraineesPage(
     trainees: PEOPLE,
     details,
     formerOnPeopleList,
+    outsideLearners,
     asOf: STATS.asOf,
   };
   await TestBed.configureTestingModule({
@@ -223,6 +226,11 @@ async function renderTraineesPage(
   await TestBed.inject(Router).navigateByUrl(`/${query}`);
   const fixture = TestBed.createComponent(TraineesComponent);
   await settle(fixture);
+  if (openOutside) {
+    // The list of learners not on the people list starts collapsed.
+    fixture.nativeElement.querySelector('[data-testid="org-people-trainees-outside-toggle"]')!.click();
+    await settle(fixture);
+  }
   return fixture.nativeElement;
 }
 
@@ -236,6 +244,29 @@ describe('Training strip and Trainees cards (one stats component, one stats call
     expect(trainees).toEqual(training);
     expect(training.find((tile) => tile.testId === 'org-training-stat-courses-taken')?.value).toBe('6');
     expect(training.every((tile) => tile.ariaLabel.includes(tile.label))).toBe(true);
+  });
+});
+
+describe('Learners not on the people list: tile vs the Trainees list', () => {
+  const OUTSIDE = [
+    { personKey: 'outside:1', name: 'Outside One', status: 'Certified' as const },
+    { personKey: 'outside:2', name: 'Outside Two', status: 'Enrolled' as const },
+    { personKey: 'outside:3', name: null, status: 'Enrolled' as const },
+  ];
+  const UNFILTERED_STATS: OrgTrainingStats = { ...STATS, learnersOutsidePeopleList: OUTSIDE.length };
+
+  it('shows a tile value equal to the Trainees outside list length, and keeps it out of the people tile', async () => {
+    const host = await renderTraineesPage(DETAILS, '?range=all', UNFILTERED_STATS, { people: 0, pairs: 0 }, OUTSIDE, true);
+    const tiles = snapshotTiles(host);
+    const outsideTile = tiles.find((tile) => tile.testId === 'org-training-stat-learners-outside-people-list')!;
+    const peopleTile = tiles.find((tile) => tile.testId === 'org-training-stat-people-with-training-activity')!;
+
+    expect(outsideTile.label).toBe('Learners not on the people list');
+    expect(Number(outsideTile.value)).toBe(host.querySelectorAll('[data-testid="org-people-trainees-outside"] li').length);
+    expect(outsideTile.value).toBe('3');
+    // The people tile is the people-list people (the Trainees table rows), without the outside learners.
+    expect(peopleTile.value).toBe('3');
+    expect(Number(peopleTile.value)).toBe(new Set(resolveOrgTraineePairs(DETAILS).map((pair) => pair.personKey)).size);
   });
 });
 
@@ -497,6 +528,16 @@ describe('Overview Education tiles vs the Training page in its default state', (
     expect(enrollments.value).toBe(tile('org-training-stat-courses-taken').value);
     expect(enrollments.value).toBe('9,660');
     expect(enrollments.subtitle).toBe(tile('org-training-stat-courses-taken').caption);
+    const people = cards.find((card) => card.testId === 'org-overview-involvement-card-people-with-training-activity')!;
+    expect(people.value).toBe(tile('org-training-stat-people-with-training-activity').value);
+    expect(people.value).toBe('3');
+    expect(people.subtitle).toBe(tile('org-training-stat-people-with-training-activity').caption);
+    expect(people.title).toBe(tile('org-training-stat-people-with-training-activity').label);
+    expect(cards.filter((card) => card.category === 'education').map((card) => card.testId)).toEqual([
+      'org-overview-involvement-card-people-with-training-activity',
+      'org-overview-involvement-card-certified-employees',
+      'org-overview-involvement-card-training-enrollments',
+    ]);
     expect(certified.title).toBe(tile('org-training-stat-certified-people').label);
     expect(enrollments.title).toBe(tile('org-training-stat-courses-taken').label);
   });

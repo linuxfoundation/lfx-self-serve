@@ -7,6 +7,7 @@ import {
   ORG_EVENT_DICTIONARY_COLUMNS,
   ORG_EVENT_FOUNDATION_OPTION_COLUMNS,
   ORG_EVENT_OPTION_COLUMNS,
+  ORG_EVENTS_COUNTED_ATTRIBUTION,
   ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
@@ -22,7 +23,6 @@ import type {
   OrgEventAttendeesSummary,
   OrgEventParticipationRow,
   OrgEventParticipationSummaryRow,
-  OrgEventsAttribution,
   OrgEventsFilters,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -38,15 +38,15 @@ import {
 } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
-import { readOrgEventsServedAttribution } from '../helpers/org-events-coverage.helper';
 import { distinctFoundationOptions, orgEventsAttendeePredicate, orgEventsRangeWindow, orgEventsSpeakerPredicate } from '../helpers/org-events-filters.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
 /**
- * Event Attendees tab data access — one bundled GET: the listed person × event rows of ORG_EVENT_PARTICIPATION for the picked
- * range, attribution and participation (ended events only; the server applies the window, the browser does not), the
- * summary row dbt computed for the same pick, and the foundation and event dropdown options of that same row set.
+ * Event Attendees tab data access — one bundled GET: the person × event rows of ORG_EVENT_PARTICIPATION for the picked range and
+ * participation (everyone Employee match credits to the organization, by name and title; ended events only; the
+ * server applies the window, the browser does not), the summary row dbt computed for the same pick, and the foundation and
+ * event dropdown options of that same row set.
  */
 export class OrgPeopleEventAttendeesService {
   private readonly snowflakeService: SnowflakeService;
@@ -55,28 +55,24 @@ export class OrgPeopleEventAttendeesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  public async getEventAttendees(
-    accountId: string,
-    filters: Pick<OrgEventsFilters, 'range' | 'attribution' | 'participation'>
-  ): Promise<OrgEventAttendeesResponse> {
+  public async getEventAttendees(accountId: string, filters: Pick<OrgEventsFilters, 'range' | 'participation'>): Promise<OrgEventAttendeesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
     }
 
     const { range, participation } = filters;
-    const servedAttribution = await readOrgEventsServedAttribution(accountId, filters.attribution);
 
-    // Only the filters that select rows are in the key. `v3`: the stored value is the compact projection of
-    // ORG_EVENT_PARTICIPATION rows (GH-1906 layout, new columns); a `v2` entry is a different shape and must miss.
+    // Only the filters that select rows are in the key. `v7`: Employee match only; a `v6` entry may hold the retired Self-reported only
+    // or All row sets, so it must miss.
     const [{ detailRows, foundationRows, eventRows }, summary] = await Promise.all([
       withOrgCompactCache(
         accountId,
-        `people-event-attendees:v3:${range}:${servedAttribution}:${participation}`,
+        `people-event-attendees:v7:${range}:${participation}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
-        () => this.fetchEventAttendeesRaw(accountId, range, servedAttribution, participation),
+        () => this.fetchEventAttendeesRaw(accountId, range, participation),
         { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
       ),
-      this.readSummary(accountId, range, servedAttribution, participation),
+      this.readSummary(accountId, range, participation),
     ]);
 
     const details: OrgEventAttendeeDetailRow[] = detailRows.map((row) => ({
@@ -108,35 +104,35 @@ export class OrgPeopleEventAttendeesService {
       eventName: row.EVENT_NAME,
     }));
 
-    return { accountId, details, summary, servedAttribution, foundationOptions, eventOptions };
+    return { accountId, details, summary, foundationOptions, eventOptions };
   }
 
-  /** The dbt summary row for (range, attribution, participation); zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
+  /** The dbt summary row for (range, participation), Employee match; zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
   public async readSummary(
     accountId: string,
     range: OrgEventsFilters['range'],
-    attribution: OrgEventsAttribution,
     participation: OrgEventsFilters['participation']
   ): Promise<OrgEventAttendeesSummary> {
     const sql = `
-      SELECT ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT
+      SELECT ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_SUMMARY
       WHERE ACCOUNT_ID = ?
         AND TIME_RANGE = ?
         AND ATTRIBUTION = ?
         AND PARTICIPATION = ?
     `;
+    // `v3`: Employee match only; a `v2` entry may hold the retired Self-reported only and All rows.
     const rows = await withOrgCache(
       accountId,
-      `people-event-attendees-summary:v1:${range}:${attribution}:${participation}`,
+      `people-event-attendees-summary:v3:${range}:${participation}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      async () => (await this.snowflakeService.execute<OrgEventParticipationSummaryRow>(sql, [accountId, range, attribution, participation])).rows,
+      async () =>
+        (await this.snowflakeService.execute<OrgEventParticipationSummaryRow>(sql, [accountId, range, ORG_EVENTS_COUNTED_ATTRIBUTION, participation])).rows,
       isObjectRowArray
     );
     const row = rows[0];
     return {
       attendeesCount: row?.ATTENDEES_COUNT ?? 0,
-      listedAttendeesCount: row?.LISTED_ATTENDEES_COUNT ?? 0,
       speakersCount: row?.SPEAKERS_COUNT ?? 0,
       eventsCount: row?.EVENTS_COUNT ?? 0,
       foundationsCount: row?.FOUNDATIONS_COUNT ?? 0,
@@ -146,41 +142,40 @@ export class OrgPeopleEventAttendeesService {
   private async fetchEventAttendeesRaw(
     accountId: string,
     range: OrgEventsFilters['range'],
-    attribution: OrgEventsAttribution,
     participation: OrgEventsFilters['participation']
   ): Promise<EventAttendeesRaw> {
-    // One row set, three projections: the rows, and the dropdown options narrowed to what the rows hold. Listed people only
-    // (the unlisted are counted in the summary, never named), ended events only, inside the range window.
+    // One row set, two projections: the rows, and the dropdown options narrowed to what the rows hold. Everyone who
+    // credits the organization by Employee match for the participation, ended events only, inside the range window.
     const where = `
-      WHERE ACCOUNT_ID = ?
-        AND ${orgEventsAttendeePredicate(attribution, participation)}
-        AND IS_LISTABLE = TRUE
-        AND EVENT_DATE < CURRENT_DATE()
-        ${orgEventsRangeWindow('EVENT_DATE', range)}
+      WHERE p.ACCOUNT_ID = ?
+        AND p.${orgEventsAttendeePredicate(participation)}
+        AND p.EVENT_DATE < CURRENT_DATE()
+        ${orgEventsRangeWindow('p.EVENT_DATE', range)}
     `;
-    const from = 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION';
+    const from = 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p';
+    const speaker = `p.${orgEventsSpeakerPredicate()}`;
     const binds = [accountId];
 
     const [detail, foundations, events] = await Promise.all([
       this.snowflakeService.execute<OrgEventParticipationRow>(
-        `SELECT PARTICIPANT_REF, PERSON_KEY, DISPLAY_NAME, JOB_TITLE, EVENT_ID, EVENT_NAME, EVENT_LOCATION, EVENT_CITY, EVENT_COUNTRY,
-                EVENT_URL, EVENT_START_DATE, EVENT_END_DATE, FOUNDATION_ID, FOUNDATION_NAME,
-                CASE WHEN ${orgEventsSpeakerPredicate(attribution)} THEN TRUE ELSE FALSE END AS IS_SPEAKER
+        `SELECT p.PARTICIPANT_REF, p.PERSON_KEY, p.DISPLAY_NAME, p.JOB_TITLE, p.EVENT_ID, p.EVENT_NAME, p.EVENT_LOCATION, p.EVENT_CITY,
+                p.EVENT_COUNTRY, p.EVENT_URL, p.EVENT_START_DATE, p.EVENT_END_DATE, p.FOUNDATION_ID, p.FOUNDATION_NAME,
+                CASE WHEN ${speaker} THEN TRUE ELSE FALSE END AS IS_SPEAKER
          ${from} ${where}
-         ORDER BY PARTICIPANT_REF ASC, EVENT_DATE DESC NULLS LAST, EVENT_ID ASC`,
+         ORDER BY p.PARTICIPANT_REF ASC, p.EVENT_DATE DESC NULLS LAST, p.EVENT_ID ASC`,
         binds
       ),
       this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(
-        `SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME ${from} ${where}
-           AND FOUNDATION_ID IS NOT NULL AND FOUNDATION_NAME IS NOT NULL
-         ORDER BY FOUNDATION_NAME ASC`,
+        `SELECT DISTINCT p.FOUNDATION_ID, p.FOUNDATION_NAME ${from} ${where}
+           AND p.FOUNDATION_ID IS NOT NULL AND p.FOUNDATION_NAME IS NOT NULL
+         ORDER BY p.FOUNDATION_NAME ASC`,
         binds
       ),
       // Most-recent-first, matching the prototype's flat list.
       this.snowflakeService.execute<EventAttendeeEventOptionRow>(
-        `SELECT DISTINCT EVENT_ID, EVENT_NAME, EVENT_DATE ${from} ${where}
-           AND EVENT_ID IS NOT NULL AND EVENT_NAME IS NOT NULL
-         ORDER BY EVENT_DATE DESC NULLS LAST, EVENT_NAME ASC`,
+        `SELECT DISTINCT p.EVENT_ID, p.EVENT_NAME, p.EVENT_DATE ${from} ${where}
+           AND p.EVENT_ID IS NOT NULL AND p.EVENT_NAME IS NOT NULL
+         ORDER BY p.EVENT_DATE DESC NULLS LAST, p.EVENT_NAME ASC`,
         binds
       ),
     ]);

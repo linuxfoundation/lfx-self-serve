@@ -187,6 +187,7 @@ describe('CrowdfundingController org donations (#415)', () => {
           initiativeSlug: 'synthetic-fund',
           donorName: 'Synthetic Donor',
           donorEmail: 'donor@example.com',
+          anonymous: false,
           amountCents: 2500,
           date: Date.UTC(2026, 9, 1),
         },
@@ -195,6 +196,67 @@ describe('CrowdfundingController org donations (#415)', () => {
       pageSize: 10,
       offset: 20,
     });
+  });
+});
+
+describe('CrowdfundingController donation anonymity (lfx-crowdfunding#466)', () => {
+  const DONATION_ID = '00000000-0000-4000-8000-0000000000d1';
+  const SUBSCRIPTION_ID = '00000000-0000-4000-8000-0000000000a1';
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
+    fetchMock = vi.fn(async (_url: string, init: RequestInit) => ({
+      ok: true,
+      json: async () => ({ id: 'cf-id', anonymous: JSON.parse(String(init.body)).anonymous }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  const patchReq = (id: string, body: unknown) => ({ bearerToken: 'user-token', query: {}, params: { id }, body }) as any;
+
+  it.each([
+    ['updateMyDonationAnonymity', DONATION_ID, `https://cf.example/crowdfunding/me/donations/${DONATION_ID}`],
+    ['updateMySubscriptionAnonymity', SUBSCRIPTION_ID, `https://cf.example/crowdfunding/me/subscriptions/${SUBSCRIPTION_ID}`],
+  ] as const)('%s PATCHes CF with the user token and returns the saved setting', async (handler, id, url) => {
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController()[handler](patchReq(id, { anonymous: true }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][0]).toBe(url);
+    expect(fetchMock.mock.calls[0][1].method).toBe('PATCH');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer user-token');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ anonymous: true });
+    expect(res.json).toHaveBeenCalledWith({ id: 'cf-id', anonymous: true });
+  });
+
+  it.each([
+    ['a non-UUID id', 'not-a-uuid', { anonymous: true }],
+    ['a path traversal id', '../payment-method', { anonymous: true }],
+    ['a missing anonymous flag', DONATION_ID, {}],
+    ['a string anonymous flag', DONATION_ID, { anonymous: 'true' }],
+    ['no body', DONATION_ID, undefined],
+  ])('rejects %s with a 400 before calling CF', async (_label, id, body) => {
+    const controller = new CrowdfundingController();
+    for (const handler of [controller.updateMyDonationAnonymity, controller.updateMySubscriptionAnonymity]) {
+      const next = vi.fn();
+      await handler.call(controller, patchReq(id, body), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("propagates a CF 404 for a donation that is not the caller's", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 404, text: async () => 'not found' });
+    const next = vi.fn();
+    await new CrowdfundingController().updateMyDonationAnonymity(patchReq(DONATION_ID, { anonymous: false }), buildRes(), next);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 404 });
   });
 });
 

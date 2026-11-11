@@ -20,14 +20,15 @@ interface SocialTokenResponse {
  * Service for handling social identity verification via Auth0 social connections.
  *
  * Uses the same Auth0 Profile Client as Flow C but with a `connection` parameter
- * to force authentication with a specific social provider (GitHub/LinkedIn).
+ * to force authentication with a specific social provider (GitHub/GitLab/Google/LinkedIn).
  * The resulting id_token represents the social identity and can be used to link
  * the account via the existing NATS `user_identity.link` subject.
  *
  * Auth0 Configuration Required:
  * - The Profile Client must have the social callback URL in its Allowed Callback URLs
  *   e.g., http://localhost:4200/social/callback
- * - The `github`, `google-oauth2`, and `linkedin` social connections must be enabled on the Auth0 tenant
+ * - The `github`, `google-oauth2`, and `linkedin` social connections and the `gitlab`
+ *   generic OAuth2 connection must be enabled on the Auth0 tenant
  */
 export class SocialVerificationService {
   // Resolved lazily on first access so process.loadEnvFile has finished loading,
@@ -38,7 +39,7 @@ export class SocialVerificationService {
   private _baseUrl: string | undefined;
   private _redirectUri: string | undefined;
 
-  private static readonly validProviders: readonly SocialProvider[] = ['github', 'google', 'linkedin'];
+  private static readonly validProviders: readonly SocialProvider[] = ['github', 'gitlab', 'google', 'linkedin'];
 
   private get clientId(): string {
     return (this._clientId ??= process.env['PROFILE_CLIENT_ID'] || '');

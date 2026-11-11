@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
@@ -10,25 +11,27 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES,
   HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
-  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
   HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
   HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
-  HEALTH_METRICS_MEMBERS_NOT_AVAILABLE,
+  HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS,
+  HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
   HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
   HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
-  HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
 import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
 import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsChartTipRowView, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRiskAging,
   HealthMetricsMembersAtRiskAgingView,
@@ -42,11 +45,9 @@ import type {
   HealthMetricsMembersBoardMeetingRowView,
   HealthMetricsMembersBoardSummaryView,
   HealthMetricsMembersBoardTrendBarView,
-  HealthMetricsMembersBridge,
-  HealthMetricsMembersBridgeBarView,
-  HealthMetricsMembersBridgeStep,
-  HealthMetricsMembersBridgeTone,
-  HealthMetricsMembersBridgeView,
+  HealthMetricsMembersBreakdownColumnView,
+  HealthMetricsMembersBreakdownRowView,
+  HealthMetricsMembersBreakdownView,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDeparture,
   HealthMetricsMembersChurnDepartureRowView,
@@ -61,10 +62,11 @@ import type {
   HealthMetricsMembersDirectoryCellView,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryRowView,
+  HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthColumnView,
+  HealthMetricsMembersGrowthLineView,
+  HealthMetricsMembersGrowthView,
   HealthMetricsMembersSectionKey,
-  HealthMetricsMembersMovement,
-  HealthMetricsMembersMovementListType,
-  HealthMetricsMembersMovementRowView,
   HealthMetricsMembersNpsAudience,
   HealthMetricsMembersNpsAudienceOption,
   HealthMetricsMembersNpsQuarter,
@@ -76,14 +78,9 @@ import type {
   HealthMetricsMembersRenewalRowView,
   HealthMetricsMembersRenewalsSummary,
   HealthMetricsMembersRenewalsSummaryView,
+  HealthMetricsMembersReservedTier,
   HealthMetricsMembersSubNavItem,
   HealthMetricsMembersTiers,
-  HealthMetricsMembersTiersMode,
-  HealthMetricsMembersTiersStatView,
-  HealthMetricsMembersTiersTierView,
-  HealthMetricsMembersTiersView,
-  HealthMetricsMembersTiersYearSummary,
-  HealthMetricsMembersTiersYearView,
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
 
@@ -100,142 +97,167 @@ export function buildHealthMetricsMembersSubNavItems(
   }));
 }
 
+/** The Members sections, with the running year in any copy that names it. */
+export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2Section[] {
+  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ ...section, description: section.description.replace('{year}', String(year)) }));
+}
+
 /**
- * `#tiers` — the hero for the selected period, plus every year as a tier × year matrix and a
- * composition chart. Pure over the loaded response, so a period or mode change never re-reads.
+ * `#breakdown` — members per tier at each year's end, from the first year shown to the running one, as PCC tables it:
+ * every tier with a member in a year shown, in rank order, then the totals. Only the sub-nav count follows the period.
  */
-export function buildHealthMetricsMembersTiersView(
-  tiers: HealthMetricsMembersTiers,
-  range: HealthMetricsRange,
-  mode: HealthMetricsMembersTiersMode
-): HealthMetricsMembersTiersView {
-  const years = [...new Set(tiers.rows.map((row) => row.year))].sort((a, b) => a - b);
-  const tierNames = orderTiers(tiers.rows);
-  const rowsByYear = new Map(years.map((year) => [year, tiers.rows.filter((row) => row.year === year)]));
-
-  const selectedYear = getYearForRange(range);
+export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers, range: HealthMetricsRange): HealthMetricsMembersBreakdownView {
   const currentYear = getYearForRange('YTD');
-  const selected = summarizeYear(rowsByYear.get(selectedYear) ?? []);
-  const prior = summarizeYear(rowsByYear.get(selectedYear - 1) ?? []);
-  const yearMeasured = rowsByYear.has(selectedYear);
+  const rows = tiers.rows.filter((row) => row.year >= HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR && row.year <= currentYear);
+  if (rows.length === 0) return { measured: false, columns: [], rows: [], count: null };
 
-  const yearViews: HealthMetricsMembersTiersYearView[] = years.map((year) => {
-    const summary = summarizeYear(rowsByYear.get(year) ?? []);
-    return {
+  const firstYear = Math.min(...rows.map((row) => row.year));
+  const years = Array.from({ length: currentYear - firstYear + 1 }, (_, index) => firstYear + index);
+  // Totals count every row, so a measured zero stays zero after the empty tiers drop out of the table.
+  const totals = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.memberCount)));
+  const revenue = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.revenueUsd)));
+
+  const tierRows = collectBreakdownTiers(rows).map(
+    (tier, index): HealthMetricsMembersBreakdownRowView => ({
+      key: `tier-${tier.label}`,
+      label: tier.label,
+      kind: 'tier',
+      icon: tier.reserved,
+      striped: index % 2 === 1,
+      cells: years.map((year) => formatCount(tier.members.get(year) ?? null)),
+    })
+  );
+
+  return {
+    measured: true,
+    columns: years.map((year): HealthMetricsMembersBreakdownColumnView => ({ year, label: year === currentYear ? `${year} YTD` : String(year) })),
+    rows: [
+      ...tierRows,
+      { key: 'members', label: 'Total members', kind: 'total', icon: null, striped: false, cells: totals.map((total) => formatCount(total)) },
+      { key: 'revenue', label: 'Total revenue', kind: 'total', icon: null, striped: false, cells: revenue.map((value) => formatUsd(value)) },
+    ],
+    count: totals[years.indexOf(getYearForRange(range))] ?? null,
+  };
+}
+
+/**
+ * `#growth` — cumulative new members by month, one line per year as PCC draws it: the period's year solid, every
+ * other year dashed, newest in accent. This year stops at `today`'s month, which may still be in progress.
+ */
+export function buildHealthMetricsMembersGrowthView(
+  growth: HealthMetricsMembersGrowth,
+  range: HealthMetricsRange,
+  today: Date = new Date()
+): HealthMetricsMembersGrowthView {
+  const currentYear = today.getFullYear();
+  const now = today.getMonth();
+  const selectedYear = currentYear - (getYearForRange('YTD') - getYearForRange(range));
+  const colors = HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS;
+  const firstYear = Math.max(HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR, currentYear - colors.length + 1);
+
+  const raw = new Map<number, (number | null)[]>();
+  for (const row of growth.months) {
+    if (row.year < firstYear || row.year > currentYear || row.month < 1 || row.month > 12) continue;
+    const months = raw.get(row.year) ?? Array<number | null>(12).fill(null);
+    months[row.month - 1] = row.cumulative;
+    raw.set(row.year, months);
+  }
+  // A year with no measured total is missing, never a year of zeros.
+  const years = [...raw.keys()]
+    .sort((a, b) => a - b)
+    .flatMap((year): [number, number[]][] => {
+      const months = raw.get(year)?.slice(0, year === currentYear ? now + 1 : 12) ?? [];
+      return months.some((value) => value !== null) ? [[year, fillCumulative(months)]] : [];
+    });
+  if (years.length === 0) return emptyGrowthView();
+
+  const top = chartScaleStep(Math.max(1, ...years.flatMap(([, values]) => values))) * 4;
+  const plot = HEALTH_METRICS_MEMBERS_GROWTH_PLOT;
+  const spacing = (plot.width - 2 * plot.insetX) / 11;
+  const x = (month: number): number => plot.insetX + month * spacing;
+  const y = (value: number): number => plot.height - (Math.min(value, top) / top) * plot.height;
+
+  const lines = years.map(
+    ([year, values]): HealthMetricsMembersGrowthLineView => ({
       year,
-      isCurrent: year === currentYear,
-      isPartial: summary.isPartial,
-      totalMembers: summary.members,
-      totalMembersLabel: formatCount(summary.members),
-      totalRevenueLabel: formatUsd(summary.revenue),
+      color: colors[currentYear - year],
+      dashed: year !== selectedYear,
+      d: growthCurve(values.map((value, month): [number, number] => [x(month), y(value)])),
+      points: values.map((value, month) => ({
+        month: month + 1,
+        leftPct: (x(month) / plot.width) * 100,
+        topPct: (y(value) / plot.height) * 100,
+        label: formatCount(value),
+      })),
+    })
+  );
+
+  const columns = MONTH_NAMES.map((label, month): HealthMetricsMembersGrowthColumnView => {
+    const rows: HealthMetricsChartTipRowView[] = [...lines]
+      .reverse()
+      .filter((line) => month < line.points.length)
+      .map((line) => ({ label: String(line.year), value: line.points[month].label, color: line.color, separated: false }));
+    return {
+      month: month + 1,
+      label,
+      leftPct: (x(month) / plot.width) * 100,
+      widthPct: (spacing / plot.width) * 100,
+      tip: { title: label, rows },
+      ariaLabel: `${label}. ${rows.map((row) => `${row.label}: ${row.value}`).join(', ')}`,
     };
   });
 
-  const tierViews: HealthMetricsMembersTiersTierView[] = tierNames.map((tier, index) => ({
-    tier,
-    color: HEALTH_METRICS_MEMBERS_TIERS_COLORS[index % HEALTH_METRICS_MEMBERS_TIERS_COLORS.length],
-    cells: yearViews.map((yearView) => {
-      const row = (rowsByYear.get(yearView.year) ?? []).find((candidate) => candidate.tier === tier);
-      const value = (mode === 'members' ? row?.memberCount : row?.revenueUsd) ?? null;
-      const sharePct = (mode === 'members' ? row?.memberSharePct : row?.revenueSharePct) ?? null;
-      return { year: yearView.year, value, label: value ? formatTierValue(value, mode) : '—', sharePct };
-    }),
-  }));
-
-  // A partial year has no same-window prior to compare with, so its delta is not available.
-  const comparable = yearMeasured && !selected.isPartial && prior.measured;
-  const baseline = `vs ${selectedYear - 1}`;
-  const membersStat = buildStat('members', 'Members', formatCount(selected.members), comparable, baseline, selected.members, prior.members);
-  const revenueStat = buildStat('revenue', 'Annual revenue', formatUsd(selected.revenue), comparable, baseline, selected.revenue, prior.revenue);
-  const newStat: HealthMetricsMembersTiersStatView = {
-    key: 'new',
-    label: range === 'YTD' ? 'New this year' : `New in ${selectedYear}`,
-    value: formatCount(selected.newMembers),
-    delta: null,
-    deltaDirection: 'neutral',
-    baseline: null,
-    positive: selected.newMembers !== null && selected.newMembers > 0,
-  };
-  const shareStat: HealthMetricsMembersTiersStatView = {
-    key: 'share',
-    label: 'Share of foundation revenue',
-    value: formatShare(selected.revenue, tiers.foundationRevenue.find((period) => period.range === range)?.totalUsd ?? null),
-    delta: null,
-    deltaDirection: 'neutral',
-    baseline: null,
-    positive: false,
-  };
-
-  const headline = mode === 'members' ? membersStat : revenueStat;
-  const side = [
-    mode === 'members'
-      ? { ...revenueStat, delta: null, deltaDirection: 'neutral' as const, baseline: null }
-      : { ...membersStat, delta: null, deltaDirection: 'neutral' as const, baseline: null },
-    newStat,
-    shareStat,
-  ];
-
+  const first = lines[0].year;
+  const last = lines[lines.length - 1].year;
   return {
-    measured: tiers.rows.length > 0,
-    yearMeasured,
-    metaLabel: `${pluralize(tierNames.length, 'tier')} · ${pluralize(years.length, 'year')}`,
-    headline,
-    side,
-    years: yearViews,
-    tiers: tierViews,
+    measured: true,
+    yMax: formatCount(top),
+    lines,
+    columns,
+    ariaLabel: `Cumulative new members by month, one line per year, ${first === last ? first : `${first} to ${last}`}`,
   };
+}
+
+function emptyGrowthView(): HealthMetricsMembersGrowthView {
+  return { measured: false, yMax: '', lines: [], columns: [], ariaLabel: '' };
 }
 
 /**
- * The selected period's membership bridge. Bars keep the model's figures as they are; when start plus
- * the signed movements misses the end total, the view carries a note instead of adjusting a bar.
+ * A smooth path through the points, as the design curves it, with monotone (Fritsch–Carlson) handles: each segment
+ * stays between its two totals, so a flat month before a jump never dips or overshoots.
  */
-export function buildHealthMetricsMembersBridgeView(bridge: HealthMetricsMembersBridge, range: HealthMetricsRange): HealthMetricsMembersBridgeView {
-  const year = getYearForRange(range);
-  const isCurrentYear = year === getYearForRange('YTD');
-  const steps = bridge.steps.filter((step) => step.year === year).sort((a, b) => a.sortOrder - b.sortOrder);
-  const endLabel = isCurrentYear || steps.some((step) => step.isPartialYear) ? 'Today' : `End of ${year}`;
+function growthCurve(points: [number, number][]): string {
+  if (points.length === 0) return '';
+  const slopes = points.slice(1).map(([x, y], index) => (y - points[index][1]) / (x - points[index][0]));
+  const tangents = points.map((_, index) => {
+    if (index === 0) return slopes[0] ?? 0;
+    if (index === points.length - 1) return slopes[index - 1];
+    return slopes[index - 1] * slopes[index] <= 0 ? 0 : (slopes[index - 1] + slopes[index]) / 2;
+  });
+  slopes.forEach((slope, index) => {
+    if (slope === 0) {
+      tangents[index] = 0;
+      tangents[index + 1] = 0;
+      return;
+    }
+    const a = tangents[index] / slope;
+    const b = tangents[index + 1] / slope;
+    const length = a * a + b * b;
+    if (length > 9) {
+      const scale = 3 / Math.sqrt(length);
+      tangents[index] = scale * a * slope;
+      tangents[index + 1] = scale * b * slope;
+    }
+  });
 
-  return {
-    measured: bridge.steps.length > 0,
-    yearMeasured: steps.length > 0,
-    year,
-    heading: range === 'YTD' ? 'How the base changed this year' : `How the base changed in ${year}`,
-    bars: buildBridgeBars(steps, endLabel),
-    reconcileNote: buildReconcileNote(steps, endLabel),
-  };
-}
-
-/** A movement drawer's title: the design's "this year" wording for the running year, the year otherwise. */
-export function buildHealthMetricsMembersMovementDrawerTitle(listType: HealthMetricsMembersMovementListType, year: number): string {
-  const copy = HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY[listType];
-  return year === getYearForRange('YTD') ? copy.title : `${copy.pastTitle} ${year}`;
-}
-
-/** Drawer rows: tier and movement date under the name, and the dues change signed by direction. */
-export function buildHealthMetricsMembersMovementRows(
-  rows: HealthMetricsMembersMovement[],
-  listType: HealthMetricsMembersMovementListType
-): HealthMetricsMembersMovementRowView[] {
-  const { verb } = HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY[listType];
-  const loss = listType === 'downgrade';
-
-  return rows.map((row) => ({
-    accountId: row.accountId,
-    accountName: row.accountName,
-    detail: [row.membershipTier ?? 'No tier recorded', row.movementDate ? `${verb} ${formatIsoDateLabel(row.movementDate)}` : null]
-      .filter((part): part is string => part !== null)
-      .join(' · '),
-    duesLabel: formatSignedUsd(row.duesImpactUsd, listType === 'new' ? 'neutral' : toneFor(listType)),
-    loss,
-  }));
-}
-
-/** Set when the list and its bar disagree; the list still shows every organization it has. */
-export function buildHealthMetricsMembersMovementCountNote(totalRecords: number, barCount: number | null): string | null {
-  if (barCount === null || barCount === totalRecords) return null;
-
-  return `${pluralize(totalRecords, 'organization')} listed, while the bar counts ${barCount.toLocaleString('en-US')}. The list and the bar are counted separately, so they can differ slightly.`;
+  let d = `M${round1(points[0][0])} ${round1(points[0][1])}`;
+  for (let index = 0; index < points.length - 1; index++) {
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[index + 1];
+    const third = (x2 - x1) / 3;
+    d += ` C${round1(x1 + third)} ${round1(y1 + tangents[index] * third)} ${round1(x2 - third)} ${round1(y2 - tangents[index + 1] * third)} ${round1(x2)} ${round1(y2)}`;
+  }
+  return d;
 }
 
 /** Directory rows. A NULL activity count is not tracked for the foundation and renders as a dash, never 0. */
@@ -770,140 +792,6 @@ function formatIsoDate(value: string | null): string {
   return value ? formatIsoDateLabel(value) : '—';
 }
 
-function buildBridgeBars(steps: HealthMetricsMembersBridgeStep[], endLabel: string): HealthMetricsMembersBridgeBarView[] {
-  // Each movement floats from the running total, as a waterfall; the two totals stand on zero.
-  let running = 0;
-  const spans = steps.map((step) => {
-    if (step.movementType === 'start_of_year' || step.movementType === 'today') {
-      const total = Math.max(0, step.memberCount ?? 0);
-      if (step.movementType === 'start_of_year') running = total;
-      return { step, low: 0, high: total };
-    }
-
-    const from = running;
-    running = Math.max(0, running + (step.signedMemberCount ?? 0));
-    return { step, low: Math.min(from, running), high: Math.max(from, running) };
-  });
-
-  // Headroom above the tallest bar leaves space for its labels.
-  const scale = Math.max(1, ...spans.map((span) => span.high)) * 1.12;
-
-  return spans.map(({ step, low, high }) => {
-    const tone = toneFor(step.movementType);
-    const label = step.movementType === 'today' ? endLabel : HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS[step.movementType];
-    const countLabel = formatSignedCount(step.memberCount, tone);
-    const duesLabel = formatSignedUsd(step.revenueImpactUsd, tone);
-    const hasMembers = (step.memberCount ?? 0) > 0;
-    const listType = hasMembers ? (HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES.find((type) => type === step.movementType) ?? null) : null;
-    const opensChurn = hasMembers && step.movementType === 'churned';
-    const action = listType ? ', opens the list' : '';
-
-    return {
-      movementType: step.movementType,
-      label,
-      countLabel,
-      tone,
-      bottomPct: (low / scale) * 100,
-      heightPct: ((high - low) / scale) * 100,
-      listType,
-      opensChurn,
-      memberCount: step.memberCount,
-      ariaLabel: `${label}: ${countLabel} members${duesLabel ? `, ${duesLabel} in dues` : ''}${opensChurn ? ', goes to churn' : action}`,
-    };
-  });
-}
-
-/** Checked, never assumed: a year missing either total or a movement's signed count cannot be checked. */
-function buildReconcileNote(steps: HealthMetricsMembersBridgeStep[], endLabel: string): string | null {
-  const start = steps.find((step) => step.movementType === 'start_of_year')?.memberCount ?? null;
-  const end = steps.find((step) => step.movementType === 'today')?.memberCount ?? null;
-  const movements = steps.filter((step) => step.movementType !== 'start_of_year' && step.movementType !== 'today');
-  if (start === null || end === null || movements.some((step) => step.signedMemberCount === null)) return null;
-
-  const expected = movements.reduce((sum, step) => sum + (step.signedMemberCount ?? 0), start);
-  if (expected === end) return null;
-
-  const endPhrase = endLabel === 'Today' ? 'today' : `at the ${endLabel.toLowerCase()}`;
-  return `These figures don't reconcile: ${formatCount(start)} at the start of the year plus the movements comes to ${formatCount(expected)}, but ${formatCount(end)} are recorded ${endPhrase}. The bars show the recorded figures.`;
-}
-
-function toneFor(movementType: HealthMetricsMembersBridgeStep['movementType']): HealthMetricsMembersBridgeTone {
-  if (movementType === 'new' || movementType === 'upgrade') return 'gain';
-  if (movementType === 'downgrade' || movementType === 'churned') return 'loss';
-  return 'neutral';
-}
-
-/** Counts arrive unsigned, so a movement's sign comes from its direction. */
-function formatSignedCount(value: number | null, tone: HealthMetricsMembersBridgeTone): string {
-  if (value === null) return '—';
-  if (value === 0 || tone === 'neutral') return formatCount(value);
-  return `${tone === 'gain' ? '+' : '−'}${formatCount(value)}`;
-}
-
-/** Empty for an unmeasured figure, so the bar shows only its count. */
-function formatSignedUsd(value: number | null, tone: HealthMetricsMembersBridgeTone): string {
-  if (value === null) return '';
-  const amount = formatCurrency(Math.abs(value));
-  if (value === 0 || tone === 'neutral') return amount;
-  return `${tone === 'gain' ? '+' : '−'}${amount}`;
-}
-
-function summarizeYear(rows: HealthMetricsMembersTierYear[]): HealthMetricsMembersTiersYearSummary {
-  return {
-    measured: rows.length > 0,
-    isPartial: rows.some((row) => row.isPartialYear),
-    members: sumMeasured(rows.map((row) => row.memberCount)),
-    newMembers: sumMeasured(rows.map((row) => row.newMemberCount)),
-    revenue: sumMeasured(rows.map((row) => row.revenueUsd)),
-  };
-}
-
-/** Sum of the measured values; `null` when none is measured, so an unread year never reads as zero. */
-function sumMeasured(values: (number | null)[]): number | null {
-  const measured = values.filter((value): value is number => value !== null);
-  return measured.length === 0 ? null : measured.reduce((sum, value) => sum + value, 0);
-}
-
-/** Tier names by their lowest sort rank across years, then by name, so every year lists tiers in one order. */
-function orderTiers(rows: HealthMetricsMembersTierYear[]): string[] {
-  const rankByTier = new Map<string, number>();
-  for (const row of rows) rankByTier.set(row.tier, Math.min(rankByTier.get(row.tier) ?? Infinity, row.sortRank));
-
-  return [...rankByTier.entries()].sort(([a, rankA], [b, rankB]) => rankA - rankB || a.localeCompare(b, 'en-US')).map(([tier]) => tier);
-}
-
-function buildStat(
-  key: string,
-  label: string,
-  value: string,
-  comparable: boolean,
-  baseline: string,
-  current: number | null,
-  previous: number | null
-): HealthMetricsMembersTiersStatView {
-  const change = comparable && current !== null && previous !== null && previous > 0 ? (current - previous) / previous : null;
-  return { key, label, value, ...formatDelta(change), baseline: change === null ? null : baseline, positive: false };
-}
-
-function formatTierValue(value: number, mode: HealthMetricsMembersTiersMode): string {
-  return mode === 'members' ? formatCount(value) : formatUsd(value);
-}
-
-/** A change as a whole percent (`−25%`); the sign follows the rounded value. */
-function formatDelta(fraction: number | null): Pick<HealthMetricsMembersTiersStatView, 'delta' | 'deltaDirection'> {
-  if (fraction === null) return { delta: HEALTH_METRICS_MEMBERS_NOT_AVAILABLE, deltaDirection: 'neutral' };
-
-  const rounded = Math.round(fraction * 100);
-  if (rounded === 0) return { delta: '0%', deltaDirection: 'neutral' };
-
-  return { delta: `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}%`, deltaDirection: rounded > 0 ? 'up' : 'down' };
-}
-
-function formatShare(revenue: number | null, foundationTotal: number | null): string {
-  if (revenue === null || foundationTotal === null || foundationTotal <= 0) return HEALTH_METRICS_MEMBERS_NOT_AVAILABLE;
-  return `${Math.round((revenue / foundationTotal) * 100)}% of foundation revenue`;
-}
-
 function formatCount(value: number | null): string {
   return value === null ? '—' : Math.round(value).toLocaleString('en-US');
 }
@@ -932,4 +820,60 @@ function formatSignedScore(value: number | null): string {
 function directionOf(value: number | null): 'up' | 'down' | 'neutral' {
   if (value === null || Math.round(value) === 0) return 'neutral';
   return value > 0 ? 'up' : 'down';
+}
+
+/** A tier as the breakdown shows it: its rows merged under one label, with its members per year. */
+interface BreakdownTier {
+  label: string;
+  reserved: HealthMetricsMembersReservedTier | null;
+  rank: number;
+  members: Map<number, number | null>;
+}
+
+/** The tier's name without a trailing "Membership" or "Member", so "Platinum Membership" reads as Platinum. */
+function breakdownTierLabel(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
+  const trimmed = raw.trim();
+  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
+  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
+  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
+}
+
+/** Tiers with a member in any year shown, highest-paying first; rows with the same label merge. */
+function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownTier[] {
+  const byLabel = new Map<string, BreakdownTier>();
+  for (const row of rows) {
+    const { label, reserved } = breakdownTierLabel(row.tier);
+    const tier = byLabel.get(label) ?? { label, reserved, rank: row.sortRank, members: new Map<number, number | null>() };
+    tier.rank = Math.min(tier.rank, row.sortRank);
+    tier.members.set(row.year, sumNullable([tier.members.get(row.year) ?? null, row.memberCount]));
+    byLabel.set(label, tier);
+  }
+
+  return [...byLabel.values()]
+    .filter((tier) => [...tier.members.values()].some((count) => (count ?? 0) > 0))
+    .sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
+}
+
+/** The smallest whole, evenly readable step (e.g. 750 for a 3,000 top) whose four steps reach the top. */
+function chartScaleStep(top: number): number {
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(top, 4) / 4));
+  return (
+    [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8, 10].map((factor) => factor * magnitude).find((step) => Number.isInteger(step) && step * 4 >= top) ?? magnitude * 10
+  );
+}
+
+function sumNullable(values: (number | null)[]): number | null {
+  const measured = values.filter((value): value is number => value !== null);
+  return measured.length === 0 ? null : measured.reduce((sum, value) => sum + value, 0);
+}
+
+/** A year's running totals with gaps carried forward from the month before, starting from none. */
+function fillCumulative(months: (number | null)[]): number[] {
+  let last = 0;
+  return months.map((value) => (last = value ?? last));
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
 }

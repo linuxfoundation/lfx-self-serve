@@ -30,8 +30,7 @@ export class UiKeyboardInputComponent {
   private initKeyClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: the app root font is 14px. The type-role class sets the sans family, which `<kbd>` would not inherit.
-      const base =
-        'inline-flex items-center justify-center whitespace-nowrap rounded-ui-xs bg-ui-background-100 leading-none text-ui-neutral-600 tabular-nums edge';
+      const base = 'inline-flex items-center justify-center whitespace-nowrap rounded-ui-xs bg-ui-background-100 leading-none text-ui-neutral-600 edge';
       const sizes = {
         md: 'h-ui-tiny min-w-[24px] px-[6px] label-14',
         sm: 'h-[20px] min-w-[20px] px-[4px] label-12',

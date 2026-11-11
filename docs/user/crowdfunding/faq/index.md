@@ -4,7 +4,7 @@ description: Frequently asked questions about crowdfunding initiatives and donat
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, faq, initiatives, donations, recurring, refunds]
-last_updated: 2026-10-29
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
@@ -32,6 +32,10 @@ Archiving an initiative stops it from accepting new donations and cancels all ac
 ## How do I cancel a recurring donation I made?
 
 To cancel a recurring donation, go to **Crowdfunding → Donations** in LFX Self Serve and find the donation in the **Recurring Donations** list. Open its detail page and select **Cancel**, or select the **More options** menu (⋯) on its entry and choose **Cancel**. Then select **Cancel Donation** to confirm. Cancellation stops all future charges immediately. Past charges are not refunded, and the subscription stays in the list marked **Canceled**. See [Manage Recurring Donations](../manage-recurring-donations/) for full steps.
+
+## Can I hide my name on a donation?
+
+Yes. Choose to donate anonymously when you donate on LFX Crowdfunding, or change it later in LFX Self Serve: go to **Crowdfunding → Donations**, select the **More options** menu (⋯) on the donation or recurring donation, and choose **Hide my name** or **Show my name**. An anonymous donation is still listed with its amount, but your name and email show as **Anonymous** to everyone else, including the initiative's team and the organization you donated on behalf of. On a recurring donation the setting applies to every charge. See [View Donations](../view-donations/#hide-or-show-your-name).
 
 ## What if a charge on my recurring donation can't be processed?
 

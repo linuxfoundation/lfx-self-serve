@@ -10,8 +10,9 @@
     icon="fa-light fa-bars-filter"
     popoverLabel="Filters"
     popoverPadding="none"
+    popoverAlign="end"
     [popover]="panel"
-    [popoverWidth]="344"
+    [popoverWidth]="panelWidth()"
     [ariaLabel]="buttonLabel()"
     (click)="resetDraft()"
     data-testid="meetings-home-filters-button">
@@ -23,7 +24,7 @@
 }
 
 <ng-template #panel let-close="close">
-  <!-- Exact px design values: 344px panel, 6px body padding, 40px switch rows; rem undershoots at the 14px root. -->
+  <!-- Exact px design values: 344px panel (full width on phones), 6px body padding, 40px switch rows; rem undershoots at the 14px root. -->
   <div class="flex max-h-[min(560px,calc(100vh-220px))] flex-col" data-testid="meetings-home-filters-panel">
     <div class="flex min-h-0 flex-col gap-[2px] overflow-y-auto p-[6px]">
       @if (showFoundation()) {
@@ -44,14 +45,20 @@
       @if (showProject()) {
         <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
           <lfx-ui-select
-            label="Project"
+            label="Foundation/Project"
             size="small"
             [value]="draft().project ?? ''"
             (valueChange)="setProject($event)"
+            (openChange)="projectQuery.set('')"
             data-testid="meetings-home-filters-project">
-            <lfx-ui-option value="" label="All projects" />
-            @for (option of projectOptions(); track option.value) {
+            <lfx-ui-search-input lfxUiSelectHeader ariaLabel="Search projects" [(value)]="projectQuery" data-testid="meetings-home-filters-project-search" />
+            @if (!projectQuery()) {
+              <lfx-ui-option value="" label="All projects" />
+            }
+            @for (option of projectMatches(); track option.value) {
               <lfx-ui-option [value]="option.value" [label]="option.label" />
+            } @empty {
+              <p lfxUiSelectEmpty>No projects match “{{ projectQuery() }}”.</p>
             }
           </lfx-ui-select>
         </div>
@@ -64,7 +71,7 @@
           (valueChange)="setMeetingType($event)"
           data-testid="meetings-home-filters-type">
           <lfx-ui-option value="" label="All types" />
-          @for (option of typeOptions(); track option.value) {
+          @for (option of typeOptions; track option.value) {
             <lfx-ui-option [value]="option.value" [label]="option.label" />
           }
         </lfx-ui-select>
@@ -81,6 +88,7 @@
         <div class="flex min-h-[40px] items-center px-[10px]">
           <lfx-ui-toggle
             label="Organized by me"
+            labelPosition="start"
             [checked]="draft().organizedByMe"
             (checkedChange)="setOrganizedByMe($event)"
             data-testid="meetings-home-filters-organized" />
@@ -88,6 +96,7 @@
         <div class="flex min-h-[40px] items-center px-[10px]">
           <lfx-ui-toggle
             label="Hide declined meeting series"
+            labelPosition="start"
             [checked]="draft().hideDeclined"
             (checkedChange)="setHideDeclined($event)"
             data-testid="meetings-home-filters-hide-declined" />

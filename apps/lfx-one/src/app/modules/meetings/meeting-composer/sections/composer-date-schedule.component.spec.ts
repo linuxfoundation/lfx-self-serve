@@ -16,6 +16,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from '../meeting-composer-form.service';
@@ -592,5 +593,102 @@ describe('ComposerDateScheduleComponent — chips that cannot be cleared', () =>
     clickChip('composer-early-join-chips', `${retained} min`);
 
     expect(control('early_join_time_minutes')?.value).toBe(retained);
+  });
+});
+
+/**
+ * Covers Start date hydration and minDate() for an edited recurring series (GH-4944). The real
+ * bug: editing the entire series showed a blank Start date with every day in the picker greyed
+ * out, because the form hydrated from the series' original (and often long-past) start_time
+ * instead of the next upcoming occurrence -- unlike PCC, which shows the next occurrence. The
+ * fix prefers meeting.next_occurrence_start_time (see getUpcomingMeetingStartTime()), falling
+ * back to start_time once no future occurrence remains; minDate()'s past-date allowance (mirroring
+ * editModeDateTimeValidator()'s existing allowance) covers exactly that fallback case.
+ */
+describe('ComposerDateScheduleComponent — Start date hydration and minDate (GH-4944)', () => {
+  let fixture: ComponentFixture<ComposerDateScheduleComponent>;
+  let formService: MeetingComposerFormService;
+  let getMeeting: ReturnType<typeof vi.fn>;
+
+  const mountEditing = async (meeting: Partial<Meeting>): Promise<void> => {
+    getMeeting = vi.fn().mockReturnValue(
+      of({
+        id: 'meeting-1',
+        title: 'Weekly sync',
+        organizer: true,
+        timezone: 'UTC',
+        duration: 30,
+        ...meeting,
+      } as Meeting)
+    );
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting,
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(ComposerDateScheduleComponent, { set: { template: '', imports: [] } });
+
+    formService = TestBed.inject(MeetingComposerFormService);
+    formService.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    fixture = TestBed.createComponent(ComposerDateScheduleComponent);
+    fixture.componentRef.setInput('form', formService.form());
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('uses the next upcoming occurrence, not the series origin, when editing the entire series', async () => {
+    await mountEditing({
+      start_time: '2025-05-27T16:45:00Z', // the series' original, long-past start
+      next_occurrence_start_time: '2026-11-11T20:00:00Z', // the next upcoming Wednesday
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    const startDate = formService.form().get('startDate')?.value as Date;
+    expect(startDate.getFullYear()).toBe(2026);
+    expect(startDate.getMonth()).toBe(10); // November
+    expect(startDate.getDate()).toBe(11);
+  });
+
+  it('falls back to the series origin once no future occurrence remains', async () => {
+    await mountEditing({ start_time: '2025-05-27T16:45:00Z', next_occurrence_start_time: undefined });
+
+    const startDate = formService.form().get('startDate')?.value as Date;
+    expect(startDate.getFullYear()).toBe(2025);
+    expect(startDate.getMonth()).toBe(4); // May
+    expect(startDate.getDate()).toBe(27);
+  });
+
+  it('lowers minDate to the edited series’ own start date when it already started in the past', async () => {
+    // matches the reporter's case: edited in November, with no next occurrence to prefer instead.
+    await mountEditing({ start_time: '2026-07-15T15:00:00Z', next_occurrence_start_time: undefined });
+
+    const minDate = (fixture.componentInstance as any).minDate();
+    expect(minDate.getFullYear()).toBe(2026);
+    expect(minDate.getMonth()).toBe(6);
+    expect(minDate.getDate()).toBe(15);
+  });
+
+  it('keeps minDate at yesterday when the edited meeting starts in the future', async () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await mountEditing({ start_time: future.toISOString(), next_occurrence_start_time: undefined });
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+
+    expect((fixture.componentInstance as any).minDate().getTime()).toBe(yesterday.getTime());
   });
 });

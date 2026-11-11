@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-04
+last_updated: 2026-11-10
 intercom_collection: Committees
 ---
 
@@ -50,7 +50,7 @@ To change only the name, type, parent, join mode, features, or chat channel, you
 ## Add or remove members
 
 1. Open the group and go to the **Members** tab.
-2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. For managers, **Add Member** followed by **Import Members** appears on the right of the member filter pills, above search and dropdown filters. On narrower screens, the controls wrap as needed. Members who can only send invitations see **Invite Someone** instead.
+2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. If the group has voting, you can also set the new member's **Voting status** when adding them. Voting status dates can still be set from **Edit**. (This applies when you add members directly, not when you send invitations.) For managers, **Add Member** followed by **Import Members** appears on the right of the member filter pills, above search and dropdown filters. On narrower screens, the controls wrap as needed. Members who can only send invitations see **Invite Someone** instead.
 3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
 
 The roster shows **Name**, **Email** (hidden from visitors), **Organization**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
@@ -59,7 +59,7 @@ The Members tab loads the complete roster before enabling **Add Member** and **I
 
 ### Pending invitations
 
-When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog.
+When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and organization from the original.
 
 ### Pending applications
 
@@ -83,7 +83,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.
 6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. To fix a value, correct the file and choose it again; you can also remove a row from the preview. The import cannot start while any row is invalid.
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
-8. Select **Add _N_ members**.
+8. Select **Add _N_ members**. Rows are added in batches, one batch at a time. While the import runs, each row shows **Not yet submitted**, **Adding…**, or **Waiting to resume** until it settles. A retry run preserves **Outcome unknown** for an unconfirmed earlier attempt until that row is sent again.
 
 ### Import while creating or editing a group
 
@@ -110,9 +110,12 @@ People already in the group or already staged in the form are skipped. Imports u
 ### Members-tab results and retry
 
 - People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
-- After the import, each row shows **Added**, **Skipped**, or **Failed** with the reason. Select **Retry _N_ failed** to send only the failed rows again — added and skipped rows are never resubmitted.
-- If your session expires, you lose permission to manage the group, or too many requests are sent, the import stops and rows that were not sent are marked **Failed** so you can retry them later. For too many requests, wait a minute before retrying.
-- If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, missing-invitation, and rate-limit errors during cleanup also stop new member requests, but never resubmit the members already added.
+- After the import, each row shows **Added**, **Skipped**, **Failed**, **Outcome unknown**, or **Not yet submitted** with the reason. Select **Retry _N_** to send the **Not yet submitted** rows, unresolved attempts and any failed rows that can still succeed. Added and skipped rows are never resubmitted, and rows the service rejected as invalid are not retried — fix them in the file and import it again.
+- If the service asks the import to slow down, or a batch hits a temporary problem, the import pauses and resumes on its own, up to 3 times per run. The dialog shows when it will resume. A server cooldown longer than two minutes stops automatic recovery rather than retrying early; the dialog shows the earliest retry time. **Retry** stays unavailable until a known cooldown ends, even after **Stop import**. The cooldown notice disappears and **Retry** becomes available when the wait ends. Once the pause budget is exhausted, review the outcomes before retrying.
+- Select **Stop import** during a pause to end the import. Rows that were never sent stay **Not yet submitted**. A submitted row whose response was lost stays **Outcome unknown**, not Failed or Added; close the dialog to refresh and review the roster before retrying.
+- When recovery finds an existing membership, the row is **Skipped**, not proof that this import added the person or applied the CSV details. Review the existing member and any pending invitation; skipped rows do not trigger invitation cleanup.
+- If your session expires, you lose permission to manage the group, or the group can no longer be found, the import stops with the next step to take, and rows that were not sent are marked **Not yet submitted** so you can retry them later.
+- If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, and missing-invitation errors during cleanup also stop new member requests, but never resubmit the members already added. A cleanup that is rate limited only adds the warning and does not stop the import.
 - Select **Close** to return to the roster, which refreshes to show the new members. Newly added members can take a few moments to appear.
 
 ## Delete a group

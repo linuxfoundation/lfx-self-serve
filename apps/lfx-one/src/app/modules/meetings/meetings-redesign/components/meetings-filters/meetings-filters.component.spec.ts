@@ -1,11 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MEETINGS_HOME_DEFAULT_FILTERS } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, MeetingsHomeFilters } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { By } from '@angular/platform-browser';
+import { of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsFiltersComponent } from './meetings-filters.component';
@@ -42,6 +46,7 @@ describe('MeetingsFiltersComponent', () => {
   let emitted: MeetingsHomeFilters[];
   let outside: HTMLButtonElement;
   const persona = { hasBoardRole: signal(true), hasProjectRole: signal(true) };
+  let phone: boolean;
 
   const byTestId = (testId: string): HTMLElement | null => document.querySelector(`[data-testid="${testId}"]`);
   const button = (testId: string): HTMLButtonElement => byTestId(testId)?.querySelector('button') as HTMLButtonElement;
@@ -94,13 +99,40 @@ describe('MeetingsFiltersComponent', () => {
   beforeEach(() => {
     persona.hasBoardRole.set(true);
     persona.hasProjectRole.set(true);
-    TestBed.configureTestingModule({ providers: [{ provide: PersonaService, useValue: persona }] });
+    phone = false;
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: PersonaService, useValue: persona },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: phone, breakpoints: {} }) } },
+      ],
+    });
   });
 
   afterEach(() => {
     fixture.destroy();
     outside.remove();
     vi.restoreAllMocks();
+  });
+
+  describe('panel width', () => {
+    const popoverWidth = (): number | null => fixture.debugElement.query(By.directive(UiButtonComponent)).componentInstance.popoverWidth();
+
+    it('is 344px above the phone breakpoint', async () => {
+      await render();
+      await open();
+
+      expect(popoverWidth()).toBe(344);
+    });
+
+    it('spans the control on phones', async () => {
+      phone = true;
+      await render();
+      await settle();
+      vi.spyOn(fixture.nativeElement as HTMLElement, 'offsetWidth', 'get').mockReturnValue(343);
+      await open();
+
+      expect(popoverWidth()).toBe(343);
+    });
   });
 
   it('shows the applied-filter count on the button', async () => {
@@ -117,12 +149,12 @@ describe('MeetingsFiltersComponent', () => {
     expect(button('meetings-home-filters-button').getAttribute('aria-label')).toBeNull();
   });
 
-  it('offers Project, Meeting type, RSVP and both switches on Upcoming, with options from the rows', async () => {
+  it('offers Project from the rows, every meeting type, RSVP and both switches on Upcoming', async () => {
     await render();
     await open();
 
     expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'CNCF', 'OpenSSF']);
-    expect(await optionLabels('meetings-home-filters-type')).toEqual(['All types', 'Board', 'Technical']);
+    expect(await optionLabels('meetings-home-filters-type')).toEqual(['All types', 'Board', 'Maintainers', 'Marketing', 'Technical', 'Legal', 'Other']);
     expect(await optionLabels('meetings-home-filters-rsvp')).toEqual(['Any RSVP', 'Needs response', 'Going', 'Not going', 'Maybe']);
     expect(byTestId('meetings-home-filters-organized')?.textContent).toContain('Organized by me');
     expect(byTestId('meetings-home-filters-hide-declined')?.textContent).toContain('Hide declined meeting series');
@@ -151,13 +183,52 @@ describe('MeetingsFiltersComponent', () => {
       await open();
 
       const fields = Array.from(document.querySelectorAll('[data-testid^="meetings-home-filters-"][label]')).map((field) => field.getAttribute('label'));
-      expect(fields.slice(0, 2)).toEqual(expected ? ['Foundation', 'Project'] : ['Project', 'Meeting type']);
+      expect(fields.slice(0, 2)).toEqual(expected ? ['Foundation', 'Foundation/Project'] : ['Foundation/Project', 'Meeting type']);
       if (expected) expect(await optionLabels('meetings-home-filters-foundation')).toEqual(expected);
     });
 
     it('lists only non-foundation projects in Project', async () => {
       await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
       await open();
+
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes', 'Sigstore']);
+    });
+
+    it('lists foundations in Foundation/Project when Foundation is hidden', async () => {
+      persona.hasBoardRole.set(false);
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
+      await open();
+
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'CNCF', 'Envoy', 'Kubernetes', 'OpenSSF', 'Sigstore']);
+
+      await pick('meetings-home-filters-project', 'CNCF');
+      button('meetings-home-filters-apply').click();
+      await settle();
+
+      expect(emitted).toEqual([{ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'f-1' }]);
+    });
+
+    it('narrows Project to the searched names and clears the search on close', async () => {
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
+      await open();
+      (byTestId('meetings-home-filters-project')?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
+      await settle();
+      const search = byTestId('meetings-home-filters-project-search')?.querySelector('input') as HTMLInputElement;
+      search.value = 'ku';
+      search.dispatchEvent(new Event('input'));
+      await settle();
+
+      expect(Array.from(document.querySelectorAll('[data-testid="ui-option"]')).map((option) => option.textContent?.trim())).toEqual(['Kubernetes']);
+
+      search.value = 'zzz';
+      search.dispatchEvent(new Event('input'));
+      await settle();
+
+      expect(document.querySelectorAll('[data-testid="ui-option"]')).toHaveLength(0);
+      expect(byTestId('ui-select-empty')?.textContent).toContain('No projects match');
+
+      (byTestId('meetings-home-filters-project')?.querySelector('[data-testid="ui-select-trigger"]') as HTMLElement).click();
+      await settle();
 
       expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes', 'Sigstore']);
     });

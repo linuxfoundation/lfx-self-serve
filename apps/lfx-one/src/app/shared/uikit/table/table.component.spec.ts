@@ -85,10 +85,10 @@ describe('UiTableComponent', () => {
     expect(cells[0].className).toContain('h-ui-row');
   });
 
-  it('right-aligns end columns with tabular figures and mutes muted columns', () => {
+  it('right-aligns end columns and mutes muted columns', () => {
     const cells = Array.from(bodyRows()[0].querySelectorAll('td'));
     expect(cells[2].className).toContain('text-right');
-    expect(cells[2].className).toContain('tabular-nums');
+    expect(cells[2].className).not.toContain('tabular-nums');
     expect(headers()[2].className).toContain('text-right');
     expect(cells[1].className).toContain('text-ui-neutral-600');
     expect(cells[0].className).toContain('text-ui-neutral-900');

@@ -119,7 +119,6 @@ function listOptions(overrides: Partial<GetOrgEventsOptions> = {}): GetOrgEvents
     offset: 0,
     sortField: 'EVENT_START_DATE',
     sortOrder: 'ASC',
-    attribution: 'company_email',
     participation: 'registered',
     eventScope: 'activity',
     foundation: '',
@@ -142,11 +141,11 @@ interface EventFixture {
   foundationId?: string;
   foundationName?: string;
   account?: string;
-  registered?: { companyEmail?: number; account?: number; all?: number };
-  attended?: { companyEmail?: number; account?: number; all?: number };
+  registered?: { verified?: number };
+  attended?: { verified?: number };
   /** Distinct people who registered or attended; defaults to the larger of the registered and attended counts. */
-  registeredOrAttended?: { companyEmail?: number; account?: number; all?: number };
-  footprint?: { companyEmail?: boolean; account?: boolean; all?: boolean };
+  registeredOrAttended?: { verified?: number };
+  footprint?: { verified?: boolean };
 }
 
 function addEvent(fixture: EventFixture = {}): string {
@@ -172,25 +171,12 @@ function addEvent(fixture: EventFixture = {}): string {
     ORG_SPEAKER_ACCEPTED_COUNT: 0,
     ORG_SPEAKER_SUBMITTED_COUNT: 0,
     IS_ORG_SPONSOR: 0,
-    REGISTERED_COUNT_COMPANY_EMAIL: fixture.registered?.companyEmail ?? 0,
-    REGISTERED_COUNT_ACCOUNT: fixture.registered?.account ?? 0,
-    REGISTERED_COUNT_ALL: fixture.registered?.all ?? 0,
-    ATTENDED_COUNT_COMPANY_EMAIL: fixture.attended?.companyEmail ?? 0,
-    ATTENDED_COUNT_ACCOUNT: fixture.attended?.account ?? 0,
-    ATTENDED_COUNT_ALL: fixture.attended?.all ?? 0,
-    ALL_COUNT_COMPANY_EMAIL: fixture.registeredOrAttended?.companyEmail ?? Math.max(fixture.registered?.companyEmail ?? 0, fixture.attended?.companyEmail ?? 0),
-    ALL_COUNT_ACCOUNT: fixture.registeredOrAttended?.account ?? Math.max(fixture.registered?.account ?? 0, fixture.attended?.account ?? 0),
-    ALL_COUNT_ALL: fixture.registeredOrAttended?.all ?? Math.max(fixture.registered?.all ?? 0, fixture.attended?.all ?? 0),
-    HAS_FOOTPRINT_COMPANY_EMAIL: fixture.footprint?.companyEmail === false ? 0 : 1,
-    HAS_FOOTPRINT_ACCOUNT: fixture.footprint?.account === false ? 0 : 1,
-    HAS_FOOTPRINT_ALL: fixture.footprint?.all === false ? 0 : 1,
+    REGISTERED_COUNT_VERIFIED: fixture.registered?.verified ?? 0,
+    ATTENDED_COUNT_VERIFIED: fixture.attended?.verified ?? 0,
+    ALL_COUNT_VERIFIED: fixture.registeredOrAttended?.verified ?? Math.max(fixture.registered?.verified ?? 0, fixture.attended?.verified ?? 0),
+    HAS_FOOTPRINT_VERIFIED: fixture.footprint?.verified === false ? 0 : 1,
   });
   return eventId;
-}
-
-/** The per-account coverage flag the participation summary carries on every row. */
-function setCoverage(hasCoverage: boolean, account = ACCOUNT): void {
-  insert('ORG_EVENT_PARTICIPATION_SUMMARY', { ACCOUNT_ID: account, HAS_COMPANY_EMAIL_COVERAGE: hasCoverage ? 1 : 0 });
 }
 
 interface ParticipantFixture {
@@ -199,28 +185,19 @@ interface ParticipantFixture {
   name?: string | null;
   title?: string | null;
   companyEmail?: boolean;
-  accountCredited?: boolean;
   roster?: boolean;
   registered?: boolean;
   attended?: boolean;
+  /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the drawer must ignore it. */
   listable?: boolean;
 }
 
-/** The nine row-level conjunction flags dbt computes: (registered | attended | registered or attended) AND (company email | account | any relation). */
-function countsFlags(fixture: {
-  companyEmail?: boolean;
-  accountCredited?: boolean;
-  roster?: boolean;
-  registered?: boolean;
-  attended?: boolean;
-}): Record<string, number> {
+/** The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended). */
+function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; registered?: boolean; attended?: boolean }): Record<string, number> {
   const registered = fixture.registered !== false;
   const attended = fixture.attended === true;
-  const credited = {
-    COMPANY_EMAIL: fixture.companyEmail !== false,
-    ACCOUNT: fixture.accountCredited === true,
-    ALL: fixture.companyEmail !== false || fixture.accountCredited === true || fixture.roster === true,
-  };
+  const verified = fixture.companyEmail !== false || fixture.roster === true;
+  const credited = { VERIFIED: verified };
   return Object.fromEntries(
     Object.entries(credited).flatMap(([suffix, flag]) => [
       [`IS_COUNTED_REGISTERED_${suffix}`, registered && flag ? 1 : 0],
@@ -277,19 +254,13 @@ beforeEach(() => {
       EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, IS_PAST_EVENT INTEGER,
       EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT, EVENT_REGISTRATION_URL TEXT,
       EVENT_REGISTRATIONS_GOAL INTEGER, ORG_SPEAKER_ACCEPTED_COUNT INTEGER, ORG_SPEAKER_SUBMITTED_COUNT INTEGER, IS_ORG_SPONSOR INTEGER,
-      REGISTERED_COUNT_COMPANY_EMAIL INTEGER, REGISTERED_COUNT_ACCOUNT INTEGER, REGISTERED_COUNT_ALL INTEGER,
-      ATTENDED_COUNT_COMPANY_EMAIL INTEGER, ATTENDED_COUNT_ACCOUNT INTEGER, ATTENDED_COUNT_ALL INTEGER,
-      ALL_COUNT_COMPANY_EMAIL INTEGER, ALL_COUNT_ACCOUNT INTEGER, ALL_COUNT_ALL INTEGER,
-      HAS_FOOTPRINT_COMPANY_EMAIL INTEGER, HAS_FOOTPRINT_ACCOUNT INTEGER, HAS_FOOTPRINT_ALL INTEGER
+      REGISTERED_COUNT_VERIFIED INTEGER, ATTENDED_COUNT_VERIFIED INTEGER, ALL_COUNT_VERIFIED INTEGER, HAS_FOOTPRINT_VERIFIED INTEGER
     )`
   );
-  database.exec('CREATE TABLE ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID TEXT, HAS_COMPANY_EMAIL_COVERAGE INTEGER)');
   database.exec(
     `CREATE TABLE ORG_EVENT_PARTICIPATION (
       ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
-      IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_REGISTERED_ACCOUNT INTEGER, IS_COUNTED_REGISTERED_ALL INTEGER,
-      IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_ACCOUNT INTEGER, IS_COUNTED_ATTENDED_ALL INTEGER,
-      IS_COUNTED_ALL_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_ACCOUNT INTEGER, IS_COUNTED_ALL_ALL INTEGER,
+      IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
       IS_LISTABLE INTEGER
     )`
   );
@@ -331,43 +302,34 @@ afterEach(() => {
 
 describe('OrgLensEventsService list — option columns', () => {
   beforeEach(() => {
-    setCoverage(true);
     addEvent({
-      registered: { companyEmail: 3, account: 5, all: 8 },
-      attended: { companyEmail: 1, account: 2, all: 4 },
-      registeredOrAttended: { companyEmail: 4, account: 6, all: 9 },
+      registered: { verified: 3 },
+      attended: { verified: 1 },
+      registeredOrAttended: { verified: 4 },
       isPast: true,
     });
   });
 
   it.each([
-    ['company_email', 'registered', 3],
-    ['account', 'registered', 5],
-    ['all', 'registered', 8],
-    ['company_email', 'attended', 1],
-    ['account', 'attended', 2],
-    ['all', 'attended', 4],
-    ['company_email', 'all', 4],
-    ['account', 'all', 6],
-    ['all', 'all', 9],
-  ] as const)('serves the %s / %s count on the Past tab', async (attribution, participation, expected) => {
-    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, attribution, participation }));
+    ['registered', 3],
+    ['attended', 1],
+    ['all', 4],
+  ] as const)('serves the %s count on the Past tab', async (participation, expected) => {
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, participation }));
 
-    expect(list.servedAttribution).toBe(attribution);
     expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([expected]);
   });
 
   it('keeps one bind per placeholder in every query it builds', async () => {
     await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, foundation: 'foundation-one', searchQuery: 'summit', status: 'registered' }));
     await service.getOrgEventsSummary(REQ, ACCOUNT, {
-      attribution: 'all',
       participation: 'registered',
       scope: 'all',
       foundation: 'foundation-one',
       range: '90d',
     });
-    await service.getOrgEventFoundations(REQ, ACCOUNT, { attribution: 'account', scope: 'activity' });
-    await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { attribution: 'all', participation: 'registered', searchQuery: 'ada' });
+    await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'activity' });
+    await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { participation: 'registered', searchQuery: 'ada' });
     await service.getEventSpeakers(REQ, ACCOUNT, 'event-one', 'ada');
 
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
@@ -377,12 +339,8 @@ describe('OrgLensEventsService list — option columns', () => {
 });
 
 describe('OrgLensEventsService list — upcoming and past', () => {
-  beforeEach(() => {
-    setCoverage(true);
-  });
-
   it('counts registrations on the Upcoming tab whatever participation is picked', async () => {
-    addEvent({ registered: { companyEmail: 4 }, attended: { companyEmail: 0 } });
+    addEvent({ registered: { verified: 4 }, attended: { verified: 0 } });
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, participation: 'attended' }));
 
@@ -390,7 +348,7 @@ describe('OrgLensEventsService list — upcoming and past', () => {
   });
 
   it('counts registrations on the Upcoming tab when Count is All', async () => {
-    addEvent({ registered: { companyEmail: 4 }, registeredOrAttended: { companyEmail: 7 } });
+    addEvent({ registered: { verified: 4 }, registeredOrAttended: { verified: 7 } });
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, participation: 'all' }));
 
@@ -398,7 +356,7 @@ describe('OrgLensEventsService list — upcoming and past', () => {
   });
 
   it('ignores the range on the Upcoming tab', async () => {
-    addEvent({ eventId: 'far-future', daysFromToday: 900, registered: { companyEmail: 1 } });
+    addEvent({ eventId: 'far-future', daysFromToday: 900, registered: { verified: 1 } });
 
     const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, range: '30d' }));
 
@@ -406,9 +364,9 @@ describe('OrgLensEventsService list — upcoming and past', () => {
   });
 
   it('windows the Past tab by the range and leaves all time open', async () => {
-    addEvent({ eventId: 'recent', daysFromToday: -10, registered: { companyEmail: 1 } });
-    addEvent({ eventId: 'old', daysFromToday: -200, registered: { companyEmail: 1 } });
-    addEvent({ eventId: 'ancient', daysFromToday: -900, registered: { companyEmail: 1 } });
+    addEvent({ eventId: 'recent', daysFromToday: -10, registered: { verified: 1 } });
+    addEvent({ eventId: 'old', daysFromToday: -200, registered: { verified: 1 } });
+    addEvent({ eventId: 'ancient', daysFromToday: -900, registered: { verified: 1 } });
 
     const past = (range: GetOrgEventsOptions['range']): Promise<string[]> =>
       service
@@ -421,9 +379,9 @@ describe('OrgLensEventsService list — upcoming and past', () => {
     expect(await past('all')).toEqual(['ancient', 'old', 'recent']);
   });
 
-  it('lists only events with activity under the served attribution by default, and the involvement-only rows under eventScope=all', async () => {
-    addEvent({ eventId: 'mine', registered: { companyEmail: 2 } });
-    addEvent({ eventId: 'others', footprint: { companyEmail: false } });
+  it('lists only events with activity by default, and the involvement-only rows under eventScope=all', async () => {
+    addEvent({ eventId: 'mine', registered: { verified: 2 } });
+    addEvent({ eventId: 'others', footprint: { verified: false } });
 
     const activity = await service.getOrgEvents(REQ, ACCOUNT, listOptions());
     const all = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ eventScope: 'all', sortField: 'EVENT_NAME' }));
@@ -452,18 +410,8 @@ describe('OrgLensEventsService list — upcoming and past', () => {
     expect(list.data.map((event) => event.eventId)).toEqual(['two']);
   });
 
-  it('keeps status=registered in step with the displayed count of the picked option', async () => {
-    addEvent({ eventId: 'registered-by-account', registered: { companyEmail: 0, account: 3 } });
-
-    const byEmail = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ status: 'registered' }));
-    const byAccount = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ status: 'registered', attribution: 'account' }));
-
-    expect(byEmail.data).toEqual([]);
-    expect(byAccount.data.map((event) => event.eventId)).toEqual(['registered-by-account']);
-  });
-
   it('keeps status=registered on registrations whatever Count shows, so an event with no attendance is not hidden', async () => {
-    addEvent({ eventId: 'registered-only', isPast: true, registered: { companyEmail: 2 }, attended: { companyEmail: 0 } });
+    addEvent({ eventId: 'registered-only', isPast: true, registered: { verified: 2 }, attended: { verified: 0 } });
 
     const attendedView = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, status: 'registered', participation: 'attended' }));
 
@@ -471,7 +419,7 @@ describe('OrgLensEventsService list — upcoming and past', () => {
   });
 
   it('keeps status=registered on registrations when Count is All', async () => {
-    addEvent({ eventId: 'attended-only', isPast: true, registered: { companyEmail: 0 }, registeredOrAttended: { companyEmail: 2 } });
+    addEvent({ eventId: 'attended-only', isPast: true, registered: { verified: 0 }, registeredOrAttended: { verified: 2 } });
 
     const allView = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, status: 'registered', participation: 'all' }));
 
@@ -479,69 +427,23 @@ describe('OrgLensEventsService list — upcoming and past', () => {
   });
 
   it("never reads another account's events", async () => {
-    addEvent({ account: OTHER_ACCOUNT, registered: { companyEmail: 9 } });
+    addEvent({ account: OTHER_ACCOUNT, registered: { verified: 9 } });
 
     expect((await service.getOrgEvents(REQ, ACCOUNT, listOptions())).data).toEqual([]);
   });
 });
 
-describe('OrgLensEventsService coverage fallback', () => {
-  it('serves the account attribution when the company has no company-email data', async () => {
-    setCoverage(false);
-    addEvent({ isPast: true, registered: { companyEmail: 0, account: 6 } });
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true }));
-
-    expect(list.servedAttribution).toBe('account');
-    expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([6]);
-  });
-
-  it('makes no coverage claim, and serves the pick as asked, when the account has no summary rows at all', async () => {
-    addEvent({ isPast: true, registered: { account: 2 } });
-
-    expect((await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true }))).servedAttribution).toBe('company_email');
-  });
-
-  it('does not fall back for an explicit account or all pick', async () => {
-    setCoverage(false);
-    addEvent({ isPast: true, registered: { all: 7 } });
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, attribution: 'all' }));
-
-    expect(list.servedAttribution).toBe('all');
-    expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([7]);
-  });
-
-  it('reports the served attribution on the summary and the drawer too', async () => {
-    setCoverage(false);
-    addEvent({ isPast: true });
-
-    const summary = await service.getOrgEventsSummary(REQ, ACCOUNT, {
-      attribution: 'company_email',
-      participation: 'registered',
-      scope: 'activity',
-      foundation: '',
-      range: '730d',
-    });
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { attribution: 'company_email', participation: 'registered' });
-
-    expect(summary.servedAttribution).toBe('account');
-    expect(drawer.servedAttribution).toBe('account');
-  });
-});
-
 describe('OrgLensEventsService summary tiles', () => {
-  const filters = { attribution: 'company_email', participation: 'registered', scope: 'activity', foundation: '', range: '730d' } as const;
+  const filters = { participation: 'registered', scope: 'activity', foundation: '', range: '730d' } as const;
 
   beforeEach(() => {
-    setCoverage(true);
     addEvent({ eventId: 'upcoming', daysFromToday: 20 });
     addEvent({ eventId: 'recent', daysFromToday: -10 });
     addEvent({ eventId: 'old', daysFromToday: -200 });
     addEvent({
       eventId: 'involvement-only',
       daysFromToday: -5,
-      footprint: { companyEmail: false },
+      footprint: { verified: false },
       foundationId: 'foundation-two',
       foundationName: 'Foundation Two',
     });
@@ -567,19 +469,17 @@ describe('OrgLensEventsService summary tiles', () => {
       totalEvents: 0,
       pastEvents: 0,
       upcomingEvents: 0,
-      servedAttribution: 'company_email',
     });
   });
 });
 
 describe('OrgLensEventsService foundations', () => {
   it('lists the foundations that have events under the picked scope', async () => {
-    setCoverage(true);
     addEvent({ eventId: 'mine', foundationId: 'foundation-one', foundationName: 'Foundation One' });
-    addEvent({ eventId: 'others', foundationId: 'foundation-two', foundationName: 'Foundation Two', footprint: { companyEmail: false } });
+    addEvent({ eventId: 'others', foundationId: 'foundation-two', foundationName: 'Foundation Two', footprint: { verified: false } });
 
-    const activity = await service.getOrgEventFoundations(REQ, ACCOUNT, { attribution: 'company_email', scope: 'activity' });
-    const all = await service.getOrgEventFoundations(REQ, ACCOUNT, { attribution: 'company_email', scope: 'all' });
+    const activity = await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'activity' });
+    const all = await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'all' });
 
     expect(activity.data).toEqual([{ id: 'foundation-one', name: 'Foundation One' }]);
     expect(all.data).toEqual([
@@ -589,50 +489,39 @@ describe('OrgLensEventsService foundations', () => {
   });
 
   it('lists one option per foundation when the name is stored padded or blank on some rows', async () => {
-    setCoverage(true);
     addEvent({ eventId: 'plain', foundationId: 'foundation-one', foundationName: 'Foundation One' });
     addEvent({ eventId: 'padded', foundationId: 'foundation-one', foundationName: ' \tFoundation One\u00A0\n' });
     addEvent({ eventId: 'blank', foundationId: 'foundation-blank', foundationName: ' \t\u00A0\n' });
 
-    const { data } = await service.getOrgEventFoundations(REQ, ACCOUNT, { attribution: 'company_email', scope: 'all' });
+    const { data } = await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'all' });
 
     expect(data).toEqual([{ id: 'foundation-one', name: 'Foundation One' }]);
   });
 });
 
 describe('OrgLensEventsService attendees drawer', () => {
-  const options = { attribution: 'company_email', participation: 'registered' } as const;
+  const options = { participation: 'registered' } as const;
 
   beforeEach(() => {
-    setCoverage(true);
-    addEvent({ isPast: true, registered: { companyEmail: 4, account: 6, all: 7 }, attended: { companyEmail: 2, account: 3, all: 4 } });
+    addEvent({ isPast: true, registered: { verified: 4 }, attended: { verified: 2 } });
   });
 
-  it('lists only the people who may be named and counts the rest as not listed', async () => {
-    addParticipant({ ref: 1, name: 'Ada Lovelace' });
-    addParticipant({ ref: 2, name: 'Grace Hopper' });
-    addParticipant({ ref: 3, name: null, listable: false });
-    addParticipant({ ref: 4, name: null, listable: false });
+  it('lists everyone the option credits, whatever the legacy listable flag says, by name; titles only for roster employees (lfx-self-serve#5158)', async () => {
+    // The warehouse leaves JOB_TITLE NULL for everyone not on the roster; the fixtures mirror that.
+    addParticipant({ ref: 1, name: 'Ada Lovelace', title: null });
+    addParticipant({ ref: 2, name: 'Grace Hopper', title: null });
+    addParticipant({ ref: 4, name: 'Roster Employee', companyEmail: false, roster: true, listable: false });
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
 
-    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace', 'Grace Hopper']);
-    expect(drawer.total).toBe(2);
-    expect(drawer.notListedCount).toBe(2);
+    expect(drawer.data.map((attendee) => [attendee.name, attendee.jobTitle])).toEqual([
+      ['Ada Lovelace', null],
+      ['Grace Hopper', null],
+      ['Roster Employee', 'Engineer'],
+    ]);
+    expect(drawer.total).toBe(3);
+    expect(drawer).not.toHaveProperty('notListedCount');
     expect(drawer.eventName).toBe('Community Summit');
-  });
-
-  it('applies each attribution predicate', async () => {
-    addParticipant({ ref: 1, name: 'By Email', companyEmail: true });
-    addParticipant({ ref: 2, name: 'By Account', companyEmail: false, accountCredited: true });
-    addParticipant({ ref: 3, name: 'By Roster', companyEmail: false, roster: true });
-
-    const names = async (attribution: 'company_email' | 'account' | 'all'): Promise<string[]> =>
-      (await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { attribution, participation: 'registered' })).data.map((attendee) => attendee.name).sort();
-
-    expect(await names('company_email')).toEqual(['By Email']);
-    expect(await names('account')).toEqual(['By Account']);
-    expect(await names('all')).toEqual(['By Account', 'By Email', 'By Roster']);
   });
 
   it('separates registered from attended, and rejected registrations never count', async () => {
@@ -645,11 +534,9 @@ describe('OrgLensEventsService attendees drawer', () => {
 
     expect(registered.data.map((attendee) => attendee.name).sort()).toEqual(['Attended', 'Registered Only']);
     expect(attended.data.map((attendee) => attendee.name)).toEqual(['Attended']);
-    // The option count is the ORG_EVENTS column of the picked option: 2 attended minus 1 listed.
-    expect(attended.notListedCount).toBe(1);
   });
 
-  it('lists everyone who registered or attended when Count is All, and counts from the ALL_COUNT column', async () => {
+  it('lists everyone who registered or attended when Count is All', async () => {
     addParticipant({ ref: 1, name: 'Attended', attended: true });
     addParticipant({ ref: 2, name: 'Registered Only' });
     addParticipant({ ref: 3, name: 'Attended Unregistered', registered: false, attended: true });
@@ -658,27 +545,19 @@ describe('OrgLensEventsService attendees drawer', () => {
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, participation: 'all' });
 
     expect(drawer.data.map((attendee) => attendee.name).sort()).toEqual(['Attended', 'Attended Unregistered', 'Registered Only']);
-    // The event's ALL_COUNT_COMPANY_EMAIL is 4 (the larger of its 4 registered and 2 attended): 4 minus 3 listed.
-    expect(drawer.notListedCount).toBe(1);
+    expect(drawer.total).toBe(3);
   });
 
-  it('counts registrations for an event that has not ended, whatever participation is picked', async () => {
-    addEvent({ eventId: 'future', registered: { companyEmail: 2 }, attended: { companyEmail: 0 } });
+  it('lists registrants for an event that has not ended, whatever participation is picked', async () => {
+    addEvent({ eventId: 'future', registered: { verified: 2 }, attended: { verified: 0 } });
     addParticipant({ ref: 1, eventId: 'future', name: 'Ada Lovelace' });
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'future', { ...options, participation: 'attended' });
 
     expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
-    expect(drawer.notListedCount).toBe(1);
   });
 
-  it('never reports a negative not-listed count', async () => {
-    for (let ref = 1; ref <= 6; ref++) addParticipant({ ref, name: `Person ${ref}` });
-
-    expect((await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options)).notListedCount).toBe(0);
-  });
-
-  it('labels a listed person with no name neutrally and returns no address in any field', async () => {
+  it('labels a person with no name neutrally and returns no address in any field', async () => {
     addParticipant({ ref: 1, name: null });
     addParticipant({ ref: 2, name: 'ada@company.test', title: 'ada@company.test' });
     addParticipant({ ref: 3, name: 'Grace Hopper', title: 'Admiral' });
@@ -699,34 +578,28 @@ describe('OrgLensEventsService attendees drawer', () => {
     expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Grace Hopper']);
   });
 
-  it('keeps notListedCount the same whatever the name search narrows to', async () => {
+  it('narrows only what is shown with a name search, never what is cached', async () => {
     addParticipant({ ref: 1, name: 'Ada Lovelace' });
     addParticipant({ ref: 2, name: 'Grace Hopper' });
-    addParticipant({ ref: 3, name: null, listable: false });
-    addParticipant({ ref: 4, name: null, listable: false });
 
-    const unsearched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
     const searched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, searchQuery: 'hopper' });
+    const unsearched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
     const noMatch = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, searchQuery: 'nobody' });
 
-    expect(unsearched.notListedCount).toBe(2);
-    expect(searched.notListedCount).toBe(2);
-    expect(noMatch.notListedCount).toBe(2);
+    expect(searched.data.map((attendee) => attendee.name)).toEqual(['Grace Hopper']);
+    expect(unsearched.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace', 'Grace Hopper']);
     expect(noMatch.data).toEqual([]);
   });
 
   it('rejects, rather than returning zero counts, when the read fails', async () => {
     execute.mockRejectedValue(new Error('warehouse down'));
 
-    await expect(service.getEventAttendees(REQ, 'acct-failing', 'event-one', { attribution: 'all', participation: 'registered' })).rejects.toThrow(
-      'warehouse down'
-    );
+    await expect(service.getEventAttendees(REQ, 'acct-failing', 'event-one', options)).rejects.toThrow('warehouse down');
   });
 });
 
 describe('OrgLensEventsService speakers drawer', () => {
   beforeEach(() => {
-    setCoverage(true);
     addEvent({ isPast: true });
   });
 
@@ -750,8 +623,7 @@ describe('OrgLensEventsService speakers drawer', () => {
 
 describe('OrgLensEventsService staff-only goal', () => {
   beforeEach(() => {
-    setCoverage(true);
-    addEvent({ registered: { companyEmail: 3 } });
+    addEvent({ registered: { verified: 3 } });
   });
 
   it('never serves the event registration goal to an external admin', async () => {
@@ -798,8 +670,7 @@ describe('OrgLensEventsService staff-only goal', () => {
 
 describe('OrgLensEventsService caching', () => {
   beforeEach(() => {
-    setCoverage(true);
-    addEvent({ isPast: true, registered: { companyEmail: 1, account: 2 } });
+    addEvent({ isPast: true, registered: { verified: 1 } });
   });
 
   it('serves a repeated identical read from the cache', async () => {
@@ -812,7 +683,6 @@ describe('OrgLensEventsService caching', () => {
   });
 
   it.each([
-    ['attribution', { attribution: 'account' }],
     ['participation', { participation: 'attended' }],
     ['eventScope', { eventScope: 'all' }],
     ['foundation', { foundation: 'foundation-one' }],
@@ -837,11 +707,11 @@ describe('OrgLensEventsService caching', () => {
 });
 
 describe('OrgLensEventsService outage', () => {
-  it('returns an empty list carrying the picked attribution when the read fails', async () => {
+  it('returns an empty list when the read fails', async () => {
     execute.mockRejectedValue(new Error('warehouse down'));
 
-    const list = await service.getOrgEvents(REQ, 'acct-failing', listOptions({ attribution: 'all' }));
+    const list = await service.getOrgEvents(REQ, 'acct-failing', listOptions());
 
-    expect(list).toEqual({ data: [], total: 0, pageSize: 25, offset: 0, servedAttribution: 'all' });
+    expect(list).toEqual({ data: [], total: 0, pageSize: 25, offset: 0 });
   });
 });

@@ -63,9 +63,9 @@ vi.mock('./org-lens-board-committee.service', () => ({
     public fetchAllOrgSeats = fetchAllOrgSeats;
   },
 }));
-vi.mock('./org-lens-key-contacts.service', () => ({
-  OrgLensKeyContactsService: class {
-    public getEmployees = getKeyContactEmployees;
+vi.mock('./org-people-key-contacts.service', () => ({
+  OrgPeopleKeyContactsService: class {
+    public getActiveEmployees = getKeyContactEmployees;
   },
 }));
 vi.mock('./org-lens-access.service', () => ({

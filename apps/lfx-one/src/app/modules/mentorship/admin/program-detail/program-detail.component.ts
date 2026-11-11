@@ -15,8 +15,8 @@ import {
   MENTORSHIP_ADMIN_PROGRAM_NO_ACCESS_TITLE,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_PROGRAM_HIDDEN_MESSAGE,
-  MENTORSHIP_PROGRAM_HIDEABLE_STATUSES,
   MENTORSHIP_PROGRAM_HIDE_BLOCKED_MESSAGE,
+  MENTORSHIP_PROGRAM_PUBLISHED_STATUSES,
   MENTORSHIP_PROGRAM_UNHIDDEN_MESSAGE,
   MENTORSHIP_PROGRAM_UNHIDE_BLOCKED_MESSAGE,
   MENTORSHIP_PROGRAM_VISIBILITY_FAILED_MESSAGE,
@@ -92,16 +92,16 @@ export class ProgramDetailComponent {
 
   protected readonly programId = toSignal(this.route.paramMap.pipe(map((params) => params.get('programId') ?? '')), { initialValue: '' });
   protected readonly terms = computed(() => this.page()?.terms ?? []);
-  /** Open and completed programs are upstream `published`, the only programs whose people have public pages. */
+  /** Upstream `published` programs are the only ones whose people have public pages. */
   protected readonly programPublished = computed(() => {
     const status = this.page()?.program.status;
-    return status !== undefined && MENTORSHIP_PROGRAM_HIDEABLE_STATUSES.includes(status);
+    return status !== undefined && MENTORSHIP_PROGRAM_PUBLISHED_STATUSES.includes(status);
   });
   protected readonly tabCounts = computed(() => this.page()?.tabCounts ?? { currentMentees: null, pastMentees: null, mentors: null, terms: null });
   /** The loaded program and the tabs it shows: all four, or Terms only for a pending program. */
   private readonly tabSource = computed<MentorshipProgramDetailTabSource>(() => {
     const page = this.page();
-    return { programId: page?.program.id ?? '', tabs: getMentorshipProgramDetailTabs(page?.program.status ?? 'open').map((tab) => tab.value) };
+    return { programId: page?.program.id ?? '', tabs: getMentorshipProgramDetailTabs(page?.program.status ?? 'in-progress').map((tab) => tab.value) };
   });
   /**
    * Opens on the program's first tab: Current Mentees, or Terms for a pending program. A read of the same program keeps

@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgEventsAttributionColumnSuffix } from './org-events-filters.interface';
-
 // Internal Snowflake query-row shapes for the Org Lens Events backend service.
 // These mirror raw column names returned by the queries in org-lens-events.service.ts.
 // They live in the shared package because AGENTS.md prohibits module-level interfaces
@@ -20,7 +18,7 @@ export interface OrgEventRow {
   EVENT_COUNTRY: string | null;
   EVENT_URL: string | null;
   EVENT_REGISTRATION_URL: string | null;
-  /** `ALL_COUNT_<ATTRIBUTION>` / `REGISTERED_COUNT_<ATTRIBUTION>` / `ATTENDED_COUNT_<ATTRIBUTION>` of the served option, aliased. */
+  /** `ALL_COUNT_VERIFIED` / `REGISTERED_COUNT_VERIFIED` / `ATTENDED_COUNT_VERIFIED` of the picked participation, aliased. */
   ORG_ATTENDEE_COUNT: number;
   EVENT_REGISTRATIONS_GOAL: number | null;
   ORG_SPEAKER_ACCEPTED_COUNT: number;
@@ -35,16 +33,13 @@ export interface OrgEventsSummaryRow {
   UPCOMING_EVENTS: number;
 }
 
-/** Per-event header read for the attendees drawer: the served option's counts and whether the event has ended. */
+/** Per-event header read for the attendees drawer: the event's name and whether it has ended. */
 export interface OrgEventDrawerHeaderRow {
   EVENT_NAME: string | null;
   IS_PAST_EVENT: boolean | null;
-  ALL_COUNT: number | null;
-  REGISTERED_COUNT: number | null;
-  ATTENDED_COUNT: number | null;
 }
 
-/** Raw row returned by the per-event attendees drawer query: a listed person; the warehouse nulls the name and title of everyone else. */
+/** Raw row returned by the per-event attendees drawer query: one person the picked option credits to the organization, by name (title only for roster employees). */
 export interface OrgEventAttendeesDrawerRow {
   PARTICIPANT_REF: number;
   DISPLAY_NAME: string | null;
@@ -60,12 +55,7 @@ export interface OrgEventSpeakersDrawerRow {
   EVENT_NAME: string | null;
 }
 
-/** Row of the coverage read: one flag per account, repeated on every `ORG_EVENT_PARTICIPATION_SUMMARY` row. */
-export interface OrgEventsCoverageRow {
-  HAS_COMPANY_EMAIL_COVERAGE: boolean | null;
-}
-
-/** Listed person × event row from `ORG_EVENT_PARTICIPATION` (list predicate, ended events, range window). */
+/** Person × event row from `ORG_EVENT_PARTICIPATION` (attendee predicate, ended events, range window); everyone credited is listed. */
 export interface OrgEventParticipationRow {
   PARTICIPANT_REF: number;
   PERSON_KEY: string | null;
@@ -81,14 +71,13 @@ export interface OrgEventParticipationRow {
   EVENT_END_DATE: Date | string | null;
   FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
-  /** `true` when the person has an accepted talk the served attribution credits (projected through the speaker predicate). */
+  /** `true` when the person has an accepted talk Employee match credits to the organization (the speaker predicate). */
   IS_SPEAKER: boolean | null;
 }
 
-/** Row from `ORG_EVENT_PARTICIPATION_SUMMARY` for one (account, range, attribution, participation). */
+/** Row from `ORG_EVENT_PARTICIPATION_SUMMARY` for one (account, range, participation), Employee match only. */
 export interface OrgEventParticipationSummaryRow {
   ATTENDEES_COUNT: number | null;
-  LISTED_ATTENDEES_COUNT: number | null;
   SPEAKERS_COUNT: number | null;
   EVENTS_COUNT: number | null;
   FOUNDATIONS_COUNT: number | null;
@@ -114,19 +103,12 @@ export interface EventAttendeesRaw {
   eventRows: EventAttendeeEventOptionRow[];
 }
 
-/** A per-attribution metric column of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview reads. */
-export type OrgEventAttendanceMetricColumn =
-  | `ATTENDEES_REGISTERED_${OrgEventsAttributionColumnSuffix}`
-  | `ATTENDEES_ALL_${OrgEventsAttributionColumnSuffix}`
-  | `SPEAKERS_${OrgEventsAttributionColumnSuffix}`
-  | `TOTAL_ATTENDEES_REGISTERED_${OrgEventsAttributionColumnSuffix}`
-  | `TOTAL_ATTENDEES_ALL_${OrgEventsAttributionColumnSuffix}`
-  | `TOTAL_SPEAKERS_${OrgEventsAttributionColumnSuffix}`;
+/** A metric column of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview reads: the Employee match (`VERIFIED`) columns only. */
+export type OrgEventAttendanceMetricColumn = 'ATTENDEES_ALL_VERIFIED' | 'SPEAKERS_VERIFIED' | 'TOTAL_ATTENDEES_ALL_VERIFIED' | 'TOTAL_SPEAKERS_VERIFIED';
 
 /** Row of `ORG_EVENT_PARTICIPATION_MONTHLY` (Overview Event Attendees / Event Speakers cards). */
 export type OrgEventAttendanceMonthlyRow = Record<OrgEventAttendanceMetricColumn, number | null> & {
   ACCOUNT_ID: string;
   ACCOUNT_NAME: string;
   MONTH_START_DATE: Date;
-  HAS_COMPANY_EMAIL_COVERAGE: boolean | null;
 };

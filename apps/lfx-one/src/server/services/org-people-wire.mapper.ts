@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  OrgAllEmployeeCompanyEmailStatus,
   OrgAllEmployeeCountedRow,
   OrgAllEmployeeRow,
   OrgAllEmployeeRowInternal,
   OrgAllEmployeesCountedResponse,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
+  OrgCompanyEmailKeys,
   OrgTeamMemberKeys,
 } from '@lfx-one/shared/interfaces';
 import { computeOrgAllEmployeeStats } from '@lfx-one/shared/utils';
@@ -106,6 +108,32 @@ export function toWireResponse(
     foundations: response.foundations,
     ...(teamMembers.unavailable ? { teamMembersUnavailable: true as const } : {}),
   };
+}
+
+/**
+ * Stamp each All Employees row with what the person drawer's company-email lookup answers for it, from the account's
+ * company-email keys: a stored row is read by its person key only, so it `has` an address when that key is in the
+ * keys, else `none` on file; a `cdp:` row is always `unconfirmed`, as the drawer answers it without any lookup; a
+ * live-only row is read by its username, so it `has` one when the username's lookup finds one, `none` when the username
+ * names one roster person without any, else (or without a username) `unconfirmed`. `null` keys (the read failed) leave
+ * every row unannotated.
+ */
+export function withCompanyEmailStatus(response: OrgAllEmployeesResponse, keys: OrgCompanyEmailKeys | null): OrgAllEmployeesResponse {
+  if (!keys) {
+    return response;
+  }
+  const personKeys = new Set(keys.personKeys);
+  const usernames = new Set(keys.usernames);
+  const noneUsernames = new Set(keys.noneUsernames);
+  const statusOf = (row: OrgAllEmployeeRow): OrgAllEmployeeCompanyEmailStatus => {
+    if (row.personKey.startsWith('cdp:')) return 'unconfirmed';
+    if (!row.personKey.startsWith('live-')) return personKeys.has(row.personKey) ? 'has' : 'none';
+    const username = row.lfUsername?.trim().toLowerCase();
+    if (username && usernames.has(username)) return 'has';
+    if (username && noneUsernames.has(username)) return 'none';
+    return 'unconfirmed';
+  };
+  return { ...response, rows: response.rows.map((row) => ({ ...row, companyEmailStatus: statusOf(row) })) };
 }
 
 const NO_TEAM_MEMBERS: OrgTeamMemberKeys = { excluded: null, unavailable: false };

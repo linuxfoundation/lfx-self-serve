@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, organization, company, employer]
-last_updated: 2026-11-02
+last_updated: 2026-11-10
 intercom_collection: Dashboards
 ---
 
@@ -25,9 +25,13 @@ Your lens selection is saved for 30 days. The next time you sign in, the app res
 
 The **Me** lens (the default view at `/`) shows your personal activity across all your projects. You see your recent contributions, upcoming meetings, earned badges, and training enrollments.
 
+In the **Meetings** section, the card labelled **Next Meeting** shows the meeting that is about to start, in progress, or coming up first. In the Me lens these are your meetings. In a project or foundation lens, they are that project's or foundation's meetings. When there is more than one upcoming meeting, the card header shows buttons such as **‹ 1 of 3 ›**. Use them to step through up to five upcoming meetings in place, and back again. The label changes to **Upcoming Meeting** once you move past the first one. The buttons are dimmed at the first and last meeting, and pressing a dimmed button does nothing. Switching lens or project, selecting **Retry**, or leaving the page takes you back to the first meeting.
+
 If you manage groups, **My Pending Actions** also shows **Join request** rows across all the groups you can manage, with the applicant's email, optional name, and group. Select **View all** to review requests in the Pending Actions drawer. **Approve** asks you to confirm the applicant and group; **Reject** lets you add optional notes. A request disappears only after your decision is saved, and the drawer stays open while the list refreshes. After the final action is resolved, the drawer shows **All caught up!** and stays open until you close it. Users without managed groups or pending requests see no join-request rows.
 
 Navigating to another page does not cancel a confirmed approval or rejection that is already being saved. If join-request discovery is too slow or unavailable, those rows are omitted for that refresh while the other pending-action sources remain available; a later refresh can load them again.
+
+In the Pending Actions drawer, each **Meetings**, **Votes**, **Surveys** or **Other** section has a **Dismiss all** button in its header. Select it and confirm to dismiss every item in that section at once; dismissed items do not come back in this browser. Items still loading their RSVP options are skipped. **Invitations**, **Applications** and **Formation** have no **Dismiss all**, because those items are resolved by accepting or declining, reviewing, or completing them.
 
 The drawer updates as the list refreshes, including loading RSVP controls for new meeting actions. If RSVP options fail to load, you can still open the meeting page; the card and drawer try loading those options again when a replacement feed arrives. Once the list is empty, the **My Pending Actions** section fades away after you close the drawer.
 
@@ -46,6 +50,8 @@ The **Organization** lens (also called the Org lens) shows your company's member
 ## Switch project context
 
 When you are in the **Foundation** or **Projects** lens, you can switch between different projects or foundations using the context picker in the top navigation. Select a different foundation or project to update the entire page to that scope.
+
+The picker can show a role label, such as **Contributor**, **Maintainer**, **Board Member**, or **Executive Director**, next to a project or foundation. The label reflects your detected involvement and can change which dashboard and cards you see, but it doesn't grant access. What you can create, edit, or manage on a project is set on the project's **Permissions** page. See [Permissions](../../permissions/).
 
 ## Drawers and detail panels
 

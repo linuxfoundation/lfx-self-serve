@@ -457,7 +457,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     expect(page.url()).toContain('/org/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
     await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No organization linked to your account');
-    await expect(page.getByTestId('org-overview-no-access-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-overview-no-access-secondary')).toContainText('How affiliations and access work');
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
     await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);
@@ -846,7 +846,7 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 
 // S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
 // Me-lens sections (LFXV2-2789). The org menu is still shaped by browser-only LaunchDarkly
-// flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one;
+// flags (Donations), so the server menu can differ from the client-resolved one;
 // hydrating one against the other used to leave "Engagement" / "Education" sections
 // interleaved with org items. The sidebar now withholds the concrete menu until
 // afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { DEFAULT_EARLY_JOIN_TIME, MEETING_VISIBILITY_BG_CLASSES } from '@lfx-one/shared/constants';
@@ -16,7 +16,7 @@ import {
   MeetingVisibilityInfo,
 } from '@lfx-one/shared/interfaces';
 import {
-  formatMeetingTimeRange,
+  formatMeetingWhen,
   getMeetingGroupNames,
   getMeetingHomeAttendance,
   getMeetingHomeRowLink,
@@ -32,13 +32,14 @@ import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.com
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeJoinService } from '../../services/meetings-home-join.service';
 import { MeetingHomeAttendanceComponent } from '../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-project-logo.component';
 
 /**
  * Next meeting card of the meetings home page: the soonest upcoming date with Join and a countdown.
- * @description Clicking the card opens the meeting; the project eyebrow opens the project. Shows an empty card without a date.
+ * @description Clicking the card opens the meeting details drawer; the project eyebrow opens the project. Shows an empty card without a date.
  * The page store loads the join link, so the folded and the rail copies share one request.
  * Project the card's actions menu with the `next-meeting-card-menu` attribute.
  */
@@ -62,6 +63,7 @@ import { MeetingProjectLogoComponent } from '../meeting-project-logo/meeting-pro
 export class NextMeetingCardComponent {
   private readonly router = inject(Router);
   private readonly joinService = inject(MeetingsHomeJoinService);
+  private readonly details = inject(MeetingsHomeDetailsService);
 
   /** The soonest upcoming date; null shows the empty card. */
   public readonly row = input.required<MeetingHomeRow | null>();
@@ -95,10 +97,18 @@ export class NextMeetingCardComponent {
   protected readonly visibilityBg = MEETING_VISIBILITY_BG_CLASSES;
 
   protected open(): void {
-    const link = this.link();
+    const row = this.row();
     // Releasing a text selection inside the card is not a click on it.
-    if (!link || window.getSelection()?.toString()) return;
-    window.open(link.url, '_blank', 'noopener,noreferrer');
+    if (!row || window.getSelection()?.toString()) return;
+    this.details.open(row, 'next_card');
+  }
+
+  /** A plain click on the title opens the drawer; a modified click keeps the link's own behaviour. */
+  protected onTitleClick(event: MouseEvent): void {
+    event.stopPropagation();
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.open();
   }
 
   /** Keeps a link click from also opening the card; a plain same-tab click navigates in-app. */
@@ -127,10 +137,7 @@ export class NextMeetingCardComponent {
   }
 
   private initWhen(): Signal<string> {
-    return this.fromRow(
-      (row) => `${formatDate(row.startTime, 'EEE', 'en-US')}, ${formatMeetingTimeRange(row.startTime, row.durationMinutes)} · ${row.durationMinutes}m`,
-      ''
-    );
+    return this.fromRow((row) => formatMeetingWhen(row.startTime, row.durationMinutes), '');
   }
 
   /** A computed of the row, with `empty` when there is none. */

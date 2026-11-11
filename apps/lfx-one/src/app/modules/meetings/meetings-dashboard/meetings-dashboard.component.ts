@@ -16,14 +16,9 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
+import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS, MY_MEETINGS_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
 import {
-  MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
-  MEETING_TYPE_CONFIGS,
-  MEETING_V2_ENABLED_DEFAULT,
-  MEETING_V2_ENABLED_FLAG,
-  MY_MEETINGS_STATS_WINDOW_DAYS,
-} from '@lfx-one/shared/constants';
-import {
+  GroupLinkState,
   Lens,
   MeetingCalendarClickProps,
   MeetingDashboardView,
@@ -54,6 +49,7 @@ import {
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -132,6 +128,8 @@ export class MeetingsDashboardComponent {
   // calendar surface a no-op outside its supported context.
   public canShowCalendarView = computed(() => this.activeLens() === 'foundation' || this.activeLens() === 'project');
   public isCalendarView = computed(() => this.viewMode() === 'calendar' && this.canShowCalendarView());
+  // Group links on the cards return here, and restore the Me lens when that is where the user was.
+  public groupLinkState: Signal<GroupLinkState> = computed(() => ({ backLabel: 'Meetings', backPath: '/meetings', fromMeLens: this.activeLens() === 'me' }));
   public calendarEvents: Signal<EventInput[]>;
   public calendarLoading: Signal<boolean>;
 
@@ -166,7 +164,7 @@ export class MeetingsDashboardComponent {
    * button in place rather than a dropdown into a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
   protected readonly publicCalendarUrl: Signal<string | null> = this.initPublicCalendarUrl();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
@@ -81,9 +81,6 @@ export class FormationCardComponent {
   private readonly destroyRef = inject(DestroyRef);
   /** Set on teardown so a write that outlives the card never emits on its destroyed output. */
   private destroyed = false;
-  private readonly unregisterDestroyed = this.destroyRef.onDestroy(() => {
-    this.destroyed = true;
-  });
 
   /**
    * Renders the card from an already-loaded checklist response instead of the project context —
@@ -136,6 +133,12 @@ export class FormationCardComponent {
 
   protected readonly adminToolUrl: Signal<string> = this.initAdminToolUrl();
 
+  public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
+  }
+
   /**
    * Opens the stage / legal-entity edit drawer through `UiDrawerService` (focus entry and return, dialog name
    * and Escape come with it). The card — not the drawer — owns the write ({@link saveRecord}), so a drawer
@@ -145,16 +148,25 @@ export class FormationCardComponent {
     const projectUid = this.view()?.uid;
     if (!projectUid) return;
 
-    let drawerOpen = true;
-    const save = (changes: UpdateFormationRecordRequest): Observable<void> => this.saveRecord(projectUid, changes, () => drawerOpen);
+    // Per open: set as soon as a dismissal is requested (Escape, backdrop, header close ask `canClose` before the exit
+    // animation starts) and again once `closed` fires, so a failure in either window is surfaced as a toast.
+    let dismissing = false;
+    const save = (changes: UpdateFormationRecordRequest): Observable<void> => this.saveRecord(projectUid, changes, () => dismissing);
     this.drawerService
       .open<boolean, FormationRecordEditDrawerData, FormationRecordEditDrawerComponent>(FormationRecordEditDrawerComponent, {
         data: { projectUid, openRequiredCount: this.openRequiredCount(), save },
         width: 520,
+        // Never blocks: the write is the card's, so closing mid-PUT is safe. It only records that the drawer is on its way out.
+        canClose: () => {
+          dismissing = true;
+          return true;
+        },
       })
-      .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      // `take(1)` bounds the subscription; it is deliberately not tied to the card's lifetime, so a closure that lands after
+      // the card is torn down is still recorded for a write that outlives both.
+      .closed.pipe(take(1))
       .subscribe(() => {
-        drawerOpen = false;
+        dismissing = true;
       });
   }
 
@@ -162,10 +174,11 @@ export class FormationCardComponent {
    * Runs the PUT detached from the drawer (no `takeUntilDestroyed`: a sent write must complete) and replays the
    * outcome to the drawer, which only listens. After a save the active project's stage is re-read (a no-op on the
    * foundation drill-down, where the context is the foundation and not the edited child) and the host is told to
-   * reload the checklist — but only while this card still shows the project that was saved. If the drawer is gone
-   * when the write fails, the error is surfaced as a toast instead of an inline message nobody can see.
+   * reload the checklist — but only while this card still shows the project that was saved. A failure is shown inline
+   * only while the drawer is open, not being dismissed (`canClose` was never asked) and its outcome subscriber is still
+   * attached; otherwise the drawer is gone or going, so it is surfaced as a toast instead of an inline message nobody can see.
    */
-  private saveRecord(projectUid: string, changes: UpdateFormationRecordRequest, isDrawerOpen: () => boolean): Observable<void> {
+  private saveRecord(projectUid: string, changes: UpdateFormationRecordRequest, isDismissing: () => boolean): Observable<void> {
     const outcome = new ReplaySubject<void>(1);
     this.projectService.updateFormationRecord(projectUid, changes).subscribe({
       next: () => {
@@ -178,8 +191,11 @@ export class FormationCardComponent {
         outcome.complete();
       },
       error: (error: unknown) => {
-        if (!isDrawerOpen()) {
+        if (!outcome.observed || isDismissing()) {
+          // Toast only: a closing drawer must not also flash the inline error, so its stream completes without it.
           this.messageService.add({ severity: 'error', summary: 'Not saved', detail: FORMATION_RECORD_ERROR_MESSAGES.generic });
+          outcome.complete();
+          return;
         }
         outcome.error(error);
       },

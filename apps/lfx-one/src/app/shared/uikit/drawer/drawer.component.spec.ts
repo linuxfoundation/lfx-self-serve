@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '../button/button.component';
 import { UiDrawerComponent } from './drawer.component';
+import { UiDrawerContext } from './drawer.context';
 import { UiDrawerService } from './drawer.service';
 
 const HOST_TEMPLATE = `
@@ -55,6 +56,27 @@ class TestClosingContentComponent {
   }
 }
 
+@Component({
+  selector: 'lfx-ui-test-bare-content',
+  imports: [UiDrawerComponent],
+  template: '<lfx-ui-drawer heading="Details" bare><button id="own-close" type="button" (click)="context.requestClose()">Close</button></lfx-ui-drawer>',
+})
+class TestBareContentComponent {
+  public readonly context = inject(UiDrawerContext);
+}
+
+// Inert at both ends, like the meeting details drawer's hidden compact header and inactive tab panel.
+const INERT_TEMPLATE = `
+  <lfx-ui-drawer heading="Details">
+    <div inert><a id="hidden-first" href="#first">Compact header</a></div>
+    <button id="live" type="button">Live</button>
+    <div inert><button id="hidden-last" type="button">Inactive tab</button></div>
+  </lfx-ui-drawer>
+`;
+
+@Component({ selector: 'lfx-ui-test-inert-content', template: '' })
+class TestInertContentComponent {}
+
 // True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
 const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
 
@@ -87,6 +109,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     TestBed.configureTestingModule({ imports: [TestHostComponent] });
     // Set here because an inline template this long trips component-max-inline-declarations.
     TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiDrawerComponent, UiButtonComponent], template: HOST_TEMPLATE } });
+    TestBed.overrideComponent(TestInertContentComponent, { set: { imports: [UiDrawerComponent], template: INERT_TEMPLATE } });
     fixture = TestBed.createComponent(TestHostComponent);
     document.body.appendChild(fixture.nativeElement);
     container = TestBed.inject(OverlayContainer).getContainerElement();
@@ -191,6 +214,38 @@ describe('UiDrawerComponent and UiDrawerService', () => {
 
     expect(document.activeElement).toBe(byId('name'));
     expect(container.querySelectorAll('.cdk-focus-trap-anchor').length).toBe(2);
+  });
+
+  describe('with inert content at either end', () => {
+    const anchors = () => [...container.querySelectorAll<HTMLElement>('.cdk-focus-trap-anchor')];
+    const openInert = async (config: UiDrawerConfig) => {
+      // jsdom lays nothing out, and the CDK skips elements without a size.
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1);
+      opener.focus();
+      TestBed.inject(UiDrawerService).open(TestInertContentComponent, config);
+      await settle();
+    };
+
+    it('bare: moves focus past the inert header and wraps Tab within the live content', async () => {
+      await openInert({ bare: true });
+      expect(document.activeElement).toBe(byId('live'));
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(byId('live'));
+    });
+
+    it('with a header: moves focus to the first live control and wraps Tab past the inert panel', async () => {
+      await openInert({});
+      const close = testId('ui-drawer-close').querySelector('button');
+      expect(document.activeElement).toBe(close);
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(close);
+    });
   });
 
   it('closes on Escape and gives focus back to the opener', async () => {
@@ -526,6 +581,58 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     } finally {
       delete (document.documentElement as unknown as Record<string, unknown>)['scrollHeight'];
     }
+  });
+
+  describe('bare', () => {
+    it('drops the header and footer, keeps the title for screen readers and makes the unpadded body the only scroller', async () => {
+      await open((host) => (host.config = { bare: true, describedBy: true }));
+
+      expect(testId('ui-drawer-header')).toBeNull();
+      expect(testId('ui-drawer-footer')).toBeNull();
+      expect(testId('ui-drawer-close')).toBeNull();
+      expect(byId('edit')).toBeNull();
+      expect(byId('done')).toBeNull();
+      expect(testId('ui-drawer-title').className).toBe('sr-only');
+      expect(testId('ui-drawer-title').textContent).toBe('Weekly Sync');
+      expect(dialog()?.getAttribute('aria-labelledby')).toBe(testId('ui-drawer-title').id);
+      expect(dialog()?.getAttribute('aria-describedby')).toBe(testId('ui-drawer-subtitle').id);
+      expect(testId('ui-drawer-subtitle').className).toBe('sr-only');
+      const body = testId('ui-drawer-body');
+      expect(body.querySelector('#name')).not.toBeNull();
+      expect(body.className).toContain('overflow-y-auto');
+      expect(body.className).not.toMatch(/\b(px|py|gap)-\[/);
+      expect(registered(body)).toBe(true);
+    });
+
+    it('is set by the input as well as the config', async () => {
+      const layout = TestBed.createComponent(UiDrawerComponent);
+      layout.componentRef.setInput('heading', 'Details');
+      layout.componentRef.setInput('bare', true);
+      await layout.whenStable();
+      const el = layout.nativeElement as HTMLElement;
+
+      expect(el.querySelector('[data-testid="ui-drawer-header"]')).toBeNull();
+      expect(el.querySelector('[data-testid="ui-drawer-footer"]')).toBeNull();
+      expect(el.querySelector('[data-testid="ui-drawer-title"]')?.className).toBe('sr-only');
+    });
+
+    it('closes from the content through UiDrawerContext.requestClose, asking canClose first', async () => {
+      const canClose = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+      const ref = TestBed.inject(UiDrawerService).open(TestBareContentComponent, { canClose });
+      await settle();
+      const closed = vi.fn();
+      ref.closed.subscribe(closed);
+
+      byId('own-close').click();
+      await settle();
+      expect(canClose).toHaveBeenCalledTimes(1);
+      expect(drawer()).not.toBeNull();
+
+      byId('own-close').click();
+      await settle();
+      expect(canClose).toHaveBeenCalledTimes(2);
+      expect(closed).toHaveBeenCalled();
+    });
   });
 
   it('hides the footer when nothing is projected into it, and renders without a service as an inert layout', async () => {

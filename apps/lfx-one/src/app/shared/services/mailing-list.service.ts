@@ -12,6 +12,10 @@ import {
   MailingListMember,
   MyMailingList,
   QueryServiceCountResponse,
+  SyncApplyJobStatus,
+  SyncApplyRequest,
+  SyncDiffJobStatus,
+  SyncJobStart,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { MAILING_LIST_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
@@ -89,6 +93,32 @@ export class MailingListService {
     return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data).pipe(
       take(1),
       tap(() => this.mailingListDetailCache.delete(uid))
+    );
+  }
+
+  /** Starts an async sync-diff job and returns its ID immediately. Poll with {@link getSyncDiffStatus}. */
+  public startSyncDiff(mailingListId: string): Observable<SyncJobStart> {
+    return this.http.post<SyncJobStart>(`${this.baseUrl}/${mailingListId}/sync-diff/start`, {}).pipe(take(1));
+  }
+
+  /** Fetches the current progress/result of a sync-diff job started via {@link startSyncDiff}. */
+  public getSyncDiffStatus(mailingListId: string, jobId: string): Observable<SyncDiffJobStatus> {
+    return this.http.get<SyncDiffJobStatus>(`${this.baseUrl}/${mailingListId}/sync-diff/${jobId}/status`);
+  }
+
+  /** Starts an async sync-apply job for an admin-approved subset of a sync-diff's adds/removes. Poll with {@link getSyncApplyStatus}. */
+  public startSyncApply(mailingListId: string, data: SyncApplyRequest): Observable<SyncJobStart> {
+    return this.http.post<SyncJobStart>(`${this.baseUrl}/${mailingListId}/sync-apply/start`, data).pipe(take(1));
+  }
+
+  /** Fetches the current progress/result of a sync-apply job started via {@link startSyncApply}. Evicts the mailing list detail cache once the job finishes. */
+  public getSyncApplyStatus(mailingListId: string, jobId: string): Observable<SyncApplyJobStatus> {
+    return this.http.get<SyncApplyJobStatus>(`${this.baseUrl}/${mailingListId}/sync-apply/${jobId}/status`).pipe(
+      tap((status) => {
+        if (status.status === 'completed' || status.status === 'failed') {
+          this.mailingListDetailCache.delete(mailingListId);
+        }
+      })
     );
   }
 

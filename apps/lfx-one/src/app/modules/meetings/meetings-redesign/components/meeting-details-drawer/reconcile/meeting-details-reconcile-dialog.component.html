@@ -1,0 +1,163 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. The subtitle is 12px gray-500 here, smaller than the modal's own. -->
+<lfx-ui-modal
+  class="[&_[data-testid=ui-modal-subtitle]]:text-[12px] [&_[data-testid=ui-modal-subtitle]]:leading-[16px] [&_[data-testid=ui-modal-subtitle]]:text-gray-500"
+  heading="Reconcile Attendance"
+  subtitle="Review AI-matched attendees and confirm, reassign, or leave them unknown"
+  [width]="720"
+  [height]="800"
+  sticky
+  closable
+  scrollFade
+  data-testid="meeting-details-reconcile-dialog">
+  <!-- The padding offsets the context block's own full-bleed margin. -->
+  <div modalHeaderExtra class="px-[24px]">
+    @if (loading()) {
+      <lfx-meeting-dialog-context [row]="row" origin="drawer" />
+    } @else {
+      <!-- Full bleed, so the tabs' rule spans the dialog. -->
+      <lfx-ui-tabs
+        class="-mx-[24px] px-[24px]"
+        ariaLabel="Reconciliation results"
+        idPrefix="meeting-details-reconcile"
+        [tabs]="tabs()"
+        [value]="activeTab()"
+        (valueChange)="selectTab($event)"
+        data-testid="meeting-details-reconcile-tabs" />
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="flex flex-1 items-center justify-center p-[48px]" data-testid="meeting-details-reconcile-loading">
+      <lfx-ui-spinner [size]="24" />
+    </div>
+  } @else {
+    @if (poolDegraded()) {
+      <lfx-ui-note variant="warning" size="small" icon="fa-light fa-triangle-exclamation" data-testid="meeting-details-reconcile-degraded"
+        >Some candidate sources failed to load, so no matches were auto-applied this run. Review all results below.</lfx-ui-note
+      >
+    }
+
+    <div
+      class="flex flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+      role="tabpanel"
+      tabindex="0"
+      [attr.id]="'meeting-details-reconcile-panel-' + activeTab()"
+      [attr.aria-labelledby]="'meeting-details-reconcile-tab-' + activeTab()"
+      data-testid="meeting-details-reconcile-panel">
+      @if (visibleResults().length === 0) {
+        <p class="m-0 py-[24px] text-center text-[14px] leading-[20px] text-gray-500" data-testid="meeting-details-reconcile-empty">
+          No attendees in this tab.
+        </p>
+      } @else {
+        <!-- shortcut: list rows styled inline, no uikit list. revisit: when a third screen needs lfx-list-plain. -->
+        <ul class="m-0 flex list-none flex-col divide-y divide-gray-200 p-0" data-testid="meeting-details-reconcile-list">
+          @for (result of visibleResults(); track result.attendee_id) {
+            @let busy = rowActionLoading().has(result.attendee_id);
+            <li class="flex flex-col gap-[8px] py-[12px]" [attr.data-testid]="'meeting-details-reconcile-row-' + result.attendee_id">
+              <div class="flex items-center justify-between gap-[12px]">
+                <div class="flex min-w-0 items-center gap-[12px]">
+                  <lfx-ui-avatar class="flex-none" [size]="32" [name]="result.zoom_user_name || 'Unknown'" decorative />
+                  <div class="flex min-w-0 flex-col">
+                    <span class="break-words text-[14px] font-medium leading-[20px] text-gray-900">{{ result.zoom_user_name || 'Unknown attendee' }}</span>
+                    <span class="text-[12px] leading-[16px] text-gray-500">{{ result.confidence }} confidence &middot; {{ result.method }}</span>
+                  </div>
+                </div>
+
+                @if (activeTab() !== 'auto-matched') {
+                  <div class="flex flex-none items-center gap-[8px]">
+                    @if (result.matched_candidate && activeTab() === 'needs-review') {
+                      <lfx-ui-button
+                        size="small"
+                        [disabled]="busy"
+                        [loading]="busy"
+                        (click)="confirmMatch(result)"
+                        [attr.data-testid]="'meeting-details-reconcile-confirm-' + result.attendee_id"
+                        >Confirm Match</lfx-ui-button
+                      >
+                    }
+                    <lfx-ui-button
+                      variant="secondary"
+                      size="small"
+                      [disabled]="busy"
+                      (click)="openAssign(result)"
+                      [attr.data-testid]="'meeting-details-reconcile-assign-' + result.attendee_id"
+                      >Assign</lfx-ui-button
+                    >
+                    @if (activeTab() === 'unmatched') {
+                      <lfx-ui-button
+                        variant="tertiary"
+                        size="small"
+                        [disabled]="busy"
+                        (click)="leaveUnknown(result)"
+                        [attr.data-testid]="'meeting-details-reconcile-leave-' + result.attendee_id"
+                        >Leave Unknown</lfx-ui-button
+                      >
+                    }
+                  </div>
+                }
+              </div>
+
+              @if (result.matched_candidate; as candidate) {
+                <div class="pl-[44px] text-[12px] leading-[16px] text-gray-500" data-testid="meeting-details-reconcile-candidate">
+                  {{ activeTab() === 'auto-matched' ? 'Matched' : 'Suggested' }}: {{ candidate.first_name }} {{ candidate.last_name
+                  }}{{ candidate.email ? ' (' + candidate.email + ')' : '' }}{{ candidate.org_name ? ' · ' + candidate.org_name : '' }}
+                </div>
+              }
+
+              @if (assigningAttendeeId() === result.attendee_id) {
+                <div
+                  class="ml-[44px] flex flex-col gap-[12px] border-t border-gray-200 pt-[12px]"
+                  [formGroup]="assignForm"
+                  data-testid="meeting-details-reconcile-assign-form">
+                  <div class="grid grid-cols-2 gap-[12px]">
+                    <lfx-ui-input
+                      label="Email *"
+                      size="small"
+                      placeholder="Email (required)"
+                      formControlName="email"
+                      required
+                      data-testid="meeting-details-reconcile-assign-email" />
+                    <lfx-ui-input
+                      label="Username"
+                      size="small"
+                      placeholder="Username"
+                      formControlName="username"
+                      data-testid="meeting-details-reconcile-assign-username" />
+                    <lfx-ui-input
+                      label="First name"
+                      size="small"
+                      placeholder="First name"
+                      formControlName="first_name"
+                      data-testid="meeting-details-reconcile-assign-first-name" />
+                    <lfx-ui-input
+                      label="Last name"
+                      size="small"
+                      placeholder="Last name"
+                      formControlName="last_name"
+                      data-testid="meeting-details-reconcile-assign-last-name" />
+                  </div>
+                  <div class="flex items-center justify-end gap-[8px]">
+                    <lfx-ui-button variant="tertiary" size="small" (click)="cancelAssign()" data-testid="meeting-details-reconcile-assign-cancel"
+                      >Cancel</lfx-ui-button
+                    >
+                    <lfx-ui-button
+                      size="small"
+                      [disabled]="busy"
+                      [loading]="busy"
+                      (click)="submitAssign(result)"
+                      data-testid="meeting-details-reconcile-assign-save"
+                      >Save Assignment</lfx-ui-button
+                    >
+                  </div>
+                </div>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </div>
+  }
+</lfx-ui-modal>

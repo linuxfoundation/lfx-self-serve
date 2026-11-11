@@ -2,55 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgEventAttendanceMetricColumn } from '../interfaces/org-events-internal.interface';
-import type {
-  OrgEventsAttribution,
-  OrgEventsAttributionColumnSuffix,
-  OrgEventsAttributionOption,
-  OrgEventsParticipation,
-  OrgEventsParticipationOption,
-  OrgEventsScope,
-  OrgEventsScopeOption,
-} from '../interfaces/org-events-filters.interface';
+import type { OrgEventsParticipation, OrgEventsParticipationOption, OrgEventsScope, OrgEventsScopeOption } from '../interfaces/org-events-filters.interface';
 
 // One set of Events filters for the Overview, People → Event Attendees and the Events page (lfx-self-serve#4598): the same
 // options, defaults and URL parameters everywhere, so the same selection gives the same count on every page.
 
-/** "Counted by" options, default first. */
-export const ORG_EVENTS_ATTRIBUTION_OPTIONS: readonly OrgEventsAttributionOption[] = [
-  { label: 'All relations', value: 'all' },
-  { label: 'Company email', value: 'company_email' },
-  { label: 'Account on registration', value: 'account' },
-] as const;
-
-/** Default "Counted by" — the URL drops `?attribution=` when it is active. The Overview is pinned to it. */
-export const DEFAULT_ORG_EVENTS_ATTRIBUTION: OrgEventsAttribution = 'all';
-
-/** URL query parameter of the "Counted by" filter. */
-export const ORG_EVENTS_ATTRIBUTION_QUERY_PARAM = 'attribution';
-
-/** Accessible label of the "Counted by" filter. */
-export const ORG_EVENTS_ATTRIBUTION_LABEL = 'Counted by';
-
-/** Tooltip on the "Counted by" filter, per option. */
-export const ORG_EVENTS_ATTRIBUTION_TOOLTIP: Readonly<Record<OrgEventsAttribution, string>> = {
-  all: 'Everyone related to the company: company-email registrations, registrations credited to the account, and current employees. People are counted, not listed, unless they used a company address or are current employees.',
-  company_email: 'People who registered with one of the company’s own email addresses.',
-  account:
-    'Registrations credited to the company’s account, whatever address was used. People are counted, not listed, unless they also used a company address or are current employees.',
-};
-
-/** Phrase a caption or tooltip adds for the attribution it counts. */
-export const ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE: Readonly<Record<OrgEventsAttribution, string>> = {
-  company_email: 'Registered with a company email.',
-  account: 'Registrations credited to the company account.',
-  all: 'Everyone related to the company.',
-};
-
-/**
- * Note shown while Company email is picked but the company has no company-email data: the read serves Account on
- * registration instead, so the numbers are not zero.
- */
-export const ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE = 'No company-email data is available for this company; counts use registrations credited to the account.';
+/** Caption phrase for the Employee match count every Events surface shows (the only attribution there is). */
+export const ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE = 'Company email on record or LF account on the company roster.';
 
 /** "Count" options, default first. */
 export const ORG_EVENTS_PARTICIPATION_OPTIONS: readonly OrgEventsParticipationOption[] = [
@@ -119,31 +77,29 @@ export const ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL = 'Registered attendee';
 /** Label shown for a speaker who has no usable name; never an email address. */
 export const ORG_EVENTS_NEUTRAL_SPEAKER_LABEL = 'Speaker';
 
-/** The one mapping from an attribution to its warehouse column suffix; every Events read derives its column identifiers from it, never from user input. */
-export const ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX: Readonly<Record<OrgEventsAttribution, OrgEventsAttributionColumnSuffix>> = {
-  company_email: 'COMPANY_EMAIL',
-  account: 'ACCOUNT',
-  all: 'ALL',
-};
+/** Every Events read counts Employee match only: its warehouse columns carry this suffix (`REGISTERED_COUNT_VERIFIED`, `IS_COUNTED_ALL_VERIFIED`, ...). Never built from user input. */
+export const ORG_EVENTS_COUNTED_COLUMN_SUFFIX = 'VERIFIED';
 
-/** The one mapping from a participation to its segment of a warehouse column (`<SEGMENT>_COUNT_<ATTRIBUTION>`, `IS_COUNTED_<SEGMENT>_<ATTRIBUTION>`); never built from user input. */
+/** The `ATTRIBUTION` value of the Employee match rows in the warehouse summary tables (`ORG_EVENT_PARTICIPATION_SUMMARY`); bound, never built from user input. */
+export const ORG_EVENTS_COUNTED_ATTRIBUTION = 'verified';
+
+/** The one mapping from a participation to its segment of a warehouse column (`<SEGMENT>_COUNT_VERIFIED`, `IS_COUNTED_<SEGMENT>_VERIFIED`); never built from user input. */
 export const ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT: Readonly<Record<OrgEventsParticipation, string>> = {
   all: 'ALL',
   registered: 'REGISTERED',
   attended: 'ATTENDED',
 };
 
-/** The per-attribution metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects. */
-export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMetricColumn[] = Object.values(ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX).flatMap(
-  (suffix) => [
-    `ATTENDEES_REGISTERED_${suffix}` as const,
-    `ATTENDEES_ALL_${suffix}` as const,
-    `SPEAKERS_${suffix}` as const,
-    `TOTAL_ATTENDEES_REGISTERED_${suffix}` as const,
-    `TOTAL_ATTENDEES_ALL_${suffix}` as const,
-    `TOTAL_SPEAKERS_${suffix}` as const,
-  ]
-);
+/**
+ * The metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects: the Employee match (`VERIFIED`) columns, the
+ * only ones Events count.
+ */
+export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMetricColumn[] = [
+  'ATTENDEES_ALL_VERIFIED',
+  'SPEAKERS_VERIFIED',
+  'TOTAL_ATTENDEES_ALL_VERIFIED',
+  'TOTAL_SPEAKERS_VERIFIED',
+] as const;
 
 /** Longest foundation id the Events filters accept; ids are short opaque strings and the value is only ever bound, never inlined. */
 export const ORG_EVENTS_FOUNDATION_ID_MAX_LENGTH = 128;

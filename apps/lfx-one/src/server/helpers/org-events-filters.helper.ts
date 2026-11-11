@@ -2,12 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  DEFAULT_ORG_EVENTS_ATTRIBUTION,
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   DEFAULT_ORG_EVENTS_SCOPE,
-  ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX,
-  ORG_EVENTS_ATTRIBUTION_OPTIONS,
-  ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
+  ORG_EVENTS_COUNTED_COLUMN_SUFFIX,
   ORG_EVENTS_FOUNDATION_ID_MAX_LENGTH,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT,
@@ -18,18 +15,11 @@ import {
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_LENS_TIME_RANGES,
 } from '@lfx-one/shared/constants';
-import type {
-  EventAttendeeFoundationOptionRow,
-  OrgEventsAttribution,
-  OrgEventsFilters,
-  OrgEventsParticipation,
-  OrgLensTimeRange,
-} from '@lfx-one/shared/interfaces';
+import type { EventAttendeeFoundationOptionRow, OrgEventsFilters, OrgEventsParticipation, OrgLensTimeRange } from '@lfx-one/shared/interfaces';
 import {
   isOrgLensTimeRange,
   normalizeLegacyOrgLensTimeRange,
   orgLensTimeRangeDays,
-  parseOrgEventsAttribution,
   parseOrgEventsParticipation,
   parseOrgEventsScope,
 } from '@lfx-one/shared/utils';
@@ -39,19 +29,12 @@ import { ServiceValidationError } from '../errors';
 import { getStringQueryParam } from './validation.helper';
 
 /**
- * Validate the Org Lens Events filters (`attribution`, `participation`, `eventScope`, `foundation`, `range`; lfx-self-serve#4598):
- * a missing param is its default, an unknown value is a 400 before any SQL is built.
+ * Validate the Org Lens Events filters (`participation`, `eventScope`, `foundation`, `range`; lfx-self-serve#4598). Events count
+ * Employee match only, so there is no attribution filter: a legacy `?attribution=` is ignored and never reaches SQL.
+ * A missing param is its default, an unknown value is a 400 before any SQL is built.
  */
 export function parseOrgEventsFilters(req: Request, operation: string): OrgEventsFilters {
   return {
-    attribution: parseEnumParam(
-      req,
-      ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
-      parseOrgEventsAttribution,
-      ORG_EVENTS_ATTRIBUTION_OPTIONS,
-      DEFAULT_ORG_EVENTS_ATTRIBUTION,
-      operation
-    ),
     participation: parseEnumParam(
       req,
       ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
@@ -66,31 +49,27 @@ export function parseOrgEventsFilters(req: Request, operation: string): OrgEvent
   };
 }
 
-/** `ALL_COUNT_<ATTRIBUTION>`, `REGISTERED_COUNT_<ATTRIBUTION>` or `ATTENDED_COUNT_<ATTRIBUTION>` of `ORG_EVENTS` — the per-event distinct-people count of an option. */
-export function orgEventsCountColumn(attribution: OrgEventsAttribution, participation: OrgEventsParticipation): string {
-  return `${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_COUNT_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]}`;
+/** `ALL_COUNT_VERIFIED`, `REGISTERED_COUNT_VERIFIED` or `ATTENDED_COUNT_VERIFIED` of `ORG_EVENTS` — the per-event distinct-people count of a participation. */
+export function orgEventsCountColumn(participation: OrgEventsParticipation): string {
+  return `${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_COUNT_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX}`;
 }
 
-/** `HAS_FOOTPRINT_<ATTRIBUTION>` of `ORG_EVENTS` — whether the company has activity at the event under the attribution. */
-export function orgEventsFootprintColumn(attribution: OrgEventsAttribution): string {
-  return `HAS_FOOTPRINT_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]}`;
-}
-
-/**
- * `ORG_EVENT_PARTICIPATION` predicate selecting the attendees an attribution and participation count (no leading `AND`):
- * the one row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_COMPANY_EMAIL`, `IS_COUNTED_ATTENDED_ALL`,
- * `IS_COUNTED_ALL_ACCOUNT` — registered or attended, ...).
- */
-export function orgEventsAttendeePredicate(attribution: OrgEventsAttribution, participation: OrgEventsParticipation): string {
-  return `IS_COUNTED_${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]} = TRUE`;
+/** `HAS_FOOTPRINT_VERIFIED` of `ORG_EVENTS` — whether the company has Employee match activity at the event. */
+export function orgEventsFootprintColumn(): string {
+  return `HAS_FOOTPRINT_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX}`;
 }
 
 /**
- * Predicate for the speakers an attribution credits (no leading `AND`): the one row-level flag dbt computes for an ACCEPTED talk
- * credited under that attribution (`IS_COUNTED_SPEAKER_COMPANY_EMAIL`, `IS_COUNTED_SPEAKER_ALL`, ...).
+ * `ORG_EVENT_PARTICIPATION` predicate selecting the Employee match attendees a participation counts (no leading `AND`):
+ * the row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_VERIFIED`, `IS_COUNTED_ATTENDED_VERIFIED`, ...).
  */
-export function orgEventsSpeakerPredicate(attribution: OrgEventsAttribution): string {
-  return `IS_COUNTED_SPEAKER_${ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[attribution]} = TRUE`;
+export function orgEventsAttendeePredicate(participation: OrgEventsParticipation): string {
+  return `IS_COUNTED_${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX} = TRUE`;
+}
+
+/** Predicate for the Employee match speakers (no leading `AND`): `IS_COUNTED_SPEAKER_VERIFIED`. */
+export function orgEventsSpeakerPredicate(): string {
+  return `IS_COUNTED_SPEAKER_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX} = TRUE`;
 }
 
 /**

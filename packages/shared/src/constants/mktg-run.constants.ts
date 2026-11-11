@@ -13,6 +13,7 @@ import {
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
   BRAND_KIT_MAX_LOGO_FILES,
   BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BYTES,
   BRAND_KIT_REQUIRED_HEADINGS,
 } from './brand-kit.constants';
 import {
@@ -54,6 +55,8 @@ export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
 export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** A discarded or superseded session cannot accept another turn. */
 export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
+/** Only a failed started run can be dismissed from the Documents page. */
+export const MKTG_RUN_NOT_FAILED = 'MKTG_RUN_NOT_FAILED';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
 export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 
@@ -141,9 +144,10 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   logoFiles: {
     title: 'Logo files',
     hint: 'the horizontal lockup, the stacked lockup and the symbol',
-    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. A file too big to send, or one on the site, goes as a link (SVG only); the agent fetches it. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
+    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
     maxFiles: BRAND_KIT_MAX_LOGO_FILES,
     maxFileChars: BRAND_KIT_MAX_LOGO_FILE_CHARS,
+    maxZipBytes: BRAND_KIT_MAX_LOGO_ZIP_BYTES,
     maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
     fileExtensions: [...BRAND_KIT_LOGO_FILE_EXTENSIONS],
   },
@@ -936,8 +940,16 @@ export const MKTG_RUN_POLL = {
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
-/** Bound raw Guild history reads to 2,000 events per result request. */
-export const MKTG_RAW_EVENTS_MAX_PAGES = 4;
+/**
+ * Absolute cap on raw Guild event pages (500 each) read for one result request:
+ * 10,000 raw events. Guild serves a session's events oldest-first, so the
+ * finalize receipt and the root envelope ride the LAST page, and the loop is
+ * sized from the API's `pagination.total_count`; this cap only bounds it. A
+ * Member 360 session writes about 8 raw events per member (a 308-member
+ * foundation: 2,558 events; the biggest session seen: 3,037). A safety bound,
+ * not a product limit: past it the truncation marker is appended as before.
+ */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 20;
 
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';

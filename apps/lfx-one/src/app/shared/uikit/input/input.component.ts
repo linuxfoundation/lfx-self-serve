@@ -52,6 +52,8 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Marks the field as required for assistive technology. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
+  /** Shows the value without letting it be edited; it stays focusable and is still read and submitted. */
+  public readonly readonly = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Native `autocomplete` token, for example `email`. Empty leaves the browser default, so autofill and password managers keep working. */
   public readonly autocomplete = input<string>('');
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-link`. */

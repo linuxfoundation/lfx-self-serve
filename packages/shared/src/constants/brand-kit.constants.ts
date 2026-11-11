@@ -138,6 +138,18 @@ export const BRAND_KIT_MAX_LOGO_FILES = 12;
 export const BRAND_KIT_MAX_LOGO_FILE_CHARS = 2_000_000;
 
 /**
+ * A ZIP of logo files, in bytes as picked: the form's footnote says "Keep a
+ * ZIP small: SVG files only, under 150 KB" (the agent's intake), and this is
+ * that number, so the form refuses a bigger package at pick time and the
+ * validator refuses it in the request. The full logo package linked on a
+ * brand page is usually far over it; it goes by link.
+ */
+export const BRAND_KIT_MAX_LOGO_ZIP_BYTES = 150 * 1024;
+
+/** The same cap on the wire: base64 is exactly four characters per three bytes. */
+export const BRAND_KIT_MAX_LOGO_ZIP_BASE64_CHARS = Math.ceil(BRAND_KIT_MAX_LOGO_ZIP_BYTES / 3) * 4;
+
+/**
  * All logo files of one form together, in UTF-8 bytes: the generate request
  * is one JSON body, and the BFF's body parser takes 15 MB of bytes — the form
  * says so before the request is refused on the way out. The 3 MB left over
@@ -249,8 +261,16 @@ export const BRAND_KIT_TYPE_STEPS = ['display', 'h2', 'h3', 'eyebrow', 'body', '
 /** The WCAG grades the contrast table prints, best first. */
 export const BRAND_KIT_CONTRAST_GRADES = ['AAA', 'AA', 'Large text only', 'Fails'] as const;
 
+/**
+ * WCAG 1.4.3's contrast thresholds, the one AA figure for every text-on-colour rule in the kit (a swatch's label on
+ * its swatch, the accent as text on paper, the symbol page's white-on-accent clause) and the grades' steps beside it.
+ */
+export const BRAND_KIT_CONTRAST_AAA = 7;
+export const BRAND_KIT_CONTRAST_AA = 4.5;
+export const BRAND_KIT_CONTRAST_LARGE_TEXT = 3;
+
 /** The contrast a swatch's label must reach on its swatch: WCAG AA for normal text, since the labels are small. */
-export const BRAND_KIT_LABEL_MIN_CONTRAST = 4.5;
+export const BRAND_KIT_LABEL_MIN_CONTRAST = BRAND_KIT_CONTRAST_AA;
 
 /** Where a palette value was found. */
 export const BRAND_KIT_FOUND_IN_KINDS = ['logo', 'site_css', 'brand_page', 'page', 'unsourced'] as const;

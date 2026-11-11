@@ -11,14 +11,14 @@
   [blank]="blank"
   navLabel="Members sections"
   testIdPrefix="members">
-  <ng-template lfxHealthMetricsL2Section="tiers">
-    <div class="flex flex-col gap-6">
-      <lfx-members-tiers (reading)="shell.sectionReading('tiers')" (settled)="shell.sectionSettled('tiers', $event)" />
-      <lfx-members-bridge
-        (reading)="shell.sectionReading('bridge', 'tiers')"
-        (settled)="shell.sectionSettled('bridge', $event, 'tiers')"
-        (sectionPicked)="shell.scrollToSection($event)" />
-    </div>
+  <ng-template lfxHealthMetricsL2Section="growth">
+    <lfx-members-growth (reading)="shell.sectionReading('growth')" (settled)="shell.sectionSettled('growth', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2Section="breakdown">
+    <lfx-members-breakdown
+      (countChange)="breakdownCount.set($event)"
+      (reading)="shell.sectionReading('breakdown')"
+      (settled)="shell.sectionSettled('breakdown', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="list">
     <lfx-members-directory (countChange)="listCount.set($event)" (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list', $event)" />

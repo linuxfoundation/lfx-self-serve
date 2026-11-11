@@ -16,12 +16,11 @@ import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
   HealthMetricsMembersAtRiskFilterOption,
-  HealthMetricsMembersBridge,
+  HealthMetricsMembersBreakdownTableClasses,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardCohort,
   HealthMetricsMembersBoardLatestTone,
   HealthMetricsMembersBoardCohortOption,
-  HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartures,
   HealthMetricsMembersChurnModeOption,
@@ -29,32 +28,40 @@ import type {
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryTierOption,
   HealthMetricsMembersEngagementLevel,
-  HealthMetricsMembersMovementDrawerCopy,
-  HealthMetricsMembersMovementListType,
-  HealthMetricsMembersMovements,
+  HealthMetricsMembersGrowth,
   HealthMetricsMembersNps,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersQueryParams,
   HealthMetricsMembersRenewals,
   HealthMetricsMembersRenewalsWindow,
+  HealthMetricsMembersReservedTier,
+  HealthMetricsMembersTierIcon,
   HealthMetricsMembersRenewalsWindowOption,
   HealthMetricsMembersTiers,
-  HealthMetricsMembersTiersMode,
-  HealthMetricsMembersTiersModeOption,
 } from '../interfaces/health-metrics-members.interface';
 
 /**
- * The seven Members sections in render order. `key` is the section's URL fragment and the scroll-spy
+ * The eight Members sections in render order. `key` is the section's URL fragment and the scroll-spy
  * allowlist; the DOM id is `sec-mem-<key>`. Footnotes land with each section's data.
  */
 export const HEALTH_METRICS_MEMBERS_SECTIONS = [
   {
-    key: 'tiers',
+    key: 'growth',
+    // One read serves every period, so the empty state never names a past year.
+    empty: { icon: 'fa-light fa-chart-line', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members, snapshot: true },
+    label: 'Member growth by year',
+    heading: 'Member growth by year',
+    description: 'New members each month, this year against last year.',
+    footnote: [],
+    footnoteCaution: false,
+  },
+  {
+    key: 'breakdown',
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
-    label: 'Membership & revenue',
-    heading: 'Membership & revenue by tier',
-    description:
-      'The most-used view. Composition over time rather than a total-members line — where the base is shifting is the question a total cannot answer.',
+    label: 'Membership breakdown by tier',
+    heading: 'Membership breakdown by tier',
+    // `{year}` is the running year, filled in by `buildHealthMetricsMembersSections`.
+    description: 'Members per tier at each year end. {year} is year to date.',
     footnote: [],
     footnoteCaution: false,
   },
@@ -149,10 +156,10 @@ export const HEALTH_METRICS_MEMBERS_BLANK: HealthMetricsL2Blank = {
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_MEMBERS_SECTION_ID_PREFIX = 'sec-mem-';
 
-/** Reads a deep link waits for: each section's issue adds its key; `bridge` is the second read in `#tiers`. */
+/** Reads a deep link waits for: each section's issue adds its key. */
 export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
-  'tiers',
-  'bridge',
+  'growth',
+  'breakdown',
   'list',
   'risk',
   'renewals',
@@ -161,102 +168,103 @@ export const HEALTH_METRICS_MEMBERS_DATA_SECTIONS = [
   'churn',
 ] as const satisfies readonly HealthMetricsMembersDataSectionKey[];
 
-/** A delta or share the data cannot support, e.g. a partial year with no same-window comparison. */
-export const HEALTH_METRICS_MEMBERS_NOT_AVAILABLE = 'not available';
+/** Read-failed / no-foundation value: no month rows, so the section renders no figures. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED: HealthMetricsMembersGrowth = { months: [] };
+
+/** The earliest year read; the chart draws at most one line per colour, newest first. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR = 2017;
+
+/** Upper bound on month rows read: 12 a year, from the first year on, with decades to spare. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP = 600;
+
+/** The plot's SVG viewBox, stretched to the card; January and December sit `insetX` in from each edge. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_PLOT = { width: 1000, height: 300, insetX: 40 } as const;
+
+/** One colour per year, newest first: this year in accent, then the design's palette. */
+export const HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS = [
+  lfxColors.blue[500],
+  lfxColors.violet[400],
+  lfxColors.emerald[400],
+  lfxColors.amber[400],
+  lfxColors.red[400],
+  lfxColors.gray[400],
+  lfxColors.violet[300],
+  lfxColors.emerald[300],
+  lfxColors.amber[300],
+  lfxColors.red[300],
+] as const;
 
 /** Read-failed / no-foundation value: no tier rows, so the section renders no figures. */
-export const HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED: HealthMetricsMembersTiers = { rows: [], foundationRevenue: [] };
-
-/** The toggle over the hero; the first is the default. */
-export const HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS: readonly HealthMetricsMembersTiersModeOption[] = [
-  { id: 'members', label: 'Members' },
-  { id: 'revenue', label: 'Revenue' },
-];
-
-/** The matrix caption per mode: the design's counts wording, with the unit swapped for revenue. */
-export const HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS: Record<HealthMetricsMembersTiersMode, string> = {
-  members: 'the most-used table in PCC — exact counts',
-  revenue: 'the most-used table in PCC — in USD',
-};
-
-/** The composition chart's caption, in either mode. */
-export const HEALTH_METRICS_MEMBERS_TIERS_COMPOSITION_CAPTION = 'the same table as shares, so a shifting mix is visible';
+export const HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED: HealthMetricsMembersTiers = { rows: [] };
 
 /** Upper bound on tier rows read; the busiest foundation has around a hundred. */
 export const HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP = 500;
 
-/** One colour per tier in `tier_sort_rank` order, darkest for the top tier; reused past the eighth. */
-export const HEALTH_METRICS_MEMBERS_TIERS_COLORS: readonly string[] = [
-  lfxColors.blue[900],
-  lfxColors.blue[600],
-  lfxColors.blue[300],
-  lfxColors.violet[700],
-  lfxColors.violet[400],
-  lfxColors.emerald[600],
-  lfxColors.emerald[300],
-  lfxColors.amber[500],
-];
+/** The first year the breakdown shows; a foundation that started later starts at its own first year. */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR = 2019;
 
-/** Read-failed / no-foundation value: no steps, so the bridge renders no bars. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED: HealthMetricsMembersBridge = { steps: [] };
+/** The tiers with an icon of their own. */
+export const HEALTH_METRICS_MEMBERS_RESERVED_TIERS = ['diamond', 'platinum', 'gold', 'silver'] as const;
 
-/** Upper bound on bridge rows read: six per year, so a century of years. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP = 600;
-
-/** Every `MEMBERSHIP_WATERFALL` step in bar order, and the allowlist the bridge read keeps rows against. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES = ['start_of_year', 'new', 'upgrade', 'downgrade', 'churned', 'today'] as const;
-
-/** The movements a bar opens as a named list, and the allowlist the movements read validates against. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES = ['new', 'upgrade', 'downgrade'] as const;
-
-/** Read-failed value for a movement list. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED: HealthMetricsMembersMovements = { rows: [], totalRecords: 0 };
-
-/** Rows per page of a movement list; the longest list today runs to several hundred. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE = 25;
-
-/** Largest page a caller may ask for. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE = 100;
-
-/** Bar labels in the design's order; the closing total's label depends on the year, so it is built. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS: Record<Exclude<HealthMetricsMembersBridgeStepType, 'today'>, string> = {
-  start_of_year: 'Start of year',
-  new: 'New',
-  upgrade: 'Upgrades',
-  downgrade: 'Downgrades',
-  churned: 'Churned',
+/** How a reserved tier reads, whatever the foundation's spelling of it. */
+export const HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS: Record<HealthMetricsMembersReservedTier, string> = {
+  diamond: 'Diamond',
+  platinum: 'Platinum',
+  gold: 'Gold',
+  silver: 'Silver',
 };
 
-/** Under the bridge: why it stands in for a total-members line. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_FOOTER: readonly HealthMetricsFootnotePart[] = [
-  { text: "The bridge replaces PCC's total-members all-time line: it says " },
-  { text: 'why', bold: true },
-  { text: ' the number moved — adds, upgrades, downgrades and churn — rather than only that it did.' },
-];
+/**
+ * The tier icons as the design draws them: a gradient cut to a diamond (Diamond, Platinum) or a ring (Gold, Silver).
+ * The Platinum gradient is the design's darker one.
+ */
+export const HEALTH_METRICS_MEMBERS_TIER_ICONS: Record<HealthMetricsMembersReservedTier, HealthMetricsMembersTierIcon> = {
+  diamond: {
+    // Platinum's shape in purple; the design's deep stop has no palette token.
+    background: `linear-gradient(135deg, ${lfxColors.violet[400]} 0%, ${lfxColors.violet[900]} 40%, ${lfxColors.violet[300]} 58%, #2F0D68 85%, ${lfxColors.violet[800]} 100%)`,
+    mask: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.6 14.4 8 8 14.4 1.6 8Z' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat`,
+    radius: '0',
+  },
+  platinum: {
+    background: `linear-gradient(135deg, ${lfxColors.gray[500]} 0%, ${lfxColors.gray[800]} 40%, ${lfxColors.gray[400]} 58%, ${lfxColors.gray[900]} 85%, ${lfxColors.gray[700]} 100%)`,
+    mask: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.6 14.4 8 8 14.4 1.6 8Z' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat`,
+    radius: '0',
+  },
+  gold: {
+    // The ring's highlights have no palette tokens.
+    background: 'conic-gradient(from 45deg, #FDE68A, #D08700, #FFF1B8, #A65F00, #FDE68A)',
+    mask: 'radial-gradient(circle closest-side, transparent 52%, #000 56%)',
+    radius: '9999px',
+  },
+  silver: {
+    background: 'conic-gradient(from 45deg, #F4F4F5, #A1A1AA, #FAFAFA, #71717A, #F4F4F5)',
+    mask: 'radial-gradient(circle closest-side, transparent 52%, #000 56%)',
+    radius: '9999px',
+  },
+};
 
-/** Each movement drawer's copy, from the design's named lists. The from-tier is not in the data yet. */
-export const HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY: Record<HealthMetricsMembersMovementListType, HealthMetricsMembersMovementDrawerCopy> = {
-  new: {
-    title: 'Joined this year',
-    pastTitle: 'Joined in',
-    subtitle: 'New memberships, largest dues first',
-    note: "The dues column is annual. A new member's first 90 days predict whether they renew — worth checking that each one has attended something.",
-    verb: 'joined',
+/** Room a column's popup needs on its right before it opens on the left; the design caps the popup at 280px. */
+export const HEALTH_METRICS_MEMBERS_CHART_TIP_ROOM_PX = 292;
+
+/**
+ * The breakdown table's classes: row labels and value cells by kind, the striped and total fills, and the rules
+ * between cells. Applied via [class], so Tailwind's safelist carries them.
+ */
+export const HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES: HealthMetricsMembersBreakdownTableClasses = {
+  label: {
+    tier: 'text-[13px] font-medium text-gray-900',
+    total: 'text-[13px] font-semibold text-gray-900',
   },
-  upgrade: {
-    title: 'Moved up a tier',
-    pastTitle: 'Moved up a tier in',
-    subtitle: 'Existing members who increased their commitment',
-    note: 'Upgrades are the strongest signal a member is getting value. Worth understanding what changed for them — it is repeatable.',
-    verb: 'moved up',
+  cell: {
+    tier: 'text-[13px] font-normal text-gray-900',
+    total: 'text-[13px] font-semibold text-gray-900',
   },
-  downgrade: {
-    title: 'Moved down a tier',
-    pastTitle: 'Moved down a tier in',
-    subtitle: 'Reduced commitment — often a precursor to churn',
-    note: 'A downgrade keeps the logo but loses the revenue, so logo churn misses it entirely. These accounts are the highest-value save opportunities.',
-    verb: 'moved down',
-  },
+  stripe: 'bg-gray-50',
+  totalFill: 'bg-blue-100',
+  cellBase: 'flex min-w-0 items-center justify-end whitespace-nowrap px-[10px] py-[11px] leading-[18px]',
+  rowRule: 'border-b border-[color:var(--ui-neutral-alpha-100)]',
+  cellRule: 'border-l border-[color:var(--ui-neutral-alpha-100)]',
+  totalRule: 'border-t border-gray-900',
 };
 
 /** The directory's filter, search and page state in the URL; each key is namespaced to the section. */

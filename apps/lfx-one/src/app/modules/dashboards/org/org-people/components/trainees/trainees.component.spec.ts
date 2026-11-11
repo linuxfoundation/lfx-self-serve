@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
 import type {
@@ -146,9 +147,12 @@ describe('TraineesComponent', () => {
   let getTrainees: Mock<(orgUid: string, range: OrgLensTimeRange) => Observable<OrgTraineesResponse>>;
   let getTrainingStats: Mock<(orgUid: string, query: OrgTrainingStatsQuery) => Observable<OrgTrainingStats>>;
   let drawerOpen: Mock;
+  let account: WritableSignal<{ uid: string; accountName: string }>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const router = (): Router => TestBed.inject(Router);
+  const outsideToggle = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside-toggle"]');
+  const outsideNote = (): HTMLElement | null => el().querySelector('[data-testid="org-people-trainees-outside-note"]');
   const stat = (name: string): string => el().querySelector(`[data-testid="org-training-stat-${name}-value"]`)?.textContent?.trim() ?? '';
   const listed = (): string[] =>
     [...el().querySelectorAll<HTMLElement>('tbody tr[role="button"]')].map((tr) => tr.getAttribute('data-testid')!.replace('org-people-trainees-row-', ''));
@@ -170,7 +174,8 @@ describe('TraineesComponent', () => {
       imports: [TraineesComponent],
       providers: [
         provideRouter([]),
-        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        provideNoopAnimations(),
+        { provide: AccountContextService, useValue: { selectedAccount: account } },
         { provide: TraineesService, useValue: { getTrainees } },
         { provide: OrgLensTrainingService, useValue: { getTrainingStats, getFilterOptions: vi.fn(() => of(FILTER_OPTIONS)) } },
         { provide: PersonDetailDrawerService, useValue: { open: drawerOpen } },
@@ -187,10 +192,17 @@ describe('TraineesComponent', () => {
     await settle();
   }
 
+  // The list of learners not on the people list starts collapsed; its toggle opens or closes it.
+  async function openOutside(): Promise<void> {
+    el().querySelector<HTMLElement>('[data-testid="org-people-trainees-outside-toggle"]')!.click();
+    await settle();
+  }
+
   beforeEach(() => {
     getTrainees = vi.fn((_orgUid: string, range: OrgLensTimeRange) => of(responseFor(range)));
     getTrainingStats = vi.fn((_orgUid: string, query: OrgTrainingStatsQuery) => of(statsFor(query)));
     drawerOpen = vi.fn();
+    account = signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME });
   });
 
   describe('range and stats come from the URL', () => {
@@ -221,6 +233,29 @@ describe('TraineesComponent', () => {
       expect(stat('courses-in-progress')).toBe('2');
       expect(stat('completion-rate')).toBe('50%');
       expect(el().querySelector('[data-testid="org-training-stat-courses-taken-caption"]')?.textContent).toContain('all time');
+    });
+
+    it('shows the people-list tiles first and reveals the other stats on the link', async () => {
+      await mount('/?tab=training&range=all');
+      const visibleTiles = (): string[] =>
+        [...el().querySelectorAll<HTMLElement>('[data-testid^="org-training-stat-"][role="note"]')]
+          .filter((node) => !node.classList.contains('hidden'))
+          .map((node) => node.getAttribute('data-testid')!);
+      const toggle = (): HTMLElement => el().querySelector<HTMLElement>('[data-testid="org-training-stats-toggle"]')!;
+
+      expect(visibleTiles()).toEqual([
+        'org-training-stat-people-with-training-activity',
+        'org-training-stat-courses-taken',
+        'org-training-stat-certified-people',
+      ]);
+      expect(toggle().textContent).toContain('Show 7 more stats');
+      // A hidden tile still carries its number, so opening the strip never changes a value.
+      expect(stat('courses-in-progress')).toBe('2');
+
+      toggle().click();
+      await settle();
+      expect(visibleTiles()).toHaveLength(10);
+      expect(toggle().textContent).toContain('Show fewer stats');
     });
 
     it('refetches the rows and the stats when the range in the URL changes, without another navigation', async () => {
@@ -519,16 +554,39 @@ describe('TraineesComponent', () => {
       );
     });
 
-    it('lists them apart from the table, by name, with a name and a status and nothing to expand', async () => {
+    it('keeps them collapsed behind a header with the count, and opens the list with its review note on click', async () => {
       await mount('/?tab=training');
 
       expect(listed()).toEqual(['p-1']);
       expect(outsideList()?.querySelector('h3')?.textContent).toContain('Learners not on the people list (3)');
+      expect(outsideToggle()?.getAttribute('aria-expanded')).toBe('false');
+      expect(outsideNames()).toEqual([]);
+      expect(outsideNote()).toBeNull();
+      expect(outsideList()!.querySelector('[data-testid="org-people-trainees-outside-paginator"]')).toBeNull();
+
+      await openOutside();
+      expect(outsideToggle()?.getAttribute('aria-expanded')).toBe('true');
+      expect(outsideNote()?.textContent).toContain('not on its people list');
+      expect(outsideNote()?.textContent).toContain('can appear more than once');
+      expect(outsideNote()?.textContent).toContain('org admin');
+      expect(outsideNames()).toEqual(['Bea Outside', 'Zoe Outside', 'Name not available']);
+
+      await openOutside();
+      expect(outsideToggle()?.getAttribute('aria-expanded')).toBe('false');
+      expect(outsideNames()).toEqual([]);
+      expect(outsideNote()).toBeNull();
+    });
+
+    it('lists them apart from the table, by name, with a name and a status and nothing to expand', async () => {
+      await mount('/?tab=training');
+      await openOutside();
+
+      expect(listed()).toEqual(['p-1']);
       expect(outsideNames()).toEqual(['Bea Outside', 'Zoe Outside', 'Name not available']);
       const items = [...outsideList()!.querySelectorAll('li')].map((li) => li.textContent ?? '');
       expect(items[1]).toContain('Certified');
       expect(items[0]).toContain('Enrolled');
-      expect(outsideList()!.querySelector('button, [role="button"], [aria-expanded]')).toBeNull();
+      expect(outsideList()!.querySelector('ul')!.querySelector('button, [role="button"], [aria-expanded]')).toBeNull();
       expect(filteredNote()).toBeNull();
     });
 
@@ -539,11 +597,13 @@ describe('TraineesComponent', () => {
       expect(filteredNote()?.textContent).toContain('follow the time range and the name search');
     });
 
-    it('narrows them by the name search', async () => {
+    it('narrows them by the name search, in the header count and in the open list', async () => {
       await mount('/?tab=training');
       await search('bea');
 
       expect(listed()).toEqual([]);
+      expect(outsideList()?.querySelector('h3')?.textContent).toContain('(1)');
+      await openOutside();
       expect(outsideNames()).toEqual(['Bea Outside']);
       expect(emptyText()).toBe('No one on the people list matches the search.');
     });
@@ -551,6 +611,7 @@ describe('TraineesComponent', () => {
     it('keeps the generic filter copy for a search nobody matches, and says so plainly in the list', async () => {
       await mount('/?tab=training');
       await search('nobody-matches');
+      await openOutside();
 
       expect(emptyText()).toBe('No trainees match the current filters.');
       expect(el().querySelector('[data-testid="org-people-trainees-outside-empty"]')?.textContent?.trim()).toBe('No one in this list matches the search.');
@@ -568,6 +629,303 @@ describe('TraineesComponent', () => {
       await mount('/?tab=training&range=30d');
 
       expect(emptyText()).toBe('No one on the people list has training activity in this range.');
+    });
+  });
+
+  describe('pagination', () => {
+    const personKey = (i: number): string => `p-${String(i).padStart(2, '0')}`;
+    const manyPeople = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        personKey: personKey(i + 1),
+        lfid: null,
+        cdpMemberId: null,
+        name: `Person ${String(i + 1).padStart(2, '0')}`,
+        title: null,
+        email: null,
+      }));
+    const respondWith = (count: number, outside = 0) =>
+      getTrainees.mockImplementation((_org, range) =>
+        of({
+          ...EMPTY_ORG_TRAINEES_RESPONSE,
+          accountId: ORG,
+          timeRange: range,
+          trainees: manyPeople(count),
+          // One course each, every other person in a second foundation, so a filter can narrow the list.
+          details: manyPeople(count).map((person, i) =>
+            detail(person.personKey, `course-${i}`, 'Enrolled', {
+              foundationId: i % 2 === 0 ? 'foundation-a' : 'lf',
+              foundationName: i % 2 === 0 ? 'foundation-a' : 'lf',
+            })
+          ),
+          outsideLearners: Array.from({ length: outside }, (_, i) => ({
+            personKey: `outside:${i + 1}`,
+            name: `Learner ${String(i + 1).padStart(2, '0')}`,
+            status: 'Enrolled' as const,
+          })),
+          asOf: null,
+        })
+      );
+    const report = (testid: string): string => el().querySelector(`[data-testid="${testid}"] .p-paginator-current`)?.textContent?.trim() ?? '';
+    const tableReport = (): string => report('org-people-trainees-paginator');
+    const outsideReport = (): string => report('org-people-trainees-outside-paginator');
+    const click = async (selector: string): Promise<void> => {
+      el().querySelector<HTMLElement>(selector)!.click();
+      await settle();
+    };
+    const nextTable = (): Promise<void> => click('[data-testid="org-people-trainees-paginator"] .p-paginator-next');
+    const nextOutside = (): Promise<void> => click('[data-testid="org-people-trainees-outside-paginator"] .p-paginator-next');
+    const outsideCount = (): number => outsideList()?.querySelectorAll('li').length ?? 0;
+    // The rows-per-page choice goes through the paginator's real PrimeNG dropdown: open it, then click the option in the overlay.
+    const choosePageSize = async (paginatorTestId: string, rows: number): Promise<void> => {
+      // PrimeNG's overlay reads matchMedia and scrolls the selected option into view, which the test DOM lacks.
+      Element.prototype.scrollIntoView ??= () => undefined;
+      window.matchMedia ??= ((query: string) =>
+        ({
+          matches: false,
+          media: query,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+          addListener: () => undefined,
+          removeListener: () => undefined,
+        }) as unknown as MediaQueryList) as typeof window.matchMedia;
+      const select = el().querySelector<HTMLElement>(`[data-testid="${paginatorTestId}"] p-select`)!;
+      select.click();
+      await settle();
+      const option = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find((node) => node.textContent?.trim() === String(rows));
+      expect(option, `the ${rows} option`).toBeDefined();
+      // The options must render outside the component's overflow-hidden containers, or they get clipped.
+      expect(el().contains(option!)).toBe(false);
+      option!.click();
+      await settle();
+    };
+    const pickPageSize = (rows: number): Promise<void> => choosePageSize('org-people-trainees-paginator', rows);
+    const pickOutsidePageSize = (rows: number): Promise<void> => choosePageSize('org-people-trainees-outside-paginator', rows);
+
+    it('shows the first ten rows and the filtered total, with no Show All', async () => {
+      respondWith(25);
+      await mount('/?tab=training');
+
+      expect(listed()).toEqual(Array.from({ length: 10 }, (_, i) => personKey(i + 1)));
+      expect(tableReport()).toBe('Showing 1 to 10 of 25');
+      expect(el().textContent).not.toContain('Show All');
+      expect(el().querySelector('[data-testid^="org-people-trainees-show-all"]')).toBeNull();
+    });
+
+    it('sorts by courses descending then name, and a page change shows the next rows', async () => {
+      respondWith(25);
+      await mount('/?tab=training');
+      await nextTable();
+
+      expect(listed()).toEqual(Array.from({ length: 10 }, (_, i) => personKey(i + 11)));
+      expect(tableReport()).toBe('Showing 11 to 20 of 25');
+      await nextTable();
+      expect(listed()).toHaveLength(5);
+      expect(tableReport()).toBe('Showing 21 to 25 of 25');
+    });
+
+    it('states one page of rows with no page-size dropdown and no page buttons', async () => {
+      respondWith(8);
+      await mount('/?tab=training');
+
+      expect(listed()).toHaveLength(8);
+      expect(tableReport()).toBe('Showing 1 to 8 of 8');
+      const paginator = el().querySelector('[data-testid="org-people-trainees-paginator"]')!;
+      expect(paginator.classList.contains('lfx-paginator-no-rpp')).toBe(true);
+      expect(paginator.classList.contains('lfx-paginator-single-page')).toBe(true);
+    });
+
+    it('offers 10, 25 and 50 rows per page once there are more than ten rows', async () => {
+      respondWith(25);
+      await mount('/?tab=training');
+
+      const paginator = el().querySelector('[data-testid="org-people-trainees-paginator"]')!;
+      expect(paginator.classList.contains('lfx-paginator-no-rpp')).toBe(false);
+      expect(paginator.classList.contains('lfx-paginator-single-page')).toBe(false);
+    });
+
+    it('changes the rows per page, back to the first page', async () => {
+      respondWith(60);
+      await mount('/?tab=training');
+      await nextTable();
+      await pickPageSize(25);
+
+      expect(listed()).toHaveLength(25);
+      expect(tableReport()).toBe('Showing 1 to 25 of 60');
+    });
+
+    it('goes back to the first page on a search, keeping the rows per page', async () => {
+      respondWith(60);
+      await mount('/?tab=training');
+      await pickPageSize(25);
+      await nextTable();
+      expect(tableReport()).toBe('Showing 26 to 50 of 60');
+
+      await search('Person 4');
+      expect(tableReport()).toBe('Showing 1 to 10 of 10');
+      await search('');
+      expect(tableReport()).toBe('Showing 1 to 25 of 60');
+    });
+
+    it.each([
+      ['foundation', 'foundation=lf', 'Showing 1 to 25 of 30'],
+      ['range', 'range=365d', 'Showing 1 to 25 of 60'],
+    ])('goes back to the first page when the %s in the URL changes', async (_label, query, expected) => {
+      respondWith(60);
+      await mount('/?tab=training');
+      await pickPageSize(25);
+      await nextTable();
+      expect(tableReport()).toBe('Showing 26 to 50 of 60');
+
+      await router().navigateByUrl(`/?tab=training&${query}`);
+      await settle();
+      expect(tableReport()).toBe(expected);
+      expect(listed()[0]).toBe(personKey(_label === 'foundation' ? 2 : 1));
+    });
+
+    it('goes back to the first page when the sort changes', async () => {
+      respondWith(25);
+      await mount('/?tab=training');
+      await nextTable();
+      expect(tableReport()).toBe('Showing 11 to 20 of 25');
+
+      el().querySelector<HTMLElement>('th[aria-sort] button')!.click();
+      await settle();
+      expect(tableReport()).toBe('Showing 1 to 10 of 25');
+      expect(listed()[0]).toBe(personKey(1));
+    });
+
+    it('goes back to the first page when the organization changes', async () => {
+      respondWith(25);
+      await mount('/?tab=training');
+      await nextTable();
+
+      account.set({ uid: 'another-org', accountName: 'Another' });
+      await settle();
+      expect(tableReport()).toBe('Showing 1 to 10 of 25');
+    });
+
+    describe('expanded rows', () => {
+      const toggle = async (key: string): Promise<void> => click(`[data-testid="org-people-trainees-row-${key}"]`);
+      const detailRows = (): number => el().querySelectorAll('[data-testid$="-detail-row"]').length;
+
+      it('keeps a row expanded while it is on the page and drops it when the page changes, leaving no orphaned detail row', async () => {
+        respondWith(25);
+        await mount('/?tab=training');
+        await toggle('p-01');
+        expect(detailRows()).toBe(1);
+
+        await nextTable();
+        expect(detailRows()).toBe(0);
+        await click('[data-testid="org-people-trainees-paginator"] .p-paginator-prev');
+        expect(listed()[0]).toBe('p-01');
+        expect(el().querySelector('[data-testid="org-people-trainees-row-p-01"]')!.getAttribute('aria-expanded')).toBe('false');
+        expect(detailRows()).toBe(0);
+      });
+
+      it('keeps the expansion through a sort that leaves the person on the page, and drops it when they leave it', async () => {
+        respondWith(25);
+        await mount('/?tab=training');
+        await toggle('p-02');
+
+        // Name ascending: p-01..p-10 stay on page one.
+        el().querySelector<HTMLElement>('th[aria-sort] button')!.click();
+        await settle();
+        expect(el().querySelector('[data-testid="org-people-trainees-row-p-02"]')!.getAttribute('aria-expanded')).toBe('true');
+        expect(detailRows()).toBe(1);
+
+        // Name descending: p-25..p-16 are on page one.
+        el().querySelector<HTMLElement>('th[aria-sort] button')!.click();
+        await settle();
+        expect(listed()[0]).toBe('p-25');
+        expect(detailRows()).toBe(0);
+      });
+
+      it('still toggles with Enter and Space', async () => {
+        respondWith(25);
+        await mount('/?tab=training');
+        const row = el().querySelector<HTMLElement>('[data-testid="org-people-trainees-row-p-03"]')!;
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await settle();
+        expect(detailRows()).toBe(1);
+        row.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+        await settle();
+        expect(detailRows()).toBe(0);
+      });
+    });
+
+    describe('learners not on the people list', () => {
+      it('pages them on their own, with the heading keeping the full count', async () => {
+        respondWith(3, 35);
+        await mount('/?tab=training');
+        await openOutside();
+
+        expect(outsideList()?.querySelector('h3')?.textContent).toContain('(35)');
+        expect(outsideCount()).toBe(10);
+        expect(outsideReport()).toBe('Showing 1 to 10 of 35');
+        expect(tableReport()).toBe('Showing 1 to 3 of 3');
+        expect(el().textContent).not.toContain('Show All');
+
+        await nextOutside();
+        expect(outsideNames()[0]).toBe('Learner 11');
+        expect(outsideReport()).toBe('Showing 11 to 20 of 35');
+        expect(tableReport()).toBe('Showing 1 to 3 of 3');
+        expect(outsideList()?.querySelector('h3')?.textContent).toContain('(35)');
+      });
+
+      it('changes its own rows per page without touching the table', async () => {
+        respondWith(30, 60);
+        await mount('/?tab=training');
+        await openOutside();
+        await pickOutsidePageSize(50);
+
+        expect(outsideCount()).toBe(50);
+        expect(outsideReport()).toBe('Showing 1 to 50 of 60');
+        expect(tableReport()).toBe('Showing 1 to 10 of 30');
+      });
+
+      it('goes back to its first page on a search and on a range change, keeping its rows per page', async () => {
+        respondWith(3, 60);
+        await mount('/?tab=training');
+        await openOutside();
+        await pickOutsidePageSize(25);
+        await nextOutside();
+        expect(outsideReport()).toBe('Showing 26 to 50 of 60');
+
+        await search('Learner 1');
+        expect(outsideNames()[0]).toBe('Learner 10');
+        expect(outsideReport()).toBe('Showing 1 to 10 of 10');
+        await search('');
+        expect(outsideReport()).toBe('Showing 1 to 25 of 60');
+
+        await nextOutside();
+        await router().navigateByUrl('/?tab=training&range=365d');
+        await settle();
+        expect(outsideReport()).toBe('Showing 1 to 25 of 60');
+      });
+
+      it('goes back to its first page when the organization changes', async () => {
+        respondWith(3, 35);
+        await mount('/?tab=training');
+        await openOutside();
+        await nextOutside();
+
+        account.set({ uid: 'another-org', accountName: 'Another' });
+        await settle();
+        // A new organization starts collapsed again, on its first page.
+        expect(outsideNames()).toEqual([]);
+        await openOutside();
+        expect(outsideReport()).toBe('Showing 1 to 10 of 35');
+      });
+
+      it('shows names and statuses only, with no identifier beyond the opaque key', async () => {
+        respondWith(3, 12);
+        await mount('/?tab=training');
+        await openOutside();
+
+        const items = [...outsideList()!.querySelectorAll('li')];
+        expect(items.every((li) => /^Learner\d+(Enrolled|Certified)$/.test((li.textContent ?? '').replace(/\s+/g, '')))).toBe(true);
+        expect(outsideList()!.querySelector('ul')!.querySelector('[role="button"], [aria-expanded], a, [href]')).toBeNull();
+      });
     });
   });
 

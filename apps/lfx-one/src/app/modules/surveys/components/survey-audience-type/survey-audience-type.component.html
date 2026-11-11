@@ -4,7 +4,7 @@
 <div class="flex flex-col gap-6" data-testid="survey-audience-type">
   <!-- Step Title -->
   <div>
-    <h2 class="text-lg font-normal text-gray-900 mb-1">Audience & NPS Survey Template</h2>
+    <h2 class="text-lg font-normal text-gray-900 mb-1">Audience & NPS Survey Templates</h2>
     <p class="text-sm text-gray-500">Select who should receive this survey and choose the appropriate survey template</p>
   </div>
 
@@ -52,7 +52,12 @@
     <!-- Right Column - Survey Template -->
     <div class="flex flex-col gap-6">
       <div>
-        <h3 class="text-base font-medium text-gray-900 mb-4">NPS Survey Template <span class="text-red-500">*</span></h3>
+        <h3 id="survey-template-heading" class="text-base font-medium text-gray-900 mb-4" data-testid="survey-template-heading">
+          NPS Survey Templates <span class="text-red-500" aria-hidden="true">*</span>
+        </h3>
+        <p class="text-sm text-gray-500 mb-4" data-testid="survey-template-guidance">
+          Templates come from the SurveyMonkey survey workgroup. Select one to use its questions in your survey.
+        </p>
 
         <div class="flex flex-col gap-2">
           <lfx-select
@@ -64,6 +69,13 @@
             [loading]="templatesState().status === 'loading'"
             optionLabel="label"
             optionValue="value"
+            [filter]="true"
+            filterBy="label"
+            filterPlaceholder="Search templates..."
+            emptyFilterMessage="No templates match your search."
+            [resetFilterOnHide]="true"
+            ariaFilterLabel="Search survey templates"
+            ariaLabelledBy="survey-template-heading"
             placeholder="Select Survey"
             data-testid="survey-template-select">
           </lfx-select>

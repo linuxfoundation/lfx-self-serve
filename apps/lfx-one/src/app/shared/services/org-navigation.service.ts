@@ -30,7 +30,6 @@ import {
 } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
-import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { LensService } from './lens.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -48,7 +47,6 @@ export class OrgNavigationService {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly injector = inject(Injector);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
@@ -77,19 +75,6 @@ export class OrgNavigationService {
    * still in flight" from "the viewer is scrolling"; this can.
    */
   public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
-
-  public constructor() {
-    // M3: CLA-only rows are filtered by the flag as each page lands (`toOrgListPage`). A list fetched
-    // before LaunchDarkly was ready was filtered against the flag's default, and a caller whose
-    // selector was already enabled gets no re-bootstrap — so refetch it once the flag settles.
-    toObservable(this.orgClaOnlyAccess.enabled, { injector: this.injector })
-      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        if (this.state.loaded() || this.state.loading()) {
-          this.refreshList(this.accountContextService.selectedAccount().uid || this.accountContextService.getStoredUid());
-        }
-      });
-  }
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -308,10 +293,8 @@ export class OrgNavigationService {
   }
 
   private toOrgListPage(response: OrgItemsResponse, reset: boolean): OrgListPage {
-    // M3: the server lists CLA-only rows whatever the flag says; dropped here at ingest, so the default selection never picks one either.
-    const claOnlyListed = this.orgClaOnlyAccess.enabled();
     return {
-      items: claOnlyListed ? response.items : response.items.filter((item) => item.claOnly !== true),
+      items: response.items,
       nextPageToken: response.next_page_token,
       upstreamFailed: response.upstream_failed,
       reset,
@@ -328,6 +311,26 @@ export class OrgNavigationService {
     // pin (below) came from this very list, so a later authoritative page re-runs the selection —
     // that is how a revoked organization is released instead of kept for the session.
     if (this.accountContextService.isAdoptedFromAddress()) {
+      // One exception, and it is about the address rather than the selection. Two selections pin as
+      // an address while the URL names no organization — `/org`, or a legacy `/org/{page}`:
+      //
+      //  - a roll-up restored from the cookie, because nothing may re-default it. The pin alone
+      //    leaves the combined view living only in the cookie: the address still reads
+      //    `/org/people`, so sharing or reloading that link drops it (#4415 review 7).
+      //  - the organization a demotion fell back to, which `applyDemotionFallback` pins for the
+      //    same reason. `repointAddressAfterDemotion` corrects a `/org/family-{rootUid}/…` address but no-ops on
+      //    a legacy one, which names no organization to correct — so without this the page would
+      //    render one organization under `/org/people` and a shared link would not identify it
+      //    (#4415, Copilot).
+      //
+      // `isOnAddressedPage()` is what separates these from a genuine resolver adoption: there the
+      // URL already names the organization, so there is nothing to write. The selection stays
+      // pinned either way; only the address is written, through the same idle-safe writer every
+      // default uses, which takes the legacy-insert path. It is a no-op off `/org/…` entirely
+      // (`navigateToSelectedOrg` → `isRewritableOrgAddress`).
+      if (!this.orgLensNavigation.isOnAddressedPage()) {
+        this.writeDefaultAddress();
+      }
       return;
     }
     if (page.items.length === 0) {

@@ -19,6 +19,7 @@ const HOST_TEMPLATE = `
     [attr.aria-label]="label()"
     [lfxUiTooltip]="text()"
     [lfxUiTooltipTitle]="heading()"
+    [lfxUiTooltipIcon]="icon()"
     [lfxUiTooltipShortcut]="shortcut()"
     [lfxUiTooltipItems]="items()"
     [lfxUiTooltipSide]="side()"
@@ -32,6 +33,7 @@ const HOST_TEMPLATE = `
 class TestHostComponent {
   public readonly text = signal('Copy link');
   public readonly heading = signal('');
+  public readonly icon = signal('');
   public readonly shortcut = signal<string[]>([]);
   public readonly items = signal<UiTooltipItem[]>([]);
   public readonly side = signal<UiTooltipSide>('top');
@@ -414,6 +416,22 @@ describe('UiTooltipDirective', () => {
       expect(container.querySelector('[data-testid="ui-tooltip-text"]')?.textContent).toBe('Weighted from activity.');
       expect(container.querySelectorAll('kbd').length).toBe(2);
       expect(tooltip()?.className).toContain('flex-col');
+      expect(container.querySelector('[data-testid="ui-tooltip-icon"]')).toBeNull();
+    });
+
+    it('renders the icon before the title', async () => {
+      await setup();
+      fixture.componentInstance.heading.set('Restricted');
+      fixture.componentInstance.icon.set('fa-solid fa-lock');
+      await flush();
+      await hover();
+
+      const icon = container.querySelector('[data-testid="ui-tooltip-icon"]');
+      expect(icon?.className).toContain('fa-lock');
+      expect(icon?.className).toContain('text-[11px]');
+      expect(icon?.getAttribute('aria-hidden')).toBe('true');
+      expect(container.querySelector('[data-testid="ui-tooltip-title"]')?.firstElementChild).toBe(icon);
+      expect(container.querySelector('[data-testid="ui-tooltip-title"]')?.textContent).toBe('Restricted');
     });
 
     it('shows counts in place of the text and keeps the text as the description', async () => {

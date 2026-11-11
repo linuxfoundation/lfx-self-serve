@@ -118,12 +118,28 @@
               </td>
 
               <td>
-                <span
-                  class="inline-block max-w-full truncate bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded"
-                  [pTooltip]="getGroupName(survey)"
-                  tooltipPosition="top">
-                  {{ getGroupName(survey) }}
-                </span>
+                @if (survey.groupCommands) {
+                  <a
+                    [routerLink]="survey.groupCommands"
+                    [queryParams]="survey.groupQueryParams"
+                    [state]="{ backLabel: 'Surveys', backPath: '/surveys', fromMeLens: isMeLens() }"
+                    class="lfx-table-name-link inline-block max-w-full truncate text-sm"
+                    [pTooltip]="survey.groupName || ''"
+                    [tooltipDisabled]="!survey.groupName"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'surveys-group-link-' + rowId">
+                    {{ survey.groupName || '-' }}
+                  </a>
+                } @else {
+                  <span
+                    class="inline-block max-w-full truncate text-sm text-gray-700"
+                    [pTooltip]="survey.groupName || ''"
+                    [tooltipDisabled]="!survey.groupName"
+                    tooltipPosition="top"
+                    [attr.data-testid]="'surveys-group-text-' + rowId">
+                    {{ survey.groupName || '-' }}
+                  </span>
+                }
               </td>
 
               @if (isMeLens()) {

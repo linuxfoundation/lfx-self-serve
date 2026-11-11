@@ -125,6 +125,9 @@ describe('renderMktgSlidesExportFormMessage', () => {
         'LOGO REVERSED URL: none',
         'LOGO ONE-COLOR URL: none',
         'LOGO SYMBOL REVERSED URL: none',
+        'ICON DARK URLS: none',
+        'ICON LIGHT URLS: none',
+        'ICON HIGHLIGHT URL: none',
         'ASSETS: framework, kit',
         '--- ASSETS (JSON) ---',
         '{',
@@ -147,7 +150,7 @@ describe('renderMktgSlidesExportFormMessage', () => {
       { project_name: 'Example Project', deck_id: DECK_ID, logo_url: 'https://cdn.example.test/logo.png', assets: { kit: {} } },
       new Date('2026-10-19T23:30:00Z')
     );
-    expect(text.split('\n').slice(0, 12)).toEqual([
+    expect(text.split('\n').slice(0, 15)).toEqual([
       'BATCH INTAKE SUBMISSION (Slides export)',
       'PROJECT NAME: Example Project',
       'RUN DATE: 2026-10-19',
@@ -159,6 +162,9 @@ describe('renderMktgSlidesExportFormMessage', () => {
       'LOGO REVERSED URL: none',
       'LOGO ONE-COLOR URL: none',
       'LOGO SYMBOL REVERSED URL: none',
+      'ICON DARK URLS: none',
+      'ICON LIGHT URLS: none',
+      'ICON HIGHLIGHT URL: none',
       'ASSETS: kit',
     ]);
   });
@@ -175,12 +181,35 @@ describe('renderMktgSlidesExportFormMessage', () => {
       logo_symbol_reversed_url: 'https://cdn.example.test/symbol-reversed.png',
       assets: { kit: {} },
     });
-    expect(text.split('\n').slice(6, 12)).toEqual([
+    expect(text.split('\n').slice(6, 15)).toEqual([
       'LOGO URL: https://cdn.example.test/primary.png',
       'LOGO SYMBOL URL: https://cdn.example.test/symbol.png',
       'LOGO REVERSED URL: https://cdn.example.test/reversed.png',
       'LOGO ONE-COLOR URL: https://cdn.example.test/one-color.png',
       'LOGO SYMBOL REVERSED URL: https://cdn.example.test/symbol-reversed.png',
+      'ICON DARK URLS: none',
+      'ICON LIGHT URLS: none',
+      'ICON HIGHLIGHT URL: none',
+      'ASSETS: kit',
+    ]);
+  });
+
+  it('renders the kit’s icon sets on three head lines after the logo lines: each set’s URLs space-separated in the board’s order, the highlight alone', () => {
+    const dark = Array.from({ length: 8 }, (_, index) => `https://cdn.example.test/icon-dark-${index}.png`);
+    const light = Array.from({ length: 8 }, (_, index) => `https://cdn.example.test/icon-light-${index}.png`);
+    const text = renderMktgSlidesExportFormMessage({
+      project_name: 'P',
+      run_date: '2026-10-19',
+      folder_id: FOLDER_ID,
+      icon_dark_urls: dark,
+      icon_light_urls: light,
+      icon_highlight_url: 'https://cdn.example.test/icon-highlight.png',
+      assets: { kit: {} },
+    });
+    expect(text.split('\n').slice(11, 15)).toEqual([
+      `ICON DARK URLS: ${dark.join(' ')}`,
+      `ICON LIGHT URLS: ${light.join(' ')}`,
+      'ICON HIGHLIGHT URL: https://cdn.example.test/icon-highlight.png',
       'ASSETS: kit',
     ]);
   });

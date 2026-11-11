@@ -288,12 +288,17 @@ export const VALKEY_CACHE = {
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
-    // every detail row — so the remaining excess is real data, not repetition. `v3` (lfx-self-serve#4598) reads listed
-    // person × event rows of ORG_EVENT_PARTICIPATION per range, attribution and participation (the unlisted are counted,
-    // never sent). Each row repeats the person's name, title and person key, and drops the roster identity columns of
-    // `v2`, so its size is NOT measured: the 2 MiB cap is carried over from `v2` as a starting point and must be measured
-    // on dev data (largest org, `all` range) before release.
-    'org-lens-sf:v1:people-event-attendees:v3': 2 * 1_048_576,
+    // every detail row — so the remaining excess is real data, not repetition. `v3` (lfx-self-serve#4598) read listed
+    // person × event rows of ORG_EVENT_PARTICIPATION per range, attribution and participation. `v4` (lfx-self-serve#5158)
+    // reads everyone the selection credits, not only the listable, so it is larger than `v3`. Measured 2026-11-04 on dev
+    // data (largest org, 730-day range, all attribution): about 11k rows, roughly 1.1 MB compact, under the 2 MiB cap
+    // carried over from `v2`. All-time, all attribution: the largest real org is about 10.7k rows (~0.9 MB by the same SQL
+    // estimate); only the 'Individual - No Account' bucket (~81k rows) exceeds the cap, and an over-cap value skips the
+    // cache and reads directly. `v5` drops the per-row HAS_COMPANY_EMAIL flag and adds the `verified` attribution (a
+    // subset of `all`), so no value is larger than `v4`; the cap carries over. `v6` (lfx-self-serve#5315) reads Self-reported
+    // only through dbt's person-level ORG_EVENT_PARTICIPATION_RANGED (still a subset of `all`); same rows otherwise, the cap carries over.
+    // `v7` (lfx-self-serve-ops#1441) reads Employee match only, the `verified` rows of `v6`, so no value is larger; the cap carries over.
+    'org-lens-sf:v1:people-event-attendees:v7': 2 * 1_048_576,
     // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
     // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
     // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three
@@ -313,8 +318,8 @@ export const VALKEY_CACHE = {
     // the dev build (ANALYTICS_DEV ORG_PEOPLE_TRAINING, All time, no filters, the five largest organizations; the largest has
     // the most person-course pairs: 33,867) as the JSON of the stored value (`JSON.stringify` size from SQL `TO_JSON` rows,
     // each + 1 comma byte), same filtered-pair rules as the BFF; every filter combination is a subset of these.
-    // `training-stats:v5`: one object of 13 scalar fields, 366 bytes at most (a fixed shape; no per-org growth).
-    'org-lens-sf:v1:training-stats:v5': 1_048_576,
+    // `training-stats:v6`: one object of 13 scalar fields, 366 bytes at most (a fixed shape; no per-org growth).
+    'org-lens-sf:v1:training-stats:v6': 1_048_576,
     // `training-filter-options:v1`: five {label, value} lists, per range; All time is the largest: 42.6 KB for the largest
     // course dictionary (319 course names 37.4 KB, 57 projects 3.2 KB, 23 foundations 1.5 KB, 3 levels, 5 formats).
     'org-lens-sf:v1:training-filter-options:v1': 1_048_576,

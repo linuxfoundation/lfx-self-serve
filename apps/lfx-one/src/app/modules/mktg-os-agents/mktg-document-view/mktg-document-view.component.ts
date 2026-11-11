@@ -5,6 +5,7 @@ import { DatePipe, DecimalPipe, DOCUMENT, formatDate, isPlatformBrowser, Locatio
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   afterNextRender,
+  AfterRenderRef,
   Component,
   computed,
   DestroyRef,
@@ -51,6 +52,8 @@ import {
   MKTG_AGENT_INTAKES,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_PRINT_KIT_READ_PENDING,
   MKTG_RUN_RESUME_QUERY_CLEAR,
 } from '@lfx-one/shared/constants';
 import {
@@ -59,6 +62,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgAssetReport,
+  MktgPrintKitRead,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
   MktgRevisionSummary,
@@ -84,6 +88,8 @@ import {
   mktgAssetHeaderMetadata,
   mktgKitAssetLabel,
   mktgKitRootPath,
+  mktgPrintBrand,
+  mktgPrintDocumentTitle,
   mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
   mktgRunRouteFor,
@@ -132,6 +138,7 @@ import {
   takeUntil,
   Subject,
   ReplaySubject,
+  Subscription,
 } from 'rxjs';
 
 import { MktgApproveGapsDialogComponent } from '../components/mktg-approve-gaps-dialog/mktg-approve-gaps-dialog.component';
@@ -153,6 +160,9 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
+import { MktgPrintSheetRowComponent } from '../components/mktg-print-sheet-row/mktg-print-sheet-row.component';
+import { MktgPrintSheetComponent } from '../components/mktg-print-sheet/mktg-print-sheet.component';
+import { MktgPrintRunningHeadComponent } from '../components/mktg-print-running-head/mktg-print-running-head.component';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -186,6 +196,9 @@ import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
     RouterLink,
     BrandKitWebViewComponent,
     MarkdownRendererComponent,
+    MktgPrintSheetComponent,
+    MktgPrintSheetRowComponent,
+    MktgPrintRunningHeadComponent,
     MessageComponent,
     MktgSkeletonComponent,
     MktgBoilerplatesViewComponent,
@@ -281,7 +294,6 @@ export class MktgDocumentViewComponent {
   protected readonly progressRefreshKey = signal('0');
   protected readonly remoteRevisionId = signal('');
   private pinnedRouteRevision = '';
-  private pendingTitleFocus: { scopeKey: string; revisionId: string } | null = null;
   private readonly refreshedFailures = new Set<string>();
   private readonly preparedRunIds = new Set<string>();
   private restoreEpoch = 0;
@@ -313,12 +325,8 @@ export class MktgDocumentViewComponent {
   });
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly memberResult = viewChild(Member360ResultComponent);
-  private readonly documentTitle = viewChild<ElementRef<HTMLElement>>('documentTitle');
   protected readonly breadcrumbPage = this.initBreadcrumbPage();
   protected readonly revisionRows: Signal<MktgRevisionSummary[]> = computed(() => this.view()?.revisions ?? []);
-  protected readonly bannerKey = this.initBannerKey();
-  protected readonly bannerDismissed = linkedSignal({ source: this.bannerKey, computation: () => false });
-  protected readonly currentBanner = this.initCurrentBanner();
   protected readonly makeCurrentHint = MKTG_DOCUMENT_MAKE_CURRENT_HINT;
   protected readonly revisionPreviewCount = MKTG_DOCUMENT_REVISION_PREVIEW_COUNT;
   protected readonly savingStatus = computed(() => {
@@ -401,6 +409,12 @@ export class MktgDocumentViewComponent {
   }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
+  /** The approved revision's own approval record: the Brand Kit PDF prints it, whatever revision the page shows. */
+  protected readonly approvedApproval = computed(() => this.approvedView().revision?.revision.approval ?? null);
+  /** When the approved revision was stored, as the page shows it; it dates the PDF's name. */
+  protected readonly approvedCreatedAt = computed(() => this.approvedView().revision?.revision.createdAt ?? null);
+  /** When the approved revision was approved; the framework's print dates its cover with it. */
+  protected readonly approvedAt = computed(() => this.approvedView().revision?.revision.approval?.approvedAt ?? null);
   protected readonly approvedFramework = computed(() => {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'foundation-message' ? foundationMessageAssetOfRevision(approved.markdown, approved.sidecar) : null;
@@ -409,8 +423,17 @@ export class MktgDocumentViewComponent {
     const approved = this.approvedView().revision;
     return approved?.type.agentKey === 'brand-kit' ? readBrandKitRevision(approved.sidecar) : null;
   });
-  /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
-  protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
+  /**
+   * The print's Brand Kit read: not settled until the project's kit, or a definite "none stored", has arrived, and marked failed
+   * when the read errored (the framework's Download PDF then waits and says why, never the LF look); a project switch starts a new read.
+   */
+  protected readonly printKitRead: Signal<MktgPrintKitRead> = this.initPrintKitRead();
+  /** The project's stored Brand Kit, which a framework revision's or an AEO/GEO report's print (Download PDF) is set in; null for the LF look. */
+  protected readonly printKit: Signal<BrandKitRevision | null> = computed(() => this.printKitRead().kit);
+  private readonly printKitSettled = computed(() => this.printKitRead().settled);
+  private readonly printKitSettled$ = toObservable(this.printKitSettled);
+  /** The brand the other Marketing OS prints wear on their running head: the project's kit, or the LF look without one. */
+  protected readonly printBrand = computed(() => mktgPrintBrand(this.printKit()));
   /** Read-only deck lookup belongs to the viewed document, not its approved bytes. */
   protected readonly exportLookupTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
     const view = this.view();
@@ -570,6 +593,9 @@ export class MktgDocumentViewComponent {
   private readonly pendingDocuments = inject(MktgPendingDocumentService);
   private readonly printService = inject(MktgPrintService);
   private aeoPrintRequested = false;
+  /** A Download PDF press made while the Brand Kit read was still open; it prints once, after the render that follows the read. */
+  private aeoPrintWaiting: Subscription | null = null;
+  private aeoPrintRender: AfterRenderRef | null = null;
   protected readonly aeoPrintOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   protected readonly activity = signal<MktgRunActivity[]>([]);
   protected readonly aeoActivityStartedAt = signal(0);
@@ -660,15 +686,6 @@ export class MktgDocumentViewComponent {
             return equal || firstResolution || handoffOnly;
           }),
           tap((request) => {
-            const focus = this.pendingTitleFocus;
-            if (
-              focus &&
-              (focus.scopeKey !== JSON.stringify([request.project, request.agentKey, request.documentId]) ||
-                focus.revisionId !== request.revisionId ||
-                request.runId ||
-                request.generation)
-            )
-              this.pendingTitleFocus = null;
             if (request.revisionId !== this.pinnedRouteRevision || request.generation) this.remoteRevisionId.set('');
             const key = JSON.stringify({ ...request, reload: 0 });
             selectionChanged = key !== readerSelectionKey;
@@ -694,7 +711,6 @@ export class MktgDocumentViewComponent {
             }
             const scope = JSON.stringify([request.project, request.agentKey === 'member-360' ? '' : request.subject, request.agentKey, request.documentId]);
             if (scope !== this.loadedScope) {
-              this.pendingTitleFocus = null;
               this.loadedScope = scope;
               this.remoteRevisionId.set('');
               this.redirectedRun = '';
@@ -1028,54 +1044,16 @@ export class MktgDocumentViewComponent {
           takeUntilDestroyed()
         )
         .subscribe((view) => {
-          const focus = this.pendingTitleFocus;
-          this.pendingTitleFocus = null;
           this.view.set(view);
           if (view) this.selectionReadPending.set(false);
           if (!this.editingLink() && !this.savingLink())
             this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
-          if (
-            focus &&
-            view &&
-            focus.scopeKey === JSON.stringify([view.project, view.type.agentKey, view.documentId]) &&
-            focus.revisionId === view.revision.id
-          ) {
-            const focusScope = this.loadedScope;
-            afterNextRender(
-              () => {
-                if (focusScope !== this.loadedScope) return;
-                const current = this.view();
-                if (!current) return;
-                if (
-                  this.revisionParam() === focus.revisionId &&
-                  current.revision.id === focus.revisionId &&
-                  JSON.stringify([current.project, current.type.agentKey, current.documentId]) === focus.scopeKey
-                )
-                  this.focusDocumentTitle();
-              },
-              { injector: this.injector }
-            );
-          }
         });
     }
   }
 
   // === Protected methods ===
-  protected dismissCurrentBanner(): void {
-    if (!this.currentBanner()) return;
-    this.bannerDismissed.set(true);
-    this.focusDocumentTitle();
-  }
-
-  protected onBannerOpen(event: MouseEvent): void {
-    this.pendingTitleFocus = null;
-    const banner = this.currentBanner();
-    const viewed = this.view();
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !banner || !viewed || this.submittingGeneration()) return;
-    this.pendingTitleFocus = { scopeKey: JSON.stringify([viewed.project, viewed.type.agentKey, viewed.documentId]), revisionId: banner.id };
-  }
-
   protected onPublicProgress(cycle: MktgDocumentReadCycle): void {
     if (cycle.detail.project !== this.projectContext.activeContextUid()) return;
     const viewed = this.view();
@@ -1150,7 +1128,6 @@ export class MktgDocumentViewComponent {
   }
 
   protected onPublicProgressError(error: HttpErrorResponse): void {
-    this.pendingTitleFocus = null;
     this.runDetail.set(null);
     this.localProgress.set(null);
     this.view.set(null);
@@ -1319,9 +1296,30 @@ export class MktgDocumentViewComponent {
   }
 
   protected onDownload(): void {
-    if (!isPlatformBrowser(this.platformId) || !this.view()?.aeoGeoReport) return;
+    const view = this.view();
+    if (!isPlatformBrowser(this.platformId) || !view?.aeoGeoReport) return;
     this.aeoPrintRequested = true;
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    // A press while one is already waiting (for the kit read, or for the render after it) is dropped: one press prints once.
+    if (this.aeoPrintWaiting) return;
+    // The print waits for the Brand Kit read to settle (a kit, or null after a failed read), or a press before it
+    // arrives would save the LF-default PDF: the first press is kept and prints after the render that follows the read.
+    // A press in the frame after the read settles and before that render prints at once, from the head as rendered then.
+    if (this.printKitSettled()) {
+      this.printAeoReport();
+    } else {
+      this.aeoPrintWaiting = this.printKitSettled$.pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+        // The settled signal arrives inside an effect, which runs before this template (and the running head's brand) is
+        // refreshed; the print clones the DOM, so it waits for the render that follows.
+        this.aeoPrintRender = afterNextRender(
+          () => {
+            this.aeoPrintWaiting = null;
+            this.aeoPrintRender = null;
+            this.printAeoReport();
+          },
+          { injector: this.injector }
+        );
+      });
+    }
   }
 
   protected onToggleAllRevisions(): void {
@@ -1520,29 +1518,6 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
-  private initBannerKey() {
-    return computed(() => {
-      const view = this.view();
-      return view ? [view.project, view.type.agentKey, view.documentId, view.revision.id, view.approvedCurrent?.revisionId ?? ''].join(':') : '';
-    });
-  }
-
-  private initCurrentBanner() {
-    return computed(() => {
-      const dismissed = this.bannerDismissed();
-      const view = this.view();
-      const approved = view?.approvedCurrent;
-      if (!view || !approved || approved.revisionId === view.revision.id || dismissed) return null;
-      const row = view.revisions.find((revision) => revision.id === approved.revisionId);
-      const number = row?.number ?? approved.number;
-      if (!Number.isFinite(number) || number <= 0) return null;
-      // A missing row provides no approver evidence, so omit the clause rather than guessing one.
-      const approverClause = row ? `, approved by ${row.approval?.approvedBy?.name?.trim() || 'a project writer'}` : '';
-      const sentence = `v${number} is now the current version${approverClause}. You are reading v${view.revision.number}.`;
-      return { id: approved.revisionId, number, viewedNumber: view.revision.number, approverClause, sentence };
-    });
-  }
-
   private mergeDocumentMetadata(view: MktgRevisionResponse, detail: MktgDocumentDetailResponse): MktgRevisionResponse {
     if (
       JSON.stringify({ revisions: view.revisions, current: view.current, approvedCurrent: view.approvedCurrent }) ===
@@ -1654,20 +1629,24 @@ export class MktgDocumentViewComponent {
   }
 
   /**
-   * The project's Brand Kit, read only while a framework revision is on
-   * screen (a kit or a Markdown document prints nothing of this) and only in
-   * the browser. Any failed read is the LF look, not an error.
+   * The project's Brand Kit, which the print's running head wears: read only
+   * while a framework revision or an AEO/GEO report is on screen (a kit or a
+   * plain Markdown document prints nothing of this), only in the browser, and
+   * never on the server. Any failed read is null, the LF look, not an error.
    */
-  private initPrintKit(): Signal<BrandKitRevision | null> {
-    const projectUid = computed(() => (isPlatformBrowser(this.platformId) && this.asset() !== null ? this.projectContext.activeContextUid() : ''));
+  private initPrintKitRead(): Signal<MktgPrintKitRead> {
+    const projectUid = computed(() =>
+      isPlatformBrowser(this.platformId) && (this.asset() !== null || !!this.view()?.aeoGeoReport) ? this.projectContext.activeContextUid() : ''
+    );
+    const pending: MktgPrintKitRead = MKTG_PRINT_KIT_READ_PENDING;
     return toSignal(
       toObservable(projectUid).pipe(
         distinctUntilChanged(),
-        // A project switch drops the previous project's kit at once: until the new
-        // project's kit resolves, the print takes the LF look, never another project's brand.
-        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid).pipe(startWith(null)) : of(null)))
+        // A project switch drops the previous project's kit at once: until the new project's kit resolves, the print
+        // takes the LF look, never another project's brand, and a Download PDF press waits. No kit project is settled.
+        switchMap((uid) => (uid ? this.dependencyService.readBrandKit(uid).pipe(startWith(pending)) : of<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE)))
       ),
-      { initialValue: null }
+      { initialValue: pending }
     );
   }
 
@@ -1832,12 +1811,21 @@ export class MktgDocumentViewComponent {
     }
   }
 
-  private focusDocumentTitle(): void {
-    if (isPlatformBrowser(this.platformId)) this.documentTitle()?.nativeElement.focus({ preventScroll: true });
+  // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
+  private printAeoReport(): void {
+    const view = this.view();
+    if (!view?.aeoGeoReport) return;
+    // The saved PDF's name, like the deck's title: the project, the label the page shows, the revision on the page and its date.
+    const title = mktgPrintDocumentTitle(this.projectName(), view.type.itemLabel, view.revision.number, view.revision.createdAt);
+    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, title);
   }
 
-  // === AEO/GEO pending helpers (private methods follow protected methods by repository lint) ===
   private clearAeoPrint(): void {
+    // A press still waiting for the kit, or for the render after it, belongs to the document that is leaving the screen.
+    this.aeoPrintWaiting?.unsubscribe();
+    this.aeoPrintWaiting = null;
+    this.aeoPrintRender?.destroy();
+    this.aeoPrintRender = null;
     if (this.aeoPrintRequested) {
       this.printService.clear();
       this.aeoPrintRequested = false;

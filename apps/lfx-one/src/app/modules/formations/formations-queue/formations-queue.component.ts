@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
 import { ProjectApplicationService } from '@services/project-application.service';
@@ -12,18 +13,24 @@ import type {
   FilterPillOption,
   FormationQueueTiles,
   FormationsQueueFilterState,
+  FormationsQueuePageTab,
   FormationsQueueResponse,
-  ProjectApplicationTab,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import {
   createEmptyFormationsQueueResponse,
+  FORMATION_PIPELINE_COPY,
+  FORMATION_PIPELINE_TAB_ID,
   FORMATIONS_QUEUE_PAGE_TAB_OPTIONS,
   LF_FOUNDATION_ROOT_SLUG,
+  PROJECT_APPLICATION_FROM_FOUNDATION_COPY,
+  PROJECT_APPLICATION_PARENT_QUERY_PARAM,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, map, of, switchMap } from 'rxjs';
+import { withProposalsPendingCount } from '@lfx-one/shared/utils';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
+import { FormationsPipelineComponent } from '../components/formations-pipeline/formations-pipeline.component';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
 import { FormationsTableComponent } from '../components/formations-table/formations-table.component';
@@ -37,7 +44,15 @@ import { ProjectApplicationsPanelComponent } from '../components/project-applica
  */
 @Component({
   selector: 'lfx-formations-queue',
-  imports: [FormationPageTabsComponent, FormationsTableComponent, ProjectApplicationsPanelComponent, StatCardGridComponent, PageHeaderComponent],
+  imports: [
+    ButtonComponent,
+    FormationsPipelineComponent,
+    FormationPageTabsComponent,
+    FormationsTableComponent,
+    ProjectApplicationsPanelComponent,
+    StatCardGridComponent,
+    PageHeaderComponent,
+  ],
   templateUrl: './formations-queue.component.html',
   styleUrl: './formations-queue.component.scss',
 })
@@ -48,8 +63,9 @@ export class FormationsQueueComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  protected readonly pageTabOptions: FilterPillOption[] = FORMATIONS_QUEUE_PAGE_TAB_OPTIONS;
   protected readonly tabs = PROJECT_APPLICATION_TABS;
+  protected readonly pipelineTab = FORMATION_PIPELINE_TAB_ID;
+  protected readonly proposeLabel = PROJECT_APPLICATION_FROM_FOUNDATION_COPY.proposeButton;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly filters = signal<FormationsQueueFilterState>({ subStage: undefined, search: '' });
@@ -62,25 +78,54 @@ export class FormationsQueueComponent {
   private readonly isFormationTeam: Signal<boolean | null> = toSignal(this.projectApplicationService.getAccess(), { initialValue: null });
   private readonly requestedTab: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('tab'))), { initialValue: null });
   /** The proposals tab exists only on The Linux Foundation, and only for formation-team members. */
-  protected readonly showProposalsTab = computed(
-    () => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG && this.isFormationTeam() === true
+  private readonly isLfRoot = computed(() => this.projectContextService.selectedFoundation()?.slug === LF_FOUNDATION_ROOT_SLUG);
+  protected readonly showProposalsTab = computed(() => this.isLfRoot() && this.isFormationTeam() === true);
+  /**
+   * The page tabs, with the pending-proposals count (#5229) on the Project proposals tab once the shared staff read
+   * has landed. No count while it is unread, failed or zero — never a guessed "(0)".
+   */
+  protected readonly pageTabOptions: Signal<FilterPillOption[]> = computed(() =>
+    withProposalsPendingCount(FORMATIONS_QUEUE_PAGE_TAB_OPTIONS, this.projectApplicationService.pendingStaffCount())
   );
-  /** A `?tab=proposals` link the caller can't use falls back to the formations list. */
-  protected readonly pageTab: Signal<ProjectApplicationTab> = computed(() =>
-    this.showProposalsTab() && this.requestedTab() === PROJECT_APPLICATION_TABS.proposals
-      ? PROJECT_APPLICATION_TABS.proposals
-      : PROJECT_APPLICATION_TABS.formations
-  );
+  /**
+   * The Pipeline tab (#5475) shows under exactly the proposals tab's condition and is the default there: no `?tab=` means
+   * Pipeline. `?tab=formations` and `?tab=proposals` pick those tabs; a link the caller can't use falls back to the
+   * formations list, which is what everyone outside LF root and the formation team has always seen.
+   */
+  protected readonly pageTab: Signal<FormationsQueuePageTab> = computed(() => {
+    if (!this.showProposalsTab()) {
+      return PROJECT_APPLICATION_TABS.formations;
+    }
+    const requested = this.requestedTab();
+    if (requested === PROJECT_APPLICATION_TABS.proposals || requested === PROJECT_APPLICATION_TABS.formations) {
+      return requested;
+    }
+    return FORMATION_PIPELINE_TAB_ID;
+  });
 
   /**
    * Whether the formations read should run: only on the formations tab, and — for a `?tab=proposals` deep
    * link — only once the access check has answered, so a cold load doesn't fire a read it then discards.
    */
   private readonly formationsReadActive: Signal<boolean> = computed(() => {
-    if (this.requestedTab() === PROJECT_APPLICATION_TABS.proposals && this.isFormationTeam() === null) {
+    // A link that may land on the proposals or pipeline tab waits for the access answer rather than fire a read it discards.
+    const requested = this.requestedTab();
+    const mayLandElsewhere = requested === PROJECT_APPLICATION_TABS.proposals || (requested !== PROJECT_APPLICATION_TABS.formations && this.isLfRoot());
+    if (mayLandElsewhere && this.isFormationTeam() === null) {
       return false;
     }
     return this.pageTab() === PROJECT_APPLICATION_TABS.formations;
+  });
+
+  /**
+   * `?parent=<selected foundation uid>` for the "Propose a project" button (#5187), or `null` before a foundation is
+   * selected. The foundation is only a prefill hint for the formation team; it grants and places nothing, so any
+   * viewer of this page may start a proposal from it — including on The Linux Foundation, where `showProposalsTab`
+   * is deliberately unchanged.
+   */
+  protected readonly proposeQueryParams: Signal<Record<string, string> | null> = computed(() => {
+    const uid = this.projectContextService.selectedFoundation()?.uid;
+    return uid ? { [PROJECT_APPLICATION_PARENT_QUERY_PARAM]: uid } : null;
   });
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
@@ -91,11 +136,22 @@ export class FormationsQueueComponent {
   // GH-2367: reflects the foundation the queue is actually scoped to, so the copy doesn't claim
   // "every foundation" once a `parent` filter has narrowed the rows to one.
   protected readonly subtitle = computed(() => {
+    if (this.pageTab() === FORMATION_PIPELINE_TAB_ID) {
+      return FORMATION_PIPELINE_COPY.description;
+    }
     const foundation = this.projectContextService.selectedFoundation();
     return foundation
       ? `${foundation.name}'s formations between Prospect and Active.`
       : 'Every foundation, project, and child project between Prospect and Active.';
   });
+
+  public constructor() {
+    // The count needs the staff queue even while the Formations tab is showing. The read is shared with the
+    // proposals panel (joined while in flight), and is made only for callers who can see the tab at all.
+    toObservable(this.showProposalsTab)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.projectApplicationService.refreshStaff());
+  }
 
   protected onPageTabChange(tab: string): void {
     // Returning to Formations recreates the table with its default pill and search, so reset the filters to
@@ -105,7 +161,8 @@ export class FormationsQueueComponent {
     }
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { tab: tab === PROJECT_APPLICATION_TABS.proposals ? tab : null },
+      // Pipeline is the default for those who see the tab, so it carries no param; Formations must say so.
+      queryParams: { tab: tab === FORMATION_PIPELINE_TAB_ID ? null : tab },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

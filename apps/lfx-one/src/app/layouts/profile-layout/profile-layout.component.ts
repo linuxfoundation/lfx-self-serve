@@ -9,20 +9,21 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_MESSAGE,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
-  MY_CLAS_ENABLED_FLAG,
   normalizeTShirtSize,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
   PROFILE_AUTH_ERROR_MESSAGES,
+  PROFILE_TABS,
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildDisplayName, buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
+import { buildDisplayName, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -87,7 +88,6 @@ export class ProfileLayoutComponent {
   private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly rumService = inject(DataDogRumService);
   private readonly intercomService = inject(IntercomService);
 
@@ -101,10 +101,7 @@ export class ProfileLayoutComponent {
   // the initial GET, so we stash it and re-apply once a GET lands (see reapplyPendingOptimisticUpdate).
   private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
 
-  // Tab configuration. The read-only "CLAs" tab is appended (before Transactions/Settings)
-  // only when the `my-clas-enabled` flag is on — matching the route's CanMatch guard.
-  private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
-  public readonly tabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
+  protected readonly tabs: ProfileTab[] = PROFILE_TABS;
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
   // (read-after-write lag in the auth-service), so after a save we apply an optimistic override
@@ -415,7 +412,8 @@ export class ProfileLayoutComponent {
   /**
    * Surface the outcome of an email verification the Flow C callback replayed after authorization.
    * The marker is presentation-only (no email, code, or token), so unknown values are ignored and
-   * neither outcome changes identity state locally — already-connected re-fetches the canonical list.
+   * no outcome changes identity state locally — already-connected re-fetches the canonical list, while
+   * already-linked and retry outcomes leave identities untouched.
    */
   private handleEmailCallbackStatus(status: unknown): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -425,6 +423,8 @@ export class ProfileLayoutComponent {
     if (status === EMAIL_ALREADY_CONNECTED_STATUS) {
       this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
       this.userService.refreshUserIdentities();
+    } else if (status === EMAIL_CALLBACK_ALREADY_LINKED_STATUS) {
+      this.messageService.add({ severity: 'warn', summary: 'Email already linked', detail: EMAIL_ALREADY_LINKED_MESSAGE });
     } else if (status === EMAIL_CALLBACK_RETRY_REQUIRED_STATUS) {
       this.messageService.add({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
     }

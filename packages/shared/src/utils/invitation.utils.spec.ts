@@ -22,6 +22,7 @@ import {
   findPendingInvitationForCommittee,
   formatInviteExpiry,
   invitationRequiresOrganization,
+  isInviteExpired,
 } from './invitation.utils';
 
 /**
@@ -397,5 +398,38 @@ describe('formatInviteExpiry', () => {
     expect(formatted).not.toContain('T');
     expect(formatted).not.toContain('Invalid');
     expect(formatted).toMatch(/2026/);
+  });
+});
+
+describe('isInviteExpired', () => {
+  const now = new Date('2026-06-20T12:00:00Z');
+
+  it('is expired once the expiry is in the past', () => {
+    expect(isInviteExpired('2026-06-20T11:59:59Z', now)).toBe(true);
+    expect(isInviteExpired('2026-05-01T00:00:00Z', now)).toBe(true);
+  });
+
+  it('is not expired while the expiry is in the future', () => {
+    expect(isInviteExpired('2026-06-20T12:00:01Z', now)).toBe(false);
+    expect(isInviteExpired('2026-07-20T12:00:00Z', now)).toBe(false);
+  });
+
+  it('is not expired at the exact expiry instant', () => {
+    expect(isInviteExpired('2026-06-20T12:00:00Z', now)).toBe(false);
+  });
+
+  it('never treats a record with no expiry as expired (legacy records never expire)', () => {
+    expect(isInviteExpired(null, now)).toBe(false);
+    expect(isInviteExpired(undefined, now)).toBe(false);
+    expect(isInviteExpired('', now)).toBe(false);
+  });
+
+  it('never treats an unparseable expiry as expired', () => {
+    expect(isInviteExpired('not-a-date', now)).toBe(false);
+  });
+
+  it('defaults to the current time', () => {
+    expect(isInviteExpired(new Date(Date.now() - 60_000).toISOString())).toBe(true);
+    expect(isInviteExpired(new Date(Date.now() + 60_000).toISOString())).toBe(false);
   });
 });

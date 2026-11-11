@@ -9,6 +9,7 @@ import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingTranscriptDialogComponent } from '../components/meeting-transcript-dialog/meeting-transcript-dialog.component';
 import { MeetingsHomeSummaryDialogComponent } from '../components/meetings-home-summary-dialog/meetings-home-summary-dialog.component';
 import { MeetingsHomeDialogsService } from './meetings-home-dialogs.service';
 
@@ -47,6 +48,24 @@ describe('MeetingsHomeDialogsService', () => {
     expect(open).toHaveBeenCalledWith(MeetingsHomeSummaryDialogComponent, { data: { row: ROW, summary, onChange } });
   });
 
+  it('passes the drawer origin and pending flag to the summary dialog', () => {
+    const summary = {} as PastMeetingSummary;
+
+    service.openSummary(ROW, summary, undefined, { origin: 'drawer', showPending: true });
+
+    expect(open).toHaveBeenCalledWith(MeetingsHomeSummaryDialogComponent, {
+      data: { row: ROW, summary, onChange: undefined, origin: 'drawer', showPending: true },
+    });
+  });
+
+  it('opens the transcript dialog for a past meeting with its origin', () => {
+    service.openTranscript('synthetic-past-meeting', ROW, { origin: 'drawer' });
+
+    expect(open).toHaveBeenCalledWith(MeetingTranscriptDialogComponent, {
+      data: { row: ROW, pastMeetingId: 'synthetic-past-meeting', origin: 'drawer' },
+    });
+  });
+
   it('opens a valid recording link in a new tab and reports an invalid one', () => {
     service.openRecording(SHARE_URL);
     service.openRecording('javascript:alert(1)');
@@ -56,11 +75,11 @@ describe('MeetingsHomeDialogsService', () => {
     expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Failed to open recording' }));
   });
 
-  it('copies the recording link and confirms with a success toast', () => {
+  it('copies the recording link and confirms with a dark toast like the other home toasts', () => {
     service.copyRecordingLink(SHARE_URL);
 
     expect(copy).toHaveBeenCalledWith(SHARE_URL);
-    expect(toastShow).toHaveBeenCalledWith({ variant: 'success', message: 'Recording link copied to clipboard' });
+    expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Recording link copied to clipboard' });
   });
 
   it('shows an error toast when the copy fails', () => {

@@ -10,17 +10,18 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
  * Tabs for switching sections of one page, following the WAI-ARIA tabs pattern: a labelled `tablist`, roving `tabindex`, and
  * Left/Right/Home/End moving focus and selection together. Disabled tabs take focus from those keys without being selected, so their
  * reason tooltip opens, but they stay out of the initial tab stop. Use `[(value)]` to read and set the selection.
- * `variant="default"` is an underline with a 2px accent bar on a rule; `variant="secondary"` is 32px pills. `size="small"` (13px) is the
- * one used on Meetings. A tab can have a count, an icon, and a disabled state with a tooltip that says why. The component renders the
- * tablist only: render the `role="tabpanel"` elements yourself and point them at `idPrefix`.
+ * `variant="default"` is an underline with a 2px accent bar on a rule; `variant="secondary"` is 32px pills. `size="small"` is 13px; the
+ * default is 14px. A tab can have a count, an icon, and a disabled state with a tooltip that says why. The component renders the
+ * tablist only: render the `role="tabpanel"` elements yourself and point them at `idPrefix`. Projected content, such as a search field, sits at
+ * the end of the row, 16px from the tabs and on the same rule; it wraps below the tabs when the row is too narrow, and the rule stays under it.
  */
 @Component({
   selector: 'lfx-ui-tabs',
   imports: [UiTooltipDirective],
   templateUrl: './tabs.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // flow-root keeps the list's negative margins inside the host, so the rule sits on the tabs' bottom edge.
-  host: { class: 'flow-root', '[class]': 'hostClasses()' },
+  // A flex row keeps the list's negative margins inside the host, so the rule sits on the tabs' bottom edge; 16px gaps, exact px.
+  host: { class: 'flex flex-wrap items-end justify-between gap-[16px]', '[class]': 'hostClasses()' },
 })
 export class UiTabsComponent {
   /** The tabs to render, in order. */
@@ -80,7 +81,8 @@ export class UiTabsComponent {
   private initListClasses(): Signal<string> {
     return computed(() => {
       // Exact px gap, not rem; 14px root. The 4px padding, offset by negative margins, gives the focus ring room on every side inside the scroll area.
-      const base = '-mx-[4px] -my-[4px] flex items-end overflow-x-auto p-[4px] isolate';
+      // shrink-0 lets projected content narrow first; max-w-full still scrolls tabs wider than the row.
+      const base = '-mx-[4px] -my-[4px] flex max-w-full shrink-0 items-end overflow-x-auto p-[4px] isolate';
       return this.variant() === 'secondary' ? `${base} gap-[4px]` : `${base} gap-[24px]`;
     });
   }

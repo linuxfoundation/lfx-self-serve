@@ -4,6 +4,7 @@
 import { afterNextRender, Component, computed, ElementRef, inject, Injector, input, model, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_DEVICE_LABELS,
   GOOGLE_ADS_MAX_BID_MODIFIER,
   GOOGLE_ADS_DEVICES,
@@ -72,6 +73,11 @@ export class CampaignGoogleTargetingPanelComponent {
    * While set, a device offers Default bid and Exclude only, and one already adjusted is shown held.
    */
   public readonly deviceAdjustBlockedReason = input<string | null>(null);
+  /**
+   * The devices the channel takes, one row each: the tab's `googleAdsDevicesOn` answer. Demand Gen
+   * and Performance Max add TV screens; the default is the three every other channel takes.
+   */
+  public readonly devices = input<readonly GoogleAdsDevice[]>(GOOGLE_ADS_DEVICES);
 
   public readonly adSchedules = model.required<CampaignAdSchedule[]>();
   public readonly deviceBidModifiers = model.required<CampaignDeviceBidModifier[]>();
@@ -299,7 +305,7 @@ export class CampaignGoogleTargetingPanelComponent {
     return computed(() => {
       const blocked = this.deviceAdjustBlockedReason() !== null;
       const byDevice = new Map(this.deviceBidModifiers().map((d) => [d.device, d.bidModifier]));
-      return GOOGLE_ADS_DEVICES.map((device) => {
+      return this.devices().map((device) => {
         const modifier = byDevice.get(device);
         let mode: GoogleDeviceBidMode = 'adjust';
         if (modifier === undefined) mode = 'default';
@@ -324,12 +330,17 @@ export class CampaignGoogleTargetingPanelComponent {
     this.adSchedules.update((list) => list.map((s, i) => (i === index ? change(s) : s)));
   }
 
-  /** Writes one device's modifier, or drops its entry for `null`, keeping the list in {@link GOOGLE_ADS_DEVICES} order. */
+  /**
+   * Writes one device's modifier, or drops its entry for `null`, keeping the list in
+   * {@link GOOGLE_ADS_DEMAND_GEN_DEVICES} order. Ordered by that widest vocabulary rather than by
+   * {@link devices}, so an entry the current channel does not list (TV screens, held after a switch
+   * away from Demand Gen or Performance Max) survives an edit to another row.
+   */
   private setDevice(device: GoogleAdsDevice, bidModifier: number | null): void {
     const others = new Map(this.deviceBidModifiers().map((d) => [d.device, d.bidModifier]));
     if (bidModifier === null) others.delete(device);
     else others.set(device, bidModifier);
-    this.deviceBidModifiers.set(GOOGLE_ADS_DEVICES.filter((d) => others.has(d)).map((d) => ({ device: d, bidModifier: others.get(d) as number })));
+    this.deviceBidModifiers.set(GOOGLE_ADS_DEMAND_GEN_DEVICES.filter((d) => others.has(d)).map((d) => ({ device: d, bidModifier: others.get(d) as number })));
   }
 
   /** Day names as a sentence fragment, through the shared {@link joinAsSentenceList}: "Monday, Tuesday and Friday". */

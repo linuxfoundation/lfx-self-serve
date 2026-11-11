@@ -49,6 +49,7 @@ export const PROFILE_TABS: ProfileTab[] = [
   { id: 'attribution', label: 'Work history & Affiliations', route: 'attributions' },
   { id: 'identities', label: 'Identities', route: 'identities' },
   { id: 'individual-enrollment', label: 'Individual Enrollment', route: 'individual-enrollment' },
+  { id: 'clas', label: 'CLAs', route: 'clas' },
   { id: 'transactions', label: 'Transactions', route: 'transactions' },
   { id: 'settings', label: 'Settings', route: 'settings' },
 ];
@@ -102,6 +103,7 @@ export const YEAR_OPTIONS: { label: string; value: string }[] = Array.from({ len
  */
 export const IDENTITY_PROVIDER_OPTIONS: IdentityProviderOption[] = [
   { id: 'github', name: 'GitHub', description: 'Connect your GitHub account for code contributions', icon: 'fa-brands fa-github' },
+  { id: 'gitlab', name: 'GitLab', description: 'Connect your GitLab account for code contributions', icon: 'fa-brands fa-gitlab' },
   { id: 'linkedin', name: 'LinkedIn', description: 'Connect your LinkedIn account for employer recognition', icon: 'fa-brands fa-linkedin' },
   { id: 'google', name: 'Google', description: 'Connect your Google account to verify your email', icon: 'fa-brands fa-google' },
   { id: 'email', name: 'Email', description: 'Add an email address for notifications and attribution', icon: 'fa-light fa-envelope' },
@@ -132,6 +134,21 @@ export const CDP_TO_AUTH0_PROVIDER_MAP: Record<string, string> = Object.fromEntr
 );
 
 /**
+ * Auth0 connection name of the generic OAuth2 social connection that links
+ * GitLab accounts (#4187). Its reverse-map entry above supplies the
+ * `connection=gitlab` sent to Auth0 when connecting.
+ */
+export const GITLAB_AUTH0_CONNECTION = 'gitlab';
+
+/**
+ * Auth0 provider of identities linked through the GitLab connection. `oauth2`
+ * is the generic strategy shared by any custom social connection, so only the
+ * connection name identifies GitLab; unlinking needs this provider, not the
+ * connection name.
+ */
+export const GITLAB_AUTH0_PROVIDER = 'oauth2';
+
+/**
  * Default mapping from CDP platform → identity type, used when LFX One POSTs
  * new identities to CDP from auth-service (where the value's shape is known
  * because we control it — Auth0 always gives us email for LinkedIn, nickname
@@ -154,15 +171,24 @@ export const CDP_PLATFORM_TO_TYPE_MAP: Readonly<Record<string, CdpIdentityType |
  * profile identities UI and syncing to CDP from auth-service. Applied AFTER
  * the `custom → email` remap in cdp.service.ts, so email-style entries appear
  * here as `email + email`. LFID is handled by a dedicated auto-verify branch
- * and intentionally excluded from this allowlist.
+ * and intentionally excluded from this allowlist. Combos surfaced only when the
+ * user has linked the account live in `AUTH0_LINKED_ONLY_IDENTITY_COMBOS`.
  */
 export const CDP_DISPLAYABLE_IDENTITY_COMBOS: ReadonlySet<string> = new Set(['github+username', 'linkedin+email', 'email+email', 'google+email']);
+
+/**
+ * (platform, type) combos shown in the profile identities UI only when backed
+ * by an identity linked in auth-service. CDP-only rows for these combos stay
+ * hidden, so they are never offered for verification (Product decision, #4190).
+ */
+export const AUTH0_LINKED_ONLY_IDENTITY_COMBOS: ReadonlySet<string> = new Set(['gitlab+username']);
 
 /**
  * CDP platform to icon class mapping
  */
 export const CDP_PLATFORM_ICONS: Record<string, string> = {
   github: 'fa-brands fa-github',
+  gitlab: 'fa-brands fa-gitlab',
   google: 'fa-brands fa-google',
   linkedin: 'fa-brands fa-linkedin',
   email: 'fa-light fa-envelope',
@@ -187,10 +213,10 @@ export const IDENTITY_PROVIDER_LABELS: Record<IdentityProvider, string> = {
 export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
 
 /**
- * Generic, non-identifying message returned when a post-proof link reports the email is already
- * linked. Intentionally never names the owning account — surfacing the owning LFID would enable
- * account enumeration — and never asserts "another account", since the upstream conflict alone
- * does not prove that. Keeps the "already linked" marker the dialogs' support-link classifier
+ * Generic, non-identifying message returned when, after a correct code, OTP verification or the
+ * identity link reports the email is already linked. Intentionally never names the owning
+ * account — surfacing the owning LFID would enable account enumeration — and never asserts
+ * "another account", since the upstream conflict alone does not prove that. Keeps the "already linked" marker the dialogs' support-link classifier
  * (`isIdentityAlreadyLinkedError`) matches.
  */
 export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to an LFX account. Contact support if you need help.';
@@ -229,6 +255,9 @@ export const EMAIL_CALLBACK_STATUS_PARAM = 'email_status';
 /** Flow C callback outcome: a replayed pending email verification did not finish. */
 export const EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: EmailVerificationCallbackStatus = 'retry_required';
 
+/** Flow C callback outcome: the replayed code was correct, but the address is already linked to an LFX account. */
+export const EMAIL_CALLBACK_ALREADY_LINKED_STATUS: EmailVerificationCallbackStatus = 'already_linked';
+
 /** Fixed guidance for a pending email verification that did not finish during the Flow C callback. */
 export const EMAIL_CALLBACK_RETRY_MESSAGE =
   'Email verification did not finish. Return to Email Settings or Identities and request a new verification code to try again.';
@@ -254,13 +283,13 @@ export const EMAIL_RESEND_SUPPORT_MESSAGE = "If it hasn't arrived, contact suppo
 /** Retryable, non-identifying error shown when a resend request fails. */
 export const EMAIL_RESEND_FAILED_MESSAGE = "We couldn't request another code. Please try again.";
 
-/** Generic error code for every non-service-unavailable OTP verification failure. */
+/** Generic error code for wrong, expired or otherwise failed OTP verification (not outages or proven conflicts). */
 export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';
 
-/** Non-identifying guidance for wrong, expired or already-linked OTP verification failures. */
+/** Non-identifying guidance for wrong, expired or otherwise failed OTP verification; proven conflicts use EMAIL_ALREADY_LINKED_MESSAGE. */
 export const EMAIL_VERIFICATION_FAILED_MESSAGE = 'Verification failed. Please try again or request a new code.';
 
-/** Minimum upstream-to-response duration for send-code and unsuccessful OTP verification. */
+/** Minimum upstream-to-response duration for send-code replies and non-outage OTP failures. */
 export const EMAIL_VERIFICATION_MIN_RESPONSE_MS = 1500;
 
 /** Send-code rate-limit window shared by the per-user and per-target limiters. */

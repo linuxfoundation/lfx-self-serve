@@ -52,8 +52,10 @@ import {
   getEntityCommands,
   getMeetingCommitteeSelectionKey,
   getSavedAttendeeVisibility,
+  getUpcomingMeetingStartTime,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
+  isSameMinute,
   mapRecurrenceToFormValue,
   markMeetingFormForValidation,
   normalizeMeetingApiVotingStatuses,
@@ -142,6 +144,25 @@ export class MeetingManageComponent {
   public meetingId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
   public originalStartTime = signal<string | null>(null);
+  // The same start date populateFormWithMeetingData() computes via toZonedTime(), kept alongside
+  // the form value so the wizard can pass it down as minDate()'s past-date allowance (originalStartDate
+  // input on lfx-meeting-details, GH-4944) without re-deriving it from the raw timestamp.
+  public originalStartDate = signal<Date | null>(null);
+  // The series' own raw start_time (edit mode only), distinct from originalStartTime once that
+  // defaults to the next occurrence (GH-4944): prepareMeetingData() resends this verbatim instead
+  // of the displayed next-occurrence default when the organizer never touched Start date/time, so
+  // an untouched save never moves the series anchor or risks the upstream "time changed" update
+  // path an edited-and-unchanged next-occurrence value could trigger (an override's moved time, or
+  // one inside the no-buffer window right after an occurrence ends, does not equal the pattern's
+  // own next slot upstream compares against -- see prepareMeetingData()).
+  private seriesOriginStartTime = signal<string | null>(null);
+  // The timezone the displayed next-occurrence default was computed in (edit mode only). The
+  // "untouched Start date" substitution must not apply once this no longer matches the form's
+  // current timezone -- otherwise a timezone-only change can leave the displayed local time
+  // looking unchanged (same UTC instant under the old zone) while the resent origin, computed
+  // under the *old* zone, is paired with the *new* one and means a different local time than the
+  // organizer picked.
+  private originalTimezone = signal<string | null>(null);
   // Owner hydrated from the loaded meeting (edit mode). prepareOwnerData() compares against this
   // to omit the owner key when the picker is untouched — upstream replaces owner as a whole
   // object, so re-sending an unchanged owner would silently drop its stored profile_picture.
@@ -296,18 +317,24 @@ export class MeetingManageComponent {
         this.updateCanProceed();
       });
 
-    // When Board meeting type is selected, default to private + restricted access.
-    // When switching away from Board, reset to public + unrestricted defaults so the
-    // user isn't left with Board-level settings silently applied to a non-Board meeting.
-    // The user can freely override visibility and restriction after the default is applied.
+    // Selecting Board, or switching away from it, reaffirms the form's own private + restricted
+    // default — the resting state is private/restricted either way, so there's nothing left to
+    // "undo" on leaving Board. Kept as its own patch (rather than relying on the form's initial
+    // value alone) so a user who manually loosened access while on Board gets it reset on leaving,
+    // same as before this default changed. The user can freely override visibility and restriction
+    // after the default is applied.
+    //
+    // Not edit mode: hydration writes `meeting_type` like any other field, so the subscription
+    // would fire mid-patch and overwrite the access settings the meeting was actually saved with.
     this.form()
       .get('meeting_type')
       ?.valueChanges.pipe(startWith(this.form().get('meeting_type')?.value as string), pairwise(), takeUntilDestroyed(this.destroyRef))
       .subscribe(([previousType, currentType]: [string, string]) => {
-        if (currentType === MeetingType.BOARD) {
+        if (this.isEditMode()) {
+          return;
+        }
+        if (currentType === MeetingType.BOARD || previousType === MeetingType.BOARD) {
           this.form().patchValue({ visibility: MeetingVisibility.PRIVATE, restricted: true });
-        } else if (previousType === MeetingType.BOARD) {
-          this.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
         }
       });
 
@@ -606,7 +633,32 @@ export class MeetingManageComponent {
     // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
     const formValue = this.form().getRawValue();
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
-    const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
+    const combinedStartDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
+    // Editing the entire series hydrates Start date/time from the next occurrence (GH-4944), not
+    // the series' own start_time, so an organizer who never touches those fields must still resend
+    // the true, unmodified origin -- not the displayed next-occurrence stand-in. Submitting the
+    // next occurrence's date unconditionally would move the series anchor on every save, and when
+    // that date came from an individually-rescheduled occurrence (or one just past the no-buffer
+    // reconciliation window) it no longer equals the pattern slot upstream's change-detection
+    // compares against, so the save would be misread as a deliberate time change and re-email every
+    // registrant. Comparing against originalStartTime (the same next-occurrence default actually
+    // displayed), not seriesOriginStartTime itself, correctly treats a deliberate edit back to the
+    // original date as a real, intentional change.
+    // The substitution must also stand down once the meeting stops being recurring (turning off
+    // "Recurring Meeting" makes this a one-time meeting on the displayed date, not the historical
+    // series) and once the timezone the organizer is saving under no longer matches the one the
+    // displayed default was computed in (otherwise the origin, computed under the old zone, could
+    // be paired with the new one and mean a different local time than what's shown on screen).
+    const original = this.originalStartTime();
+    const seriesOrigin = this.seriesOriginStartTime();
+    const startUnchanged =
+      this.isEditMode() &&
+      !!formValue.isRecurring &&
+      !!combinedStartDateTime &&
+      !!original &&
+      formValue.timezone === this.originalTimezone() &&
+      isSameMinute(combinedStartDateTime, original);
+    const startDateTime = startUnchanged && seriesOrigin ? seriesOrigin : combinedStartDateTime;
 
     // Handle recurrence - use FormGroup value directly
     let recurrenceObject: any = null;
@@ -1071,15 +1123,22 @@ export class MeetingManageComponent {
     // the picker decides as it arrives.
     this.form().get('show_meeting_attendees')?.markAsPristine();
 
-    // Store the original start time for validation
-    this.originalStartTime.set(meeting.start_time);
+    // Editing the entire series shows the next upcoming occurrence, not the series' original
+    // start_time -- for an ongoing weekly series that can be edited months or years after it
+    // first started, so defaulting to the origin meant Start date routinely landed deep in the
+    // past (GH-4944). Falls back to start_time itself once no future occurrence remains. Mirrors
+    // PCC and the same precedent already used for the join-page host-key window and dashboard
+    // cards (see getUpcomingMeetingStartTime()).
+    const effectiveStartTime = getUpcomingMeetingStartTime(meeting);
+    this.originalStartTime.set(effectiveStartTime);
+    this.seriesOriginStartTime.set(meeting.start_time ?? null);
 
-    // Parse start_time to separate date and time
+    // Parse the effective start time into separate date and time
     let startDate = null;
     let startTime = '';
 
-    if (meeting.start_time) {
-      const utcDate = new Date(meeting.start_time);
+    if (effectiveStartTime) {
+      const utcDate = new Date(effectiveStartTime);
       const meetingTimezone = meeting.timezone || getUserTimezone();
 
       // Convert UTC date to the meeting's timezone for proper display
@@ -1087,6 +1146,8 @@ export class MeetingManageComponent {
       // in the meeting's timezone, not the user's local timezone
       const zonedDate = toZonedTime(utcDate, meetingTimezone);
       startDate = zonedDate;
+      this.originalStartDate.set(zonedDate);
+      this.originalTimezone.set(meetingTimezone);
 
       // Convert to 12-hour format in the meeting's timezone for display
       startTime = formatTo12HourInTimezone(utcDate, meetingTimezone);
@@ -1292,8 +1353,8 @@ export class MeetingManageComponent {
       {
         // Step 1: Meeting Type
         meeting_type: new FormControl('', [Validators.required]),
-        visibility: new FormControl(MeetingVisibility.PUBLIC),
-        restricted: new FormControl(false),
+        visibility: new FormControl(MeetingVisibility.PRIVATE),
+        restricted: new FormControl(true),
 
         // Step 2: Meeting Details
         title: new FormControl('', [Validators.required]),

@@ -131,7 +131,7 @@ test.describe('Meetings home page', () => {
       const row = homeRow(page, TITLES.oneOff);
 
       await row.getByTestId('meetings-home-rsvp-accepted').click();
-      await expect(homeToast(page, 'Response saved: Going')).toBeVisible();
+      await expect(homeToast(page, 'Meeting RSVP set to “Going”')).toBeVisible();
       await expect(row.getByTestId('meetings-home-rsvp-status')).toContainText('Going');
       expect(mocks.rsvpPosts).toEqual([expect.objectContaining({ response: 'accepted', scope: 'all' })]);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
@@ -160,7 +160,7 @@ test.describe('Meetings home page', () => {
 
       await homeRow(page, TITLES.oneOff).getByTestId('meetings-home-row-actions-trigger').click();
       await page.getByRole('menuitem', { name: 'Copy Link' }).click();
-      await expect(homeToast(page, 'Meeting Link Copied')).toBeVisible();
+      await expect(homeToast(page, 'Meeting link copied to clipboard')).toBeVisible();
     });
   });
 
@@ -225,7 +225,7 @@ test.describe('Meetings home page', () => {
       // The stub feed still lists the meeting, so the row must stay gone after the refetch.
       const refetch = page.waitForResponse('**/api/user/meetings*');
       await dialog.getByRole('button', { name: 'Delete Meeting' }).click();
-      await expect(homeToast(page, 'Meeting deleted successfully.')).toBeVisible();
+      await expect(homeToast(page, 'Meeting deleted')).toBeVisible();
       await refetch;
       await expect(homeRow(page, TITLES.oneOff)).toHaveCount(0);
       expect(mocks.deletes).toEqual(['home-e2e-one-off']);
@@ -259,7 +259,7 @@ test.describe('Meetings home page', () => {
       const refetch = page.waitForResponse('**/api/user/meetings*');
       await confirm.getByRole('button', { name: 'Cancel Occurrence' }).click();
 
-      await expect(homeToast(page, 'Occurrence cancelled')).toBeVisible();
+      await expect(homeToast(page, 'Meeting occurrence cancelled')).toBeVisible();
       await refetch;
       await expect(seriesRowOn(page, '13')).toHaveCount(0);
       await expect(seriesRowOn(page, '6')).toHaveCount(1);
@@ -274,10 +274,10 @@ test.describe('Meetings home page', () => {
 
       await openRowAction(page, homeRow(page, TITLES.oneOff), 'Remove Myself');
       const dialog = page.getByRole('alertdialog', { name: 'Remove Yourself' });
-      await expect(dialog).toContainText(`Remove yourself from "${TITLES.oneOff}"?`);
+      await expect(dialog).toContainText(`Remove yourself from “${TITLES.oneOff}”?`);
       await dialog.getByRole('button', { name: 'Remove Me' }).click();
 
-      await expect(homeToast(page, 'You have been removed from this meeting.')).toBeVisible();
+      await expect(homeToast(page, 'Removed from meeting')).toBeVisible();
       await expect(homeRow(page, TITLES.oneOff)).toHaveCount(0);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
       expect(mocks.selfRemovals).toEqual(['home-e2e-one-off']);
@@ -285,24 +285,26 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Pending RSVPs', () => {
-    test('answering from the popover drops each date until the button hides', async ({ page }) => {
+    test('answering from the drawer drops each date until the drawer closes and the button hides', async ({ page }) => {
       const mocks = await gotoMeetingsHome(page);
 
       await page.getByTestId('meetings-home-pending-rsvps-button').click();
-      const popover = page.getByRole('dialog', { name: 'Pending RSVPs' });
-      const rows = popover.getByTestId('meetings-home-pending-rsvps-row');
+      const drawer = page.getByRole('dialog', { name: 'Pending RSVPs' });
+      const rows = drawer.getByTestId('meetings-home-pending-rsvps-row');
       await expect(rows).toHaveCount(3);
+      await expect(drawer.getByTestId('ui-drawer-subtitle')).toHaveText('3 waiting for a response');
 
       await rows.filter({ hasText: TITLES.oneOff }).getByTestId('meetings-home-rsvp-accepted').click();
       await expect(rows).toHaveCount(2);
       await expect(page.getByTestId('meetings-home-pending-rsvps-count')).toHaveText('2');
+      await expect(drawer.getByTestId('ui-drawer-subtitle')).toHaveText('2 waiting for a response');
 
       await rows.filter({ hasText: 'Nov 6' }).getByTestId('meetings-home-rsvp-declined').click();
       const scope = page.getByRole('dialog', { name: 'RSVP to recurring meeting' });
       await scope.getByRole('radio', { name: 'All occurrences' }).check();
       await scope.getByTestId('meetings-home-rsvp-scope-ok').click();
 
-      await expect(popover).toHaveCount(0);
+      await expect(drawer).toHaveCount(0);
       await expect(page.getByTestId('meetings-home-pending-rsvps-button')).toHaveCount(0);
       expect(mocks.rsvpPosts).toEqual([
         expect.objectContaining({ response: 'accepted', scope: 'all' }),
@@ -325,7 +327,7 @@ test.describe('Meetings home page', () => {
       await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await rail.getByTestId('meetings-home-last-card-summary').click();
-      const summary = page.getByRole('dialog', { name: 'Meeting Summary' });
+      const summary = page.getByRole('dialog', { name: 'AI Summary' });
       await expect(summary).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
     });
 
@@ -346,7 +348,7 @@ test.describe('Meetings home page', () => {
       await expect(homeToast(page, 'Recording link copied to clipboard')).toBeVisible();
 
       await row.getByRole('button', { name: 'AI Summary', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Meeting Summary' })).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
+      await expect(page.getByRole('dialog', { name: 'AI Summary' })).toContainText(MEETINGS_HOME_SUMMARY_TEXT);
     });
   });
 
@@ -396,16 +398,14 @@ test.describe('Meetings home page', () => {
   });
 
   test.describe('Paging', () => {
-    test('a list longer than one page loads the rest on scroll and says so', async ({ page }) => {
+    test('a list longer than one page loads the rest on scroll', async ({ page }) => {
       await gotoMeetingsHome(page, { extraCount: 20 });
 
       await expect(homeRows(page)).toHaveCount(20);
-      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveCount(0);
 
       await homeRows(page).last().scrollIntoViewIfNeeded();
       await expect(homeRows(page)).toHaveCount(25);
       await expect(page.getByRole('tab', { name: 'Upcoming, 25 meetings' })).toBeVisible();
-      await expect(page.getByTestId('meetings-home-all-loaded')).toHaveText('All 25 meetings loaded');
     });
   });
 });

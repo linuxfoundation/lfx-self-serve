@@ -33,9 +33,11 @@ import {
   CERTIFICATION_PRODUCT_TYPE,
   EMPTY_ORG_TRAINEES_RESPONSE,
   ORG_LENS_DEFAULT_TIME_RANGE,
-  ORG_TRAINEES_INITIAL_LIMIT,
+  ORG_TRAINEES_DEFAULT_PAGE_SIZE,
   ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE,
   ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING,
+  ORG_TRAINEES_OUTSIDE_LEARNERS_REVIEW_NOTE,
+  ORG_TRAINEES_PAGE_SIZE_OPTIONS,
   TRAINING_PRODUCT_TYPE,
 } from '@lfx-one/shared/constants';
 import type {
@@ -53,6 +55,7 @@ import type {
   OrgTrainingStatsQuery,
   OrgTrainingViewState,
 } from '@lfx-one/shared/interfaces';
+import { PaginatorModule, type PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { TraineesService } from '../../services/trainees.service';
@@ -68,6 +71,7 @@ import { TraineesService } from '../../services/trainees.service';
     OrgTrainingFilterBarComponent,
     OrgTrainingStatsComponent,
     OrgTrainingStatsErrorComponent,
+    PaginatorModule,
     SkeletonModule,
   ],
   templateUrl: './trainees.component.html',
@@ -79,10 +83,10 @@ export class TraineesComponent {
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
 
-  protected readonly initialLimit = ORG_TRAINEES_INITIAL_LIMIT;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly outsideLearnersHeading = ORG_TRAINEES_OUTSIDE_LEARNERS_HEADING;
   protected readonly outsideLearnersFilteredNote = ORG_TRAINEES_OUTSIDE_LEARNERS_FILTERED_NOTE;
+  protected readonly outsideLearnersReviewNote = ORG_TRAINEES_OUTSIDE_LEARNERS_REVIEW_NOTE;
 
   /** Only the name/title search is page-local; the range and filters live in the URL, written by the shared filter bar. */
   public readonly filterForm = new FormGroup({
@@ -92,8 +96,14 @@ export class TraineesComponent {
   // WritableSignals — keep grouped per component-organization.md (writables → computed/toSignal).
   protected readonly sortColumn = signal<OrgTraineeSortColumn>('courses');
   protected readonly sortDirection = signal<OrgTraineeSortDirection>(-1);
-  protected readonly limit = signal<number>(ORG_TRAINEES_INITIAL_LIMIT);
+  // Paging: the first-row offset resets on search, filter, range, sort and org changes; the rows-per-page choice survives those resets.
+  protected readonly first = signal<number>(0);
+  protected readonly pageSize = signal<number>(ORG_TRAINEES_DEFAULT_PAGE_SIZE);
+  protected readonly outsideFirst = signal<number>(0);
+  protected readonly outsidePageSize = signal<number>(ORG_TRAINEES_DEFAULT_PAGE_SIZE);
   protected readonly expansion = signal<Record<string, boolean>>({});
+  // The list of learners not on the people list starts collapsed: its count is in the header, its rows and the review note open on click.
+  protected readonly outsideExpanded = signal<boolean>(false);
   // Separate triggers: Retry on the stats card re-reads the stats only and leaves the loaded table alone.
   protected readonly retryTrigger = signal<number>(0);
   protected readonly statsRetryTrigger = signal<number>(0);
@@ -151,10 +161,19 @@ export class TraineesComponent {
   protected readonly sortedRows: Signal<OrgTraineeRowVm[]> = computed(() => this.initSortedRows());
 
   protected readonly totalFiltered = computed(() => this.sortedRows().length);
-  protected readonly visibleRows = computed(() => this.sortedRows().slice(0, this.limit()));
-  protected readonly canShowMore = computed(() => this.limit() < this.totalFiltered());
+  // The offset is clamped so a refetch that leaves fewer rows never strands the table past its last page.
+  protected readonly pageFirst = computed(() => clampPageFirst(this.first(), this.totalFiltered(), this.pageSize()));
+  protected readonly visibleRows = computed(() => this.sortedRows().slice(this.pageFirst(), this.pageFirst() + this.pageSize()));
+  protected readonly rowsPerPageOptions = computed(() => this.initRowsPerPageOptions(this.totalFiltered()));
+  protected readonly paginatorStyleClass = computed(() => this.initPaginatorStyleClass(this.totalFiltered(), this.pageSize()));
 
-  protected readonly footerCountLabel: Signal<string> = computed(() => this.initFooterCountLabel());
+  protected readonly outsideTotal = computed(() => this.outsideLearners().length);
+  protected readonly outsidePageFirst = computed(() => clampPageFirst(this.outsideFirst(), this.outsideTotal(), this.outsidePageSize()));
+  protected readonly visibleOutsideLearners = computed(() =>
+    this.outsideLearners().slice(this.outsidePageFirst(), this.outsidePageFirst() + this.outsidePageSize())
+  );
+  protected readonly outsideRowsPerPageOptions = computed(() => this.initRowsPerPageOptions(this.outsideTotal()));
+  protected readonly outsidePaginatorStyleClass = computed(() => this.initPaginatorStyleClass(this.outsideTotal(), this.outsidePageSize()));
 
   /** Which empty-table copy applies; only a search or a dropdown pick reads as filtering, never the range alone. */
   public readonly emptyState: Signal<OrgTraineesEmptyState> = computed(() => this.initEmptyState());
@@ -170,16 +189,20 @@ export class TraineesComponent {
     // Reset filter / sort / pagination / expansion when the org actually changes.
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => this.resetAllState());
 
-    // Sort change: reset pagination, preserve expansion (same rows, new order).
+    // Sort change: back to the first page; an expanded person stays expanded only if still on that page.
     combineLatest([toObservable(this.sortColumn), toObservable(this.sortDirection)])
       .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => this.limit.set(ORG_TRAINEES_INITIAL_LIMIT));
+      .subscribe(() => {
+        this.first.set(0);
+        this.keepExpansionOnPage();
+      });
 
-    // Search, range or filter change: reset pagination + expansion (collapse so (N) tracks the scope).
+    // Search, range or filter change: reset both lists to their first page and collapse (so (N) tracks the scope).
     combineLatest([toObservable(this.searchValue), toObservable(this.statsQuerySignature)])
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
-        this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
+        this.first.set(0);
+        this.outsideFirst.set(0);
         this.expansion.set({});
       });
   }
@@ -224,8 +247,19 @@ export class TraineesComponent {
     this.toggleRow(personKey);
   }
 
-  protected showAll(): void {
-    this.limit.set(this.totalFiltered());
+  protected onPageChange(event: PaginatorState): void {
+    this.pageSize.set(event.rows ?? this.pageSize());
+    this.first.set(event.first ?? 0);
+    this.keepExpansionOnPage();
+  }
+
+  protected onOutsidePageChange(event: PaginatorState): void {
+    this.outsidePageSize.set(event.rows ?? this.outsidePageSize());
+    this.outsideFirst.set(event.first ?? 0);
+  }
+
+  protected toggleOutside(): void {
+    this.outsideExpanded.update((open) => !open);
   }
 
   protected retry(): void {
@@ -357,9 +391,27 @@ export class TraineesComponent {
     return copy;
   }
 
-  private initFooterCountLabel(): string {
-    const visible = Math.min(this.limit(), this.totalFiltered());
-    return `Showing ${visible.toLocaleString('en-US')} of ${this.totalFiltered().toLocaleString('en-US')}`;
+  /** The page-size dropdown is offered only once there is more than one smallest page of rows. */
+  private initRowsPerPageOptions(total: number): number[] | undefined {
+    return total > ORG_TRAINEES_PAGE_SIZE_OPTIONS[0] ? [...ORG_TRAINEES_PAGE_SIZE_OPTIONS] : undefined;
+  }
+
+  /** Hides the page-size dropdown at or below the smallest page, and the page buttons when everything fits on one page. */
+  private initPaginatorStyleClass(total: number, pageSize: number): string {
+    const classes = ['border-t', 'border-gray-200'];
+    if (total <= ORG_TRAINEES_PAGE_SIZE_OPTIONS[0]) classes.push('lfx-paginator-no-rpp');
+    if (total <= pageSize) classes.push('lfx-paginator-single-page');
+    return classes.join(' ');
+  }
+
+  /** Drops expansion entries for people whose row is not on the current page, so a page change never leaves an orphaned detail row. */
+  private keepExpansionOnPage(): void {
+    const shown = new Set(this.visibleRows().map((row) => row.personKey));
+    this.expansion.update((state) => {
+      const keys = Object.keys(state);
+      if (keys.every((key) => shown.has(key))) return state;
+      return Object.fromEntries(keys.filter((key) => shown.has(key)).map((key) => [key, true]));
+    });
   }
 
   private initEmptyState(): OrgTraineesEmptyState {
@@ -494,9 +546,17 @@ export class TraineesComponent {
     this.filterForm.patchValue({ search: '' });
     this.sortColumn.set('courses');
     this.sortDirection.set(-1);
-    this.limit.set(ORG_TRAINEES_INITIAL_LIMIT);
+    this.first.set(0);
+    this.outsideFirst.set(0);
     this.expansion.set({});
+    this.outsideExpanded.set(false);
   }
+}
+
+/** First-row offset kept inside the last page that holds rows. */
+function clampPageFirst(first: number, total: number, pageSize: number): number {
+  if (total <= 0) return 0;
+  return Math.min(first, Math.floor((total - 1) / pageSize) * pageSize);
 }
 
 /** Most-recent row per Item 4 tiebreak: ACTIVITY_TS DESC → STATUS='Certified' DESC → COURSE_NAME ASC. */

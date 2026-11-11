@@ -38,7 +38,9 @@ describe('MeetingHomeArtifactsComponent', () => {
   let openSummary: ReturnType<typeof vi.fn>;
   let toastShow: ReturnType<typeof vi.fn>;
   let lastMeeting: WritableSignal<MeetingHomeRow | null>;
-  let setLastMeetingSummary: ReturnType<typeof vi.fn>;
+  let applySummaryChange: ReturnType<typeof vi.fn>;
+  let lastMeetingSummary: WritableSignal<PastMeetingSummary | null | undefined>;
+  let approvedSummaries: WritableSignal<ReadonlyMap<string, string>>;
 
   const render = async (value: MeetingHomeRow): Promise<void> => {
     fixture = TestBed.createComponent(MeetingHomeArtifactsComponent);
@@ -58,14 +60,27 @@ describe('MeetingHomeArtifactsComponent', () => {
     openSummary = vi.fn();
     toastShow = vi.fn();
     lastMeeting = signal(null);
-    setLastMeetingSummary = vi.fn();
+    lastMeetingSummary = signal(undefined);
+    approvedSummaries = signal(new Map());
+    // Records approvals as the store does; the store spec covers the Last card side.
+    applySummaryChange = vi.fn((key: string, change: PastMeetingSummary) => {
+      if (change.approved || !change.requires_approval) approvedSummaries.update((approved) => new Map(approved).set(key, change.uid));
+    });
 
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingService, useValue: { getPastMeetingSummary } },
         { provide: MeetingsHomeDialogsService, useValue: { openRecording, copyRecordingLink, openSummary } },
         { provide: UiToastService, useValue: { show: toastShow } },
-        { provide: MeetingsHomeStore, useValue: { lastMeeting, setLastMeetingSummary } },
+        {
+          provide: MeetingsHomeStore,
+          useValue: {
+            lastMeeting,
+            lastMeetingSummary,
+            approvedSummaries,
+            applySummaryChange,
+          },
+        },
       ],
     });
   });
@@ -125,7 +140,58 @@ describe('MeetingHomeArtifactsComponent', () => {
     await click('meetings-home-row-summary');
 
     expect(getPastMeetingSummary).toHaveBeenCalledWith('synthetic-past-key');
-    expect(openSummary).toHaveBeenCalledWith(value, summary(), undefined);
+    expect(openSummary).toHaveBeenCalledWith(value, summary(), expect.any(Function));
+    expect(applySummaryChange).not.toHaveBeenCalled();
+  });
+
+  it('offers an organizer "Review summary" until the summary is approved from its dialog', async () => {
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'synthetic-summary' }));
+    const button = (): HTMLButtonElement | null | undefined => query('meetings-home-row-summary')?.querySelector('button');
+
+    expect(button()?.textContent?.trim()).toBe('Review summary');
+    expect(button()?.className).toContain('text-ui-accent-500');
+    expect(button()?.querySelector('i')).toBeNull();
+
+    await click('meetings-home-row-summary');
+    const onChange = openSummary.mock.calls[0][2] as (change: PastMeetingSummary) => void;
+    onChange(summary());
+    await fixture.whenStable();
+
+    expect(button()?.textContent?.trim()).toBe('AI Summary');
+    expect(button()?.querySelector('i.fa-sparkles')).not.toBeNull();
+
+    // A row hidden and shown again is a new component over the same, not yet re-indexed feed.
+    fixture.destroy();
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'synthetic-summary' }));
+    expect(button()?.textContent?.trim()).toBe('AI Summary');
+
+    // A refreshed feed that selects a newer pending summary asks for review again.
+    fixture.destroy();
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'newer-summary' }));
+    expect(button()?.textContent?.trim()).toBe('Review summary');
+  });
+
+  it('keeps "Review summary" after an edit that leaves the summary pending', async () => {
+    await render(row({ has_ai_summary: true, ai_summary_awaiting_approval: true, ai_summary_uid: 'synthetic-summary' }));
+
+    await click('meetings-home-row-summary');
+    const onChange = openSummary.mock.calls[0][2] as (change: PastMeetingSummary) => void;
+    onChange(summary({ approved: false }));
+    await fixture.whenStable();
+
+    expect(approvedSummaries().size).toBe(0);
+    expect(query('meetings-home-row-summary')?.textContent?.trim()).toBe('Review summary');
+  });
+
+  it('follows the Last meeting card when the row is the last meeting', async () => {
+    const value = row({ has_ai_summary: true, ai_summary_awaiting_approval: true });
+    lastMeeting.set(value);
+    await render(value);
+
+    lastMeetingSummary.set(summary());
+    await fixture.whenStable();
+
+    expect(query('meetings-home-row-summary')?.textContent?.trim()).toBe('AI Summary');
   });
 
   it('keeps the Last meeting card in step with a summary edited from its row', async () => {
@@ -137,7 +203,7 @@ describe('MeetingHomeArtifactsComponent', () => {
     const onChange = openSummary.mock.calls[0][2] as (change: PastMeetingSummary) => void;
     onChange(summary({ summary_data: { content: 'Edited' } } as Partial<PastMeetingSummary>));
 
-    expect(setLastMeetingSummary).toHaveBeenCalledWith(expect.objectContaining({ summary_data: { content: 'Edited' } }));
+    expect(applySummaryChange).toHaveBeenCalledWith(value.key, expect.objectContaining({ summary_data: { content: 'Edited' } }));
   });
 
   it('keeps a summary awaiting approval from an invitee', async () => {

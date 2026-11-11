@@ -157,7 +157,14 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
         { provide: MktgAnswerMemoryService, useValue: { load: () => ({}), remember: vi.fn() } },
         {
           provide: MktgDependencyService,
-          useValue: { resolveDependencies: () => of(dependencies), resolveBrandKit: () => of(null), notifyDocumentsChanged: vi.fn(), documentsChanged$: NEVER },
+          // The print's read (readBrandKit) is the resolved kit as a settled read: no kit here, as resolveBrandKit says.
+          useValue: {
+            resolveDependencies: () => of(dependencies),
+            resolveBrandKit: () => of(null),
+            readBrandKit: () => of({ settled: true, kit: null, failed: false }),
+            notifyDocumentsChanged: vi.fn(),
+            documentsChanged$: NEVER,
+          },
         },
       ],
     }).compileComponents();

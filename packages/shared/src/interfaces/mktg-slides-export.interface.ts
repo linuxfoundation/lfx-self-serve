@@ -12,6 +12,7 @@ import {
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
   MKTG_SLIDES_EXPORT_ASSET_KINDS,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
+  MKTG_SLIDES_EXPORT_ICON_FIELDS,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
   MKTG_SLIDES_EXPORT_LOGO_VARIANT_FIELDS,
   MKTG_SLIDES_EXPORT_LOGO_VARIANTS,
@@ -41,6 +42,9 @@ export type MktgSlidesExportLogoVariant = (typeof MKTG_SLIDES_EXPORT_LOGO_VARIAN
 /** One of the logo images a deck places: the primary, or a variant. */
 export type MktgSlidesExportLogoImage = 'primary' | MktgSlidesExportLogoVariant;
 
+/** One image the server publishes for a deck, for the log: a logo image by name, or an icon by set and id (server-side). */
+export type MktgSlidesExportPublishedImage = MktgSlidesExportLogoImage | MktgSlidesExportIconImage;
+
 /** How many image requests the exporter sent per logo image (`content.branded.logo_variants`, slides-export 1.1.2); 0 for one not supplied. */
 export type MktgSlidesExportLogoVariantCounts = Record<MktgSlidesExportLogoImage, number>;
 
@@ -52,6 +56,31 @@ export type MktgSlidesExportLogoVariantField = (typeof MKTG_SLIDES_EXPORT_LOGO_V
 
 /** The form's logo fields: the primary and each variant, each present only when its PNG was published. */
 export type MktgSlidesExportLogoFields = Pick<MktgSlidesExportForm, 'logo_url' | MktgSlidesExportLogoVariantField>;
+
+/** One of the three icon sets a deck places: the tiles' ink, white, or the one highlighted icon. */
+export type MktgSlidesExportIconSet = keyof typeof MKTG_SLIDES_EXPORT_ICON_FIELDS;
+
+/** The form field an icon set's URLs travel in. */
+export type MktgSlidesExportIconField = (typeof MKTG_SLIDES_EXPORT_ICON_FIELDS)[MktgSlidesExportIconSet];
+
+/** The form's icon fields: all three present when every icon PNG was published, none otherwise. */
+export type MktgSlidesExportIconFields = Pick<MktgSlidesExportForm, MktgSlidesExportIconField>;
+
+/** One icon image the server draws for a deck: which set, and which of the eight icons (server-side). */
+export interface MktgSlidesExportIconImage {
+  set: MktgSlidesExportIconSet;
+  icon: string;
+}
+
+/** Why one icon image was not published: the image, the rasterizer's or the publisher's reason, and its detail for the log (server-side). */
+export interface MktgSlidesExportIconFailure {
+  image: MktgSlidesExportIconImage;
+  reason: string;
+  detail: string;
+}
+
+/** One icon image as the server drew and published it: its public URL, or why there is none (server-side). */
+export type MktgSlidesExportIconOutcome = { url: string } | MktgSlidesExportIconFailure;
 
 /** What went wrong with an export, as the plain message names it. */
 export type MktgSlidesExportFailure = keyof typeof MKTG_SLIDES_EXPORT_FAILURE_MESSAGES;
@@ -77,6 +106,12 @@ export interface MktgSlidesExportForm {
   logo_one_color_url?: string;
   /** A publicly fetchable PNG, JPEG or GIF URL of the reversed (white) symbol alone (slides-export 1.1.2 or later). */
   logo_symbol_reversed_url?: string;
+  /** The kit's eight iconography samples in the tiles' ink (the kit's dark), publicly fetchable PNG URLs in the board's order (slides-export 1.1.6 or later). */
+  icon_dark_urls?: string[];
+  /** The same eight icons in white, for the strip's dark ground; the deck draws the ground and the labels itself (slides-export 1.1.6 or later). */
+  icon_light_urls?: string[];
+  /** The one highlighted strip icon (the third, Global) in the kit's highlight colour, a publicly fetchable PNG URL (slides-export 1.1.6 or later). */
+  icon_highlight_url?: string;
   /** One member per asset, as LFX One stores it. */
   assets: Partial<Record<MktgSlidesExportAssetKind, unknown>>;
 }
@@ -285,9 +320,13 @@ export interface MktgSlidesExportStartInput {
  */
 export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big' | 'blank' | 'render-failed';
 
-/** How the server draws a logo PNG: `requireInk` refuses a drawing with no painted pixel (`blank`) instead of publishing a transparent image. */
+/**
+ * How the server draws a logo PNG: `requireInk` refuses a drawing with no painted pixel (`blank`) instead of publishing a
+ * transparent image; `sidePx` is the longest side to draw at (the logo's drawing size when absent).
+ */
 export interface MktgLogoPngOptions {
   requireInk?: boolean;
+  sidePx?: number;
 }
 
 /** What the server sends its render child on stdin: the rasterizer's resolved path, the SVG, and the rules to draw it by (server-side). */

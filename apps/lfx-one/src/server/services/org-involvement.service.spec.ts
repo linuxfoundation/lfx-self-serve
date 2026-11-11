@@ -346,65 +346,48 @@ describe('OrgInvolvementService.getContributorsMonthly — the default organizat
 });
 
 describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)', () => {
-  const monthlyRow = (month: Date, coverage: boolean): Record<string, unknown> => ({
+  const monthlyRow = (month: Date): Record<string, unknown> => ({
     ACCOUNT_ID: 'acc-1',
     ACCOUNT_NAME: 'Account One',
     MONTH_START_DATE: month,
-    HAS_COMPANY_EMAIL_COVERAGE: coverage,
-    ATTENDEES_REGISTERED_COMPANY_EMAIL: 3,
-    ATTENDEES_ALL_COMPANY_EMAIL: 4,
-    SPEAKERS_COMPANY_EMAIL: 1,
-    TOTAL_ATTENDEES_REGISTERED_COMPANY_EMAIL: 5,
-    TOTAL_ATTENDEES_ALL_COMPANY_EMAIL: 6,
-    TOTAL_SPEAKERS_COMPANY_EMAIL: 2,
-    ATTENDEES_REGISTERED_ACCOUNT: 30,
-    ATTENDEES_ALL_ACCOUNT: 40,
-    SPEAKERS_ACCOUNT: 10,
-    TOTAL_ATTENDEES_REGISTERED_ACCOUNT: 50,
-    TOTAL_ATTENDEES_ALL_ACCOUNT: 60,
-    TOTAL_SPEAKERS_ACCOUNT: 20,
-    ATTENDEES_REGISTERED_ALL: 300,
     ATTENDEES_ALL_ALL: 400,
     SPEAKERS_ALL: 100,
-    TOTAL_ATTENDEES_REGISTERED_ALL: 500,
     TOTAL_ATTENDEES_ALL_ALL: 600,
     TOTAL_SPEAKERS_ALL: 200,
+    ATTENDEES_ALL_VERIFIED: 80,
+    SPEAKERS_VERIFIED: 15,
+    TOTAL_ATTENDEES_ALL_VERIFIED: 120,
+    TOTAL_SPEAKERS_VERIFIED: 25,
   });
 
   beforeEach(() => {
     execute.mockReset();
   });
 
-  it('reads the all-relations, registered-or-attended columns: monthly distinct people as the sparkline, the distinct total as the headline', async () => {
-    execute.mockResolvedValue({ rows: [monthlyRow(new Date(2030, 0, 15), true), monthlyRow(new Date(2030, 1, 15), true)] });
+  it('reads the Employee match, registered-or-attended columns: monthly distinct people as the sparkline, the distinct total as the headline', async () => {
+    execute.mockResolvedValue({ rows: [monthlyRow(new Date(2030, 0, 15)), monthlyRow(new Date(2030, 1, 15))] });
 
     const response = await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
 
     expect(response).toEqual({
       accountId: 'acc-1',
       accountName: 'Account One',
-      // The headline is the distinct total, not the sum of the two monthly points (400 + 400).
-      totalAttended: 600,
-      totalSpeakers: 200,
-      servedAttribution: 'all',
-      attendeesMonthlyData: [400, 400],
-      speakersMonthlyData: [100, 100],
+      // The headline is the distinct total, not the sum of the two monthly points (80 + 80).
+      totalAttended: 120,
+      totalSpeakers: 25,
+      attendeesMonthlyData: [80, 80],
+      speakersMonthlyData: [15, 15],
       monthlyLabels: ['Jan 2030', 'Feb 2030'],
     });
   });
 
-  it('does not fall back to the account columns for a company with no company-email data: all relations needs none', async () => {
-    execute.mockResolvedValue({ rows: [monthlyRow(new Date(2030, 0, 15), false)] });
+  it('selects only the default Employee match columns: no Self-reported only, All or coverage columns', async () => {
+    execute.mockResolvedValue({ rows: [] });
 
-    const response = await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
+    await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
 
-    expect(response).toMatchObject({
-      totalAttended: 600,
-      totalSpeakers: 200,
-      servedAttribution: 'all',
-      attendeesMonthlyData: [400],
-      speakersMonthlyData: [100],
-    });
+    const [sql] = execute.mock.calls[0] as [string];
+    expect(sql).not.toMatch(/SELF_REPORTED|_ALL_ALL|SPEAKERS_ALL|COMPANY_EMAIL|_ACCOUNT\b|COVERAGE/);
   });
 
   it('selects the dbt columns and binds only the account', async () => {
@@ -414,9 +397,9 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
 
     const [sql, binds] = execute.mock.calls[0] as [string, string[]];
     expect(sql).toContain('ORG_EVENT_PARTICIPATION_MONTHLY');
-    expect(sql).toContain('ATTENDEES_ALL_ALL');
-    expect(sql).toContain('TOTAL_ATTENDEES_ALL_ALL');
-    expect(sql).toContain('TOTAL_SPEAKERS_ALL');
+    expect(sql).toContain('ATTENDEES_ALL_VERIFIED');
+    expect(sql).toContain('TOTAL_ATTENDEES_ALL_VERIFIED');
+    expect(sql).toContain('TOTAL_SPEAKERS_VERIFIED');
     expect(sql).not.toMatch(/REGISTRATION_COUNT|TOTAL_REGISTRATIONS|TOTAL_ATTENDED/);
     expect(binds).toEqual(['acc-1']);
   });
@@ -429,7 +412,6 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
       accountName: '',
       totalAttended: 0,
       totalSpeakers: 0,
-      servedAttribution: 'all',
       attendeesMonthlyData: [],
       speakersMonthlyData: [],
       monthlyLabels: [],
@@ -441,6 +423,6 @@ describe('OrgInvolvementService.getEventAttendanceMonthly (lfx-self-serve#4598)'
 
     await new OrgInvolvementService().getEventAttendanceMonthly('acc-1');
 
-    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('events:v3');
+    expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe('events:v5');
   });
 });

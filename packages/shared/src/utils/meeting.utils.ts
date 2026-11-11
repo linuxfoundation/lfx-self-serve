@@ -1842,12 +1842,21 @@ export function isBatchRegistrantOperationResponse<T>(value: unknown): value is 
  * removal only ends their invitation, not their organizer access.
  */
 export function getMeetingSelfRemovalMessage(title: string, options: { viaCommittee?: boolean; organizer?: boolean } = {}): string {
-  const parts = [`Remove yourself from "${title}"? You will no longer be invited to any occurrence and will lose your RSVP.`];
-  if (options.organizer) {
-    parts.push('You will still be an organizer of this meeting.');
-  }
-  if (options.viaCommittee) {
-    parts.push("You stay in the committee, but it won't invite you to this meeting again.");
-  }
-  return parts.join(' ');
+  return [
+    `Remove yourself from "${title}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+    ...getMeetingSelfRemovalNotes(options),
+  ].join(' ');
+}
+
+/** The question of the meetings home Remove Yourself dialog, with curly quotes; its notes are listed under it. */
+export function getMeetingSelfRemovalQuestion(title: string): string {
+  return `Remove yourself from “${title}”? You will no longer be invited to any occurrence and will lose your RSVP.`;
+}
+
+/** What stays after a self-removal: organizer access, and the committee membership that will no longer invite them. */
+export function getMeetingSelfRemovalNotes(options: { viaCommittee?: boolean; organizer?: boolean } = {}): string[] {
+  const notes: string[] = [];
+  if (options.organizer) notes.push('You will still be an organizer of this meeting.');
+  if (options.viaCommittee) notes.push("You stay in the committee, but it won't invite you to this meeting again.");
+  return notes;
 }

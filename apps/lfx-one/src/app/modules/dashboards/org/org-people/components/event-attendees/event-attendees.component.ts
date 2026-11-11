@@ -7,16 +7,11 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
-  DEFAULT_ORG_EVENTS_ATTRIBUTION,
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
   ORG_ALL_FOUNDATIONS_LABEL,
   ORG_EVENT_ATTENDEES_INITIAL_LIMIT,
-  ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
-  ORG_EVENTS_ATTRIBUTION_LABEL,
-  ORG_EVENTS_ATTRIBUTION_OPTIONS,
-  ORG_EVENTS_ATTRIBUTION_TOOLTIP,
-  ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE,
+  ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
   ORG_EVENTS_PARTICIPATION_OPTIONS,
@@ -33,7 +28,6 @@ import type {
   OrgEventAttendeeSortColumn,
   OrgEventAttendeeSortDirection,
   OrgEventAttendeeStatsBaseline,
-  OrgEventsAttribution,
   OrgEventsParticipation,
   OrgLensTimeRange,
   OrgLensTimeRangeOption,
@@ -43,18 +37,12 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of,
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
-import {
-  readOrgEventsAttribution,
-  readOrgEventsParticipation,
-  syncOrgEventsAttributionWithUrl,
-  syncOrgEventsParticipationWithUrl,
-} from '@shared/utils/org-events-filters-url.util';
+import { readOrgEventsParticipation, syncOrgEventsParticipationWithUrl } from '@shared/utils/org-events-filters-url.util';
 import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
 
@@ -62,10 +50,10 @@ import { EventAttendeesService } from '../../services/event-attendees.service';
 
 import { eventDateOf } from './event-attendees.util';
 
-/** Event Attendees tab body — search + foundation + event + range filters, four stat cards, sortable table with chevron-toggled Events detail. */
+/** Event Attendees tab body — search, foundation, event, range and Count filters, four stat cards, sortable table with chevron-toggled Events detail. */
 @Component({
   selector: 'lfx-org-people-event-attendees',
-  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, MoreFiltersToggleComponent, SelectComponent, SkeletonModule],
+  imports: [DecimalPipe, ReactiveFormsModule, EmptyStateComponent, InputTextComponent, SelectComponent, SkeletonModule],
   templateUrl: './event-attendees.component.html',
 })
 export class EventAttendeesComponent {
@@ -78,10 +66,7 @@ export class EventAttendeesComponent {
   protected readonly initialLimit = ORG_EVENT_ATTENDEES_INITIAL_LIMIT;
   protected readonly timeRangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly participationOptions = [...ORG_EVENTS_PARTICIPATION_OPTIONS];
-  protected readonly attributionOptions = [...ORG_EVENTS_ATTRIBUTION_OPTIONS];
   protected readonly participationLabel = ORG_EVENTS_PARTICIPATION_LABEL;
-  protected readonly attributionLabel = ORG_EVENTS_ATTRIBUTION_LABEL;
-  protected readonly attributionUnavailableNote = ORG_EVENTS_ATTRIBUTION_UNAVAILABLE_NOTE;
   protected readonly tableSkeletonRows: readonly number[] = [0, 1, 2, 3, 4, 5];
   protected readonly statSkeletonLabels: readonly string[] = ['Speakers', 'Attendees', 'Events', 'Foundations'];
 
@@ -91,9 +76,8 @@ export class EventAttendeesComponent {
     event: new FormControl<string>('', { nonNullable: true }),
     // Follows `?range=` (shared with every People tab and Code Contributions).
     timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
-    // Follow `?participation=` and `?attribution=` (lfx-self-serve#4598), shared with the Events page.
+    // Follows `?participation=` (lfx-self-serve#4598), shared with the Events page.
     participation: new FormControl<OrgEventsParticipation>(readOrgEventsParticipation(this.route), { nonNullable: true }),
-    attribution: new FormControl<OrgEventsAttribution>(readOrgEventsAttribution(this.route), { nonNullable: true }),
   });
 
   // WritableSignals — grouped per component-organization.md (writables → computed/toSignal).
@@ -102,8 +86,6 @@ export class EventAttendeesComponent {
   protected readonly sortDirection = signal<OrgEventAttendeeSortDirection>(-1);
   protected readonly limit = signal<number>(ORG_EVENT_ATTENDEES_INITIAL_LIMIT);
   protected readonly expansion = signal<Record<number, boolean>>({});
-  // The secondary filter ("Counted by") behind "More filters": shown for this visit only.
-  protected readonly moreFiltersExpanded = signal(false);
   protected readonly retryTrigger = signal<number>(0);
   private readonly loadingState = signal<boolean>(true);
   private readonly fetchErrorState = signal<boolean>(false);
@@ -128,23 +110,14 @@ export class EventAttendeesComponent {
   private readonly participation: Signal<OrgEventsParticipation> = toSignal(this.filterForm.controls.participation.valueChanges, {
     initialValue: this.filterForm.controls.participation.value,
   });
-  private readonly attribution: Signal<OrgEventsAttribution> = toSignal(this.filterForm.controls.attribution.valueChanges, {
-    initialValue: this.filterForm.controls.attribution.value,
-  });
-  private readonly query = computed(() => ({ range: this.timeRange(), attribution: this.attribution(), participation: this.participation() }));
+  private readonly query = computed(() => ({ range: this.timeRange(), participation: this.participation() }));
 
   protected readonly response: Signal<OrgEventAttendeesResponse> = this.initResponse();
 
-  // Counted by falls back to the account when the company has no company-email data; say so instead of showing silent zeros.
-  protected readonly attributionUnavailable = computed(
-    () => !this.isLoading() && !this.fetchError() && this.response().servedAttribution !== this.attribution()
-  );
   protected readonly attendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.response().servedAttribution]}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
   );
   protected readonly participationTooltip = computed(() => ORG_EVENTS_PARTICIPATION_TOOLTIP[this.participation()]);
-  protected readonly attributionTooltip = computed(() => ORG_EVENTS_ATTRIBUTION_TOOLTIP[this.attribution()]);
-  protected readonly hiddenFilterCount = computed(() => (this.attribution() === DEFAULT_ORG_EVENTS_ATTRIBUTION ? 0 : 1));
 
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = computed(() => this.initFoundationOptions());
 
@@ -154,12 +127,6 @@ export class EventAttendeesComponent {
   protected readonly filteredDetails: Signal<OrgEventAttendeeDetailRow[]> = computed(() => this.initFilteredDetails());
 
   protected readonly stats: Signal<OrgEventAttendeeStatsBaseline> = computed(() => this.initStats());
-
-  // People the option counts but no row names (never named, by construction); shown with the unfiltered tiles they belong to.
-  protected readonly notListedCount = computed(() => {
-    const { attendeesCount, listedAttendeesCount } = this.response().summary;
-    return this.isRowFiltering() ? 0 : Math.max(attendeesCount - listedAttendeesCount, 0);
-  });
 
   protected readonly viewRows: Signal<OrgEventAttendeeRowVm[]> = computed(() => this.initViewRows());
 
@@ -195,7 +162,6 @@ export class EventAttendeesComponent {
 
     syncOrgLensTimeRangeWithUrl(this.filterForm.controls.timeRange, this.route, this.router);
     syncOrgEventsParticipationWithUrl(this.filterForm.controls.participation, this.route, this.router);
-    syncOrgEventsAttributionWithUrl(this.filterForm.controls.attribution, this.route, this.router);
   }
 
   protected onSort(column: OrgEventAttendeeSortColumn): void {
@@ -226,7 +192,7 @@ export class EventAttendeesComponent {
 
   protected onPersonClick(row: OrgEventAttendeeRowVm, event: Event): void {
     event.stopPropagation();
-    // A listed person without a roster match has no person record to open.
+    // A person without a roster match has no person record to open.
     if (!row.personKey) return;
     this.drawer.open({
       personKey: row.personKey,
@@ -255,7 +221,7 @@ export class EventAttendeesComponent {
     ];
   }
 
-  /** Only events the server returned for the range, Count and Counted by, in the BFF's order. */
+  /** Only events the server returned for the range and Count, in the BFF's order. */
   private initEventOptions(): OrgDropdownOption[] {
     return [{ label: 'All Events', value: '' }, ...this.response().eventOptions.map((e) => ({ label: e.eventName, value: e.eventId }))];
   }
@@ -266,7 +232,7 @@ export class EventAttendeesComponent {
     const foundationId = this.offeredValue(values.foundation, this.foundationOptions());
     const eventId = this.offeredValue(values.event, this.eventOptions());
 
-    // Search is by who the person is (listed name and title); rows carry no email or event text to match.
+    // Search is by who the person is (name and title); rows carry no email or event text to match.
     return this.response().details.filter((row) => {
       if (foundationId && row.foundationId !== foundationId) return false;
       if (eventId && row.eventId !== eventId) return false;
@@ -284,9 +250,8 @@ export class EventAttendeesComponent {
   }
 
   private initStats(): OrgEventAttendeeStatsBaseline {
-    // All four tiles are the warehouse summary for the selection — the numbers the Overview shows, including people the rows
-    // never name — until search, foundation or event narrow the rows; then they are counted from the listed rows that remain,
-    // so the four tiles always agree with each other.
+    // All four tiles are the warehouse summary for the selection — the numbers the Overview shows — until search, foundation,
+    // or event narrow the rows; then they are counted from the rows that remain, so the four tiles always agree with each other.
     const attendees = new Set<number>();
     const speakers = new Set<number>();
     const events = new Set<string>();
@@ -388,7 +353,7 @@ export class EventAttendeesComponent {
     return `Showing ${visible.toLocaleString()} of ${this.totalFiltered().toLocaleString()}`;
   }
 
-  /** Search, foundation or event narrow the rows (not the server read), so the tiles follow the rows and the not-listed note stands down. */
+  /** Search, foundation or event narrow the rows (not the server read), so the tiles follow the rows. */
   private initIsRowFiltering(): boolean {
     const values = this.filterValues();
     const hasSearch = (values.search ?? '').trim().length > 0;
@@ -399,8 +364,7 @@ export class EventAttendeesComponent {
     const values = this.filterValues();
     const hasTimeFilter = (values.timeRange ?? ORG_LENS_DEFAULT_TIME_RANGE) !== ORG_LENS_DEFAULT_TIME_RANGE;
     const hasCountFilter = (values.participation ?? DEFAULT_ORG_EVENTS_PARTICIPATION) !== DEFAULT_ORG_EVENTS_PARTICIPATION;
-    const hasAttributionFilter = (values.attribution ?? DEFAULT_ORG_EVENTS_ATTRIBUTION) !== DEFAULT_ORG_EVENTS_ATTRIBUTION;
-    return this.isRowFiltering() || hasTimeFilter || hasCountFilter || hasAttributionFilter;
+    return this.isRowFiltering() || hasTimeFilter || hasCountFilter;
   }
 
   private initAriaSortMap(): Record<OrgEventAttendeeSortColumn, 'ascending' | 'descending' | 'none'> {
@@ -444,9 +408,7 @@ export class EventAttendeesComponent {
     return toSignal(
       combineLatest([
         this.orgUid$,
-        toObservable(this.query).pipe(
-          distinctUntilChanged((a, b) => a.range === b.range && a.attribution === b.attribution && a.participation === b.participation)
-        ),
+        toObservable(this.query).pipe(distinctUntilChanged((a, b) => a.range === b.range && a.participation === b.participation)),
         toObservable(this.retryTrigger),
       ]).pipe(
         tap(() => {
@@ -476,7 +438,7 @@ export class EventAttendeesComponent {
   }
 
   /**
-   * A range, Count or Counted by change can drop the picked event or foundation from the dropdown; once a read succeeds,
+   * A range or Count change can drop the picked event or foundation from the dropdown; once a read succeeds,
    * clear the control too so the dropdown shows All Events / All Foundations (the detail filter already ignores a pick the
    * options no longer offer). Only a successful response reaches this, so a failed read proves nothing about the options
    * and the picks are kept for Retry. It runs in the read's own pipeline, with the response in hand, not in an effect.
@@ -488,7 +450,7 @@ export class EventAttendeesComponent {
   }
 
   private resetAllState(): void {
-    // The range, Count and Counted by are page-level URL state, not per-org, so an org switch keeps them.
+    // The range and Count are page-level URL state, not per-org, so an org switch keeps them.
     this.filterForm.patchValue({ search: '', foundation: '', event: '' });
     this.sortColumn.set('events');
     this.sortDirection.set(-1);

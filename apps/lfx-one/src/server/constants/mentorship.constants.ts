@@ -6,6 +6,7 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
+  MentorshipMentorProgramStatus,
   MentorshipMentorStatus,
   MentorshipProgramStatus,
   MentorshipUpstreamApplicationStatus,
@@ -159,9 +160,9 @@ export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM: Readonly<Record<
 export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'hold', 'accepted'];
 
 /**
- * How a program's own status reads on its page when the program is not published. A published program reads
- * `open` or `completed` from its terms. The header route has no `admin_status`, so the BFF maps the status itself;
- * any other value reads as pending review and is flagged as unknown.
+ * How a program's own status reads on its page when the program is not published. A published program reads its
+ * status from its terms (`mentorshipPublishedProgramStatus`). The header route has no `admin_status`, so the BFF maps
+ * the status itself; any other value reads as pending review and is flagged as unknown.
  */
 export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
   pending: 'pending-review',
@@ -169,11 +170,21 @@ export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string
   hidden: 'hidden',
 };
 
+/**
+ * How upstream groups a published program by its terms, as the BFF shows it: the published values of the admin list's
+ * `admin_status` and the mentor list's `status`.
+ */
+export const MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipMentorProgramStatus>> = {
+  accepting: 'accepting',
+  in_progress: 'in-progress',
+  upcoming: 'upcoming',
+  completed: 'completed',
+};
+
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */
 export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipProgramStatus>> = {
-  open: 'open',
+  ...MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM,
   pending_review: 'pending-review',
-  completed: 'completed',
   rejected: 'rejected',
   hidden: 'hidden',
 };

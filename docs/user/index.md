@@ -44,6 +44,9 @@ features:
   - title: Account
     details: Manage affiliations, identities, CLAs, transactions, and settings.
     link: /account/
+  - title: Permissions
+    details: See who has access to a project and how to get access.
+    link: /permissions/
   - title: Training & Certifications
     details: Track your Linux Foundation training enrollments and certifications.
     link: /trainings/

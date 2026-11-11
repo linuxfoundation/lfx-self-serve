@@ -22,10 +22,11 @@ async function open(
       : of({
           eventId: 'event-1',
           eventName: 'Event One',
-          total: 1,
-          notListedCount: 0,
-          servedAttribution: 'company_email',
-          data: [{ contactId: '0', name: 'Jane Doe', jobTitle: null }],
+          total: 2,
+          data: [
+            { contactId: '0', name: 'Jane Doe', jobTitle: null },
+            { contactId: '1', name: 'Roster Employee', jobTitle: 'Analyst' },
+          ],
         })
   );
   await TestBed.configureTestingModule({
@@ -70,7 +71,7 @@ describe('EventAttendeesDrawerComponent', () => {
 
     expect(getEventAttendees).toHaveBeenCalledWith('acc-1', 'event-1', expect.objectContaining({ participation: 'attended' }));
     expect(document.body.querySelector('[data-testid="event-attendee-status"]')?.textContent?.trim()).toBe('Attended');
-    expect(document.body.querySelector('[data-testid="event-attendees-drawer-subtitle"]')?.textContent).toContain('1 counted');
+    expect(document.body.querySelector('[data-testid="event-attendees-drawer-subtitle"]')?.textContent).toContain('2 counted');
   });
 
   it('refetches while open when Count changes, so the rows and the badge describe the same selection', async () => {
@@ -83,6 +84,18 @@ describe('EventAttendeesDrawerComponent', () => {
 
     expect(getEventAttendees).toHaveBeenLastCalledWith('acc-1', 'event-1', expect.objectContaining({ participation: 'attended' }));
     expect(document.body.querySelector('[data-testid="event-attendee-status"]')?.textContent?.trim()).toBe('Attended');
+  });
+
+  it('lists everyone the response sends, by name and any title it carries, and never shows a "counted, not listed" note (lfx-self-serve#5158)', async () => {
+    await open('all');
+
+    const rows = Array.from(document.body.querySelectorAll('[data-testid="event-attendees-list"] > li'));
+    expect(rows.map((row) => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      expect.stringContaining('Jane Doe'),
+      expect.stringMatching(/Roster Employee\s*Analyst/),
+    ]);
+    expect(document.body.querySelector('[data-testid="event-attendees-not-listed"]')).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('not listed');
   });
 
   it('keeps the opener count and says the load failed, never "0 counted", when the read fails', async () => {

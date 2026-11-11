@@ -123,6 +123,6 @@ describe('OrgRoiComponent — page readiness', () => {
     expect(has(fixture, '[data-testid="org-roi-loading"]')).toBe(false);
     expect(has(fixture, 'lfx-org-roi-kpi-cards')).toBe(false);
     expect(has(fixture, 'lfx-org-roi-projects-section')).toBe(false);
-    expect(has(fixture, '[data-testid="org-roi-assumptions-trigger"]')).toBe(false);
+    expect(has(fixture, '[data-testid="org-roi-settings-trigger"]')).toBe(false);
   });
 });

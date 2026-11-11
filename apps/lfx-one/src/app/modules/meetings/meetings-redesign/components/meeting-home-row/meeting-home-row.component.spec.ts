@@ -7,7 +7,7 @@ import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingDashboardView, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
-import { formatMeetingDateTime } from '@lfx-one/shared/utils';
+import { formatMeetingWhen } from '@lfx-one/shared/utils';
 import { MeetingOwnInviteResendService } from '@services/meeting-own-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
@@ -17,6 +17,7 @@ import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingHomeRowComponent } from './meeting-home-row.component';
@@ -72,6 +73,7 @@ describe('MeetingHomeRowComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
+  let openDetails: ReturnType<typeof vi.fn>;
   let getPublicMeetingJoinUrl: ReturnType<typeof vi.fn>;
   const viewerUsername = signal<string | null>('viewer');
 
@@ -95,6 +97,7 @@ describe('MeetingHomeRowComponent', () => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
     navigate = vi.fn().mockResolvedValue(true);
     open = vi.fn();
+    openDetails = vi.fn();
     getPublicMeetingJoinUrl = vi.fn(() => of({ link: 'https://zoom.example.test/j/123' }));
     vi.stubGlobal(
       'ResizeObserver',
@@ -108,7 +111,7 @@ describe('MeetingHomeRowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl, navigate } },
-        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null), now: signal(new Date()) } },
+        { provide: MeetingsHomeStore, useValue: { lastMeeting: signal(null), approvedSummaries: signal(new Map()), now: signal(new Date()) } },
         { provide: MeetingOwnInviteResendService, useValue: { isResendingOwn: () => false } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal(new Set<string>()), getPublicMeetingJoinUrl } },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set<string>()) } },
@@ -118,6 +121,7 @@ describe('MeetingHomeRowComponent', () => {
         },
         { provide: MeetingsHomeEditService, useValue: { isChecking: () => false } },
         { provide: MeetingsHomeDeleteService, useValue: {} },
+        { provide: MeetingsHomeDetailsService, useValue: { open: openDetails } },
       ],
     });
   });
@@ -135,16 +139,20 @@ describe('MeetingHomeRowComponent', () => {
       expect(text(fixture, 'meetings-home-row-date-day')).toBe(String(START.getDate()));
       expect(text(fixture, 'meetings-home-row-project-name')).toBe('Kubernetes');
       expect(text(fixture, 'meetings-home-row-title')).toBe('Series title');
-      expect(texts(fixture, 'meetings-home-row-when')).toEqual([formatMeetingDateTime(START), '1h']);
-      expect(texts(fixture, 'meetings-home-row-when')[0]).toMatch(/^\w{3}, \w{3} \d{1,2} · \d{1,2}:\d{2} [AP]M \S+$/);
+      expect(texts(fixture, 'meetings-home-row-when').join(' · ')).toBe(formatMeetingWhen(START, 60));
+      expect(texts(fixture, 'meetings-home-row-when')).toEqual([
+        expect.stringMatching(/^\w{3}, \w{3} \d{1,2}$/),
+        expect.stringMatching(/^\d{1,2}:\d{2} [AP]M$/),
+        '60 min',
+      ]);
       expect(text(fixture, 'meetings-home-row-type').replace('·', '').trim()).toBe('Technical');
       expect(query(fixture, 'meetings-home-row-recurring')).toBeNull();
       expect(query(fixture, 'meetings-home-row-attended')).toBeNull();
     });
 
     it.each<[number, string]>([
-      [30, '30m'],
-      [90, '1h 30m'],
+      [30, '30 min'],
+      [90, '90 min'],
     ])("shows the occurrence's own title and a %i minute duration as %s", async (minutes, label) => {
       const fixture = await render(buildRow(buildMeeting(), { title: 'Occurrence title', durationMinutes: minutes }));
 
@@ -196,7 +204,7 @@ describe('MeetingHomeRowComponent', () => {
       [{ visibility: MeetingVisibility.PUBLIC, restricted: false }, []],
       [{ visibility: MeetingVisibility.PRIVATE, restricted: false }, ['private']],
       [{ visibility: MeetingVisibility.PUBLIC, restricted: true }, ['restricted']],
-      [{ visibility: MeetingVisibility.PRIVATE, restricted: true }, ['private', 'restricted']],
+      [{ visibility: MeetingVisibility.PRIVATE, restricted: true }, ['restricted', 'private']],
     ])('shows the visibility badges for %j', async (overrides, kinds) => {
       const fixture = await render(buildRow(buildMeeting(overrides)));
       const badges = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid^="meetings-home-row-visibility-"]'));
@@ -301,16 +309,30 @@ describe('MeetingHomeRowComponent', () => {
       });
     });
 
-    it('opens the meeting page in a new tab with the password and date', async () => {
-      const fixture = await render(buildRow(buildMeeting()));
-      const url = `/meetings/123?password=secret&occurrence=${START.getTime()}`;
+    it('opens the details drawer on a click and keeps the meeting page link, in a new tab with the password and date', async () => {
+      const row = buildRow(buildMeeting());
+      const fixture = await render(row);
+      const title = query(fixture, 'meetings-home-row-title');
 
-      expect(query(fixture, 'meetings-home-row-title')?.getAttribute('href')).toBe(url);
-      expect(query(fixture, 'meetings-home-row-title')?.getAttribute('target')).toBe('_blank');
+      expect(title?.getAttribute('href')).toBe(`/meetings/123?password=secret&occurrence=${START.getTime()}`);
+      expect(title?.getAttribute('target')).toBe('_blank');
       query(fixture, 'meetings-home-row-when')?.click();
+      title?.click();
 
-      expect(open).toHaveBeenCalledWith(url, '_blank', 'noopener,noreferrer');
+      expect(openDetails).toHaveBeenCalledTimes(2);
+      expect(openDetails).toHaveBeenCalledWith(row, 'row');
+      expect(open).not.toHaveBeenCalled();
       expect(navigateByUrl).not.toHaveBeenCalled();
+    });
+
+    it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])('leaves a modified title click to the link (%o)', async (modifier) => {
+      const fixture = await render(buildRow(buildMeeting()));
+      const click = new MouseEvent('click', { bubbles: true, cancelable: true, ...modifier });
+
+      query(fixture, 'meetings-home-row-title')?.dispatchEvent(click);
+
+      expect(click.defaultPrevented).toBe(false);
+      expect(openDetails).not.toHaveBeenCalled();
     });
 
     it('jumps to the project without opening the row', async () => {
@@ -322,7 +344,7 @@ describe('MeetingHomeRowComponent', () => {
       eyebrow?.click();
 
       expect(navigateByUrl).toHaveBeenCalledWith('/project/overview?project=kubernetes');
-      expect(open).not.toHaveBeenCalled();
+      expect(openDetails).not.toHaveBeenCalled();
     });
 
     it('opens the row menu without opening the row', async () => {
@@ -330,7 +352,7 @@ describe('MeetingHomeRowComponent', () => {
 
       query(fixture, 'meetings-home-row-actions-trigger')?.querySelector('button')?.click();
 
-      expect(open).not.toHaveBeenCalled();
+      expect(openDetails).not.toHaveBeenCalled();
       expect(navigateByUrl).not.toHaveBeenCalled();
     });
 
@@ -370,12 +392,14 @@ describe('MeetingHomeRowComponent', () => {
       const fixture = await render(buildRow(buildMeeting({ is_invite_responses_enabled: true }), { myRsvp: null }));
 
       expect(query(fixture, 'meetings-home-rsvp')).not.toBeNull();
-      expect(classes(fixture, 'meetings-home-row-rsvp-cell')).toEqual(
-        expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1'])
+      // At 480px or less the cell unwraps: the RSVP sits left on line 2.
+      expect(classes(fixture, 'meetings-home-row-rsvp-cell')).toEqual(expect.arrayContaining(['contents', '@[481px]:col-[3/4]', '@[481px]:row-start-1']));
+      expect(query(fixture, 'meetings-home-row-rsvp-cell')?.querySelector('lfx-meeting-rsvp-controls')?.parentElement?.className).toContain(
+        'justify-self-start'
       );
       expect(fixture.debugElement.query(By.css('[data-testid="meetings-home-rsvp-accepted"]')).componentInstance.size()).toBe('small');
       query(fixture, 'meetings-home-rsvp')?.click();
-      expect(open).not.toHaveBeenCalled();
+      expect(openDetails).not.toHaveBeenCalled();
       expect(navigateByUrl).not.toHaveBeenCalled();
     });
 
@@ -395,12 +419,16 @@ describe('MeetingHomeRowComponent', () => {
 
       expect(join?.querySelector('button')?.getAttribute('aria-label')).toBe('Join Series title');
       expect(join?.querySelector('button')?.className).toContain('h-ui-xsmall');
+      // At 480px or less Join sits right on the row's last line, above the attendance cell it shares.
+      expect(join?.className).toContain('row-start-3');
+      expect(join?.className).toContain('z-[1]');
+      expect(join?.className).toContain('justify-self-end');
       expect(getPublicMeetingJoinUrl).toHaveBeenCalledWith('123', 'secret', { email: 'real@example.test' });
       join?.querySelector('button')?.click();
 
       expect(open).toHaveBeenCalledTimes(1);
       expect(open).toHaveBeenCalledWith(expect.stringMatching(/^https:\/\/zoom\.example\.test\/j\/123\?uname=Real%20Viewer/), '_blank', 'noopener,noreferrer');
-      expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(openDetails).not.toHaveBeenCalled();
     });
 
     it('falls back to the meeting page with the password when the join link fails to load', async () => {
@@ -426,12 +454,14 @@ describe('MeetingHomeRowComponent', () => {
   });
 
   describe('organizer attendance', () => {
-    it("shows the date's RSVP counts with a tooltip on the bar, and widens the actions over 860px", async () => {
+    it("shows the date's RSVP counts in a 220px popup trigger, and widens the actions over 860px", async () => {
       const fixture = await render(buildRow(buildMeeting({ rsvp_summary: { invited: 16, yes: 12, maybe: 2, no: 1, no_response: 1 } })));
 
       expect(text(fixture, 'meetings-home-attendance-label')).toBe('12 of 16 attending · 75%');
       expect(query(fixture, 'meetings-home-attendance-bar')?.getAttribute('aria-label')).toBe('Yes 12, Maybe 2, No 1, No response 1');
       expect(query(fixture, 'meetings-home-attendance-legend')).toBeNull();
+      expect(query(fixture, 'meetings-home-attendance-trigger')?.getAttribute('role')).toBe('button');
+      expect(fixture.nativeElement.querySelector('lfx-meeting-home-attendance-popup')?.classList).toContain('max-w-[220px]');
       expect(classes(fixture, 'meetings-home-row-actions')).toContain('@[861px]:min-w-[330px]');
       expect(classes(fixture, 'meetings-home-row')).toContain('@[601px]:grid-cols-[auto_minmax(0,1fr)_minmax(240px,auto)_auto]');
     });
@@ -477,25 +507,28 @@ describe('MeetingHomeRowComponent', () => {
       expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(
         expect.arrayContaining(['col-[2/-1]', 'row-start-2', '@[481px]:col-[3/4]', '@[481px]:row-start-1', 'hidden', 'has-[div]:flex'])
       );
+      // At 480px or less the buttons sit left and wrap, so a phone row never overflows.
+      expect(classes(past, 'meetings-home-row-artifacts-cell')).toEqual(
+        expect.arrayContaining(['justify-self-start', '[&>*>div]:shrink', '[&>*>div]:flex-wrap', '@[481px]:[&>*>div]:flex-nowrap'])
+      );
     });
 
-    it('opens the meeting page in place for invitees', async () => {
-      const fixture = await render(buildRow(buildMeeting({ meeting_and_occurrence_id: '123-1759334400000' })), 'past');
+    it('opens the details drawer on a click and links invitees to the meeting page in place', async () => {
+      const row = buildRow(buildMeeting({ meeting_and_occurrence_id: '123-1759334400000' }));
+      const fixture = await render(row, 'past');
 
+      expect(query(fixture, 'meetings-home-row-title')?.getAttribute('href')).toBe('/meetings/123-1759334400000');
       expect(query(fixture, 'meetings-home-row-title')?.getAttribute('target')).toBeNull();
       query(fixture, 'meetings-home-row')?.click();
 
-      expect(navigateByUrl).toHaveBeenCalledWith('/meetings/123-1759334400000');
-      expect(open).not.toHaveBeenCalled();
+      expect(openDetails).toHaveBeenCalledWith(row, 'row');
+      expect(navigateByUrl).not.toHaveBeenCalled();
     });
 
-    it('opens the admin details page with the project for organizers', async () => {
+    it('links organizers to the admin details page with the project', async () => {
       const fixture = await render(buildRow(buildMeeting({ meeting_and_occurrence_id: '123-1759334400000', organizer: true })), 'past');
 
-      query(fixture, 'meetings-home-row-title')?.click();
-
-      expect(navigateByUrl).toHaveBeenCalledTimes(1);
-      expect(navigateByUrl).toHaveBeenCalledWith('/project/meetings/123-1759334400000/details?project=kubernetes');
+      expect(query(fixture, 'meetings-home-row-title')?.getAttribute('href')).toBe('/project/meetings/123-1759334400000/details?project=kubernetes');
     });
   });
 });

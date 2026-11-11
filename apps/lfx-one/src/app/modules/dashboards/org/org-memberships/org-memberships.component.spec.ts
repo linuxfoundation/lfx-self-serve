@@ -75,7 +75,7 @@ async function render(memberships: OrgActiveMembership[] = [], projects: OrgMemb
       provideRouter([]),
       // The Org Projects side panel is a p-drawer, which binds synthetic animation listeners.
       provideNoopAnimations(),
-      // lfxOpenIntercom (the empty state's contact-support link) injects the app-root MessageService.
+      // The empty state no longer carries a support link (#5447); MessageService stays provided for the page's other controls.
       MessageService,
       { provide: AccountContextService, useValue: { selectedAccount } },
       { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },

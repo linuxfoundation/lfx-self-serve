@@ -4,7 +4,7 @@ description: How to create and send an NPS survey to the members of one or more 
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, create, nps, feedback, reminders, email, schedule]
-last_updated: 2026-11-05
+last_updated: 2026-11-06
 intercom_collection: Surveys
 ---
 
@@ -24,9 +24,11 @@ The **Create Survey** form is a four-step wizard: **Audience & Type**, **Timing 
 ## Step 1: Audience & Type
 
 1. Under **Target Audience**, open the **Select groups** dropdown and tick the group to survey. Use the **Search groups…** box at the top of the list to find it, then click outside the list to close it. At least one is required, or you see "Please select at least one group." If you came from a group, that group is already chosen.
-2. Under **NPS Survey Template**, open the list that reads **Select Survey** and choose a template. A template is required, or you see "Please select a survey template."
+2. Under **NPS Survey Templates**, open the list that reads **Select Survey** and choose a template. Use **Search templates...** to find one by its title. A template is required, or you see "Please select a survey template."
 
-   The list shows the current SurveyMonkey templates, so new or renamed templates appear without waiting for an app update. While the list loads, it shows a loading indicator and can't be opened. If the templates fail to load, you see "We couldn't load survey templates." Select **Try again** to reload them. You can't move to the next step until a template is chosen from a loaded list. If no templates exist yet, you see "No survey templates are available yet."
+   The list shows the current templates from the SurveyMonkey survey workgroup. The template you select provides the survey questions. New or renamed templates appear without waiting for an app update. While the list loads, it shows a loading indicator and can't be opened. If the templates fail to load, you see "We couldn't load survey templates." Select **Try again** to reload them. You can't move to the next step until a template is chosen from a loaded list. If no templates exist yet, you see "No survey templates are available yet."
+
+   If your search finds nothing, you see "No templates match your search." Clear the search to see all templates; the search also resets when you close the list.
 
    If the list reloads and your chosen template is no longer available, the choice is cleared. Select an available template before continuing.
 

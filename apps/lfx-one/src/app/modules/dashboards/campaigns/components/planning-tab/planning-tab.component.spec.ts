@@ -133,6 +133,115 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
   });
 
+  it('looks a survey up under the slug it is saved under -- a Google Form by its title, not `viewform`', async () => {
+    campaignService.loadBrief.mockReturnValue(EMPTY);
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as { briefForm: { controls: { sourceText: { setValue(v: string): void } } } };
+    component.briefForm.controls.sourceText.setValue('2026 Cloud Native Survey\nTwelve questions.');
+
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('2026-cloud-native-survey', 'foundation-a', 'survey', 'Survey Promo');
+  });
+
+  it('restores a saved Google Form survey, guarding on the slug the lookup used', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((sub) => sub.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-s', etag: 'W/"v1"', approved: true }))
+    );
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { sourceText: { setValue(v: string): void } } };
+      restoreSavedBrief(): void;
+      restoreSavedBriefRequested: { subscribe(fn: (v: { briefId: string }) => void): void };
+    };
+    component.briefForm.controls.sourceText.setValue('2026 Cloud Native Survey');
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+    const emitted: { briefId: string }[] = [];
+    component.restoreSavedBriefRequested.subscribe((v) => emitted.push(v));
+
+    component.restoreSavedBrief();
+
+    // The guard compared `viewform` with the title slug, so the offered Restore did nothing.
+    expect(emitted.map((e) => e.briefId)).toEqual(['brief-s']);
+
+    // Still refused once the link is cleared, though the title alone would derive the same slug.
+    (fixture.componentInstance as unknown as { briefForm: { controls: { url: { setValue(v: string): void } } } }).briefForm.controls.url.setValue('');
+    component.restoreSavedBrief();
+    expect(emitted).toHaveLength(1);
+  });
+
+  it('derives the lookup slug again when the surface changes between Email and Survey', async () => {
+    campaignService.loadBrief.mockReturnValue(EMPTY);
+    fixture.componentRef.setInput('deliveryType', 'email');
+    fixture.componentRef.setInput('emailStage', 'Registration Push');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance as unknown as { briefForm: { controls: { sourceText: { setValue(v: string): void } } } };
+    component.briefForm.controls.sourceText.setValue('2026 Cloud Native Survey');
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('viewform', 'foundation-a', 'email', 'Registration Push');
+
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    // The same link is the survey's TITLE to the survey lookup, not `viewform`.
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('2026-cloud-native-survey', 'foundation-a', 'survey', 'Survey Promo');
+  });
+
+  it('re-runs a survey lookup when its title changes, since the title is half of its identity', async () => {
+    campaignService.loadBrief.mockReturnValue(EMPTY);
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.componentRef.setInput('emailStage', 'Survey Promo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    await typeEventUrl('https://docs.google.com/forms/d/e/1FAIpQ/viewform');
+    const component = fixture.componentInstance as unknown as { briefForm: { controls: { sourceText: { setValue(v: string): void } } } };
+
+    component.briefForm.controls.sourceText.setValue('Developer Survey 2027');
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).toHaveBeenLastCalledWith('developer-survey-2027', 'foundation-a', 'survey', 'Survey Promo');
+  });
+
+  it('counts the survey source as campaign-service does and will not generate past the limit', async () => {
+    fixture.componentRef.setInput('deliveryType', 'survey');
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      briefForm: { controls: { sourceText: { setValue(v: string): void }; url: { setValue(v: string): void } } };
+      canGenerate(): boolean;
+      sourceTextLength(): number;
+    };
+    component.briefForm.controls.url.setValue('https://surveys.example.com/r/cloud-2026');
+
+    // Whitespace runs count as one, as the server counts them.
+    component.briefForm.controls.sourceText.setValue('a  \n\n b');
+    expect(component.sourceTextLength()).toBe(3);
+
+    component.briefForm.controls.sourceText.setValue('x'.repeat(3000));
+    expect(component.canGenerate()).toBe(true);
+    component.briefForm.controls.sourceText.setValue('x'.repeat(3001));
+    fixture.detectChanges();
+    expect(component.canGenerate()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-source-text-too-long"]')).not.toBeNull();
+
+    // Within the counted limit but past the raw ceiling the BFF also refuses: mostly whitespace.
+    component.briefForm.controls.sourceText.setValue('a' + ' '.repeat(24_000) + 'b');
+    fixture.detectChanges();
+    expect(component.sourceTextLength()).toBe(3);
+    expect(component.canGenerate(), 'the BFF refuses the raw size').toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-source-text-too-long"]')?.textContent).toContain('mostly blank space');
+  });
+
   it('offers a saved brief for restore when the lookup returns status=loaded', async () => {
     campaignService.loadBrief.mockReturnValue(
       new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
@@ -187,6 +296,369 @@ describe('PlanningTabComponent brief read-back', () => {
     // Restore fires, and carries the STORED slug -- which is what the parent keys ownership on.
     expect(emitted).toHaveLength(1);
     expect(emitted[0].brief.eventDetails?.slug).toBe('kubecon-europe-2026');
+  });
+
+  describe('a brief stored under a year-suffixed slug (#5492)', () => {
+    const year = new Date().getFullYear();
+    const loaded = (slug: string): CampaignBriefLoadResult => ({
+      status: 'loaded',
+      brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+      briefId: 'brief-year',
+      etag: 'W/"v1"',
+      approved: true,
+    });
+    const none: CampaignBriefLoadResult = { status: 'none', briefId: null, brief: null, etag: null, approved: false } as unknown as CampaignBriefLoadResult;
+
+    function lookedUpSlugs(): string[] {
+      return campaignService.loadBrief.mock.calls.map((call) => call[0] as string);
+    }
+
+    it('prefers the latest edition when several years are stored', async () => {
+      // This year's edition has often already happened; offering it would file the new campaign on it.
+      const stored = new Set([`kubecon-cloudnativecon-europe-${year}`, `kubecon-cloudnativecon-europe-${year + 1}`]);
+      campaignService.loadBrief.mockImplementation((slug: string) => of(stored.has(slug) ? loaded(slug) : none));
+
+      await typeEventUrl('https://events.example.com/kubecon-cloudnativecon-europe/');
+
+      expect(savedBrief()?.eventDetails.slug).toBe(`kubecon-cloudnativecon-europe-${year + 1}`);
+    });
+
+    it('retries a miss with the next two years and this one, latest first, and offers the first one found', async () => {
+      const stored = `kubecon-cloudnativecon-europe-${year + 1}`;
+      campaignService.loadBrief.mockImplementation((slug: string) => of(slug === stored ? loaded(stored) : none));
+
+      await typeEventUrl('https://events.example.com/kubecon-cloudnativecon-europe/');
+
+      expect(lookedUpSlugs()).toEqual(['kubecon-cloudnativecon-europe', `kubecon-cloudnativecon-europe-${year + 2}`, stored]);
+      expect(savedBrief()?.eventDetails.slug).toBe(stored);
+
+      // Restorable from the URL that names the event, though the row is filed under the year slug.
+      const emitted: { briefId: string }[] = [];
+      const component = fixture.componentInstance as unknown as {
+        restoreSavedBrief(): void;
+        restoreSavedBriefRequested: { subscribe(fn: (v: { briefId: string }) => void): void };
+      };
+      component.restoreSavedBriefRequested.subscribe((v) => emitted.push(v));
+      component.restoreSavedBrief();
+      expect(emitted.map((e) => e.briefId)).toEqual(['brief-year']);
+    });
+
+    it('stops at the bare slug when it is found, and tries no year when the url already names one', async () => {
+      campaignService.loadBrief.mockImplementation((slug: string) => of(loaded(slug)));
+      await typeEventUrl('https://events.example.com/open-source-summit-korea/');
+      expect(lookedUpSlugs()).toEqual(['open-source-summit-korea']);
+
+      campaignService.loadBrief.mockClear();
+      campaignService.loadBrief.mockImplementation(() => of(none));
+      await typeEventUrl('https://events.example.com/open-source-summit-europe-2027/');
+      expect(lookedUpSlugs()).toEqual(['open-source-summit-europe-2027']);
+      expect(savedBrief()).toBeNull();
+    });
+
+    it('reports a failed lookup as it is, without guessing further', async () => {
+      campaignService.loadBrief.mockImplementation(() => throwError(() => new Error('upstream down')));
+
+      await typeEventUrl('https://events.example.com/kubecon-cloudnativecon-europe/');
+
+      expect(lookedUpSlugs()).toEqual(['kubecon-cloudnativecon-europe']);
+      expect(savedBriefWarning()).toBe('Could not check whether this event already has a saved brief.');
+    });
+
+    it('does not guess years for a survey, whose slug is not a url segment', async () => {
+      campaignService.loadBrief.mockImplementation(() => of(none));
+      fixture.componentRef.setInput('deliveryType', 'survey');
+      fixture.componentRef.setInput('emailStage', 'Survey Promo');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      campaignService.loadBrief.mockClear();
+
+      await typeEventUrl('https://surveys.example.com/r/cloud-native-survey');
+
+      expect(lookedUpSlugs()).toEqual(['cloud-native-survey']);
+    });
+  });
+
+  describe('after generation, a brief stored under the generated slug (#5492)', () => {
+    const none: CampaignBriefLoadResult = { status: 'none', briefId: null, brief: null, etag: null, approved: false } as unknown as CampaignBriefLoadResult;
+
+    interface Generating {
+      handleSSEEvent(event: { type: string; data: unknown }): void;
+      reset(): void;
+      openSavedBriefToEdit(): void;
+      openSavedBriefRequested: { subscribe(fn: (v: { briefId: string }) => void): void };
+    }
+
+    /** Finish a generation whose scraped event carries `slug`, as the generate stream does. */
+    function finishGeneration(slug: string): void {
+      const component = fixture.componentInstance as unknown as Generating;
+      component.handleSSEEvent({ type: 'event', data: { name: 'KubeCon Europe', slug } });
+      component.handleSSEEvent({ type: 'done', data: null });
+      fixture.detectChanges();
+    }
+
+    it('looks the generated slug up when it differs from the url and offers what it finds on the review step', async () => {
+      const generated = 'kubecon-europe-2031';
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === generated
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: generated } },
+                briefId: 'brief-gen',
+                etag: 'W/"v1"',
+                approved: true,
+              }
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      expect(savedBrief()).toBeNull();
+
+      finishGeneration(generated);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(campaignService.loadBrief).toHaveBeenLastCalledWith(generated, 'foundation-a', 'paid-marketing', '');
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+
+      // Open to edit acts on it from the review step.
+      const component = fixture.componentInstance as unknown as Generating;
+      const opened: { briefId: string }[] = [];
+      component.openSavedBriefRequested.subscribe((v) => opened.push(v));
+      component.openSavedBriefToEdit();
+      expect(opened.map((o) => o.briefId)).toEqual(['brief-gen']);
+    });
+
+    it('replaces an offer found under another slug with the brief the save would collide with', async () => {
+      const generated = 'kubecon-europe-2031';
+      const briefFor = (slug: string, briefId: string): CampaignBriefLoadResult => ({
+        status: 'loaded',
+        brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+        briefId,
+        etag: 'W/"v1"',
+        approved: true,
+      });
+      campaignService.loadBrief.mockImplementation((slug: string) => {
+        if (slug === 'kubecon-europe') return of(briefFor('kubecon-europe', 'brief-url'));
+        return of(slug === generated ? briefFor(generated, 'brief-gen') : none);
+      });
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      expect(savedBrief()?.eventDetails.slug).toBe('kubecon-europe');
+
+      finishGeneration(generated);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+    });
+
+    it('does not claim an offer under another slug blocks the save', async () => {
+      // The url lookup found an earlier edition; the save is keyed on the generated slug, where nothing is stored.
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === 'kubecon-europe'
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+                briefId: 'brief-url',
+                etag: 'W/"v1"',
+                approved: true,
+              }
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+
+      finishGeneration('kubecon-europe-2031');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).toContain('if you want it instead of this one');
+      expect(banner?.textContent).not.toContain("can't be saved over it");
+    });
+
+    it('also looks the generated slug up when the stream ends without a done event', async () => {
+      const generated = 'kubecon-europe-2031';
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === generated
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+                briefId: 'brief-gen',
+                etag: 'W/"v1"',
+                approved: true,
+              }
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(
+        of({ type: 'event', data: { name: 'KubeCon Europe', slug: generated } } as unknown as SSEEvent<CampaignSSEEventType>)
+      );
+
+      (fixture.componentInstance as unknown as { generate(): void }).generate();
+      await fixture.whenStable();
+
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+    });
+
+    it('keeps the offer found on the save key when an older url lookup answers after it', async () => {
+      const year = new Date().getFullYear();
+      const generated = 'kubecon-europe-2031';
+      const pendingYearGuess = new Subject<CampaignBriefLoadResult>();
+      campaignService.loadBrief.mockImplementation((slug: string) => {
+        if (slug === `kubecon-europe-${year + 2}`) return pendingYearGuess;
+        if (slug === generated) {
+          return of({
+            status: 'loaded',
+            brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+            briefId: 'brief-gen',
+            etag: 'W/"v1"',
+            approved: true,
+          });
+        }
+        return of(none);
+      });
+      // The url lookup is still waiting on its first year guess when the generation finishes.
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      finishGeneration(generated);
+      await fixture.whenStable();
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+
+      pendingYearGuess.next({
+        status: 'loaded',
+        brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: `kubecon-europe-${year + 2}` } },
+        briefId: 'brief-older-guess',
+        etag: 'W/"v1"',
+        approved: true,
+      });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+    });
+
+    describe('a brief the year guess found under the generated slug', () => {
+      const year = new Date().getFullYear();
+      const generated = `kubecon-europe-${year + 1}`;
+
+      async function foundBeforeGenerating(result: CampaignBriefLoadResult): Promise<void> {
+        campaignService.loadBrief.mockImplementation((slug: string) => of(slug === generated ? result : none));
+        await typeEventUrl('https://events.example.com/kubecon-europe/');
+        finishGeneration(generated);
+        await fixture.whenStable();
+        fixture.detectChanges();
+      }
+
+      const loadedUnderGenerated: CampaignBriefLoadResult = {
+        status: 'loaded',
+        brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: generated } },
+        briefId: 'brief-gen',
+        etag: 'W/"v1"',
+        approved: true,
+      };
+
+      it('says the generated brief cannot be saved over it when someone else owns it', async () => {
+        // The usual #5492 path: the year guess finds the stored edition before Generate is pressed.
+        await foundBeforeGenerating(loadedUnderGenerated);
+
+        const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+        expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+      });
+
+      it('does not claim it blocks the save when this session owns it, as after a Proceed', async () => {
+        fixture.componentRef.setInput('ownedBriefIds', new Set(['brief-gen']));
+        await foundBeforeGenerating(loadedUnderGenerated);
+
+        const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+        expect(banner?.textContent).toContain('if you want it instead of this one');
+        expect(banner?.textContent).not.toContain("can't be saved over it");
+      });
+
+      it('keeps the unreadable-brief warning on the review step when it is on the save slug', async () => {
+        await foundBeforeGenerating({ status: 'unreadable', brief: null, briefId: 'brief-x', etag: 'W/"v1"', approved: false } as CampaignBriefLoadResult);
+
+        expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')?.textContent).toContain('could not be opened');
+      });
+    });
+
+    it('still applies the url lookup for a different event typed after the save-key offer', async () => {
+      const generated = 'kubecon-europe-2031';
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === generated || slug === 'open-source-summit-korea'
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+                briefId: `brief-${slug}`,
+                etag: 'W/"v1"',
+                approved: true,
+              }
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      finishGeneration(generated);
+      await fixture.whenStable();
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+
+      await typeEventUrl('https://events.example.com/open-source-summit-korea/');
+
+      expect(savedBrief()?.eventDetails.slug).toBe('open-source-summit-korea');
+    });
+
+    it('does not warn on the review step about an unreadable brief stored under another edition', async () => {
+      const year = new Date().getFullYear();
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === `kubecon-europe-${year + 2}`
+            ? ({ status: 'unreadable', brief: null, briefId: 'brief-x', etag: 'W/"v1"', approved: false } as CampaignBriefLoadResult)
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      expect(savedBriefWarning()).toContain('could not be opened');
+
+      finishGeneration(`kubecon-europe-${year + 1}`);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')).toBeNull();
+    });
+
+    it('makes no extra lookup when the generated slug is the one the url lookup already used', async () => {
+      campaignService.loadBrief.mockImplementation(() => of(none));
+      await typeEventUrl('https://events.example.com/open-source-summit-europe-2027/');
+      campaignService.loadBrief.mockClear();
+
+      finishGeneration('open-source-summit-europe-2027');
+      await fixture.whenStable();
+
+      expect(campaignService.loadBrief).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]')).toBeNull();
+    });
+
+    it('drops an answer that arrives after the page has started over', async () => {
+      campaignService.loadBrief.mockImplementation(() => of(none));
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      const pending = new Subject<CampaignBriefLoadResult>();
+      campaignService.loadBrief.mockImplementation(() => pending);
+
+      finishGeneration('kubecon-europe-2031');
+      (fixture.componentInstance as unknown as Generating).reset();
+      pending.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-late', etag: 'W/"v1"', approved: true });
+      await fixture.whenStable();
+
+      expect(savedBrief()).toBeNull();
+    });
   });
 
   it('warns when the stored brief was never approved', async () => {
@@ -959,7 +1431,8 @@ describe('PlanningTabComponent editing an existing brief', () => {
     await openInEditor();
 
     expect(internals().briefForm.controls['url'].disabled, 'the URL stayed editable on an existing brief').toBe(true);
-    expect(el('planning-edit-existing-url')?.textContent?.trim()).toBe('https://events.example.com/kubecon-eu-2026');
+    // The event is named by its slug, the row's key: the Registration URL beside it is editable (#5490).
+    expect(el('planning-edit-existing-url')?.textContent?.trim()).toBe('kubecon-eu-2026');
 
     const proceeded: CampaignBriefOutput[] = [];
     fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
@@ -1109,8 +1582,185 @@ describe('PlanningTabComponent editing an existing brief', () => {
     expect(internals().step()).toBe('review');
   });
 
-  it('offers no Open to edit on the email planner', async () => {
-    fixture.componentRef.setInput('deliveryType', 'email');
+  /**
+   * #5490: the paid editor's Registration URL. The scrape leaves it empty for an event page with no
+   * registration link yet, every ad platform refuses a create whose saved brief has none, and this
+   * field is the only place to set it.
+   */
+  describe('Registration URL (#5490)', () => {
+    interface UrlInternals {
+      isEditing(): boolean;
+      eventDetails(): CampaignEventDetails | null;
+      paidEditForm: FormGroup;
+      paidEditError(): string;
+      editSearchHeadlines: { set(v: string[]): void };
+      saveEdits(): void;
+      cancelEdit(): void;
+      onProceedToImplementation(): void;
+    }
+    const urlInternals = (): UrlInternals => fixture.componentInstance as unknown as UrlInternals;
+    const typeUrl = (value: string): void => urlInternals().paidEditForm.controls['registrationUrl'].setValue(value);
+
+    it('seeds the field from the brief and saves a corrected https URL with it, on the stored event', async () => {
+      await openInEditor();
+      fixture.detectChanges();
+      expect(el('planning-registration-url-edit'), 'no Registration URL field in the paid editor').not.toBeNull();
+      expect(urlInternals().paidEditForm.controls['registrationUrl'].value).toBe('https://events.example.com/kubecon-eu-2026');
+
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+      typeUrl('  https://events.example.com/kubecon-eu-2026/register/  ');
+      urlInternals().onProceedToImplementation();
+
+      expect(proceeded).toHaveLength(1);
+      expect(proceeded[0].eventDetails.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
+      // The URL is not the row's key, so the brief stays on its event.
+      expect(proceeded[0].eventDetails.slug).toBe('kubecon-eu-2026');
+      expect(proceeded[0].eventDetails.name).toBe('KubeCon EU 2026');
+    });
+
+    it('sets a URL on a brief generated without one, and the strip stops warning', async () => {
+      const noUrl = { ...storedBrief, eventDetails: { ...storedBrief.eventDetails, registrationUrl: '' } } as unknown as CampaignBriefOutput;
+      fixture.componentRef.setInput('editRequest', { brief: noUrl, requestId: 11 });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(el('planning-registration-url-missing'), 'an empty registration URL was not called out').not.toBeNull();
+      expect(el('planning-registration-url-value')).toBeNull();
+
+      typeUrl('https://events.example.com/kubecon-eu-2026/register/');
+      urlInternals().saveEdits();
+      fixture.detectChanges();
+
+      expect(urlInternals().isEditing()).toBe(false);
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
+      expect(el('planning-registration-url-missing')).toBeNull();
+      expect(el('planning-registration-url-value')?.textContent?.trim()).toBe('https://events.example.com/kubecon-eu-2026/register/');
+    });
+
+    it.each([
+      ['an http:// address, which Meta refuses', 'http://events.example.com/register'],
+      ['an address with no scheme', 'events.example.com/register'],
+      ['https: without //, which Go reads as having no host', 'https:events.example.com/register'],
+      ['a third slash after https://, which Go also reads as having no host', 'https:///events.example.com/register'],
+      ['a private host', 'https://localhost/register'],
+      ['a user name and password', 'https://user:secret@events.example.com/register'],
+      ['a semicolon in the query, which Go refuses', 'https://events.example.com/register?ref=a;b'],
+      ['a malformed percent escape', 'https://events.example.com/register%zz'],
+      ['an empty @ userinfo', 'https://@events.example.com/register'],
+      ['an emptied field', '   '],
+    ])('refuses %s: the editor stays open with its message, and nothing is applied or emitted', async (_label, value) => {
+      await openInEditor();
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+      urlInternals().editSearchHeadlines.set(['Edited headline']);
+      typeUrl(value);
+
+      urlInternals().onProceedToImplementation();
+      fixture.detectChanges();
+
+      expect(proceeded, 'the brief was handed on with the refused URL').toEqual([]);
+      expect(urlInternals().isEditing()).toBe(true);
+      expect(el('planning-registration-url-error')?.textContent?.trim()).toBe('Enter the full registration link, starting with https://.');
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026');
+      // Refused before anything was applied, so the copy edit is not half-saved either.
+      expect((fixture.componentInstance as unknown as { getSearchCopy(): { headlines: string[] } }).getSearchCopy().headlines).toEqual(['Stored headline']);
+    });
+
+    it('scrolls the refusal into view, since Save & Proceed sits below the copy editor', async () => {
+      const scrolled: Element[] = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this);
+      };
+      try {
+        await openInEditor();
+        typeUrl('http://events.example.com/register');
+
+        urlInternals().onProceedToImplementation();
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(scrolled.map((node) => node.getAttribute('data-testid'))).toEqual(['planning-registration-url-error']);
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+    });
+
+    it('saves a URL onto a stored brief that carries no registrationUrl at all, instead of throwing', async () => {
+      const withoutUrl: Partial<CampaignEventDetails> = { ...storedBrief.eventDetails };
+      delete withoutUrl.registrationUrl;
+      const legacy = { ...storedBrief, eventDetails: withoutUrl } as unknown as CampaignBriefOutput;
+      fixture.componentRef.setInput('editRequest', { brief: legacy, requestId: 13 });
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      typeUrl('https://events.example.com/kubecon-eu-2026/register/');
+      urlInternals().saveEdits();
+
+      expect(urlInternals().isEditing()).toBe(false);
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
+    });
+
+    it('does not judge a URL the operator left unchanged, so an http one already on the brief does not block a copy edit', async () => {
+      const httpBrief = {
+        ...storedBrief,
+        eventDetails: { ...storedBrief.eventDetails, registrationUrl: 'http://events.example.com/kubecon-eu-2026' },
+      } as unknown as CampaignBriefOutput;
+      fixture.componentRef.setInput('editRequest', { brief: httpBrief, requestId: 12 });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+      urlInternals().editSearchHeadlines.set(['Edited headline']);
+
+      urlInternals().onProceedToImplementation();
+
+      expect(proceeded).toHaveLength(1);
+      expect(proceeded[0].eventDetails.registrationUrl).toBe('http://events.example.com/kubecon-eu-2026');
+      expect((proceeded[0].structuredCopy?.['google_search'] as { headlines: string[] }).headlines).toEqual(['Edited headline']);
+    });
+
+    it('carries the URL on a freshly generated brief too, where there is no stored brief to lay it over', async () => {
+      const c = fixture.componentInstance as unknown as {
+        step: { set(v: string): void };
+        eventDetails: { set(v: unknown): void };
+        structuredCopy: { set(v: unknown): void };
+        enterEditMode(): void;
+      };
+      c.step.set('review');
+      c.eventDetails.set({ ...storedBrief.eventDetails, registrationUrl: '' });
+      c.structuredCopy.set(storedBrief.structuredCopy);
+      c.enterEditMode();
+      fixture.detectChanges();
+      expect(internals().editingExistingBrief()).toBe(false);
+      const proceeded: CampaignBriefOutput[] = [];
+      fixture.componentInstance.proceedToImplementation.subscribe((b) => proceeded.push(b));
+
+      typeUrl('https://events.example.com/kubecon-eu-2026/register/');
+      urlInternals().onProceedToImplementation();
+
+      expect(proceeded).toHaveLength(1);
+      expect(proceeded[0].eventDetails.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026/register/');
+    });
+
+    it('Save Edits refuses the same way, and Cancel discards the edit and its message', async () => {
+      await openInEditor();
+      typeUrl('http://events.example.com/register');
+      urlInternals().saveEdits();
+      expect(urlInternals().isEditing()).toBe(true);
+      expect(urlInternals().paidEditError()).not.toBe('');
+
+      urlInternals().cancelEdit();
+
+      expect(urlInternals().isEditing()).toBe(false);
+      expect(urlInternals().paidEditError()).toBe('');
+      expect(urlInternals().eventDetails()?.registrationUrl).toBe('https://events.example.com/kubecon-eu-2026');
+    });
+  });
+
+  // Survey too: it rides the email planner's restore, which has no per-send editor to open.
+  it.each(['email', 'survey'] as const)('offers no Open to edit on the %s planner', async (deliveryType) => {
+    fixture.componentRef.setInput('deliveryType', deliveryType);
     fixture.detectChanges();
     loadBrief.mockReturnValue(of({ status: 'loaded', brief: storedBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }));
     internals().briefForm.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
@@ -1991,7 +2641,7 @@ describe('PlanningTabComponent email brief editing', () => {
    * The brief card lives inside the `step() === 'review'` branch, so a fixture left on the form
    * step renders nothing and every DOM assertion here would pass vacuously.
    */
-  async function buildWithScrape(deliveryType: 'paid-marketing' | 'email' = 'email'): Promise<void> {
+  async function buildWithScrape(deliveryType: 'paid-marketing' | 'email' | 'survey' = 'email'): Promise<void> {
     fixture = TestBed.createComponent(PlanningTabComponent);
     fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
     fixture.componentRef.setInput('deliveryType', deliveryType);
@@ -2017,6 +2667,153 @@ describe('PlanningTabComponent email brief editing', () => {
     const projectContextService = TestBed.inject(ProjectContextService);
     projectContextService.setRouteLensKind('foundation');
     projectContextService.setFoundation({ uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' }, false);
+  });
+
+  it("shows a survey brief's source text, and lets the operator correct it", async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'Closes 30 November.' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-email-brief-source"]')?.textContent).toContain('Closes 30 November.');
+
+    internals().enterEmailEditMode();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-test="planning-email-edit-source"]')).not.toBeNull();
+    internals().emailEditForm.controls['sourceText'].setValue('Closes 7 December.');
+    internals().saveEmailEdit();
+
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('Closes 7 December.');
+  });
+
+  it("moves a Google Form survey's slug with an edited title, so its lookup still finds it", async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({
+      ...scraped,
+      registrationUrl: 'https://docs.google.com/forms/d/e/1FAIpQ/viewform',
+      slug: 'old-title',
+      sourceText: 'Old Title',
+    });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('2027 Developer Survey\nTen questions.');
+
+    internals().saveEmailEdit();
+
+    expect((internals().eventDetails() as unknown as { slug: string }).slug).toBe('2027-developer-survey');
+  });
+
+  it('refuses an emptied survey source in the editor and keeps it open with a field error', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'Closes 30 November.' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('   \n  ');
+
+    internals().saveEmailEdit();
+    fixture.detectChanges();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('Closes 30 November.');
+    expect(fixture.nativeElement.querySelector('[data-testid="planning-email-edit-error"]')?.textContent).toContain('Paste the survey or report text');
+  });
+
+  it('does not hand off the old brief when the open edit is refused', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('x'.repeat(3001));
+    const handedOff: unknown[] = [];
+    (fixture.componentInstance as unknown as { proceedToImplementation: { subscribe(f: (v: unknown) => void): void } }).proceedToImplementation.subscribe((v) =>
+      handedOff.push(v)
+    );
+
+    (fixture.componentInstance as unknown as { onProceedToImplementation(): void }).onProceedToImplementation();
+
+    // The editor stays open with its error; the previous facts do not go forward.
+    expect(handedOff).toEqual([]);
+    expect(internals().isEditingEmailBrief()).toBe(true);
+  });
+
+  it("refuses to save a survey source edit past campaign-service's limit", async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('x'.repeat(3001));
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('short');
+  });
+
+  it('refuses a survey source edit past the raw size, even when its spacing collapses to a short count', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue(`A${' '.repeat(24000)}B`);
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('short');
+  });
+
+  it.each([[''], ['/survey'], ['not a link']])('refuses a survey link edit that is not a full web address (%j)', async (bad) => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'Title', registrationUrl: 'https://surveys.example.com/s/one' });
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['registrationUrl'].setValue(bad);
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect(internals().eventDetails()?.registrationUrl).toBe('https://surveys.example.com/s/one');
+  });
+
+  it('refuses a Google Form title edit that leaves the survey with no slug', async () => {
+    await buildWithScrape('survey');
+    const formUrl = 'https://docs.google.com/forms/d/e/1FAIpQ/viewform';
+    internals().eventDetails.set({ ...scraped, sourceText: 'Developer Survey', registrationUrl: formUrl, slug: 'developer-survey' } as never);
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('開発者調査');
+
+    internals().saveEmailEdit();
+
+    expect(internals().isEditingEmailBrief()).toBe(true);
+    expect((internals().eventDetails() as unknown as { sourceText: string }).sourceText).toBe('Developer Survey');
+  });
+
+  it('clears a refused edit when the editor is cancelled and reopened', async () => {
+    await buildWithScrape('survey');
+    internals().eventDetails.set({ ...scraped, sourceText: 'short' });
+    const refusal = fixture.componentInstance as unknown as { emailEditError(): string };
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('x'.repeat(3001));
+    internals().saveEmailEdit();
+    expect(refusal.emailEditError()).not.toBe('');
+
+    internals().cancelEmailEdit();
+    expect(refusal.emailEditError()).toBe('');
+
+    internals().enterEmailEditMode();
+    expect(refusal.emailEditError()).toBe('');
+  });
+
+  it("moves a survey's saved-brief lookup to the slug an edited title saves under", async () => {
+    await buildWithScrape('survey');
+    const formUrl = 'https://docs.google.com/forms/d/e/1FAIpQ/viewform';
+    internals().eventDetails.set({ ...scraped, sourceText: 'Old Title', registrationUrl: formUrl });
+    const form = fixture.componentInstance as unknown as {
+      briefForm: { controls: Record<string, { value: string; setValue(v: string): void }> };
+      currentSlug: string;
+    };
+    form.briefForm.controls['url'].setValue(formUrl);
+    form.briefForm.controls['sourceText'].setValue('Old Title');
+    expect(form.currentSlug).toBe('old-title');
+
+    internals().enterEmailEditMode();
+    internals().emailEditForm.controls['sourceText'].setValue('New Title');
+    internals().saveEmailEdit();
+
+    expect((internals().eventDetails() as unknown as { slug: string }).slug).toBe('new-title');
+    expect(form.currentSlug).toBe('new-title');
   });
 
   it('renders the scraped brief so the user can see what generation will use', async () => {

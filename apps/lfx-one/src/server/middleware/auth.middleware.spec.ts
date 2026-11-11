@@ -144,6 +144,17 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).not.toHaveBeenCalled();
   });
 
+  it('allows an anonymous GET to the newsletter invite landing (/newsletters/invite)', async () => {
+    const req = buildReq({ path: '/newsletters/invite' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
   it.each([
     '/newsletters/my/acme',
     '/newsletters/my;x=1/acme',

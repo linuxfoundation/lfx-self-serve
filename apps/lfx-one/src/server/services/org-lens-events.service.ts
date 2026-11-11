@@ -15,7 +15,6 @@ import type {
   OrgEventSpeaker,
   OrgEventSpeakersDrawerRow,
   OrgEventSpeakersResponse,
-  OrgEventsAttribution,
   OrgEventsFilters,
   OrgEventsParticipation,
   OrgEventsResponse,
@@ -25,7 +24,6 @@ import type {
 import { effectiveOrgEventsParticipation, formatDateToUTC, isObjectRow, isObjectRowArray, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
-import { readOrgEventsServedAttribution } from '../helpers/org-events-coverage.helper';
 import {
   distinctFoundationOptions,
   orgEventsAttendeePredicate,
@@ -44,8 +42,8 @@ import { withOrgCache } from './valkey.service';
 const VALID_SORT_COLUMNS: ReadonlySet<string> = new Set(['EVENT_NAME', 'EVENT_START_DATE', 'EVENT_CITY']);
 
 /**
- * Service for the Org Lens Events page. dbt computes every count (per-event distinct people per attribution in ORG_EVENTS,
- * listed people in ORG_EVENT_PARTICIPATION); this service selects the columns of the picked option and applies
+ * Service for the Org Lens Events page. dbt computes every count (per-event distinct people in ORG_EVENTS, person × event
+ * participation in ORG_EVENT_PARTICIPATION); this service selects the Employee match (`_VERIFIED`) columns of the picked participation and applies
  * parameterized WHERE / ORDER BY / LIMIT.
  */
 export class OrgLensEventsService {
@@ -59,7 +57,7 @@ export class OrgLensEventsService {
 
   /** GET /api/orgs/:accountId/lens/events — paginated list of events for the org. */
   public async getOrgEvents(req: Request, accountId: string, options: GetOrgEventsOptions): Promise<OrgEventsResponse> {
-    const { isPast, searchQuery, status, pageSize, offset, sortField, sortOrder, attribution, participation, eventScope, foundation, range } = options;
+    const { isPast, searchQuery, status, pageSize, offset, sortField, sortOrder, participation, eventScope, foundation, range } = options;
     const sortColumn = VALID_SORT_COLUMNS.has(sortField) ? sortField : 'EVENT_START_DATE';
 
     logger.debug(req, 'get_org_lens_events', 'Building org events query', {
@@ -78,16 +76,14 @@ export class OrgLensEventsService {
     // `false`, so an early return that never awaits this promise cannot reject unhandled.
     const includeGoal = this.callerIsLFStaff(req);
 
-    let servedAttribution: OrgEventsAttribution = attribution;
     let rows: OrgEventRow[];
     try {
-      servedAttribution = await readOrgEventsServedAttribution(accountId, attribution);
       // The Upcoming tab always counts registrations: nobody has attended an event that has not started.
       const servedParticipation = effectiveOrgEventsParticipation(participation, isPast);
-      const countColumn = orgEventsCountColumn(servedAttribution, servedParticipation);
-      const footprintColumn = orgEventsFootprintColumn(servedAttribution);
+      const countColumn = orgEventsCountColumn(servedParticipation);
+      const footprintColumn = orgEventsFootprintColumn();
       // The "Registered" status means the organization registered someone, whatever Count is showing.
-      const registeredColumn = orgEventsCountColumn(servedAttribution, 'registered');
+      const registeredColumn = orgEventsCountColumn('registered');
 
       const { sql, binds } = this.buildListQuery({
         accountId,
@@ -108,7 +104,7 @@ export class OrgLensEventsService {
 
       rows = await withOrgCache(
         accountId,
-        `events:v5:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, servedAttribution, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
+        `events:v6:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventRow>(sql, binds)).rows,
         isEventRowArray
@@ -116,7 +112,7 @@ export class OrgLensEventsService {
     } catch (error) {
       // Every outage exit shapes the response identically; #4408 turns these into a labelled-unavailable surface.
       logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', { err: error, account_id: accountId });
-      return { data: [], total: 0, pageSize, offset, servedAttribution };
+      return { data: [], total: 0, pageSize, offset };
     }
 
     const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
@@ -125,21 +121,19 @@ export class OrgLensEventsService {
 
     logger.debug(req, 'get_org_lens_events', 'Fetched org events', { count: data.length, total });
 
-    return { data, total, pageSize, offset, servedAttribution };
+    return { data, total, pageSize, offset };
   }
 
   /**
    * GET /api/orgs/:accountId/lens/events/summary — Upcoming / Past / Total tiles. They follow range (Past only),
-   * foundation, scope and attribution; never search, status or tab.
+   * foundation, and scope; never search, status or tab.
    */
   public async getOrgEventsSummary(req: Request, accountId: string, filters: OrgEventsFilters): Promise<OrgEventsSummary> {
     logger.debug(req, 'get_org_lens_events_summary', 'Building org events summary query', { account_id: accountId });
 
-    let servedAttribution: OrgEventsAttribution = filters.attribution;
     let row: OrgEventsSummaryRow | undefined;
     try {
-      servedAttribution = await readOrgEventsServedAttribution(accountId, filters.attribution);
-      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(servedAttribution)} = TRUE` : '';
+      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn()} = TRUE` : '';
       const foundationFilter = filters.foundation ? 'AND oe.FOUNDATION_ID = ?' : '';
       const sql = `
         SELECT
@@ -154,7 +148,7 @@ export class OrgLensEventsService {
 
       const rows = await withOrgCache(
         accountId,
-        `events-summary:v2:${paramSignature([servedAttribution, filters.scope, filters.foundation, filters.range])}`,
+        `events-summary:v3:${paramSignature([filters.scope, filters.foundation, filters.range])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, binds)).rows,
         isObjectRowArray
@@ -165,27 +159,22 @@ export class OrgLensEventsService {
         err: error,
         account_id: accountId,
       });
-      return { totalEvents: 0, pastEvents: 0, upcomingEvents: 0, servedAttribution };
+      return { totalEvents: 0, pastEvents: 0, upcomingEvents: 0 };
     }
 
     const pastEvents = row?.PAST_EVENTS ?? 0;
     const upcomingEvents = row?.UPCOMING_EVENTS ?? 0;
-    const summary: OrgEventsSummary = { totalEvents: pastEvents + upcomingEvents, pastEvents, upcomingEvents, servedAttribution };
+    const summary: OrgEventsSummary = { totalEvents: pastEvents + upcomingEvents, pastEvents, upcomingEvents };
 
     logger.debug(req, 'get_org_lens_events_summary', 'Fetched org events summary', { ...summary });
 
     return summary;
   }
 
-  /** GET /api/orgs/:accountId/lens/events/foundations — foundations that have events under the picked scope and attribution. */
-  public async getOrgEventFoundations(
-    req: Request,
-    accountId: string,
-    filters: Pick<OrgEventsFilters, 'attribution' | 'scope'>
-  ): Promise<OrgEventFoundationsResponse> {
+  /** GET /api/orgs/:accountId/lens/events/foundations — foundations that have events under the picked scope. */
+  public async getOrgEventFoundations(req: Request, accountId: string, filters: Pick<OrgEventsFilters, 'scope'>): Promise<OrgEventFoundationsResponse> {
     try {
-      const servedAttribution = await readOrgEventsServedAttribution(accountId, filters.attribution);
-      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(servedAttribution)} = TRUE` : '';
+      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn()} = TRUE` : '';
       const sql = `
         SELECT DISTINCT oe.FOUNDATION_ID, oe.FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
@@ -197,7 +186,7 @@ export class OrgLensEventsService {
       `;
       const rows = await withOrgCache(
         accountId,
-        `events-foundations:v2:${paramSignature([servedAttribution, filters.scope])}`,
+        `events-foundations:v3:${paramSignature([filters.scope])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(sql, [accountId])).rows,
         isObjectRowArray
@@ -210,41 +199,36 @@ export class OrgLensEventsService {
   }
 
   /**
-   * GET /api/orgs/:accountId/lens/events/:eventId/attendees — the people the option counts for one event, who may be named.
-   * `notListedCount` is the event's option count minus ALL listed rows (a name search does not change it); nobody else is named, and no email is ever returned.
+   * GET /api/orgs/:accountId/lens/events/:eventId/attendees — everyone the picked option credits to the organization for one event,
+   * by name and title (lfx-self-serve#5158). No email is ever returned.
    */
   public async getEventAttendees(
     req: Request,
     accountId: string,
     eventId: string,
-    options: { attribution: OrgEventsAttribution; participation: OrgEventsParticipation; searchQuery?: string }
+    options: { participation: OrgEventsParticipation; searchQuery?: string }
   ): Promise<OrgEventAttendeesDrawerResponse> {
     const { searchQuery } = options;
     logger.debug(req, 'get_event_attendees', 'Fetching event attendees', { account_id: accountId, event_id: eventId });
 
-    let servedAttribution: OrgEventsAttribution = options.attribution;
     try {
-      servedAttribution = await readOrgEventsServedAttribution(accountId, options.attribution);
-
-      const header = await this.readDrawerHeader(accountId, eventId, servedAttribution);
+      const header = await this.readDrawerHeader(accountId, eventId);
       const servedParticipation = effectiveOrgEventsParticipation(options.participation, header?.IS_PAST_EVENT === true);
-      const optionCount = (header ? drawerHeaderCount(header, servedParticipation) : null) ?? 0;
 
-      // The listed rows of the option, searched or not: one cache entry per event and option, and the search below
-      // narrows only what is shown, never the count of listed people `notListedCount` subtracts.
+      // Everyone the option counts, searched or not: one cache entry per event and option, and the search below narrows only what is shown.
       const sql = `
         SELECT PARTICIPANT_REF, DISPLAY_NAME, JOB_TITLE
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
         WHERE ACCOUNT_ID = ?
           AND EVENT_ID = ?
-          AND ${orgEventsAttendeePredicate(servedAttribution, servedParticipation)}
-          AND IS_LISTABLE = TRUE
+          AND ${orgEventsAttendeePredicate(servedParticipation)}
         ORDER BY DISPLAY_NAME ASC NULLS LAST, PARTICIPANT_REF ASC
       `;
 
-      const listedRows = await withOrgCache(
+      // `v7`: Employee match only; a `v6` entry may hold the retired Self-reported only or All rows.
+      const attendeeRows = await withOrgCache(
         accountId,
-        `event-attendees:v5:${paramSignature([eventId, servedAttribution, servedParticipation])}`,
+        `event-attendees:v7:${paramSignature([eventId, servedParticipation])}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, [accountId, eventId])).rows,
         isObjectRowArray
@@ -252,7 +236,7 @@ export class OrgLensEventsService {
 
       // Names only. Matching an address would make this an existence oracle, and the warehouse carries none.
       const needle = searchQuery?.toUpperCase();
-      const rows = needle ? listedRows.filter((row) => displayText(row.DISPLAY_NAME)?.toUpperCase().includes(needle)) : listedRows;
+      const rows = needle ? attendeeRows.filter((row) => displayText(row.DISPLAY_NAME)?.toUpperCase().includes(needle)) : attendeeRows;
 
       // Positional ids: stable within one response, which is all the list `track` and the avatar colour seed need.
       const data: OrgEventAttendee[] = rows.map((row, index) => ({
@@ -267,8 +251,6 @@ export class OrgLensEventsService {
         eventId,
         eventName: header?.EVENT_NAME ?? '',
         total: data.length,
-        notListedCount: Math.max(0, optionCount - listedRows.length),
-        servedAttribution,
         data,
       };
     } catch (error) {
@@ -462,23 +444,19 @@ export class OrgLensEventsService {
     return { sql, binds };
   }
 
-  /** The event's name, whether it has ended, and the served option's counts — one row, cached per event and attribution. */
-  private async readDrawerHeader(accountId: string, eventId: string, attribution: OrgEventsAttribution): Promise<OrgEventDrawerHeaderRow | undefined> {
+  /** The event's name and whether it has ended — one row, cached per event. */
+  private async readDrawerHeader(accountId: string, eventId: string): Promise<OrgEventDrawerHeaderRow | undefined> {
     const sql = `
-      SELECT
-        oe.EVENT_NAME,
-        oe.IS_PAST_EVENT,
-        oe.${orgEventsCountColumn(attribution, 'all')} AS ALL_COUNT,
-        oe.${orgEventsCountColumn(attribution, 'registered')} AS REGISTERED_COUNT,
-        oe.${orgEventsCountColumn(attribution, 'attended')} AS ATTENDED_COUNT
+      SELECT oe.EVENT_NAME, oe.IS_PAST_EVENT
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
       WHERE oe.ACCOUNT_ID = ?
         AND oe.EVENT_ID = ?
       LIMIT 1
     `;
+    // `v3` (lfx-self-serve#5158): name and ended flag only, so one entry per event whatever the attribution; `v2` also held counts.
     const rows = await withOrgCache(
       accountId,
-      `event-header:v2:${paramSignature([eventId, attribution])}`,
+      `event-header:v3:${paramSignature([eventId])}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => (await this.snowflakeService.execute<OrgEventDrawerHeaderRow>(sql, [accountId, eventId])).rows,
       isObjectRowArray
@@ -507,12 +485,6 @@ export class OrgLensEventsService {
       isOrgSponsor: !!row.IS_ORG_SPONSOR,
     };
   }
-}
-
-/** The header's distinct-people count for a participation. */
-function drawerHeaderCount(header: OrgEventDrawerHeaderRow, participation: OrgEventsParticipation): number | null {
-  if (participation === 'attended') return header.ATTENDED_COUNT;
-  return participation === 'all' ? header.ALL_COUNT : header.REGISTERED_COUNT;
 }
 
 /** A name or title for display: trimmed, `null` when empty or when it holds an address — no email reaches a drawer, whatever the warehouse sent. */

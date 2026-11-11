@@ -10,7 +10,8 @@ export class UiDrawerContext {
   public constructor(
     public readonly side: UiDrawerSide = 'right',
     public readonly width: number = 560,
-    public readonly size: UiDrawerSize = 'default'
+    public readonly size: UiDrawerSize = 'default',
+    public readonly bare: boolean = false
   ) {}
 
   /** Set by the service: runs the `canClose` guard, then closes. */

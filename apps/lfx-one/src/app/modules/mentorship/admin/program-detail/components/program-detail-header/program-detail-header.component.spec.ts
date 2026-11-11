@@ -53,13 +53,13 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
       .trim();
 
   it('shows the project name alone as the season line', () => {
-    render('open');
+    render('accepting');
 
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="mentorship-program-detail-season"]')?.textContent?.trim()).toBe('CNCF');
   });
 
   it('renders the four tabs in order, each with its own count', () => {
-    render('open');
+    render('accepting');
 
     expect(tabText('current-mentees')).toBe('Current Mentees 4');
     expect(tabText('past-mentees')).toBe('Past Mentees 7');
@@ -68,7 +68,7 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
   });
 
   it('shows a dash for a count whose read failed', () => {
-    render('open');
+    render('accepting');
     fixture.componentRef.setInput('tabCounts', { currentMentees: null, pastMentees: 7, mentors: null, terms: 3 });
     fixture.detectChanges();
 
@@ -89,7 +89,7 @@ describe('ProgramDetailHeaderComponent — tabs', () => {
     expect(tabText('terms')).toBe('Terms 3');
   });
 
-  it.each(['open', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs', (status) => {
+  it.each(['accepting', 'in-progress', 'upcoming', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs', (status) => {
     render(status);
 
     expect(tabValues()).toEqual(['current-mentees', 'past-mentees', 'mentors', 'terms']);
@@ -152,7 +152,7 @@ describe('ProgramDetailHeaderComponent — actions', () => {
   });
 
   it('links View Public Page to the program on the public mentorship site, in a new tab', () => {
-    render('open');
+    render('accepting');
 
     const link = query('mentorship-program-detail-view-public');
     expect(link?.getAttribute('href')).toBe(buildMentorshipProgramsUrl(environment.urls.mentorship, 'mp_1'));
@@ -160,7 +160,19 @@ describe('ProgramDetailHeaderComponent — actions', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it.each(['open', 'completed'] as const)('offers Hide on a %s program', (status) => {
+  it.each(['accepting', 'in-progress', 'upcoming', 'completed'] as const)('shows View Public Page on a %s program', (status) => {
+    render(status);
+
+    expect(query('mentorship-program-detail-view-public')).not.toBeNull();
+  });
+
+  it.each(['pending-review', 'rejected', 'hidden'] as const)('hides View Public Page on a %s program', (status) => {
+    render(status);
+
+    expect(query('mentorship-program-detail-view-public')).toBeNull();
+  });
+
+  it.each(['accepting', 'in-progress', 'upcoming', 'completed'] as const)('offers Hide on a %s program', (status) => {
     render(status);
 
     expect(menuItems().map((item) => item.action)).toEqual(['hide']);
@@ -181,7 +193,7 @@ describe('ProgramDetailHeaderComponent — actions', () => {
   });
 
   it.each([
-    ['open', 'hide'],
+    ['accepting', 'hide'],
     ['hidden', 'unhide'],
   ] as const)('on a %s program, emits %s only once the admin confirms', (status, action) => {
     render(status);
@@ -199,7 +211,7 @@ describe('ProgramDetailHeaderComponent — actions', () => {
   });
 
   it('opens the confirm once when the menu activates a row the way its Enter key does', async () => {
-    render('open');
+    render('accepting');
     const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
     const trigger = query('mentorship-program-detail-more')?.querySelector('button') as HTMLButtonElement;
 
@@ -221,7 +233,7 @@ describe('ProgramDetailHeaderComponent — actions', () => {
   });
 
   it('disables the menu button while a visibility change is saving', () => {
-    render('open');
+    render('accepting');
     fixture.componentRef.setInput('visibilityBusy', true);
     fixture.detectChanges();
 

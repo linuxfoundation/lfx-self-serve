@@ -3,6 +3,7 @@
 
 import {
   ALLOWED_AVATAR_MIME_TYPES,
+  AUTH0_LINKED_ONLY_IDENTITY_COMBOS,
   AUTH0_TO_CDP_PROVIDER_MAP,
   CDP_DISPLAYABLE_IDENTITY_COMBOS,
   CDP_PLATFORM_ICONS,
@@ -11,6 +12,7 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
   EMAIL_REGEX,
@@ -19,6 +21,8 @@ import {
   EMAIL_VERIFICATION_MIN_RESPONSE_MS,
   EMAIL_VERIFICATION_SENT_MESSAGE,
   ERROR_CODES,
+  GITLAB_AUTH0_CONNECTION,
+  GITLAB_AUTH0_PROVIDER,
   IDENTITY_ALREADY_CONNECTED_STATUS,
   PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
@@ -1367,17 +1371,21 @@ export class ProfileController {
         this.resolveIdentitiesPrimaryEmail(req, lfid),
       ]);
 
-      logger.debug(req, 'get_identities', 'Raw identity data before reconciliation', {
-        cdp_identities: cdpIdentities,
-        auth_service_identities: auth0Identities,
+      logger.debug(req, 'get_identities', 'Identity counts before reconciliation', {
+        cdp_count: cdpIdentities.length,
+        auth_service_count: auth0Identities.length,
       });
 
       // Reconcile CDP identities with auth-service identities and filter to the
-      // (platform, type) combos LFX One can surface for verification via Auth0. During impersonation
+      // (platform, type) combos LFX One can surface for verification via Auth0, plus the linked-only
+      // combos (GitLab) when backed by a linked auth-service identity. During impersonation
       // the read is preserved but CDP writes (auto-verify + synthetic-identity creation) are skipped —
       // an impersonator must never mutate the target's CDP records.
       const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, memberId, cdpIdentities, auth0Identities, lfid, primaryEmail);
-      const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
+      const displayIdentities = enriched.filter((id) => {
+        const combo = `${id.platform}+${id.type}`;
+        return CDP_DISPLAYABLE_IDENTITY_COMBOS.has(combo) || (AUTH0_LINKED_ONLY_IDENTITY_COMBOS.has(combo) && id.inAuth0 === true);
+      });
 
       logger.success(req, 'get_identities', startTime, {
         lfid,
@@ -1503,28 +1511,33 @@ export class ProfileController {
         }
 
         if (provider && auth0UserId) {
-          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
-          const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
+          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2'). GitLab's
+          // connection name ('gitlab') differs from its Auth0 provider ('oauth2'), and unlink needs the provider.
+          const auth0Provider = provider === 'gitlab' ? GITLAB_AUTH0_PROVIDER : CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
           const mgmtToken = this.profileAuthService.getManagementToken(req);
           if (mgmtToken) {
             const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
             if (!unlinkResult.success) {
-              logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
+              logger.warning(req, 'reject_identity', 'Auth0 unlink failed — identity was not removed', {
                 provider,
-                auth0_user_id: auth0UserId,
+                has_auth0_user_id: true,
                 error: unlinkResult.error,
                 message: unlinkResult.message,
               });
-            } else {
-              logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
-                provider,
-                auth0_user_id: auth0UserId,
+              res.status(502).json({
+                error: 'identity_unlink_failed',
+                message: 'Failed to remove identity. Please try again.',
               });
+              return 'responded';
             }
+            logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
+              provider,
+              has_auth0_user_id: true,
+            });
           } else {
             logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
               provider,
-              auth0_user_id: auth0UserId,
+              has_auth0_user_id: true,
             });
             if (!this.profileAuthService.isProfileAuthConfigured()) {
               res.status(501).json({
@@ -1921,7 +1934,8 @@ export class ProfileController {
         token_type: tokenResponse.token_type,
         scope: tokenResponse.scope,
         expires_in: tokenResponse.expires_in,
-        pending_verification_completed: !!pending && emailStatus !== EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+        pending_verification_completed:
+          !!pending && emailStatus !== EMAIL_CALLBACK_RETRY_REQUIRED_STATUS && emailStatus !== EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
         pending_email_status: emailStatus,
       });
 
@@ -1948,7 +1962,7 @@ export class ProfileController {
   }
 
   /**
-   * GET /api/profile/identities/social/connect?provider=github|google|linkedin&returnTo=/path
+   * GET /api/profile/identities/social/connect?provider=github|gitlab|google|linkedin&returnTo=/path
    * Initiates the social identity verification OAuth flow.
    * If no management token exists, chains through Flow C first.
    *
@@ -1991,7 +2005,8 @@ export class ProfileController {
 
   /**
    * GET /social/callback - Handle Auth0 callback from social OAuth flow.
-   * Exchanges code for id_token, links identity via NATS, verifies in CDP.
+   * Exchanges code for id_token, links identity via NATS, and redirects to the initiating page.
+   * CDP verification is deferred to ownership-matched reconciliation on the next identities GET.
    */
   public async handleSocialCallback(req: Request, res: Response): Promise<void> {
     // Set by startSocialConnect; re-validated here because a session can outlive a page rename.
@@ -2084,30 +2099,8 @@ export class ProfileController {
         return;
       }
 
-      // Fire-and-forget CDP identity verification
-      const lfid = getEffectiveUsername(req);
-
-      if (lfid) {
-        this.cdpService
-          .getIdentitiesForUser(req, lfid)
-          .then((identities) => {
-            // Find the newly linked social identity — look for unverified identities on this platform
-            const unverifiedSocial = identities.filter((id) => !id.verified);
-            for (const identity of unverifiedSocial) {
-              this.cdpService.verifyIdentityForUser(req, lfid, identity.id).catch((err: unknown) => {
-                logger.warning(req, 'social_auth_callback', 'CDP verify failed (non-blocking)', {
-                  identity_id: identity.id,
-                  err,
-                });
-              });
-            }
-          })
-          .catch((err: unknown) => {
-            logger.warning(req, 'social_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-              err,
-            });
-          });
-      }
+      // The next identities GET reconciles CDP against linked platform/type/value ownership.
+      // A successful social link is not proof of ownership of other unverified CDP identities.
 
       logger.success(req, 'social_auth_callback', startTime, {
         has_id_token: true,
@@ -2271,7 +2264,10 @@ export class ProfileController {
       const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp, userManagementToken);
 
       if (!otpResponse.success) {
-        logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+        const isLinkedConflict = isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message);
+        if (!isLinkedConflict) {
+          logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+        }
 
         if (otpResponse.error === 'Service temporarily unavailable') {
           res.status(503).json({
@@ -2282,10 +2278,17 @@ export class ProfileController {
           return;
         }
 
-        if (isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message)) {
+        // auth-service validates the code before any ownership lookup, so a conflict here means the
+        // caller proved the inbox. Reply with fixed copy — never the upstream text, which could name
+        // the owning account — and keep the same floor as generic 400 failures (outages return above).
+        if (isLinkedConflict) {
           this.logLinkedEmailConflict(req, 'verify_and_link_email');
         }
         await this.holdUntilFloor(otpStartedAt);
+        if (isLinkedConflict) {
+          res.status(409).json({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
+          return;
+        }
         res.status(400).json({ success: false, error: EMAIL_VERIFICATION_FAILED_ERROR, message: EMAIL_VERIFICATION_FAILED_MESSAGE });
         return;
       }
@@ -2320,14 +2323,7 @@ export class ProfileController {
 
       if (!linkResponse.success) {
         if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
-          // Resolve the owning account for support/debugging only — never returned to the client.
-          const linkedTo =
-            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
-
-          logger.warning(req, 'verify_and_link_email', 'Email already linked to another account', {
-            email,
-            linked_to: linkedTo,
-          });
+          this.logLinkedEmailConflict(req, 'verify_and_link_email');
 
           // Never forward the upstream message here — it could name the owning account.
           res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
@@ -2522,7 +2518,7 @@ export class ProfileController {
     );
   }
 
-  /** Hold indistinguishable responses until the shared upstream-to-response floor. */
+  /** Hold upstream send-code replies and non-outage OTP failures until the shared upstream-to-response floor. */
   private async holdUntilFloor(startedAt: number): Promise<void> {
     const remainingMs = EMAIL_VERIFICATION_MIN_RESPONSE_MS - (Date.now() - startedAt);
     if (remainingMs > 0) {
@@ -2530,7 +2526,7 @@ export class ProfileController {
     }
   }
 
-  /** Keep pre-proof conflict details request-correlated without logging another account's identity. */
+  /** Keep linked-address conflicts request-correlated without resolving or logging another account's identity. */
   private logLinkedEmailConflict(req: Request, operation: string): void {
     logger.warning(req, operation, 'Email already linked to another account');
   }
@@ -2547,8 +2543,9 @@ export class ProfileController {
   /**
    * Replays a pending email verification during the Flow C callback, after the caller has already
    * removed it from the session. Returns the outcome to surface on the redirect: `already_connected`,
-   * `retry_required` for any attempt that did not finish, or undefined when a new address was linked.
-   * Never throws — the authorization itself has already succeeded.
+   * `already_linked` when the proven address is linked to an LFX account (at OTP verification or at
+   * link time — no follow-up writes run), `retry_required` for any other attempt that did not finish,
+   * or undefined when a new address was linked. Never throws — the authorization has already succeeded.
    */
   private async completePendingEmailVerification(req: Request, pending: { email: string; otp: string }): Promise<EmailVerificationCallbackStatus | undefined> {
     // Resolve the freshly stored user token before replaying the code, so its absence never consumes it.
@@ -2566,6 +2563,12 @@ export class ProfileController {
         return EMAIL_ALREADY_CONNECTED_STATUS;
       }
 
+      // The code was validated before the ownership lookup, so the conflict is proven — no new code helps.
+      if (!otpResponse.success && isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message)) {
+        this.logLinkedEmailConflict(req, 'profile_auth_callback');
+        return EMAIL_CALLBACK_ALREADY_LINKED_STATUS;
+      }
+
       if (!otpResponse.success || !otpResponse.data?.id_token) {
         logger.warning(req, 'profile_auth_callback', 'Pending OTP verification failed (may have expired)', {
           error: otpResponse.error,
@@ -2576,6 +2579,10 @@ export class ProfileController {
 
       const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
       if (!linkResponse.success) {
+        if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
+          this.logLinkedEmailConflict(req, 'profile_auth_callback');
+          return EMAIL_CALLBACK_ALREADY_LINKED_STATUS;
+        }
         logger.warning(req, 'profile_auth_callback', 'Pending verification link failed', {
           error: linkResponse.error,
         });
@@ -2690,7 +2697,7 @@ export class ProfileController {
     // Build a map of "platform:type:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
     for (const authId of authServiceIdentities) {
-      const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+      const cdpPlatform = this.resolveAuth0IdentityPlatform(authId);
       const value = this.getAuth0IdentityValue(authId);
       if (cdpPlatform && value) {
         authServiceMap.set(this.identityMatchKey(cdpPlatform, CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username', value), authId);
@@ -2775,8 +2782,8 @@ export class ProfileController {
       let displayState: IdentityDisplayState;
 
       if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdp.platform}+${cdp.type}`)) {
-        // Combo not surfaceable via Auth0 (e.g. linkedin+username, gitlab+username) —
-        // we have no way to help the user verify it, so hide.
+        // Combo not surfaceable via Auth0 (e.g. linkedin+username) — we have no way to help the
+        // user verify it, so hide. GitLab is shown only when linked (matched above), never from CDP alone.
         displayState = 'hidden';
       } else if (isVerifiedByOtherOwner && hasMultiLfid) {
         // Multi-LFID merged profile — hide identities verified by another LFID
@@ -2799,7 +2806,7 @@ export class ProfileController {
     // 'custom'), so the enriched-array-only check below misses them.
     const postedCustomEmails = new Set<string>();
     for (const [, authId] of authServiceMap) {
-      const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+      const cdpPlatform = this.resolveAuth0IdentityPlatform(authId);
       const value = this.getAuth0IdentityValue(authId);
       if (!cdpPlatform || !value) {
         continue;
@@ -2810,8 +2817,10 @@ export class ProfileController {
         continue;
       }
 
-      // Skip combos LFX One can't surface for verification (e.g. lfid, gitlab)
-      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdpPlatform}+${type}`)) {
+      // Skip combos LFX One can't surface (e.g. lfid). Linked-only combos (gitlab) are kept: this
+      // identity is linked, so it is shown and synced to CDP.
+      const combo = `${cdpPlatform}+${type}`;
+      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(combo) && !AUTH0_LINKED_ONLY_IDENTITY_COMBOS.has(combo)) {
         continue;
       }
 
@@ -3132,6 +3141,25 @@ export class ProfileController {
   }
 
   /**
+   * Whether an Auth0 identity came from the GitLab generic OAuth2 connection (#4187). `oauth2` is
+   * shared by any custom social connection, so the connection name must match too (fail closed).
+   */
+  private isGitlabAuth0Identity(authId: Auth0Identity): boolean {
+    return authId.provider === GITLAB_AUTH0_PROVIDER && authId.connection === GITLAB_AUTH0_CONNECTION;
+  }
+
+  /**
+   * Resolve the CDP platform for an Auth0 identity. GitLab is identified by its connection; every
+   * other provider maps through AUTH0_TO_CDP_PROVIDER_MAP. Returns undefined for unmapped providers.
+   */
+  private resolveAuth0IdentityPlatform(authId: Auth0Identity): string | undefined {
+    if (this.isGitlabAuth0Identity(authId)) {
+      return 'gitlab';
+    }
+    return AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+  }
+
+  /**
    * Extract the matching value from an Auth0 identity's profileData
    * Used for value-level cross-referencing with CDP identities
    */
@@ -3139,6 +3167,11 @@ export class ProfileController {
     const pd = auth0Id.profileData;
     if (!pd) {
       return null;
+    }
+    if (this.isGitlabAuth0Identity(auth0Id)) {
+      // GitLab username. No name fallback: with type='username' on POST, persisting pd.name (a
+      // display name, not a username) would corrupt CDP. Skip the identity if there is no nickname.
+      return pd.nickname ?? null;
     }
     switch (auth0Id.provider) {
       case 'email':

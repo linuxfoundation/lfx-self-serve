@@ -127,10 +127,8 @@
                     @if (sendingSummaryUids().has(vote.uid)) {
                       <ng-container *ngTemplateOutlet="sendingSummaryStatus; context: { $implicit: vote }" />
                     }
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
-                        {{ vote.committee_name || 'Unknown' }}
-                      </span>
+                    <div class="flex min-w-0">
+                      <ng-container *ngTemplateOutlet="groupCell; context: { $implicit: vote, wrap: true }" />
                     </div>
                     <dl class="flex flex-col gap-2 m-0">
                       <div class="flex items-start justify-between gap-3">
@@ -168,9 +166,7 @@
                 </td>
 
                 <td>
-                  <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
-                    {{ vote.committee_name || 'Unknown' }}
-                  </span>
+                  <ng-container *ngTemplateOutlet="groupCell; context: { $implicit: vote }" />
                 </td>
 
                 <td>
@@ -209,6 +205,35 @@
 <!-- Card touch targets use an exact min-h-[44px] (14px html root; see drawer-pattern.md § Phone sheet and touch targets). -->
 <!-- Cell templates shared by the desktop table row and the mobile card so both render the same data and actions. -->
 <!-- Summary send in flight (#4831). The spinner's own status region is hidden: LiveAnnouncer is the single announcement channel. -->
+<ng-template #groupCell let-vote let-wrap="wrap">
+  @if (vote.groupCommands) {
+    <a
+      [routerLink]="vote.groupCommands"
+      [queryParams]="vote.groupQueryParams"
+      [state]="groupLinkState()"
+      class="lfx-table-name-link inline-block max-w-full text-sm"
+      [class.truncate]="!wrap"
+      [class.break-words]="wrap"
+      [pTooltip]="vote.groupName || ''"
+      [tooltipDisabled]="!vote.groupName"
+      tooltipPosition="top"
+      [attr.data-testid]="'votes-group-link-' + vote.uid">
+      {{ vote.groupName || '-' }}
+    </a>
+  } @else {
+    <span
+      class="inline-block max-w-full text-sm text-gray-700"
+      [class.truncate]="!wrap"
+      [class.break-words]="wrap"
+      [pTooltip]="vote.groupName || ''"
+      [tooltipDisabled]="!vote.groupName"
+      tooltipPosition="top"
+      [attr.data-testid]="'votes-group-text-' + vote.uid">
+      {{ vote.groupName || '-' }}
+    </span>
+  }
+</ng-template>
+
 <ng-template #sendingSummaryStatus let-vote>
   <span class="inline-flex items-center gap-1.5 text-xs text-gray-500" [attr.data-testid]="'votes-sending-summary-' + vote.uid">
     <span aria-hidden="true" class="inline-flex"><lfx-ui-spinner [size]="12" tone="neutral" label="Sending summary" /></span>

@@ -24,8 +24,10 @@ describe('MeetingsHomeJoinService', () => {
   let open: ReturnType<typeof vi.fn>;
   let getPublicMeetingJoinUrl: ReturnType<typeof vi.fn>;
   const now = signal(new Date());
+  const identity = signal<{ name: string; email: string } | null>(null);
 
   beforeEach(() => {
+    identity.set({ name: 'Real Viewer', email: 'real@example.test' });
     navigate = vi.fn().mockResolvedValue(true);
     open = vi.fn();
     getPublicMeetingJoinUrl = vi.fn(() => of({ link: 'https://zoom.example.test/j/1' }));
@@ -36,7 +38,7 @@ describe('MeetingsHomeJoinService', () => {
         { provide: MeetingService, useValue: { getPublicMeetingJoinUrl } },
         {
           provide: UserService,
-          useValue: { authenticated: signal(true), meetingJoinIdentity: signal({ name: 'Real Viewer', email: 'real@example.test' }) },
+          useValue: { authenticated: signal(true), meetingJoinIdentity: identity },
         },
       ],
     });
@@ -68,6 +70,29 @@ describe('MeetingsHomeJoinService', () => {
     const failed = runInInjectionContext(injector, () => service.joinUrl(signal(buildRow(5)), signal(true)));
     TestBed.tick();
     expect(failed()).toBeNull();
+  });
+
+  it('keeps the reason and code of a failed join link, with a fallback message', () => {
+    const injector = TestBed.inject(Injector);
+    getPublicMeetingJoinUrl.mockReturnValue(throwError(() => ({ error: { error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' } })));
+    const link = runInInjectionContext(injector, () => service.joinLink(signal(buildRow(5)), signal(true)));
+    TestBed.tick();
+    expect(link()).toEqual({ url: null, error: 'Not registered', code: 'NOT_REGISTERED_FOR_MEETING' });
+
+    getPublicMeetingJoinUrl.mockReturnValue(throwError(() => new Error('upstream down')));
+    const fallback = runInInjectionContext(injector, () => service.joinLink(signal(buildRow(5)), signal(true)));
+    TestBed.tick();
+    expect(fallback()).toEqual({ url: null, error: 'Failed to load the join link', code: null });
+
+    getPublicMeetingJoinUrl.mockReturnValue(of({ link: '' }));
+    const empty = runInInjectionContext(injector, () => service.joinLink(signal(buildRow(5)), signal(true)));
+    TestBed.tick();
+    expect(empty()).toEqual({ url: null, error: 'Join link unavailable', code: null });
+
+    identity.set(null);
+    const noIdentity = runInInjectionContext(injector, () => service.joinLink(signal(buildRow(5)), signal(true)));
+    TestBed.tick();
+    expect(noIdentity()).toEqual({ url: null, error: 'No email to join with', code: null });
   });
 
   it('opens the join link in a new tab, or the meeting page with its password without one', () => {

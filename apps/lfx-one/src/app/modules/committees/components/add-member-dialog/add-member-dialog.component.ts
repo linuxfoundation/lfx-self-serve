@@ -12,8 +12,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COMMITTEE_INVITE_CONCURRENCY, MEMBER_ROLES } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole } from '@lfx-one/shared/enums';
+import { COMMITTEE_INVITE_CONCURRENCY, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from '@lfx-one/shared/constants';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
 import {
   AddMemberDialogMode,
   CategorizedCommitteeEmails,
@@ -39,6 +39,7 @@ import {
   extractRegistrantEmails,
   filterUnlistedEmails,
   hasLfAccount,
+  isInviteExpired,
   normalizeToUrl,
   parseEmailList,
   rankUserSearchResults,
@@ -132,11 +133,17 @@ export class AddMemberDialogComponent {
   public readonly showOrganizationField = computed(() => (this.committee ? committeeRequiresOrganization(this.committee) : false));
   /** Direct-add must include a valid organization before members can be created upstream. */
   public readonly organizationRequiredForDirectAdd = computed(() => this.showOrganizationField() && this.isDirectAdd());
+  /** Voting status is set at creation only on direct-add; invites and staged wizard invites carry no voting status. */
+  public readonly showVotingStatusField = computed(() => !!this.committee?.enable_voting && this.isDirectAdd() && !this.collectOnly);
   private readonly existingMemberEmails = new Set<string>(
     ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)
   );
+  // An expired invite no longer blocks a new one: inviting the same email reinstates it with a fresh expiry.
   private readonly existingInviteEmails = new Set<string>(
-    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? []).map((i) => (i.invitee_email ?? '').trim().toLowerCase()).filter(Boolean)
+    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? [])
+      .filter((i) => !isInviteExpired(i.expires_at))
+      .map((i) => (i.invitee_email ?? '').trim().toLowerCase())
+      .filter(Boolean)
   );
   /** Pending invite UID by email — used to revoke stale invites after admin direct-add. */
   private readonly pendingInviteUidByEmail = new Map<string, string>(
@@ -151,6 +158,7 @@ export class AddMemberDialogComponent {
   public readonly form = new FormGroup({
     emails: new FormControl<string>('', { nonNullable: true }),
     role: new FormControl<string | null>(null),
+    voting_status: new FormControl<string | null>(null),
     organization: new FormControl(''),
     organization_url: new FormControl(''),
     organization_id: new FormControl<string | null>(null),
@@ -237,6 +245,7 @@ export class AddMemberDialogComponent {
   public readonly meetingOptions: Signal<MeetingSelectOption[]> = this.initMeetingOptions();
 
   public readonly roleOptions = MEMBER_ROLES;
+  public readonly votingStatusOptions = [...MEMBER_FORM_VOTING_STATUSES];
 
   public constructor() {
     this.form
@@ -377,6 +386,7 @@ export class AddMemberDialogComponent {
     // succeeded, with no summary toast and no parent refresh.
     this.submitting.set(true);
     const role = this.form.get('role')!.value || null;
+    const votingStatus = this.showVotingStatusField() ? (this.form.get('voting_status')!.value as CommitteeMemberVotingStatus | null) || null : null;
 
     const complete = (organization: CommitteeOrganizationReference | null | undefined): void => {
       // Collect-only: return the built invites for the caller to stage; do not send them now.
@@ -390,7 +400,7 @@ export class AddMemberDialogComponent {
       }
 
       if (this.isDirectAdd()) {
-        this.fanOutDirectAdd(committeeId!, emails, role, organization);
+        this.fanOutDirectAdd(committeeId!, emails, role, organization, votingStatus);
         return;
       }
       this.fanOutInvites(committeeId!, emails, role, organization);
@@ -420,7 +430,13 @@ export class AddMemberDialogComponent {
     complete(undefined);
   }
 
-  private fanOutDirectAdd(committeeId: string, emails: string[], role: string | null, organization: CommitteeOrganizationReference | null | undefined): void {
+  private fanOutDirectAdd(
+    committeeId: string,
+    emails: string[],
+    role: string | null,
+    organization: CommitteeOrganizationReference | null | undefined,
+    votingStatus: CommitteeMemberVotingStatus | null
+  ): void {
     const skipNotification = !this.form.get('send_notification')!.value;
 
     from(emails)
@@ -429,6 +445,9 @@ export class AddMemberDialogComponent {
           const memberData: CreateCommitteeMemberRequest = { email };
           if (role) {
             memberData.role = { name: role as CommitteeMemberRole };
+          }
+          if (votingStatus) {
+            memberData.voting = { status: votingStatus };
           }
           if (organization) {
             memberData.organization = organization;

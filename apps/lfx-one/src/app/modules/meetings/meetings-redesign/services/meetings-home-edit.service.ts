@@ -1,20 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
 import { DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { Meeting, MeetingEditScopeDialogData, MeetingHomeRow, MeetingOccurrence, RecurringMeetingEditScopeResult } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingComposerSectionId,
+  MeetingEditScopeDialogData,
+  MeetingHomeRow,
+  MeetingOccurrence,
+  RecurringMeetingEditScopeResult,
+} from '@lfx-one/shared/interfaces';
 import { buildMeetingOccurrenceRoute, getActiveOccurrences, getCurrentOrNextOccurrence, getEntityCommands, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { finalize, take } from 'rxjs';
+import { finalize, NEVER, take, takeUntil } from 'rxjs';
 
 import { MeetingEditScopeModalComponent } from '../components/meeting-edit-scope-modal/meeting-edit-scope-modal.component';
 
@@ -33,7 +41,7 @@ export class MeetingsHomeEditService {
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  private readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(inject(FeatureFlagService));
   private readonly checkingIds = signal<ReadonlySet<string>>(new Set());
 
   /** True while the permission re-check for this meeting runs. */
@@ -41,7 +49,8 @@ export class MeetingsHomeEditService {
     return this.checkingIds().has(meetingId);
   }
 
-  public edit(row: MeetingHomeRow): void {
+  /** `section` is where the composer lands; the pre-v2 editor ignores it. `drawer` stays open until the editor opens. */
+  public edit(row: MeetingHomeRow, section?: MeetingComposerSectionId, drawer?: DialogRef | null, seriesOnly = false): void {
     const meeting = row.meeting;
     if (this.isChecking(meeting.id)) return;
 
@@ -50,16 +59,18 @@ export class MeetingsHomeEditService {
       .getMeetingDetail(meeting.id, { skipCache: true })
       .pipe(
         take(1),
+        // Closing the drawer during the check drops the edit.
+        takeUntil(drawer?.closed ?? NEVER),
         finalize(() => this.setChecking(meeting.id, false)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe({
-        next: (fresh) => this.openEditor(row, fresh),
+        next: (fresh) => this.openEditor(row, fresh, section, drawer, seriesOnly),
         error: (error: unknown) => this.reportCheckFailure(error),
       });
   }
 
-  private openEditor(row: MeetingHomeRow, fresh: Meeting): void {
+  private openEditor(row: MeetingHomeRow, fresh: Meeting, section?: MeetingComposerSectionId, drawer?: DialogRef | null, seriesOnly = false): void {
     if (fresh.organizer !== true) {
       this.showError('Editing unavailable', 'You no longer have permission to edit this meeting.');
       return;
@@ -80,30 +91,41 @@ export class MeetingsHomeEditService {
 
     // The fresh read wins; the row fills what it leaves out, such as a project lookup that failed.
     const meeting: Meeting = { ...row.meeting, ...fresh };
-    const occurrence = fresh.recurrence ? this.resolveOccurrence(row, fresh) : null;
+    // Series-only edits, such as materials, skip the scope question since an occurrence edit hides them.
+    const occurrence = fresh.recurrence && !seriesOnly ? this.resolveOccurrence(row, fresh) : null;
     if (!occurrence) {
-      this.openSeriesEditor(meeting);
+      this.leave(drawer, () => this.openSeriesEditor(meeting, section));
       return;
     }
 
-    const data: MeetingEditScopeDialogData = { row, meeting: fresh, occurrence };
+    const data: MeetingEditScopeDialogData = { row, meeting: fresh, occurrence, origin: drawer ? 'drawer' : 'page' };
     this.modal
       .open<RecurringMeetingEditScopeResult, MeetingEditScopeDialogData>(MeetingEditScopeModalComponent, { data })
       .closed.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => {
         if (!result?.proceed) return;
         if (result.scope === 'series') {
-          this.openSeriesEditor(meeting);
+          this.leave(drawer, () => this.openSeriesEditor(meeting, section));
           return;
         }
         const picked = (result.occurrenceId ? this.findOccurrence(fresh, result.occurrenceId) : null) ?? occurrence;
-        this.openOccurrenceEditor(meeting, picked);
+        this.leave(drawer, () => this.openOccurrenceEditor(meeting, picked, section));
       });
   }
 
-  private openSeriesEditor(meeting: Meeting): void {
+  /** Closes the drawer without its close guard, then opens the editor once focus is handed back to the page. */
+  private leave(drawer: DialogRef | null | undefined, open: () => void): void {
+    if (!drawer) {
+      open();
+      return;
+    }
+    drawer.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(open);
+    drawer.close();
+  }
+
+  private openSeriesEditor(meeting: Meeting, section?: MeetingComposerSectionId): void {
     if (this.meetingsV2Enabled()) {
-      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid });
+      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid, section });
       return;
     }
 
@@ -118,9 +140,9 @@ export class MeetingsHomeEditService {
     void this.router.navigate(commands, { queryParams });
   }
 
-  private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence): void {
+  private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence, section?: MeetingComposerSectionId): void {
     if (this.meetingsV2Enabled()) {
-      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid, occurrenceId: occurrence.occurrence_id });
+      this.composer.open({ mode: 'edit', meetingUid: meeting.id, projectUid: meeting.project_uid, occurrenceId: occurrence.occurrence_id, section });
       return;
     }
 

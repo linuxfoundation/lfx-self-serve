@@ -83,9 +83,5 @@
         }
       </ul>
     }
-
-    @if (!loading() && notListedCount() > 0) {
-      <p class="text-xs text-gray-500" data-testid="event-attendees-not-listed">{{ notListedCount() | number }} more counted, not listed</p>
-    }
   </div>
 </p-drawer>

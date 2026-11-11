@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="flex flex-col gap-[10px]" data-testid="meeting-attendee-grid">
+  @if (showStats() && grid().stats.length) {
+    <div class="flex items-center gap-[14px] whitespace-nowrap text-[12px] leading-[16px] text-gray-700" data-testid="meeting-attendee-grid-stats">
+      @for (stat of grid().stats; track stat.status) {
+        <span class="inline-flex items-center gap-[6px]">
+          <span class="h-[8px] w-[8px] rounded-full" [class]="statusInfo[stat.status].legendDotClass" aria-hidden="true"></span>{{ stat.label }}
+          <span class="font-semibold text-gray-900">{{ stat.count }}</span>
+        </span>
+      }
+    </div>
+    <!-- Bleeds through the popup's 12px padding. -->
+    <div role="separator" class="-mx-[12px] h-px bg-gray-200"></div>
+  }
+
+  <div class="relative">
+    <ul
+      role="list"
+      class="grid"
+      [class]="fluid() ? 'gap-x-[6px] gap-y-[8px] pr-[2px] pt-[2px]' : 'justify-between gap-[8px]'"
+      [style.grid-template-columns]="templateColumns()"
+      data-testid="meeting-attendee-grid-list">
+      @for (person of visiblePeople(); track person.id) {
+        <li
+          class="inline-flex"
+          [class]="fluid() ? 'aspect-square w-full max-w-[28px] justify-self-center' : 'h-[28px] w-[28px]'"
+          data-testid="meeting-attendee-grid-person">
+          <!-- Outline, not ring: the avatar's background ring would paint over a focus ring. -->
+          <span
+            role="img"
+            tabindex="0"
+            class="relative inline-flex h-full w-full cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+            [attr.aria-label]="person.label"
+            [lfxUiTooltip]="person.label"
+            data-testid="meeting-attendee-grid-label">
+            <lfx-ui-avatar class="!h-full !w-full" [name]="person.name" [src]="person.avatarUrl" [size]="28" decorative />
+            <span
+              class="absolute -right-px -top-px h-[7px] w-[7px] rounded-full ring-2 ring-white"
+              [class]="statusInfo[person.status].dotClass"
+              aria-hidden="true"
+              data-testid="meeting-attendee-grid-dot"></span>
+          </span>
+        </li>
+      }
+    </ul>
+    @if (overflow().more) {
+      <div
+        class="pointer-events-none absolute -bottom-[4px] -left-[4px] -right-[4px] z-[2] h-[34px] bg-gradient-to-b from-transparent to-white to-85%"
+        aria-hidden="true"
+        data-testid="meeting-attendee-grid-fade"></div>
+    }
+  </div>
+
+  @if (overflow().more && showViewAll()) {
+    <lfx-ui-button [variant]="viewAllVariant()" [size]="viewAllSize()" fullWidth (click)="viewAll.emit()" data-testid="meeting-attendee-grid-view-all">
+      View all {{ grid().people.length }}
+    </lfx-ui-button>
+  }
+</div>

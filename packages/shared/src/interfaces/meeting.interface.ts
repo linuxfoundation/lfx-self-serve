@@ -128,6 +128,14 @@ export interface ImportantLinkFormValue {
 /** Voting-status values accepted by the meeting API for committee associations */
 export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES)[number];
 
+/** One group a meeting belongs to, with its canonical group-details link for the meeting card. */
+export interface MeetingGroupLink {
+  uid: string;
+  name: string;
+  /** Group-details link commands from the meeting's own project tier; null when the group has no uid to open, or the card is already on that group's page. */
+  commands: string[] | null;
+}
+
 /**
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
@@ -1088,6 +1096,10 @@ export interface PastMeeting extends Meeting {
   recording_share_url?: string;
   /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_ai_summary?: boolean;
+  /** Whether that summary still awaits the viewing organizer's approval — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_awaiting_approval?: boolean;
+  /** Uid of the summary those flags describe — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_uid?: string;
 }
 
 /** Angular router target for navigating to a specific meeting occurrence. */

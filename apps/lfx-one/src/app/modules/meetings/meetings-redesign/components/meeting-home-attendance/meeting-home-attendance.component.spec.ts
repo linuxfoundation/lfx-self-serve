@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
 import { MeetingHomeAttendance } from '@lfx-one/shared/interfaces';
-import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { describe, expect, it } from 'vitest';
 
 import { MeetingHomeAttendanceComponent } from './meeting-home-attendance.component';
@@ -28,7 +26,7 @@ const UPCOMING: MeetingHomeAttendance = {
 const PAST: MeetingHomeAttendance = {
   label: '9 of 20 attended · 45%',
   ariaLabel: '9 of 20 attended · 45%',
-  segments: [{ kind: 'attended', percent: 45 }],
+  segments: [{ kind: 'attendedPoor', percent: 45 }],
   answers: [],
   noResponse: null,
   poor: true,
@@ -52,35 +50,28 @@ describe('MeetingHomeAttendanceComponent', () => {
     const bar = query(fixture, 'meetings-home-attendance-bar');
     expect(bar?.getAttribute('role')).toBe('img');
     expect(bar?.getAttribute('aria-label')).toBe('Yes 12, Maybe 2, No 0, No response 2');
-    const segments = [...(bar?.querySelectorAll<HTMLElement>(':scope > span > span') ?? [])];
+    const segments = [...(bar?.querySelectorAll<HTMLElement>(':scope > span') ?? [])];
     expect(segments.map((segment) => segment.style.width)).toEqual(['75%', '12.5%']);
-    expect(segments[0].classList).toContain('bg-blue-500');
+    expect(segments[0].classList).toContain('bg-emerald-500');
     expect(segments[1].classList).toContain('bg-amber-500');
-    expect(query(fixture, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 12 Maybe 2 No 0');
-    expect(fixture.debugElement.query(By.directive(UiTooltipDirective))).toBeNull();
+    expect(query(fixture, 'meetings-home-attendance-legend')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Yes 12 Maybe 2 No 0 No response 2');
     expect(query(fixture, 'meetings-home-attendance-poor')).toBeNull();
   });
 
-  it('puts the answers in a tooltip on the bar of a row, with no legend', async () => {
+  it('labels the bar on a row with no legend and no focus stop of its own', async () => {
     const fixture = await render(UPCOMING, 'row');
 
-    const tooltip = fixture.debugElement.query(By.directive(UiTooltipDirective)).injector.get(UiTooltipDirective);
-    expect(tooltip.items()).toEqual([
-      { label: 'Yes', value: '12', dotClass: 'bg-blue-500' },
-      { label: 'Maybe', value: '2', dotClass: 'bg-amber-500' },
-      { label: 'No', value: '0', dotClass: 'bg-red-500' },
-      { label: 'No response', value: '2' },
-    ]);
-    expect(query(fixture, 'meetings-home-attendance-bar')?.getAttribute('tabindex')).toBe('0');
+    expect(query(fixture, 'meetings-home-attendance-bar')?.getAttribute('aria-label')).toBe('Yes 12, Maybe 2, No 0, No response 2');
+    expect(query(fixture, 'meetings-home-attendance-bar')?.hasAttribute('tabindex')).toBe(false);
     expect(query(fixture, 'meetings-home-attendance-legend')).toBeNull();
   });
 
-  it.each(['card', 'row'] as const)('shows the poorly-attended note under a past %s bar, with no tooltip or legend', async (variant) => {
+  it.each(['card', 'row'] as const)('shows the poorly-attended note under a past %s bar, with no legend', async (variant) => {
     const fixture = await render(PAST, variant);
 
     expect(query(fixture, 'meetings-home-attendance-label')?.textContent?.trim()).toBe('9 of 20 attended · 45%');
     expect(query(fixture, 'meetings-home-attendance-poor')?.textContent?.trim()).toBe('This meeting was poorly attended');
+    expect(query(fixture, 'meetings-home-attendance-bar')?.querySelector(':scope > span')?.classList).toContain('bg-amber-500');
     expect(query(fixture, 'meetings-home-attendance-legend')).toBeNull();
-    expect(fixture.debugElement.query(By.directive(UiTooltipDirective))).toBeNull();
   });
 });

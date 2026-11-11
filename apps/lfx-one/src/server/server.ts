@@ -42,6 +42,7 @@ import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
+import formationPipelineRouter from './routes/formation-pipeline.route';
 import formationsRouter from './routes/formations.route';
 import gatewazeRouter from './routes/gatewaze.route';
 import projectApplicationsRouter from './routes/project-applications.route';
@@ -51,6 +52,7 @@ import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import meetupsRouter from './routes/meetups.route';
 import navigationRouter from './routes/navigation.route';
+import newsletterPublicationsRouter from './routes/newsletter-publications.route';
 import newslettersRouter from './routes/newsletters.route';
 import organizationsRouter from './routes/organizations.route';
 import orgsRouter from './routes/orgs.route';
@@ -437,6 +439,8 @@ app.use('/api/events', eventsRouter);
 // resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
 // routers above.
 app.use('/api', formationsRouter);
+// Formation team's project pipeline (#5475) — its own router so the checklist router and its specs stay untouched.
+app.use('/api/formations/pipeline', formationPipelineRouter);
 app.use('/api/project-applications', projectApplicationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);
@@ -453,6 +457,7 @@ app.use('/api/changelog', changelogRouter);
 // manager router below — different prefixes, no overlap.
 app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
+app.use('/api/projects/:projectUid/newsletter-publications', newsletterPublicationsRouter);
 app.use('/api/invite', inviteRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
 // Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OverlayContainer } from '@angular/cdk/overlay';
+import { ConnectedPosition, FlexibleConnectedPositionStrategy, OverlayContainer } from '@angular/cdk/overlay';
 import { Component, inject, signal, TemplateRef, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { UI_TOAST_PANE_CLASS } from '@lfx-one/shared/constants';
@@ -104,6 +104,16 @@ const NESTED_LAST_TEMPLATE = `
 
 const BUTTON_TEMPLATE = `
   <lfx-ui-button [popover]="panel" popoverLabel="Filters" [popoverWidth]="300" [loading]="busy()" icon="fa-light fa-filter">Filters</lfx-ui-button>
+  <ng-template #panel><button id="inside" type="button">Inside</button></ng-template>
+`;
+
+const END_BUTTON_TEMPLATE = `
+  <lfx-ui-button [popover]="panel" popoverAlign="end">Filters</lfx-ui-button>
+  <ng-template #panel><button id="inside" type="button">Inside</button></ng-template>
+`;
+
+const CENTER_BUTTON_TEMPLATE = `
+  <lfx-ui-button [popover]="panel" popoverAlign="center">Filters</lfx-ui-button>
   <ng-template #panel><button id="inside" type="button">Inside</button></ng-template>
 `;
 
@@ -1005,6 +1015,28 @@ describe('UiPopoverDirective', () => {
       await settle();
       expect(panel()).toBeNull();
       expect(inner().getAttribute('aria-expanded')).toBe('false');
+    });
+  });
+
+  describe('alignment', () => {
+    const firstPosition = async (template: string): Promise<ConnectedPosition | undefined> => {
+      const spy = vi.spyOn(FlexibleConnectedPositionStrategy.prototype, 'withPositions');
+      await mount(template, [UiButtonComponent]);
+      (host.nativeElement.querySelector('lfx-ui-button button') as HTMLButtonElement).click();
+      await settle();
+      return spy.mock.calls.at(-1)?.[0][0];
+    };
+
+    it('lines the panel up with the start edge by default', async () => {
+      expect(await firstPosition(BUTTON_TEMPLATE)).toMatchObject({ originX: 'start', overlayX: 'start', originY: 'bottom' });
+    });
+
+    it('tries the end edge first with popoverAlign="end"', async () => {
+      expect(await firstPosition(END_BUTTON_TEMPLATE)).toMatchObject({ originX: 'end', overlayX: 'end', originY: 'bottom' });
+    });
+
+    it('centers the panel first with popoverAlign="center"', async () => {
+      expect(await firstPosition(CENTER_BUTTON_TEMPLATE)).toMatchObject({ originX: 'center', overlayX: 'center', originY: 'bottom' });
     });
   });
 });

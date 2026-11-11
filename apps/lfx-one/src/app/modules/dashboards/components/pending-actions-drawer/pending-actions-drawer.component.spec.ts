@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsDrawerComponent } from './pending-actions-drawer.component';
@@ -667,5 +667,119 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(fixture.componentInstance.visible()).toBe(true);
     expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
     expect(meetingService.getMeeting).toHaveBeenCalledTimes(2);
+  });
+
+  // #5512: a section-level "Dismiss all" for sections whose rows carry a per-item Dismiss.
+  describe('Dismiss all', () => {
+    const dismissAllId = (section: string): string => `pending-actions-drawer-dismiss-all-${section}`;
+
+    it('offers Dismiss all on dismissible sections only, never on invitations, applications or formation', async () => {
+      await render([
+        row('Vote', 'Vote A', { voteUid: 'vote-1' }),
+        row('Survey', 'Survey A'),
+        row('Invitation', 'Invite A', { inviteUid: 'inv-1', committeeUid: 'c-1' }),
+        formationRow({ formationItemUid: 'item-9' }),
+      ]);
+
+      expect(byTestId(dismissAllId('votes'))).not.toBeNull();
+      expect(byTestId(dismissAllId('surveys'))).not.toBeNull();
+      expect(byTestId(dismissAllId('invitations'))).toBeNull();
+      expect(byTestId(dismissAllId('formation'))).toBeNull();
+    });
+
+    it('asks for confirmation, then dismisses every row in that section only', async () => {
+      await render([row('Survey', 'Survey A'), row('Survey', 'Survey B'), row('Vote', 'Vote A', { voteUid: 'vote-1' })]);
+
+      vi.useFakeTimers();
+      try {
+        (byTestId(dismissAllId('surveys')) as HTMLButtonElement).click();
+        fixture.detectChanges();
+        // Nothing is dismissed until the confirm dialog is accepted.
+        expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+
+        const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+        expect(accept).not.toBeNull();
+        accept?.click();
+        fixture.detectChanges();
+
+        expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(PENDING_ACTION_FADE_OUT_MS);
+        fixture.detectChanges();
+
+        expect(byTestId('pending-actions-drawer-section-surveys')).toBeNull();
+        expect(byTestId('pending-actions-drawer-section-votes')).not.toBeNull();
+        expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('skips RSVP rows still loading their meeting, so a section of only those offers no Dismiss all', async () => {
+      meetingService.getMeeting.mockReturnValueOnce(NEVER);
+      await render([row('RSVP', 'RSVP A', { meetingUid: 'meeting-1' })]);
+
+      expect(byTestId('pending-actions-drawer-section-meetings')).not.toBeNull();
+      expect(byTestId(dismissAllId('meetings'))).toBeNull();
+    });
+
+    it('dismisses only the ready RSVP in a section that also holds one still loading', async () => {
+      // Rows load in feed order: the first meeting resolves, the second never does.
+      meetingService.getMeeting.mockReturnValueOnce(of(meeting)).mockReturnValueOnce(NEVER);
+      await render([row('RSVP', 'RSVP ready', { meetingUid: 'meeting-1' }), row('RSVP', 'RSVP loading', { meetingUid: 'meeting-2' })]);
+
+      (byTestId(dismissAllId('meetings')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(document.body.querySelector('.p-confirmdialog-message')?.textContent).toContain('Dismiss 1 item from Meetings');
+
+      const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+      expect(accept).not.toBeNull();
+      accept?.click();
+      fixture.detectChanges();
+
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+      expect(hiddenActions.dismissAction).toHaveBeenCalledWith(expect.objectContaining({ text: 'RSVP ready' }));
+    });
+
+    it('skips a row dismissed on its own while the confirm is open, so nothing is dismissed twice', async () => {
+      await render([row('Survey', 'Survey A', { buttonLink: 'https://example.test/a' }), row('Survey', 'Survey B', { buttonLink: 'https://example.test/b' })]);
+
+      (byTestId(dismissAllId('surveys')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      // Dismiss the first survey individually while the confirm is still showing.
+      (byTestId('pending-actions-drawer-section-surveys')?.querySelector('[data-testid="pending-actions-drawer-dismiss-Survey"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+
+      const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+      accept?.click();
+      fixture.detectChanges();
+
+      // One individual dismissal plus one bulk dismissal of the remaining row — never three.
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(2);
+      expect(hiddenActions.dismissAction).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'Survey B' }));
+    });
+
+    it('with a single dismissible section shows Dismiss all without repeating the section title or count', async () => {
+      await render([row('Survey', 'Survey A')]);
+
+      expect(byTestId(dismissAllId('surveys'))).not.toBeNull();
+      expect(byTestId('pending-actions-drawer-section-title-surveys')).toBeNull();
+      expect(byTestId('pending-actions-drawer-section-count-surveys')).toBeNull();
+    });
+
+    it('dismisses nothing when the confirmation is cancelled', async () => {
+      await render([row('Survey', 'Survey A')]);
+
+      (byTestId(dismissAllId('surveys')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      const reject = document.body.querySelector('.p-confirmdialog-reject-button, .p-confirm-dialog-reject') as HTMLButtonElement | null;
+      expect(reject).not.toBeNull();
+      reject?.click();
+      fixture.detectChanges();
+
+      expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+      expect(byTestId('pending-actions-drawer-section-surveys')).not.toBeNull();
+    });
   });
 });

@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CdkMenuTrigger } from '@angular/cdk/menu';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,6 +50,15 @@ class BothTooltipsHostComponent {}
   template: `<lfx-ui-button lfxUiTooltip="Copy link" ariaLabel="Copy" [iconOnly]="true" icon="fa-light fa-copy" />`,
 })
 class TooltipHostComponent {}
+
+@Component({
+  selector: 'lfx-ui-button-tooltip-icon-host',
+  imports: [UiButtonComponent],
+  template: `<lfx-ui-button lfxUiTooltip="Only invited people can join" lfxUiTooltipTitle="Restricted" lfxUiTooltipIcon="fa-solid fa-lock"
+    >Join</lfx-ui-button
+  >`,
+})
+class TooltipIconHostComponent {}
 
 @Component({
   selector: 'lfx-ui-button-disabled-tooltip-host',
@@ -294,6 +305,18 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('href')).toBe('/meetings/create');
   });
 
+  it('opens an external href in a new tab without an opener, and drops it while disabled', async () => {
+    await set('href', 'https://zoom.example.test/j/1');
+    expect(el().tagName).toBe('A');
+    expect(el().getAttribute('href')).toBe('https://zoom.example.test/j/1');
+    expect(el().getAttribute('target')).toBe('_blank');
+    expect(el().getAttribute('rel')).toBe('noopener noreferrer');
+    expect(el().classList).toContain('!no-underline');
+    await set('disabled', true);
+    expect(el().hasAttribute('href')).toBe(false);
+    expect(el().getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('pins a link label colour in every state and never underlines it', async () => {
     await set('variant', 'tertiary-accent');
     await set('link', '/meetings');
@@ -475,6 +498,14 @@ describe('UiButtonComponent', () => {
       expect(wrapper.getAttribute('aria-describedby')).toBeNull();
     });
 
+    it('forwards the tooltip title icon to the inner button', async () => {
+      const host = TestBed.createComponent(TooltipIconHostComponent);
+      await host.whenStable();
+      const tooltip = host.debugElement.query(By.directive(UiTooltipDirective)).injector.get(UiTooltipDirective);
+      expect(tooltip.icon()).toBe('fa-solid fa-lock');
+      expect(tooltip.title()).toBe('Restricted');
+    });
+
     describe('while disabled', () => {
       let host: ComponentFixture<DisabledTooltipHostComponent>;
       const tooltip = () => TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="ui-tooltip"]');
@@ -594,6 +625,18 @@ describe('UiButtonComponent menu', () => {
     expect(container.querySelector('[data-testid="ui-menu"]')).toBeNull();
     expect(inner.getAttribute('aria-expanded')).toBeNull();
     expect(document.activeElement).toBe(inner);
+  });
+
+  it('opens the menu from the start edge by default', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE);
+    const trigger = host.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+    expect(trigger.menuPosition[0]).toEqual({ originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top' });
+  });
+
+  it('opens the menu from the end edge with menuAlign="end"', async () => {
+    const host = await mount(MENU_HOST_TEMPLATE.replace('<lfx-ui-button ', '<lfx-ui-button menuAlign="end" '));
+    const trigger = host.debugElement.query(By.directive(CdkMenuTrigger)).injector.get(CdkMenuTrigger);
+    expect(trigger.menuPosition[0]).toEqual({ originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top' });
   });
 
   it('adds no popup semantics without a menu', async () => {

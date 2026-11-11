@@ -42,7 +42,7 @@ describe('ProgramDetailComponent', () => {
       slug: 'example-program',
       name: 'Example Program',
       projectName: 'Example Foundation',
-      status: 'open',
+      status: 'accepting',
       stats: { mentors: 2, mentees: 1, graduated: 0 },
       createdOn: '2026-05-01',
       updatedOn: '2026-07-02',

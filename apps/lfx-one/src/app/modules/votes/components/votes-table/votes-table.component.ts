@@ -7,7 +7,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -23,6 +23,7 @@ import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
+  GroupLinkState,
   GroupsIOMailingList,
   MyVotesQuickFilter,
   Vote,
@@ -91,6 +92,7 @@ import { VoteSummaryDialogComponent } from '../vote-summary-dialog/vote-summary-
     EmptyStateComponent,
     NgTemplateOutlet,
     UiSpinnerComponent,
+    RouterLink,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -142,6 +144,8 @@ export class VotesTableComponent {
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
+  // Group links carry state so the group page returns to this list instead of Groups, and restores the Me lens when that is where the user was.
+  public readonly isMeLens = input<boolean>(false);
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
@@ -215,6 +219,7 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  protected readonly groupLinkState: Signal<GroupLinkState> = this.initGroupLinkState();
   // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
   protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
   // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
@@ -559,6 +564,10 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
+  private initGroupLinkState(): Signal<GroupLinkState> {
+    return computed(() => ({ backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: this.isMeLens() }));
+  }
+
   private initStatusTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const base: FilterPillOption[] = [
@@ -810,9 +819,17 @@ export class VotesTableComponent {
     if (vote.project_slug) editQueryParams['project'] = vote.project_slug;
     if (vote.committee_uid) editQueryParams['committee_uid'] = vote.committee_uid;
 
+    // The committee tab already sits on this group's page, so a link back to it would be a no-op.
+    const viewedCommitteeUid = this.editQueryParamsFallback()['committee_uid'];
+    const groupUid = vote.committee_uid?.trim();
+    const showGroupLink = !!groupUid && groupUid !== viewedCommitteeUid;
+
     return {
       ...vote,
       endedEarlyTooltip,
+      groupName: vote.committee_name?.trim() || null,
+      groupCommands: showGroupLink ? (getEntityCommands('groups', groupUid, vote.is_foundation) ?? ['/groups', groupUid]) : null,
+      groupQueryParams: vote.project_slug ? { project: vote.project_slug } : null,
       participation: computeVoteRowParticipation(vote, this.voteService.isAwaitingInvitationCount(vote.uid)),
       editCommands,
       editQueryParams,

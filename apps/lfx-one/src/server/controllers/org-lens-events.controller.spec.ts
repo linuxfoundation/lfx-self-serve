@@ -77,7 +77,6 @@ describe('OrgLensEventsController filters', () => {
     await controller.getOrgEvents(buildReq({}), buildRes(), vi.fn());
 
     expect(getOrgEvents.mock.calls[0][2]).toMatchObject({
-      attribution: 'all',
       participation: 'all',
       eventScope: 'activity',
       foundation: '',
@@ -86,7 +85,7 @@ describe('OrgLensEventsController filters', () => {
   });
 
   it('passes each filter to the list, the summary, the foundations and the drawer', async () => {
-    const query = { attribution: 'account', participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' };
+    const query = { participation: 'attended', eventScope: 'all', foundation: 'foundation-one', range: '90d' };
 
     await controller.getOrgEvents(buildReq(query), buildRes(), vi.fn());
     await controller.getOrgEventsSummary(buildReq(query), buildRes(), vi.fn());
@@ -98,37 +97,32 @@ describe('OrgLensEventsController filters', () => {
     );
 
     expect(getOrgEvents.mock.calls[0][2]).toMatchObject({
-      attribution: 'account',
       participation: 'attended',
       eventScope: 'all',
       foundation: 'foundation-one',
       range: '90d',
     });
     expect(getOrgEventsSummary.mock.calls[0][2]).toEqual({
-      attribution: 'account',
       participation: 'attended',
       scope: 'all',
       foundation: 'foundation-one',
       range: '90d',
     });
-    expect(getOrgEventFoundations.mock.calls[0][2]).toEqual({ attribution: 'account', scope: 'all' });
-    expect(getEventAttendees.mock.calls[0][3]).toMatchObject({ attribution: 'account', participation: 'attended' });
+    expect(getOrgEventFoundations.mock.calls[0][2]).toEqual({ scope: 'all' });
+    expect(getEventAttendees.mock.calls[0][3]).toMatchObject({ participation: 'attended' });
   });
 
-  it.each([{ attribution: 'everyone' }, { participation: 'maybe' }, { eventScope: 'some' }, { range: '5d' }])(
-    'rejects %o with a 400 before any read',
-    async (query) => {
-      const next = vi.fn();
+  it.each([{ participation: 'maybe' }, { eventScope: 'some' }, { range: '5d' }])('rejects %o with a 400 before any read', async (query) => {
+    const next = vi.fn();
 
-      await controller.getOrgEvents(buildReq(query), buildRes(), next);
-      await controller.getOrgEventsSummary(buildReq(query), buildRes(), next);
+    await controller.getOrgEvents(buildReq(query), buildRes(), next);
+    await controller.getOrgEventsSummary(buildReq(query), buildRes(), next);
 
-      expect(next).toHaveBeenCalledTimes(2);
-      for (const [error] of next.mock.calls) {
-        expect(error).toMatchObject({ statusCode: 400 });
-      }
-      expect(getOrgEvents).not.toHaveBeenCalled();
-      expect(getOrgEventsSummary).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(2);
+    for (const [error] of next.mock.calls) {
+      expect(error).toMatchObject({ statusCode: 400 });
     }
-  );
+    expect(getOrgEvents).not.toHaveBeenCalled();
+    expect(getOrgEventsSummary).not.toHaveBeenCalled();
+  });
 });

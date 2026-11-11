@@ -52,16 +52,32 @@ export const WithActions: Story = {
   },
 };
 
-/** The five library examples as the stack the service builds: 12px apart, newest on top. */
+/** The five library examples as the bottom-right stack the service builds: 12px apart, newest on top, each as wide as its content. */
 export const Stack: Story = {
   render: () => ({
     template: `
-      <div class="flex flex-col gap-[12px]" aria-live="polite">
+      <div class="flex flex-col items-end gap-[12px]" aria-live="polite">
         <lfx-ui-toast [duration]="0" [actions]="[{ label: 'Undo', run: noop }, { label: 'View', run: noop, primary: true }]">Committee created.</lfx-ui-toast>
         <lfx-ui-toast [duration]="0">Copied lfx.dev/k8s to clipboard.</lfx-ui-toast>
         <lfx-ui-toast [duration]="0" variant="success">Membership renewed through Dec 31, 2027.</lfx-ui-toast>
         <lfx-ui-toast [duration]="0" variant="warning">You're offline. Changes will sync when you reconnect.</lfx-ui-toast>
         <lfx-ui-toast [duration]="0" variant="error" [actions]="[{ label: 'Retry', run: noop }]">Couldn't send the invite. Try again.</lfx-ui-toast>
+      </div>`,
+    props: { noop: () => undefined },
+    moduleMetadata: { imports: [UiToastComponent] },
+  }),
+};
+
+/** Width follows the content up to 420px, then the message wraps; an error keeps its close button at any width. */
+export const Width: Story = {
+  render: () => ({
+    template: `
+      <div class="flex flex-col items-center gap-[12px]">
+        <lfx-ui-toast [duration]="0" variant="dark">Saved</lfx-ui-toast>
+        <lfx-ui-toast [duration]="0">Copied lfx.dev/k8s to clipboard.</lfx-ui-toast>
+        <lfx-ui-toast [duration]="0" variant="error" [actions]="[{ label: 'Retry', run: noop }]">
+          Couldn't send the invite to the Technical Steering Committee members. Check your connection and try again.
+        </lfx-ui-toast>
       </div>`,
     props: { noop: () => undefined },
     moduleMetadata: { imports: [UiToastComponent] },
@@ -91,6 +107,10 @@ export const FromService: Story = {
           config: { message: "Couldn't send the invite. Try again.", variant: 'error', actions: [{ label: 'Retry', run: () => undefined }] },
         },
         { label: 'dark', config: { message: 'Meeting Link Copied', variant: 'dark' } },
+        {
+          label: 'long',
+          config: { message: 'Meeting details saved. Invitations to all 48 committee members go out within the next few minutes.', position: 'bottom-center' },
+        },
       ],
     },
     template: `

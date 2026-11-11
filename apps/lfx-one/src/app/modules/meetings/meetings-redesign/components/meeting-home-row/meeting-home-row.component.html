@@ -8,40 +8,13 @@
   (click)="open()"
   data-testid="meetings-home-row">
   <!-- Date tile: azure band upcoming, grey band past -->
-  <div
-    class="relative col-start-1 row-start-1 flex h-[42px] w-[40px] flex-none flex-col rounded-[8px] border border-gray-200 bg-white @[861px]:h-[48px] @[861px]:w-[46px] @[861px]:rounded-[10px]"
-    data-testid="meetings-home-row-date">
-    <span
-      class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold uppercase leading-none tracking-[.08em] @[861px]:h-[14px] @[861px]:text-[8.5px]"
-      [class]="
-        past()
-          ? 'rounded-t-[7px] bg-gray-200 text-gray-900 @[861px]:rounded-t-[9px]'
-          : '-mx-px -mt-px rounded-t-[8px] bg-blue-500 text-white @[861px]:rounded-t-[10px]'
-      "
-      data-testid="meetings-home-row-date-month"
-      >{{ row().startTime | date: 'MMM' }}</span
-    >
-    <span
-      class="flex flex-auto items-center justify-center text-[16px] leading-none text-gray-900 @[861px]:text-[19px]"
-      data-testid="meetings-home-row-date-day"
-      >{{ row().startTime | date: 'd' }}</span
-    >
-    <span class="absolute -right-[11px] -top-[11px] flex">
-      @for (badge of visibilityBadges(); track badge.kind) {
-        <span
-          role="img"
-          tabindex="0"
-          class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-          [class]="visibilityBg[badge.kind]"
-          [attr.aria-label]="badge.title"
-          [lfxUiTooltip]="badge.description ?? ''"
-          [lfxUiTooltipTitle]="badge.title"
-          [attr.data-testid]="'meetings-home-row-visibility-' + badge.kind">
-          <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
-        </span>
-      }
-    </span>
-  </div>
+  <lfx-meeting-date-tile
+    class="col-start-1 row-start-1"
+    testIdPrefix="meetings-home-row"
+    [date]="row().startTime"
+    [past]="past()"
+    [badges]="visibilityBadges()"
+    [responsive]="true" />
 
   <div
     class="@container/body col-start-2 row-start-1 ml-[14px] flex min-w-0 flex-col gap-[3px] @[861px]:ml-0 @[861px]:flex-1"
@@ -96,7 +69,7 @@
         [attr.rel]="link().newTab ? 'noopener noreferrer' : null"
         [lfxUiTooltip]="row().title"
         [lfxUiTooltipDisabled]="!titleTruncated()"
-        (click)="onLinkClick($event, link().url, link().newTab)"
+        (click)="onTitleClick($event)"
         data-testid="meetings-home-row-title"
         >{{ row().title }}</a
       >
@@ -197,20 +170,28 @@
     (click)="$event.stopPropagation()"
     data-testid="meetings-home-row-actions">
     @if (past()) {
-      <!-- Top right beside the menu; on line 2 at 480px or less, as the RSVP cell, so the title keeps a readable width. -->
+      <!-- Top right beside the menu; on line 2, left-aligned and wrapping, at 480px or less, so the title keeps a readable width. -->
       <div
-        class="col-[2/-1] row-start-2 hidden justify-self-end has-[div]:flex @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[861px]:ml-0"
+        class="col-[2/-1] row-start-2 ml-[14px] hidden justify-self-start has-[div]:flex [&>*>div]:shrink [&>*>div]:flex-wrap @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:justify-self-end @[481px]:[&>*>div]:shrink-0 @[481px]:[&>*>div]:flex-nowrap @[861px]:ml-0"
         data-testid="meetings-home-row-artifacts-cell">
         <lfx-meeting-home-artifacts [row]="row()" />
       </div>
     } @else {
-      <!-- On line 2 at 480px or less, so the title keeps a readable width on phones; Join sits after the RSVP. -->
+      <!-- Beside the menu, Join after the RSVP; at 480px or less the cell unwraps: RSVP left on line 2, Join right on the last line, over attendance. -->
       <div
-        class="col-[2/-1] row-start-2 hidden items-center justify-self-end gap-[18px] has-[button]:flex has-[span]:flex @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[861px]:ml-0"
+        class="contents items-center gap-[18px] @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[481px]:hidden @[481px]:justify-self-end @[481px]:has-[button]:flex @[481px]:has-[span]:flex @[861px]:ml-0"
         data-testid="meetings-home-row-rsvp-cell">
-        <lfx-meeting-rsvp-controls [row]="row()" />
+        <div class="col-[2/-1] row-start-2 ml-[14px] hidden justify-self-start has-[span]:flex @[481px]:has-[span]:contents">
+          <lfx-meeting-rsvp-controls [row]="row()" />
+        </div>
         @if (joinable()) {
-          <lfx-ui-button size="small" icon="fa-light fa-video" [ariaLabel]="'Join ' + row().title" (click)="join()" data-testid="meetings-home-row-join"
+          <lfx-ui-button
+            class="z-[1] col-[2/-1] row-start-3 self-end justify-self-end @[481px]:self-auto"
+            size="small"
+            icon="fa-light fa-video"
+            [ariaLabel]="'Join ' + row().title"
+            (click)="join()"
+            data-testid="meetings-home-row-join"
             >Join</lfx-ui-button
           >
         }
@@ -223,11 +204,12 @@
       [view]="view()"
       data-testid="meetings-home-row-menu" />
     @if (attendance(); as attendance) {
-      <!-- Under the actions on wide rows, clear of the menu; beside the body, then under it, as the row narrows. -->
+      <!-- Under the actions on wide rows, clear of the menu; beside the body, then under it, as the row narrows; clear of Join at 480px or less. -->
       <div
         class="col-[2/-1] row-start-3 ml-[14px] mt-[4px] flex justify-start @[481px]:row-start-2 @[601px]:col-start-3 @[601px]:col-end-auto @[601px]:row-[2/span_2] @[601px]:self-end @[601px]:justify-end @[861px]:ml-0 @[861px]:mt-[6px] @[861px]:basis-full @[861px]:pr-[50px]"
+        [class]="joinable() ? 'pr-[80px] @[481px]:pr-0' : ''"
         data-testid="meetings-home-row-attendance">
-        <lfx-meeting-home-attendance class="w-full max-w-[280px]" variant="row" [attendance]="attendance" />
+        <lfx-meeting-home-attendance-popup class="w-full max-w-[220px]" [row]="row()" [past]="past()" [attendance]="attendance" />
       </div>
     }
   </div>

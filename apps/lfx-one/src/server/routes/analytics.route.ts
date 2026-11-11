@@ -255,6 +255,9 @@ router.get('/events-registration-forecast-curve', requireDashboardAccess, (req, 
 // Health Metrics Overview past event registration trend (#4321)
 router.get('/events-registration-history', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRegistrationHistory(req, res, next));
 
+// Health Metrics Overview event dialog Snapshot tab (#5195)
+router.get('/events-snapshot', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSnapshot(req, res, next));
+
 // Health Metrics Events "Past events" section (#2965)
 router.get('/events-past', requireDashboardAccess, (req, res, next) => analyticsController.getEventsPast(req, res, next));
 
@@ -273,12 +276,11 @@ router.get('/events-organizations', requireDashboardAccess, (req, res, next) => 
 router.get('/events-sponsorship', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSponsorship(req, res, next));
 router.get('/events-geography', requireDashboardAccess, (req, res, next) => analyticsController.getEventsGeography(req, res, next));
 
-// Health Metrics Members "Membership & revenue by tier" section (#3100)
-router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
+// Health Metrics Members "Member growth by year" section (#5197)
+router.get('/members-growth', requireDashboardAccess, (req, res, next) => analyticsController.getMembersGrowth(req, res, next));
 
-// Health Metrics Members "Membership bridge" and its movement lists (#3101)
-router.get('/members-bridge', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBridge(req, res, next));
-router.get('/members-movements', requireDashboardAccess, (req, res, next) => analyticsController.getMembersMovements(req, res, next));
+// Health Metrics Members "Membership breakdown by tier" section (#3100, #5196)
+router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
 
 // Health Metrics Members "All members" (#3102)
 router.get('/members-directory', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectory(req, res, next));

@@ -21,9 +21,7 @@ import {
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
-  ORG_LENS_CLA_M3_ENABLED_FLAG,
   CF_ORG_DONATIONS_FLAG,
-  ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_SCOPE_QUERY_PARAM,
@@ -76,8 +74,6 @@ export class SidebarNavService {
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
   /** Pilot gate: decides whether the Newsletters links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
-  /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
-  private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens Donations entry (#415), matching `cfOrgDonationsGuard`. */
   private readonly isCfOrgDonationsEnabled = this.featureFlagService.getBooleanFlag(CF_ORG_DONATIONS_FLAG, false);
   /** Dark-launch gate for the Projects and Foundation lens Mentorship Programs entries (lfx-mentorship#398); sidebar only. */
@@ -256,16 +252,20 @@ export class SidebarNavService {
   private readonly showsOrgLfStaffOnlySection = computed(() => this.personaService.isLFStaff() && !this.userService.impersonating());
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
-    // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else (flag-gated in the service).
+    // M3: an org reached only as its CLA Manager has the EasyCLA tab and nothing else.
     if (this.orgClaOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid)) return [this.orgEasyclaNavItem()];
     const base = this.orgLensItems();
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
+    // EasyCLA is single-organization too: a corporate CLA belongs to one company, so its requests
+    // need a concrete organization and `/org/family-{id}/easycla` could only error (#4415, Copilot).
+    const items = this.accountContext.isRollUp() ? base : this.withEasyclaNavItem(base);
     // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
     // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
     const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
     // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
     // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
-    const donationsItems = this.isCfOrgDonationsEnabled() ? [this.orgDonationsNavItem()] : [];
+    // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
+    // `orgUid` its SFID validator refuses the sentinel for, so `/org/family-{id}/donations` only errors (#4415, Copilot).
+    const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
     const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
@@ -984,16 +984,10 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
-            // The time range carries between People and Code Contributions (lfx-self-serve#4159). Counted by and Count
-            // (lfx-self-serve#4598) also carry between People and Events, the only two pages that read them, so a pick is
-            // not reset by sidebar navigation; each page opts in on both ends.
-            carryQueryParams: [
-              ORG_LENS_TIME_RANGE_QUERY_PARAM,
-              ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
-              ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
-              ORG_SCOPE_QUERY_PARAM,
-              ORG_TEAM_MEMBERS_QUERY_PARAM,
-            ],
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159). Count (lfx-self-serve#4598) also
+            // carries between People and Events, the only two pages that read it, so a pick is not reset by sidebar navigation;
+            // each page opts in on both ends.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
@@ -1005,7 +999,7 @@ export class SidebarNavService {
             label: 'Events',
             icon: 'fa-light fa-ticket',
             routerLink: org('events'),
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_ATTRIBUTION_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM],
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM],
           },
           {
             label: 'Training & Certification',
@@ -1016,13 +1010,23 @@ export class SidebarNavService {
           { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-between-lines', routerLink: org('groups') },
         ],
       },
-      // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it when M3 is on.
-      {
-        label: 'Organization Profile',
-        icon: 'fa-light fa-memo',
-        routerLink: org('profile'),
-        dividerBefore: true,
-      },
+      // Org admin — divider only (no section label); Profile sits under it, with EasyCLA above it.
+      //
+      // Profile is dropped in roll-up mode. It is single-org by definition (#4125) and will never
+      // gain a combined rendering, and `orgLensPath` prefixes every item with the selected segment
+      // — so the link read `/org/family-{id}/profile`, where the page asks for
+      // `/api/orgs/uid/family-{id}`, the SFID validator refuses the roll-up key and the caller lands on an error page (#4415, Copilot).
+      // `withEasyclaNavItem` already handles Profile being absent.
+      ...(this.accountContext.isRollUp()
+        ? []
+        : [
+            {
+              label: 'Organization Profile',
+              icon: 'fa-light fa-memo',
+              routerLink: org('profile'),
+              dividerBefore: true,
+            },
+          ]),
     ];
   });
 

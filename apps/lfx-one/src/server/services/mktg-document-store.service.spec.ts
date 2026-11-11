@@ -185,6 +185,7 @@ import { guardBrandKitText } from '@lfx-one/shared/utils/brand-kit.utils';
 import { BoilerplatesService } from './boilerplates.service';
 import { GuildService } from './guild.service';
 import { MktgDocumentRunService } from './mktg-document-run.service';
+import { resetMktgDocumentAuthorNamesForTests } from './mktg-document-author.service';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 
 const req = {
@@ -256,6 +257,7 @@ describe('MktgDocumentStoreService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     store.objects.clear();
+    resetMktgDocumentAuthorNamesForTests();
     store.clock = 0;
     store.conditionalWrites = [];
     store.reads = [];
@@ -1387,7 +1389,7 @@ describe('MktgDocumentStoreService', () => {
     });
 
     it.each([new Error('NATS timeout'), new ResourceNotFoundError('User'), new MicroserviceError('NATS unavailable', 503, 'SERVICE_UNAVAILABLE')])(
-      'lookup failure %s shows no name without failing reads and warns once per ID',
+      'lookup failure %s with no earlier success shows no name without failing reads and warns once per ID',
       async (failure) => {
         await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
         await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Two'), 'two');
@@ -1401,7 +1403,23 @@ describe('MktgDocumentStoreService', () => {
       }
     );
 
-    it('handles an unsuccessful directory response directly and warns once for the stored author', async () => {
+    it('serves the last known name when the directory fails after an earlier success, and says so in the log', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: 'The writer' });
+      const err = new Error('NATS timeout');
+      directoryMocks.getUserInfo.mockRejectedValue(err);
+      const outage = { ...req } as Request;
+      const detail = await service.getDocument(outage, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
+      expect(detail?.current?.changedBy).toEqual({ name: 'The writer' });
+      expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(outage, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
+        err,
+        served_stale: true,
+      });
+      expect(JSON.stringify([...store.objects.values()])).not.toContain('The writer');
+    });
+
+    it('handles an unsuccessful directory response with no earlier success as no name and warns once for the stored author', async () => {
       await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
       directoryMocks.getUserInfo.mockResolvedValue({ success: false, error: 'user not found' });
       const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
@@ -1409,6 +1427,19 @@ describe('MktgDocumentStoreService', () => {
       expect(detail?.current?.changedBy).toEqual({ name: null });
       expect(directoryMocks.getUserInfo).toHaveBeenCalledTimes(1);
       expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
+    });
+
+    it('serves the last known name on an unsuccessful directory response after an earlier success, saying so in the log', async () => {
+      await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: 'The writer' });
+      directoryMocks.getUserInfo.mockResolvedValue({ success: false, error: 'failed to get M2M token' });
+      const limited = { ...req } as Request;
+      const detail = await service.getDocument(limited, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions[0].author).toEqual({ name: 'The writer' });
+      expect(detail?.current?.changedBy).toEqual({ name: 'The writer' });
+      expect(loggerMocks.warning).toHaveBeenCalledExactlyOnceWith(limited, 'mktg_document_store_author', 'Author lookup failed — showing the last known name', {
+        served_stale: true,
+      });
     });
 
     it('bounds distinct directory reads and discards the memo between requests', async () => {
@@ -2031,11 +2062,12 @@ describe('MktgDocumentStoreService', () => {
       const unavailable = { ...req } as Request;
       for (let index = 0; index < 2; index++) {
         expect((await service.getRevision(unavailable, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost).toMatchObject({
-          author: { name: null },
+          author: { name: 'The writer' },
           isAuthor: true,
         });
       }
       expect(loggerMocks.warning.mock.calls.filter((call) => call[1] === 'mktg_document_store_author')).toHaveLength(1);
+      expect(loggerMocks.warning.mock.calls.find((call) => call[1] === 'mktg_document_store_author')?.[3]).toMatchObject({ served_stale: true });
       directoryMocks.getUserInfo.mockResolvedValue({ success: true, username: 'not-a-display-name', data: {} });
       expect(
         (await service.getRevision({ ...req } as Request, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost?.author

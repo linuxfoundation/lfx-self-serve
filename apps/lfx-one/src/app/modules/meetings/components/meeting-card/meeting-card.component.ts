@@ -51,19 +51,19 @@ import {
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
+  GroupLinkState,
   isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingDeleteTypeResult,
+  MeetingGroupLink,
   MeetingOccurrence,
   MeetingRsvp,
   MeetingRecurrence,
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
-  MEETING_V2_ENABLED_DEFAULT,
-  MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
   PastMeetingAttachment,
@@ -92,6 +92,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
@@ -181,6 +182,10 @@ export class MeetingCardComponent implements OnInit {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
+  // Navigation state for the group links, so the group page returns to the list the card is on. Without it the page defaults to Groups.
+  public readonly groupLinkState = input<GroupLinkState | null>(null);
+  // The group whose page the card is already on (its own Meetings tab); that group shows as plain text instead of a link to itself.
+  public readonly currentGroupUid = input<string>('');
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
@@ -316,7 +321,11 @@ export class MeetingCardComponent implements OnInit {
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
-  public readonly groupNames: Signal<string[]> = this.initGroupNames();
+  public readonly groupLinks: Signal<MeetingGroupLink[]> = this.initGroupLinks();
+  public readonly groupQueryParams: Signal<{ project: string } | null> = computed(() => {
+    const slug = this.meeting().project_slug;
+    return slug ? { project: slug } : null;
+  });
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly hasTranscript: Signal<boolean> = this.initHasTranscript();
@@ -337,7 +346,7 @@ export class MeetingCardComponent implements OnInit {
    * full-page editor rather than a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
 
   // The two signals below are the flag-off edit target. They carry the same URL and query params
   // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with
@@ -1256,9 +1265,22 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  /** Names of the groups (committees) the meeting belongs to; a group with no resolved name is left out rather than shown blank. */
-  private initGroupNames(): Signal<string[]> {
-    return computed(() => (this.meeting().committees ?? []).map((committee) => committee.name?.trim()).filter((name): name is string => !!name));
+  /**
+   * The groups (committees) the meeting belongs to, each with its group-details link; a group with no resolved name is
+   * left out rather than shown blank, and the group the card is already on gets no link.
+   */
+  private initGroupLinks(): Signal<MeetingGroupLink[]> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const currentGroupUid = this.currentGroupUid();
+      return (meeting.committees ?? []).flatMap((committee) => {
+        const name = committee.name?.trim();
+        if (!name) return [];
+        const uid = committee.uid?.trim();
+        const commands = uid && uid !== currentGroupUid ? (getEntityCommands('groups', uid, meeting.is_foundation) ?? ['/groups', uid]) : null;
+        return [{ uid: committee.uid, name, commands }];
+      });
+    });
   }
 
   private denyEdit(): void {

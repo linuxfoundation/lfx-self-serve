@@ -11,20 +11,17 @@ import {
 } from '@lfx-one/shared';
 import {
   DEFAULT_ORG_COMMIT_FILTERS,
-  DEFAULT_ORG_EVENTS_ATTRIBUTION,
   DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN,
   ORG_CONTRIBUTORS_MONTHLY_VIEW,
   ORG_EVENT_ATTENDANCE_METRIC_COLUMNS,
-  ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX,
   ORG_LENS_DEFAULT_TIME_RANGE,
   ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN,
   ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type { OrgEventAttendanceMonthlyRow, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
-import { effectiveOrgEventsAttribution } from '@lfx-one/shared/utils';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
@@ -127,7 +124,9 @@ export class OrgInvolvementService {
   public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     return withOrgCache(
       accountId,
-      'events:v3',
+      // `v5` (lfx-self-serve#5315): the response no longer carries `servedAttribution` (the Overview is always Employee match);
+      // a `v4` entry holds the old shape.
+      'events:v5',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendanceMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -300,10 +299,9 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Event Attendees / Event Speakers: pinned to the defaults (all relations, registered or attended, 2 years). dbt
-   * computes every number; this reads the columns of the served attribution (`ATTENDEES_ALL_*` for attendees: people who
-   * registered or attended). The served attribution is `account` only if the pinned default is ever Company email and the
-   * company has no company-email data. The headline is the distinct-people total, not the sum of the monthly points.
+   * Overview Event Attendees / Event Speakers: pinned to the defaults (Employee match, registered or attended, 2 years). dbt
+   * computes every number; this reads the default attribution's columns (`ATTENDEES_ALL_VERIFIED` for attendees: people who
+   * registered or attended). The headline is the distinct-people total, not the sum of the monthly points.
    */
   private async fetchEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const query = `
@@ -311,7 +309,6 @@ export class OrgInvolvementService {
         ACCOUNT_ID,
         ACCOUNT_NAME,
         MONTH_START_DATE,
-        HAS_COMPANY_EMAIL_COVERAGE,
         ${ORG_EVENT_ATTENDANCE_METRIC_COLUMNS.join(',\n        ')}
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY
       WHERE ACCOUNT_ID = ?
@@ -326,7 +323,6 @@ export class OrgInvolvementService {
         accountName: '',
         totalAttended: 0,
         totalSpeakers: 0,
-        servedAttribution: DEFAULT_ORG_EVENTS_ATTRIBUTION,
         attendeesMonthlyData: [],
         speakersMonthlyData: [],
         monthlyLabels: [],
@@ -334,17 +330,14 @@ export class OrgInvolvementService {
     }
 
     const firstRow = result.rows[0];
-    const servedAttribution = effectiveOrgEventsAttribution(DEFAULT_ORG_EVENTS_ATTRIBUTION, firstRow.HAS_COMPANY_EMAIL_COVERAGE === true);
-    const suffix = ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX[servedAttribution];
 
     return {
       accountId: firstRow.ACCOUNT_ID,
       accountName: firstRow.ACCOUNT_NAME,
-      totalAttended: firstRow[`TOTAL_ATTENDEES_ALL_${suffix}`] || 0,
-      totalSpeakers: firstRow[`TOTAL_SPEAKERS_${suffix}`] || 0,
-      servedAttribution,
-      attendeesMonthlyData: result.rows.map((row) => row[`ATTENDEES_ALL_${suffix}`] || 0),
-      speakersMonthlyData: result.rows.map((row) => row[`SPEAKERS_${suffix}`] || 0),
+      totalAttended: firstRow.TOTAL_ATTENDEES_ALL_VERIFIED || 0,
+      totalSpeakers: firstRow.TOTAL_SPEAKERS_VERIFIED || 0,
+      attendeesMonthlyData: result.rows.map((row) => row.ATTENDEES_ALL_VERIFIED || 0),
+      speakersMonthlyData: result.rows.map((row) => row.SPEAKERS_VERIFIED || 0),
       monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
     };
   }

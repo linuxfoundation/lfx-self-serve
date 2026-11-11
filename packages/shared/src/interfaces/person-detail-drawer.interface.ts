@@ -28,6 +28,11 @@ export interface PersonDrawerContext {
   avatarColorClass?: string;
   /** LF username for openers without a personKey: resolved server-side to one roster person for activity, falling back to the company-address lookup. Never an email address. */
   username?: string | null;
+  /**
+   * Salesforce key-contact record ids (`OrgKeyContactAssignment.contactUid`) of the person's key contact roles. Without a
+   * personKey, the company-address lookup reads the company addresses on these records (plus `username`'s, when given).
+   */
+  keyContactIds?: readonly string[];
   profileUrl?: string | null;
   sourceIconClass?: string | null;
   defaultTab?: PersonDrawerTab;
@@ -53,6 +58,8 @@ export interface PersonDrawerContext {
 export interface PersonDrawerEmail {
   email: string;
   isPrimary: boolean;
+  /** Known only from a corporate key-contact record, not from a verified LF-account address; the drawer hints it. */
+  fromKeyContactRecord: boolean;
   /**
    * Precomputed `mailto:` target, or `null` when the address carries URI delimiters that would turn one
    * recipient into several (or into a header field). Such an address still renders — as plain text, and

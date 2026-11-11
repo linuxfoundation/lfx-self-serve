@@ -78,6 +78,18 @@ export const AtTheRightEdge: Story = {
   }),
 };
 
+/** With a `secondaryLabel` the two halves read as two equal actions, such as opening one dialog on either of its tabs. */
+export const LabelledPair: Story = {
+  render: () => ({
+    template: `
+      <div class="flex flex-col items-start gap-[16px]">
+        <lfx-ui-split-button label="Registration trend" icon="fa-light fa-chart-line" variant="secondary" size="small" secondaryLabel="Snapshot" secondaryIcon="fa-light fa-table-list" />
+        <lfx-ui-split-button label="Trend" icon="fa-light fa-chart-line" variant="secondary" size="small" secondaryLabel="Snapshot" secondaryIcon="fa-light fa-table-list" />
+        <lfx-ui-split-button label="Registration trend" icon="fa-light fa-chart-line" variant="secondary" secondaryLabel="Snapshot" secondaryIcon="fa-light fa-table-list" />
+      </div>`,
+  }),
+};
+
 /** Without a menu the right half is a second action: an icon button named by its tooltip. */
 export const WithAction: Story = {
   render: () => ({

@@ -2710,3 +2710,51 @@ describe('MeetingService.dedupePastMeetingParticipants', () => {
     expect(result).toHaveLength(2);
   });
 });
+
+describe('MeetingService.getCommitteeNameMap', () => {
+  const service = new MeetingService();
+  const committeePage = (committees: { uid: string; name: string }[]) => ({
+    resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c })),
+    page_token: undefined,
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  it('looks up each committee uid once, however many meetings share it', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      committeePage([
+        { uid: 'c1', name: 'Board' },
+        { uid: 'c2', name: 'TSC' },
+      ])
+    );
+
+    const names = await service.getCommitteeNameMap(req, [
+      { id: 'm1', committees: [{ uid: 'c1' }] },
+      { id: 'm2', committees: [{ uid: 'c1' }, { uid: 'c2' }] },
+    ] as Meeting[]);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'committee', filters_or: ['uid:c1', 'uid:c2'] });
+    expect([...names]).toEqual([
+      ['c1', 'Board'],
+      ['c2', 'TSC'],
+    ]);
+  });
+
+  it('returns an empty map without querying when no meeting has committees', async () => {
+    const names = await service.getCommitteeNameMap(req, [{ id: 'm1', committees: [] }] as unknown as Meeting[]);
+
+    expect(names.size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty map instead of throwing when the lookup fails', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('query service down'));
+
+    const names = await service.getCommitteeNameMap(req, [{ id: 'm1', committees: [{ uid: 'c1' }] }] as Meeting[]);
+
+    expect(names.size).toBe(0);
+  });
+});

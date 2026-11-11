@@ -40,18 +40,35 @@
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Email</th>
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Visibility</th>
             <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Type</th>
+            @if (syncEnabled()) {
+              <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Sync Direction</th>
+            }
           </tr>
         </thead>
         <tbody>
           @for (ml of filteredMailingLists(); track ml.uid) {
+            @let modifiable = ml.writer === true;
             <tr
-              class="border-t border-gray-100 cursor-pointer transition-colors"
+              class="border-t border-gray-100 transition-colors"
+              [class.cursor-pointer]="modifiable"
+              [class.cursor-not-allowed]="!modifiable"
+              [class.opacity-60]="!modifiable"
               [class.bg-blue-50]="selectedMailingListUids().has(ml.uid)"
-              [class.hover:bg-gray-50]="!selectedMailingListUids().has(ml.uid)"
+              [class.hover:bg-gray-50]="modifiable && !selectedMailingListUids().has(ml.uid)"
+              [pTooltip]="modifiable ? '' : 'You need Manage access to this mailing list to link or unlink it.'"
+              tooltipPosition="top"
+              tooltipEvent="both"
+              tabindex="0"
               (click)="toggleMailingList(ml.uid)"
+              (keydown.enter)="toggleMailingList(ml.uid)"
+              (keydown.space)="toggleMailingList(ml.uid); $event.preventDefault()"
+              [attr.aria-disabled]="!modifiable"
               [attr.data-testid]="'settings-ml-picker-row-' + ml.uid">
               <td class="py-3 px-4">
-                <lfx-checkbox [form]="mlCheckboxForm" [control]="ml.uid" [binary]="true"></lfx-checkbox>
+                <!-- The row click is the only toggle path; the checkbox only reflects state. -->
+                <div class="pointer-events-none">
+                  <lfx-checkbox [form]="mlCheckboxForm" [control]="ml.uid" [binary]="true"></lfx-checkbox>
+                </div>
               </td>
               <td class="py-3 px-2 font-semibold text-gray-900">{{ ml.group_name }}</td>
               <td class="py-3 px-2 text-gray-500">
@@ -66,7 +83,70 @@
                 }
               </td>
               <td class="py-3 px-4 text-gray-500">{{ ml.type | mailingListType }}</td>
+              @if (syncEnabled()) {
+                @let disabledReason = ml | mailingListDirectionDisabledReason: selectedMailingListUids() : activeAutoSyncUid() : mailingLists;
+                <td class="py-3 px-4" data-testid="settings-ml-picker-direction-cell" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
+                  <lfx-select
+                    [form]="mlDirectionForm"
+                    [control]="ml.uid"
+                    [options]="directionOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    size="small"
+                    styleClass="w-full !text-[12px]"
+                    [tooltip]="disabledReason"
+                    tooltipPosition="top"
+                    [ariaLabel]="'Sync direction for ' + ml.group_name"
+                    [dataTest]="'settings-ml-picker-direction-' + ml.uid"></lfx-select>
+                </td>
+              }
             </tr>
+            <!-- Criterion 3 (#4026): committee-filter controls, shown only for a selected list whose
+                 direction is Committee → Mailing List — a plain, unfiltered sync otherwise. -->
+            @if (syncEnabled() && selectedMailingListUids().has(ml.uid) && syncDirections()[ml.uid] === autoCToMlMode) {
+              <tr
+                class="border-t border-gray-100 bg-gray-50/60"
+                (click)="$event.stopPropagation()"
+                (keydown)="$event.stopPropagation()"
+                [attr.data-testid]="'settings-ml-picker-filters-row-' + ml.uid">
+                <td></td>
+                <td colspan="5" class="py-2.5 px-4">
+                  <div class="flex flex-col gap-2 sm:flex-row sm:gap-4">
+                    <div class="flex-1">
+                      <label class="block text-[11px] font-medium text-gray-500 mb-1">Voting statuses (optional)</label>
+                      <lfx-multi-select
+                        [form]="mlCommitteeFilterForm"
+                        [control]="ml.uid"
+                        [options]="committeeFilterOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        size="small"
+                        display="chip"
+                        placeholder="All voting statuses"
+                        styleClass="w-full !text-[12px]"
+                        [ariaLabel]="'Committee voting-status filter for ' + ml.group_name"
+                        [attr.data-testid]="'settings-ml-picker-committee-filter-' + ml.uid"></lfx-multi-select>
+                    </div>
+                    <div class="flex-1">
+                      <label class="block text-[11px] font-medium text-gray-500 mb-1">{{ committeeLabel.singular }} roles (optional)</label>
+                      <lfx-multi-select
+                        [form]="mlCommitteeRoleFilterForm"
+                        [control]="ml.uid"
+                        [options]="committeeRoleFilterOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        size="small"
+                        display="chip"
+                        placeholder="All roles"
+                        styleClass="w-full !text-[12px]"
+                        [ariaLabel]="'Committee role filter for ' + ml.group_name"
+                        [attr.data-testid]="'settings-ml-picker-role-filter-' + ml.uid"></lfx-multi-select>
+                    </div>
+                  </div>
+                  <p class="text-[11px] text-gray-400 mt-1.5">Leave blank to sync every {{ committeeLabel.singular.toLowerCase() }} member.</p>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>
@@ -75,6 +155,13 @@
       </div>
     }
   </div>
+
+  @if (syncEnabled() && activeAutoSyncUid()) {
+    <p class="text-[11.5px] text-gray-400 -mt-2">
+      Only one mailing list per {{ committeeLabel.singular.toLowerCase() }} can have automatic sync configured at a time — set it back to Manual before choosing
+      a direction for another list.
+    </p>
+  }
 </div>
 
 <div class="flex justify-end gap-2 mt-4">

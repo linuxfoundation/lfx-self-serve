@@ -140,12 +140,29 @@
     </div>
 
     <!-- Associated Group(s) -->
-    @if (groupNames().length > 0) {
-      @let groups = groupNames().join(', ');
-      <div class="flex items-center gap-1.5 mb-2 min-w-0 text-xs text-gray-600" data-testid="meeting-groups">
-        <i class="fa-light fa-people-group text-gray-400 shrink-0" aria-hidden="true"></i>
-        <span class="sr-only">{{ groupNames().length === 1 ? 'Group' : 'Groups' }}:</span>
-        <span class="truncate" [pTooltip]="groups" tooltipPosition="top" data-testid="meeting-groups-names">{{ groups }}</span>
+    @if (groupLinks().length > 0) {
+      <div class="flex items-start gap-1.5 mb-2 min-w-0 text-xs text-gray-600" data-testid="meeting-groups">
+        <i class="fa-light fa-people-group text-gray-400 shrink-0 mt-0.5" aria-hidden="true"></i>
+        <span class="sr-only">{{ groupLinks().length === 1 ? 'Group' : 'Groups' }}:</span>
+        <span class="min-w-0 break-words" data-testid="meeting-groups-names">
+          @for (group of groupLinks(); track $index; let last = $last) {
+            @if (group.commands) {
+              <a
+                [routerLink]="group.commands"
+                [queryParams]="groupQueryParams()"
+                [state]="groupLinkState() ?? undefined"
+                class="text-blue-600 hover:text-blue-800 hover:underline"
+                [attr.data-testid]="'meeting-group-link-' + group.uid"
+                >{{ group.name }}</a
+              >
+            } @else {
+              <span [attr.data-testid]="'meeting-group-text-' + group.uid">{{ group.name }}</span>
+            }
+            @if (!last) {
+              <span aria-hidden="true">, </span>
+            }
+          }
+        </span>
       </div>
     }
 

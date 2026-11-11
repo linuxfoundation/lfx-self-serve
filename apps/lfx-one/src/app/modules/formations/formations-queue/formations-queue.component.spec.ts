@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -11,8 +13,9 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
-import type { FormationsQueueResponse, ProjectContext } from '@lfx-one/shared/interfaces';
-import { Observable, of, Subject } from 'rxjs';
+import { emptyPipelineCounts } from '@lfx-one/shared/utils';
+import type { FormationsQueueResponse, ProjectApplication, ProjectContext } from '@lfx-one/shared/interfaces';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationsQueueComponent } from './formations-queue.component';
@@ -176,21 +179,42 @@ describe('FormationsQueueComponent — health tiles (#2782)', () => {
   });
 });
 
+function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectApplication {
+  return {
+    uid: 'a',
+    state: 'submitted',
+    revision: 1,
+    submitter_username: 'jdoe',
+    submitter_name: 'Jane Doe',
+    submitter_email: 'jane@example.org',
+    target_parent_uid: null,
+    application: { project_name: 'Alpha' },
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
 describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
   let getFormationsQueue: ReturnType<typeof vi.fn>;
+  let getFormationPipeline: ReturnType<typeof vi.fn>;
+  let getApplications: ReturnType<typeof vi.spyOn>;
+  let applicationService: ProjectApplicationService;
 
   const render = async (options: {
     slug: string | null;
     isFormationTeam: boolean | Observable<boolean>;
     tab?: string;
+    queue?: ProjectApplication[] | Observable<ProjectApplication[]>;
   }): Promise<ComponentFixture<FormationsQueueComponent>> => {
     TestBed.resetTestingModule();
     getFormationsQueue = vi.fn(() => of(createEmptyFormationsQueueResponse()));
+    getFormationPipeline = vi.fn(() => of({ rows: [], counts: emptyPipelineCounts() }));
     await TestBed.configureTestingModule({
       imports: [FormationsQueueComponent],
       providers: [
         provideRouter([]),
-        { provide: FormationService, useValue: { getFormationsQueue } },
+        { provide: FormationService, useValue: { getFormationsQueue, getFormationPipeline } },
         {
           provide: ProjectContextService,
           useValue: {
@@ -199,16 +223,8 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
             ),
           },
         },
-        {
-          provide: ProjectApplicationService,
-          useValue: {
-            getAccess: () => (typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam),
-            getApplications: () => of([]),
-            overlay: () => signal([]),
-            deletedUids: () => signal(new Set<string>()),
-            reconcile: vi.fn(),
-          },
-        },
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(options.tab ? { tab: options.tab } : {})) } },
         { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
@@ -216,6 +232,13 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
         DialogService,
       ],
     }).compileComponents();
+
+    applicationService = TestBed.inject(ProjectApplicationService);
+    vi.spyOn(applicationService, 'getAccess').mockReturnValue(
+      typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam
+    );
+    const queue = options.queue ?? [];
+    getApplications = vi.spyOn(applicationService, 'getApplications').mockReturnValue(Array.isArray(queue) ? of(queue) : queue);
 
     const fixture = TestBed.createComponent(FormationsQueueComponent);
     fixture.detectChanges();
@@ -267,9 +290,206 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
     expect(query(fixture, 'formations-queue-proposals')).toBeNull();
   });
 
+  describe('pending count (#5229)', () => {
+    const queue = [
+      buildApplication({ uid: 'a' }),
+      buildApplication({ uid: 'b' }),
+      buildApplication({ uid: 'c' }),
+      buildApplication({ uid: 'd', state: 'denied' }),
+      buildApplication({ uid: 'e', state: 'withdrawn' }),
+    ];
+    const tab = (fixture: ComponentFixture<FormationsQueueComponent>): HTMLElement => query(fixture, 'formations-queue-page-tabs-proposals') as HTMLElement;
+    const count = (fixture: ComponentFixture<FormationsQueueComponent>): string | null =>
+      query(fixture, 'formations-queue-page-tabs-proposals-count')?.textContent?.trim() ?? null;
+
+    it('shows only the submitted proposals as the count, with an accessible name that includes it', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue });
+      expect(count(fixture)).toBe('3');
+      expect(tab(fixture).textContent).toContain('Project proposals');
+      expect(tab(fixture).getAttribute('aria-label')).toBe('Project proposals, 3 awaiting review');
+    });
+
+    it('shows no number for zero pending proposals', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue: [buildApplication({ state: 'denied' })] });
+      expect(count(fixture)).toBeNull();
+      expect(tab(fixture).getAttribute('aria-label')).toBeNull();
+    });
+
+    it('shows no number while the read is pending', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue: new Subject<ProjectApplication[]>() });
+      expect(count(fixture)).toBeNull();
+    });
+
+    it('shows no number, never (0), when the read fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue: throwError(() => new Error('boom')) });
+      expect(count(fixture)).toBeNull();
+      expect(tab(fixture).textContent).not.toContain('0');
+    });
+
+    it('drops the count as soon as an accept, deny or withdraw lands, without a refetch', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, queue });
+      const reads = getApplications.mock.calls.length;
+      applicationService.recordWrite('staff', buildApplication({ uid: 'a', state: 'denied', revision: 2 }));
+      fixture.detectChanges();
+      expect(count(fixture)).toBe('2');
+      expect(getApplications.mock.calls.length).toBe(reads);
+    });
+
+    it('makes no queue request for a non-team member or a non-LF foundation', async () => {
+      await render({ slug: 'tlf', isFormationTeam: false, queue });
+      expect(getApplications).not.toHaveBeenCalled();
+      await render({ slug: 'cncf', isFormationTeam: true, queue });
+      expect(getApplications).not.toHaveBeenCalled();
+    });
+
+    it('makes exactly one queue request with the panel open and the count shown', async () => {
+      // An in-flight read, as over HTTP: the page's refresh and the panel's must join it rather than add a second.
+      const inFlight = new Subject<ProjectApplication[]>();
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'proposals', queue: inFlight });
+      expect(query(fixture, 'formations-queue-proposals')).not.toBeNull();
+      expect(getApplications).toHaveBeenCalledTimes(1);
+
+      inFlight.next(queue);
+      inFlight.complete();
+      fixture.detectChanges();
+      expect(count(fixture)).toBe('3');
+      expect(getApplications).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Pipeline tab (#5475)', () => {
+    it('is the default tab for a formation-team member on The Linux Foundation, first in the bar', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true });
+      expect(query(fixture, 'formations-queue-pipeline')).not.toBeNull();
+      expect(query(fixture, 'formations-queue-page-tabs-pipeline')?.getAttribute('aria-selected')).toBe('true');
+      expect(
+        query(fixture, 'formations-queue-page-tabs-pipeline')?.compareDocumentPosition(query(fixture, 'formations-queue-page-tabs-formations') as Node)
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(getFormationPipeline).toHaveBeenCalled();
+    });
+
+    it('makes no formations read while Pipeline shows, and holds it until access answers on a bare link', async () => {
+      const access = new Subject<boolean>();
+      const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable() });
+      expect(getFormationsQueue).not.toHaveBeenCalled();
+      access.next(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(getFormationsQueue).not.toHaveBeenCalled();
+    });
+
+    it('fires the Formations read and shows no empty state while access is pending, once access answers no', async () => {
+      const access = new Subject<boolean>();
+      const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable() });
+      expect(getFormationsQueue).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.textContent).not.toContain('No formations yet');
+
+      access.next(false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+    });
+
+    it('fires the Formations read when the access check errors (it fails closed to no)', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: of(false) });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const real = TestBed.inject(ProjectApplicationService);
+      vi.mocked(real.getAccess).mockRestore();
+      const http = TestBed.inject(HttpTestingController);
+      const failing = TestBed.createComponent(FormationsQueueComponent);
+      getFormationsQueue.mockClear();
+      failing.detectChanges();
+      http.match((request) => request.url.endsWith('/access')).forEach((request) => request.flush('boom', { status: 500, statusText: 'Server Error' }));
+      failing.detectChanges();
+      await failing.whenStable();
+      failing.detectChanges();
+
+      expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+      expect(query(failing, 'formations-queue-pipeline')).toBeNull();
+      expect(fixture).toBeTruthy();
+    });
+
+    it('opens ?tab=pipeline directly', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'pipeline' });
+      expect(query(fixture, 'formations-queue-pipeline')).not.toBeNull();
+    });
+
+    it("shows today's page for ?tab=formations", async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'formations' });
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+      expect(getFormationsQueue).toHaveBeenCalled();
+      expect(getFormationPipeline).not.toHaveBeenCalled();
+    });
+
+    it('leaves the page unchanged for a non-team member, even with ?tab=pipeline', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: false, tab: 'pipeline' });
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+      expect(query(fixture, 'formations-queue-page-tabs-pipeline')).toBeNull();
+      expect(getFormationPipeline).not.toHaveBeenCalled();
+      expect(getFormationsQueue).toHaveBeenCalled();
+    });
+
+    it('leaves the page unchanged on any other foundation', async () => {
+      const fixture = await render({ slug: 'cncf', isFormationTeam: true });
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+      expect(getFormationPipeline).not.toHaveBeenCalled();
+    });
+  });
+
   it('hides the tab on any other foundation', async () => {
     const fixture = await render({ slug: 'cncf', isFormationTeam: true, tab: 'proposals' });
     expect(query(fixture, 'formations-queue-page-tabs')).toBeNull();
     expect(query(fixture, 'formations-queue-proposals')).toBeNull();
+  });
+});
+
+describe('FormationsQueueComponent — "Propose a project" button (#5187)', () => {
+  let fixture: ComponentFixture<FormationsQueueComponent>;
+  let selectedFoundation: ReturnType<typeof signal<ProjectContext | null>>;
+
+  const render = async (foundation: ProjectContext | null): Promise<void> => {
+    TestBed.resetTestingModule();
+    selectedFoundation = signal<ProjectContext | null>(foundation);
+    await TestBed.configureTestingModule({
+      imports: [FormationsQueueComponent],
+      providers: [
+        provideRouter([]),
+        { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(createEmptyFormationsQueueResponse())) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation } },
+        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(FormationsQueueComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  const button = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="formations-queue-propose-project"]');
+  const href = (): string | null => button()?.querySelector('a')?.getAttribute('href') ?? null;
+
+  it('links to the propose form with the selected foundation as the parent', async () => {
+    await render({ uid: 'aaif-uid-1', name: 'Agentic AI Foundation', slug: 'aaif' } as ProjectContext);
+
+    expect(button()?.textContent).toContain('Propose a project');
+    expect(href()).toBe('/formations/propose?parent=aaif-uid-1');
+  });
+
+  it('is offered on The Linux Foundation root too, without exposing the proposals tab to a non-team viewer', async () => {
+    await render({ uid: 'tlf-uid-1', name: 'The Linux Foundation', slug: 'tlf' } as ProjectContext);
+
+    expect(href()).toBe('/formations/propose?parent=tlf-uid-1');
+    expect((fixture.nativeElement as HTMLElement).querySelector('lfx-formation-page-tabs')).toBeNull();
+  });
+
+  it('follows the selection, and is hidden until a foundation is selected', async () => {
+    await render(null);
+    expect(button()).toBeNull();
+
+    selectedFoundation.set({ uid: 'aaif-uid-1', name: 'Agentic AI Foundation', slug: 'aaif' } as ProjectContext);
+    fixture.detectChanges();
+    expect(href()).toBe('/formations/propose?parent=aaif-uid-1');
   });
 });

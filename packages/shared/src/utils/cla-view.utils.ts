@@ -16,9 +16,7 @@ import {
   ORG_CLA_ACTIVITY_LOG_EM_DASH,
   UNNAMED_CLA_GROUP,
 } from '../constants/cla.constants';
-import { PROFILE_TABS } from '../constants/profile.constants';
 import { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
-import { ProfileTab } from '../interfaces';
 import type {
   ClaGroupEnablement,
   ClaGroupOption,
@@ -36,20 +34,6 @@ import type {
   SignIdentityRef,
 } from '../interfaces/cla.interface';
 import { formatIsoDateLabel } from './date-time.utils';
-
-/**
- * Profile subtab list, with the read-only "CLAs" tab appended (before Transactions)
- * when `my-clas-enabled` is on. Shared by both profile-hub nav entry points — the layout
- * subtab strip and the sidebar me-lens ⋯ menu — so they never disagree on whether the tab
- * is present. Returns the static PROFILE_TABS reference unchanged when the flag is off.
- */
-export function buildProfileTabs(myClasEnabled: boolean): ProfileTab[] {
-  if (!myClasEnabled) return PROFILE_TABS;
-  const clasTab: ProfileTab = { id: 'clas', label: 'CLAs', route: 'clas' };
-  const insertAt = PROFILE_TABS.findIndex((t) => t.id === 'transactions');
-  if (insertAt === -1) return [...PROFILE_TABS, clasTab];
-  return [...PROFILE_TABS.slice(0, insertAt), clasTab, ...PROFILE_TABS.slice(insertAt)];
-}
 
 /** Partitions agreements into ICLA and ECLA groups, preserving order. */
 export function splitAgreementsByKind(agreements: MyClaAgreement[]): { iclas: MyClaAgreement[]; eclas: MyClaAgreement[] } {
@@ -278,9 +262,9 @@ export function claGroupSecondaryName(option: Pick<ClaGroupOption, 'projectName'
  * The step itself is never skipped, whatever this returns — the contributor is always shown
  * which identity they are about to sign under. Only the identity on offer varies.
  *
- * GitLab yields a block rather than a route because Self Serve holds no verifiable GitLab
- * identity, and only when nothing else is linked: a group reachable through GitHub or Gerrit
- * is signable, so its GitLab organizations are simply not offered.
+ * GitLab account linking is supported, but its CLA signing handoff is not implemented here.
+ * GitLab yields a block only when nothing else is linked: a group reachable through GitHub
+ * or Gerrit is signable, so its GitLab organizations are simply not offered.
  */
 export function claSignRoute(organizations: ClaGroupOrg[]): ClaSignRoute {
   if (organizations.length === 0) return 'github';

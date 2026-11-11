@@ -11,13 +11,14 @@ import { SelectComponent } from '@components/select/select.component';
 import { Committee, SurveyTemplatesState } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { MessageService } from 'primeng/api';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SurveyAudienceTypeComponent } from './survey-audience-type.component';
 
 describe('SurveyAudienceTypeComponent template picker (#5124)', () => {
   let fixture: ComponentFixture<SurveyAudienceTypeComponent>;
   let openMessenger: ReturnType<typeof vi.fn>;
+  let scrollIntoView: typeof HTMLElement.prototype.scrollIntoView;
 
   const byTestId = (id: string): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector(`[data-testid="${id}"]`);
 
@@ -33,12 +34,97 @@ describe('SurveyAudienceTypeComponent template picker (#5124)', () => {
     await fixture.whenStable();
   };
 
+  afterEach(async () => {
+    // Let PrimeNG's zero-delay overlay alignment finish before restoring browser shims.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    fixture.destroy();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     openMessenger = vi.fn();
+    // JSDOM lacks the browser APIs used by PrimeNG's real select overlays.
+    scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    vi.stubGlobal('matchMedia', (media: string) => ({
+      matches: false,
+      media,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: () => false,
+    }));
     TestBed.configureTestingModule({
       imports: [SurveyAudienceTypeComponent],
       providers: [provideNoopAnimations(), { provide: MessageService, useValue: { add: vi.fn() } }, { provide: IntercomService, useValue: { openMessenger } }],
     });
+  });
+
+  it('explains the template source and labels the searchable picker', async () => {
+    await render({ status: 'ready', options: [{ label: 'Board NPS Survey', value: '1' }] });
+
+    expect(byTestId('survey-template-heading')?.textContent).toContain('NPS Survey Templates');
+    expect(byTestId('survey-template-heading')?.querySelector('span')?.getAttribute('aria-hidden')).toBe('true');
+    expect(byTestId('survey-template-guidance')?.textContent?.trim()).toBe(
+      'Templates come from the SurveyMonkey survey workgroup. Select one to use its questions in your survey.'
+    );
+
+    const select = fixture.debugElement.query(By.directive(SelectComponent)).componentInstance as SelectComponent;
+    expect(select.filter()).toBe(true);
+    expect(select.filterBy()).toBe('label');
+    expect(select.filterPlaceholder()).toBe('Search templates...');
+    expect(select.ariaLabelledBy()).toBe('survey-template-heading');
+    expect(select.ariaFilterLabel()).toBe('Search survey templates');
+    expect(select.resetFilterOnHide()).toBe(true);
+  });
+
+  it('filters titles case-insensitively and selects the real template ID', async () => {
+    await render({
+      status: 'ready',
+      options: [
+        { label: 'Board NPS Survey', value: 'board-template' },
+        { label: 'Maintainer NPS Survey', value: 'maintainer-template' },
+      ],
+    });
+
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[role="combobox"]')?.click();
+    await fixture.whenStable();
+    const search = document.querySelector<HTMLInputElement>('input[aria-label="Search survey templates"]');
+    expect(search).not.toBeNull();
+    search!.value = 'mAiNtAiNeR';
+    search!.dispatchEvent(new Event('input', { bubbles: true }));
+    await fixture.whenStable();
+
+    const options = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
+    expect(options).toHaveLength(1);
+    expect(options[0].textContent).toContain('Maintainer NPS Survey');
+    options[0].click();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.form().get('surveyTemplate')?.value).toBe('maintainer-template');
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[role="combobox"]')?.click();
+    await fixture.whenStable();
+    expect(document.querySelector<HTMLInputElement>('input[aria-label="Search survey templates"]')?.value).toBe('');
+    expect(document.querySelectorAll('[role="option"]')).toHaveLength(2);
+  });
+
+  it('distinguishes a search with no matches from an empty template inventory', async () => {
+    await render({ status: 'ready', options: [{ label: 'Board NPS Survey', value: '1' }] });
+    (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('[role="combobox"]')?.click();
+    await fixture.whenStable();
+    const search = document.querySelector<HTMLInputElement>('input[aria-label="Search survey templates"]');
+    expect(search).not.toBeNull();
+    search!.value = 'no-such-template';
+    search!.dispatchEvent(new Event('input', { bubbles: true }));
+    await fixture.whenStable();
+
+    // PrimeNG renders its no-match message as a non-selectable option row.
+    const rows = Array.from(document.querySelectorAll('[role="option"]'));
+    expect(rows.map((row) => row.textContent?.trim())).toEqual(['No templates match your search.']);
+    expect(byTestId('survey-template-empty')).toBeNull();
   });
 
   it('passes the loading state to lfx-select', async () => {

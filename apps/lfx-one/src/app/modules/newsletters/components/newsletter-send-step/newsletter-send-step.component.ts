@@ -44,6 +44,7 @@ export class NewsletterSendStepComponent {
   public readonly edReplyEmail = input<string>('');
   public readonly edEmail = input<string>('');
   public readonly canSend = input<boolean>(false);
+  public readonly liveSendLocked = input<boolean>(false);
   public readonly sending = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);
   public readonly testSending = input<boolean>(false);

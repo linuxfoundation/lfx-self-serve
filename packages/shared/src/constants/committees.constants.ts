@@ -735,3 +735,12 @@ export const GROUPS_ENGAGEMENT_ICON_CLASS = {
   activeMembers: 'bg-violet-100 text-violet-600',
   meetingsThisMonth: 'bg-amber-100 text-amber-600',
 } as const;
+
+/**
+ * List routes a group details page can return to. The page reads `backPath` from navigation state,
+ * so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
+ */
+export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];
+
+/** How often the Members tab re-evaluates which pending invitations have expired while it stays open. */
+export const COMMITTEE_INVITE_EXPIRY_TICK_MS = 60 * 1000;

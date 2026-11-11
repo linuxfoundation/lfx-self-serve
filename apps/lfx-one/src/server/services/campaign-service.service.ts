@@ -5,8 +5,9 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
+  CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_SEND_STAGES,
   LF_OWNED_EMAIL_LINK_DOMAINS,
-  CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_FUNNEL_STAGE_OPTIONS,
   CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS,
   CAMPAIGN_TACTIC_OPTIONS,
@@ -58,7 +59,6 @@ import type {
   CampaignBriefPersistResult,
   CampaignBudgetUpdateParams,
   CampaignDeliveryType,
-  CampaignEmailStage,
   CampaignEventDetails,
   CampaignGoal,
   CampaignIndexDoc,
@@ -83,8 +83,13 @@ import type {
   CampaignServiceAccessibleAccounts,
   CampaignServiceGoogleAdsConversionActions,
   CampaignServiceGoogleAdsGeoTargetSuggestions,
+  CampaignServiceGoogleAdsAudiences,
+  CampaignServiceGoogleAdsUserLists,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
+  CampaignSendWorkflowRequest,
+  CampaignSendWorkflowResult,
+  CampaignServiceSendWorkflowResult,
   CampaignServiceCreativeAsset,
   CampaignServiceCreativeAssetList,
   CampaignServiceCreativeAssetPlan,
@@ -108,6 +113,7 @@ import type {
   CreativeSlotAssignment,
   CreativeSlotGap,
   GenerateEmailCopyResult,
+  GoogleAdsAudienceReadType,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
   KeywordActionPlatform,
@@ -648,10 +654,12 @@ export function canCreateMetaInstagramDsa(): boolean {
 }
 
 /**
- * Whether this deployment's create path can carry Google `audienceSegments` at all — the
- * deployment half of `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half (a ROOT
- * caller) the controller decides. Only the campaign-service create path reads the key: the legacy
- * creator never does, and would create the campaign without the user lists while reporting success.
+ * Whether this deployment's create path can carry Google `audienceSegments` or
+ * `campaignAudienceSegments` at all — the deployment half of
+ * `CampaignListResult.googleAudienceSegmentsEnabled`, whose other half
+ * (`global_marketing_ops` on the project) the controller decides. Only the campaign-service
+ * create path reads the key: the legacy creator never does, and would create the campaign
+ * without the user lists while reporting success.
  */
 export function canCreateWithAudienceSegments(): boolean {
   return cutoverOwnsCreate();
@@ -1342,7 +1350,7 @@ export class CampaignServiceClient {
 
     return brief === null
       ? { status: 'unreadable', briefId: found.brief.id, brief: null, etag: found.etag, approved }
-      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved };
+      : { status: 'loaded', briefId: found.brief.id, brief, etag: found.etag, approved, storedEventName: briefDispatchEventName(found.brief) };
   }
 
   /**
@@ -1385,7 +1393,14 @@ export class CampaignServiceClient {
     // answered at all.
     return brief === null
       ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readBriefValidator(response), approved }
-      : { status: 'loaded', briefId: response.data.id, brief, etag: readBriefValidator(response), approved };
+      : {
+          status: 'loaded',
+          briefId: response.data.id,
+          brief,
+          etag: readBriefValidator(response),
+          approved,
+          storedEventName: briefDispatchEventName(response.data),
+        };
   }
 
   /**
@@ -3024,6 +3039,76 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Build ONE HubSpot workflow that sends an already-staged series.
+   *
+   * Upstream does every check that matters -- each brief staged, none on the paid surface, no
+   * repeats, and the source workflow's step counts matching -- because only it can see the briefs
+   * and the workflow. This proxies rather than re-deciding, so the two cannot drift into
+   * disagreeing about what is buildable.
+   *
+   * The result is a NON-IDEMPOTENT create, so a 2xx carrying an unusable body is treated as a
+   * failure rather than reported as a workflow: an operator told it worked, with no link to open,
+   * would go looking in HubSpot for something that may not be there.
+   */
+  public async createSendWorkflow(req: Request, projectSlug: string, body: CampaignSendWorkflowRequest): Promise<CampaignSendWorkflowResult> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A send workflow requires the project.', {
+        operation: 'send_workflow_create',
+        service: 'campaign_service_client',
+      });
+    }
+    const created = await this.microserviceProxy.proxyRequest<CampaignServiceSendWorkflowResult>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/send-workflows`,
+      'POST',
+      undefined,
+      {
+        // WRAPPED in `input`, which is how Goa publishes this request: the design declares one
+        // `input` attribute carrying the whole shape, so a flat body is rejected with
+        // `"input" is missing from body` before any handler runs.
+        input: {
+          // Omitted rather than sent empty when the caller named none: upstream reads ABSENCE as
+          // "use the configured workflow", and an empty string is a value it would try to parse.
+          ...(body.sourceWorkflowUrl && body.sourceWorkflowUrl.trim() !== '' ? { source_workflow_url: body.sourceWorkflowUrl.trim() } : {}),
+          name: body.name,
+          brief_ids: body.briefIds,
+          ...(body.sendDates && body.sendDates.length > 0 ? { send_dates: body.sendDates } : {}),
+        },
+      }
+    );
+    // MAPPED from the wire, not cast to it. Upstream publishes snake_case (`flow_id`, `edit_url`),
+    // and reading camelCase off that body found undefined on every field -- so a workflow that had
+    // ALREADY been created in HubSpot was reported to the operator as a 500, with no link to the
+    // thing that now existed. The proxy types a body without checking it, which is what let the
+    // mismatch compile.
+    //
+    // VALIDATED too, for the reason createHubSpotCampaign below is: `edit_url` is what the
+    // operator needs most, since the workflow is created DISABLED and does nothing until they open
+    // it and turn it on, so a response without one is not a usable success.
+    if (typeof created?.flow_id !== 'string' || created.flow_id.trim() === '' || typeof created?.edit_url !== 'string' || created.edit_url.trim() === '') {
+      // 502: the upstream answered 2xx with a body this layer cannot use -- a gateway failure,
+      // not the caller's mistake and not an unexplained 500.
+      throw new MicroserviceError('The campaign service reported a workflow but returned no usable workflow link.', 502, 'BAD_GATEWAY', {
+        operation: 'send_workflow_create',
+        service: 'campaign_service_client',
+      });
+    }
+    return {
+      flowId: created.flow_id,
+      name: created.name ?? '',
+      editUrl: created.edit_url,
+      sourceFlowId: created.source_flow_id ?? '',
+      ...(created.source_flow_name ? { sourceFlowName: created.source_flow_name } : {}),
+      isEnabled: created.is_enabled ?? false,
+      sendEmailSteps: created.send_email_steps ?? 0,
+      datedSteps: created.dated_steps ?? 0,
+      enrollmentListIds: Array.isArray(created.enrollment_list_ids) ? created.enrollment_list_ids : [],
+      suppressionListIds: Array.isArray(created.suppression_list_ids) ? created.suppression_list_ids : [],
+    };
+  }
+
+  /**
    * Create a portal-wide HubSpot campaign, returning the token when the response carries one.
    *
    * Which portal is the project's connection's, not necessarily the LF's own — see
@@ -3317,9 +3402,9 @@ export class CampaignServiceClient {
 
   /**
    * The enabled conversion actions on the Google Ads account a create for this project uses
-   * (`list-google-ads-conversion-actions`), for the Implement tab's picker (#4991). Upstream admits
-   * only a root principal, and its gateway denies every caller until the deployment sets
-   * `openfga.rootProjectUid`; a 503 there includes an account holding more than 500 enabled actions.
+   * (`list-google-ads-conversion-actions`), for the Implement tab's picker (#4991). Upstream answers
+   * only a caller holding `global_marketing_ops` on the path project (lfx-v2-campaign-service#486); a
+   * 503 there includes an account holding more than 500 enabled actions.
    * Failures are left to the caller, which falls back to the free-text box.
    */
   public async listGoogleAdsConversionActions(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsConversionActions> {
@@ -3334,6 +3419,58 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/google-ads/conversion-actions`,
       'GET'
+    );
+  }
+
+  /**
+   * The user lists on the Google Ads account a create for this project uses (`list-google-ads-user-lists`,
+   * linuxfoundation/lfx-v2-campaign-service#508), for the Implement tab's audience segment picker (#5244).
+   * Upstream answers it on `global_marketing_ops` of the path project, the relation the BFF checks first;
+   * it returns up to 500 lists sorted by name, with `truncated` set when the account holds more.
+   * Failures are left to the caller, which falls back to the typed box.
+   */
+  public async listGoogleAdsUserLists(req: Request, projectSlug: string): Promise<CampaignServiceGoogleAdsUserLists> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A user list read requires the project it belongs to.', {
+        operation: 'list_google_ads_user_lists',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsUserLists>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/user-lists`,
+      'GET'
+    );
+  }
+
+  /**
+   * One kind of audience resource on the account a create for this project uses (`list-google-ads-audiences`,
+   * linuxfoundation/lfx-v2-campaign-service#504, #517): Audiences (`type=audience`) for the Implement tab's
+   * Demand Gen audience and Performance Max audience signal pickers (#5244, #5262), or custom audiences,
+   * custom affinity segments or user interests for its Display audience pickers (#5262). `q`, when given,
+   * keeps entries whose name contains it, ignoring case. Upstream answers it on `global_marketing_ops` of the
+   * path project, the relation the BFF checks first; it returns up to 500 usable entries sorted by name, with
+   * `truncated` set when more matched. Failures are left to the caller.
+   */
+  public async listGoogleAdsAudiences(
+    req: Request,
+    projectSlug: string,
+    type: GoogleAdsAudienceReadType = 'audience',
+    q?: string
+  ): Promise<CampaignServiceGoogleAdsAudiences> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'An Audience read requires the project it belongs to.', {
+        operation: 'list_google_ads_audiences',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceGoogleAdsAudiences>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/audiences`,
+      'GET',
+      q === undefined ? { type } : { type, q }
     );
   }
 
@@ -4374,6 +4511,46 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
 }
 
 /**
+ * The event name campaign-service composes a create's names from, read off a stored brief the way
+ * `decodeBriefFields` (`internal/dispatch/reddit.go`, v1.0.31) reads it: `event_details`, then `copy`;
+ * in each, the trimmed `eventName`, else the trimmed `name`, else the raw `name`, each only while
+ * nothing earlier has set a value. A blob that is not an object, or whose `eventName`, `name`,
+ * `registrationUrl` or `hsToken` is neither a string nor null, fails Go's decode and is skipped
+ * whole. Keys match ignoring case, as `encoding/json` matches them, and a later key wins.
+ *
+ * Returned untrimmed, as Go keeps it, which differs from trimmed only for a whitespace-only `name`,
+ * a brief upstream then refuses outright. `fromBriefResponse` reads `event_details.name` only, so its
+ * name can differ from this one, and this one is what the Google ad group names are built on.
+ */
+export function briefDispatchEventName(found: Pick<CampaignServiceBrief, 'event_details' | 'copy'>): string {
+  let eventName = '';
+  for (const blob of [found.event_details, found.copy]) {
+    if (blob === undefined) continue;
+    const fields = goBriefFields(blob);
+    if (fields === null) continue;
+    if (eventName === '') eventName = googleAdsTrimSpace(fields.eventName);
+    if (eventName === '') eventName = googleAdsTrimSpace(fields.name);
+    if (googleAdsTrimSpace(eventName) === '') eventName = fields.name;
+  }
+  return eventName;
+}
+
+/** The two name fields of `briefFields` as `json.Unmarshal` fills them, or `null` where it errors. */
+function goBriefFields(blob: unknown): { eventName: string; name: string } | null {
+  const fields = { eventName: '', name: '' };
+  if (blob === null) return fields;
+  if (typeof blob !== 'object' || Array.isArray(blob)) return null;
+  for (const [key, value] of Object.entries(blob as Record<string, unknown>)) {
+    const field = ['eventname', 'name', 'registrationurl', 'hstoken'].find((tag) => tag === key.toLowerCase());
+    if (field === undefined || value === null) continue;
+    if (typeof value !== 'string') return null;
+    if (field === 'eventname') fields.eventName = value;
+    if (field === 'name') fields.name = value;
+  }
+  return fields;
+}
+
+/**
  * Rebuild the UI's brief from a stored one — the exact inverse of `toBriefInput`.
  *
  * Returns `null` for a row this build cannot represent, which the caller reports as
@@ -4487,14 +4664,15 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     // `campaignGoal` above is: this value decides which surface may open the row, so an
     // unrecognised string must read as "no delivery type recorded" (paid, per the field's
     // contract) rather than as a surface matching nothing. Rows predating the field land here too.
-    deliveryType: found.delivery_type === 'email' || found.delivery_type === 'paid-marketing' ? found.delivery_type : undefined,
+    deliveryType: CAMPAIGN_DELIVERY_TYPES.find((d) => d.id === found.delivery_type)?.id,
     // Same shape as the line above, deliberately: `typeof` first, then membership. Relying on
     // `includes` alone to reject `undefined` works, but only by accident of `Array.includes`
     // returning false for it — and this is the presence-vs-value boundary this feature already got
     // wrong once. An absent stage and the empty string are different things upstream (`''` is the
     // PAID brief's real stage), so the check that distinguishes them should be explicit.
-    emailStage:
-      typeof found.stage === 'string' && CAMPAIGN_EMAIL_STAGES.includes(found.stage as CampaignEmailStage) ? (found.stage as CampaignEmailStage) : undefined,
+    // Either send surface's vocabulary: a survey brief's stage names its asset, and dropping it
+    // here restored the row with no stage -- the identity it is stored under.
+    emailStage: typeof found.stage === 'string' ? CAMPAIGN_SEND_STAGES.find((stage) => stage === found.stage) : undefined,
   };
 }
 

@@ -195,6 +195,20 @@ describe('OrgLensTrainingService — group-by table', () => {
     for (const sql of sqls) expect(sql).toContain("WHERE PRODUCT_TYPE = 'Certification'");
   });
 
+  it('reads only people-list rows: every statement resolves its pairs from the people-list CTE and none counts outside rows', async () => {
+    mockGroups();
+
+    await service.getGroups(REQ, ACCOUNT, QUERY, { groupBy: 'course', tab: 'certifications' }, 'org-grant');
+
+    const sqls = execute.mock.calls.map(([sql]) => sql as string);
+    expect(sqls).toHaveLength(2);
+    for (const sql of sqls) {
+      expect(sql).toContain('AND IS_ON_PEOPLE_LIST');
+      expect(sql).not.toContain('NOT IS_ON_PEOPLE_LIST');
+      expect(sql).toMatch(/FROM f\s+WHERE/);
+    }
+  });
+
   it('splits the trainings tab by the complement of the certification product type', async () => {
     mockGroups();
 
@@ -273,6 +287,24 @@ describe('OrgLensTrainingService — group drawer', () => {
     expect(countBinds).toEqual([ACCOUNT, 'Course A']);
     expect(namesSql).toContain(`LIMIT ${MAX_ORG_TRAINING_GROUP_EMPLOYEES}`);
     expect(namesBinds).toEqual([ACCOUNT, ACCOUNT, 'Course A']);
+  });
+
+  it('keeps the drawer on people-list rows: no statement reads outside rows', async () => {
+    mockDrawer({ TOTAL: 1, GROUP_LABEL: 'Course A' }, []);
+
+    await service.getGroupEmployees(
+      REQ,
+      ACCOUNT,
+      QUERY,
+      { groupBy: 'course', groupValue: 'Course A', tab: 'certifications', status: 'completed' },
+      'org-grant'
+    );
+
+    const [[countSql], [namesSql]] = drawerCalls();
+    for (const sql of [countSql, namesSql]) {
+      expect(sql).toContain('AND IS_ON_PEOPLE_LIST');
+      expect(sql).not.toContain('NOT IS_ON_PEOPLE_LIST');
+    }
   });
 
   it('names the roster from the all-time, all-projects ranges row of current employees, as People › Trainees does', async () => {
@@ -372,7 +404,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
         rosterMembers: 40,
         rosterMembersAsOf: '2026-10-29T23:00:00.000Z',
         peopleWithTrainingActivity: 0,
-        learnersOutsidePeopleList: 0,
+        learnersOutsidePeopleList: null,
         coursesTaken: 0,
         certifications: 0,
         certifiedPeople: 0,
@@ -394,7 +426,7 @@ describe('OrgLensTrainingService — a filter value the organization never carri
 
       // Only the known-values entry and the unfiltered stats entry (the roster's) were read; no key or statement holds the unknown value.
       const keys = withOrgCache.mock.calls.map(([, key]) => key as string);
-      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v1', `training-stats:v5:${orgTrainingFiltersSignature(QUERY)}`]));
+      expect(new Set(keys)).toEqual(new Set(['training-filter-known:v1', `training-stats:v6:${orgTrainingFiltersSignature(QUERY)}`]));
       for (const [sql, binds] of execute.mock.calls as [string, unknown[]][]) {
         expect(binds).not.toContain(Object.values(filter)[0]);
         expect(sql.includes('AS GROUP_KEY')).toBe(false);
@@ -633,7 +665,7 @@ describe('OrgLensTrainingService — a filter valid for the organization but wit
     expect(stats).toMatchObject({
       range: NO_ROWS_RANGE,
       peopleWithTrainingActivity: 0,
-      learnersOutsidePeopleList: 0,
+      learnersOutsidePeopleList: null,
       coursesTaken: 0,
       certifications: 0,
       certifiedPeople: 0,
