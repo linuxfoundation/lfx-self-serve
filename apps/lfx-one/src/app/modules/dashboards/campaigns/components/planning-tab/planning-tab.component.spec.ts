@@ -587,6 +587,7 @@ describe('PlanningTabComponent brief read-back', () => {
         await foundBeforeGenerating({ status: 'unreadable', brief: null, briefId: 'brief-x', etag: 'W/"v1"', approved: false } as CampaignBriefLoadResult);
 
         expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')?.textContent).toContain('could not be opened');
+        expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]')?.textContent).toContain('could not be opened');
       });
     });
 
@@ -632,6 +633,8 @@ describe('PlanningTabComponent brief read-back', () => {
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')).toBeNull();
+      // Nor read out to a screen reader: the live region says no more than the page shows (#5551).
+      expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]')?.textContent?.trim()).toBe('');
     });
 
     it('makes no extra lookup when the generated slug is the one the url lookup already used', async () => {

@@ -592,7 +592,7 @@
       The live region stays outside the @if, as on the input step, so a brief found here is announced.
     -->
     <div role="status" aria-live="polite" class="sr-only" data-testid="planning-review-saved-brief-live">
-      {{ editingExistingBrief() ? '' : savedBriefAnnouncement() }}
+      {{ editingExistingBrief() ? '' : reviewSavedBriefAnnouncement() }}
     </div>
     @if (!editingExistingBrief() && savedBrief(); as saved) {
       <div class="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2" data-testid="planning-review-saved-brief">
