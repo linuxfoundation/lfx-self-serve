@@ -158,6 +158,11 @@ export class OrgPeopleKeyContactsService {
         initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || '?',
         avatarUrl: avatarUrl ?? null,
         lfUsername: agreedUsername(group.map((assignment) => assignment.username)),
+        // The All Employees Key Contact column (#4401) renders these. `assignments` is already filtered to
+        // active contacts on active or purchased memberships, so every role here is one the person holds
+        // right now, and the tab shows the same set. One assignment per (membership, role), so the same
+        // role on two foundation memberships arrives twice — dedupe to the person-level set the column renders.
+        roles: [...new Set(group.map((assignment) => assignment.role.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
       };
     });
   }

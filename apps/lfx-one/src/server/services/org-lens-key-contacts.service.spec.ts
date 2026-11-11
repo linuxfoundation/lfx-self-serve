@@ -241,6 +241,19 @@ describe('OrgLensKeyContactsService — a key-contact write drops the caller’s
     expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-dir:v7:roster', 'tester', ORG);
   });
 
+  // Since #5539 the directory's live merge reads key contacts through OrgPeopleKeyContactsService, which
+  // serves them from its own per-caller entry. Dropping only the directory would refill it from pre-write
+  // assignments, so the source entry has to go with it — including its in-flight fill, or a read that
+  // started before the write restores it.
+  it('drops the key-contact source entry the directory reads through, not just the directory', async () => {
+    await new OrgLensKeyContactsService()
+      .addKeyContact(req, ORG, 'cncf', { contactType: 'billing', email: 'new@lfx-partner.example', firstName: 'New', lastName: 'Person' } as never)
+      .catch(() => undefined);
+
+    expect(evictPerUserOrgFetch).toHaveBeenCalledWith('org-people-kc:v1', 'tester', ORG);
+    expect(invalidatePerUserCache).toHaveBeenCalledWith('org-people-kc:v1', 'tester', ORG);
+  });
+
   it('evicts the in-flight fill as well as the stored entry', async () => {
     await new OrgLensKeyContactsService()
       .addKeyContact(req, ORG, 'cncf', { contactType: 'billing', email: 'new@lfx-partner.example', firstName: 'New', lastName: 'Person' } as never)

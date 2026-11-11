@@ -164,6 +164,24 @@ describe('OrgPeopleKeyContactsService getActiveEmployees', () => {
     expect(employees).toEqual([expect.objectContaining({ email: 'first.person@vendor-corp.example', fullName: 'First Person', lfUsername: 'fperson' })]);
   });
 
+  // #4401: the All Employees Key Contact column renders `roles` from this producer. The directory folds
+  // them in with addKeyContactRoles, which no-ops on a missing array, so dropping the field here would
+  // empty every Key Contact cell without failing a directory test.
+  it('carries the roles the person holds, deduped across memberships and sorted', async () => {
+    upstream([
+      contact({ username: 'fperson' }),
+      contact({ uid: 'contact-2', username: 'fperson', role: 'Legal Contact' }),
+      // Same role on a second foundation membership — one pill, not two.
+      contact({ uid: 'contact-3', membership_uid: 'membership-2', username: 'fperson', role: 'Billing Contact' }),
+      // Active role, expired membership: not a role they hold today, so not in the column either.
+      contact({ uid: 'contact-4', membership_uid: 'membership-ended', username: 'fperson', role: 'PR Contact' }),
+    ]);
+
+    const [employee] = await service.getActiveEmployees(req, ORG_UID);
+
+    expect(employee.roles).toEqual(['Billing Contact', 'Legal Contact']);
+  });
+
   it('leaves the username unset when the assignments at one address disagree on it', async () => {
     upstream([contact({ username: 'fperson' }), contact({ uid: 'contact-2', username: 'someone-else', role: 'Legal Contact' })]);
 

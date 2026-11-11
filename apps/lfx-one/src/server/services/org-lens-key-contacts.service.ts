@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CONTACT_TYPE_TO_ROLE, KEY_CONTACT_PRIMARY_CONTACT_TYPE, KEY_CONTACT_ROLE_CATALOG, roleToContactType } from '@lfx-one/shared/constants';
+import { CONTACT_TYPE_TO_ROLE, KEY_CONTACT_PRIMARY_CONTACT_TYPE, KEY_CONTACT_ROLE_CATALOG, roleToContactType, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import {
   AddKeyContactRequest,
   KeyContactDoc,
@@ -204,7 +204,13 @@ export class OrgLensKeyContactsService {
     // The directory is cached per (time range, project scope) and for the unranged roster, so the bare
     // family name is not a key any entry is stored under. Every scope goes, as the seat helper does it:
     // a key contact's roles are range-independent, so there is no scope a write can leave standing.
-    const namespaces = allOrgPeopleDirectoryNamespaces();
+    //
+    // The directory's own entries are not enough. Since #5539 the live merge reads key contacts through
+    // `OrgPeopleKeyContactsService.getActiveEmployees`, which is itself served from the Key Contacts tab's
+    // per-caller entry. Leaving that warm means the refill we just forced recomputes from pre-write
+    // assignments and caches the old roster again — a removed key-contact-only person stays listed, and
+    // their Key Contact cell keeps the role they no longer hold. Drop the source with the directory.
+    const namespaces = [...allOrgPeopleDirectoryNamespaces(), VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE];
     for (const namespace of namespaces) {
       evictPerUserOrgFetch(namespace, username, b2bOrgUid);
     }
