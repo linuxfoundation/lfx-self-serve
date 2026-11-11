@@ -33,6 +33,7 @@ import {
   isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import {
+  briefSlugYearCandidates,
   campaignSurveySourceTextLength,
   campaignSurveySourceTextTooLong,
   canonicalHttpUrl,
@@ -51,6 +52,7 @@ import {
   finalize,
   map,
   merge,
+  Observable,
   of,
   skip,
   Subject,
@@ -970,10 +972,7 @@ export class PlanningTabComponent implements OnInit {
         // Taken from the REQUEST rather than read at response time, so an answer dispatched
         // before a parent-side write cannot claim to post-date it.
         switchMap(([slug, project, delivery, stage, token]) =>
-          this.campaignService.loadBrief(slug, project, delivery, stage).pipe(
-            map((result) => ({ slug, project, delivery, stage, token, result })),
-            catchError(() => of({ slug, project, delivery, stage, token, result: null }))
-          )
+          this.findSavedBrief(slug, project, delivery, stage).pipe(map((result) => ({ slug, project, delivery, stage, token, result })))
         ),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -1219,20 +1218,20 @@ export class PlanningTabComponent implements OnInit {
     //
     // This derivation is NOT identical to the write path's. `deriveEventSlug` reads
     // `brief.eventDetails.slug`, which the generator produced from the scraped event page,
-    // while this reads the pasted URL's last path segment. They agree whenever the scraper
-    // echoes the segment, which is the ordinary case — but a normalized slug (different case,
-    // stripped punctuation, a redirect to a canonical path) makes the lookup MISS a brief that
-    // exists, and the user is offered nothing rather than a restore.
+    // while this reads the pasted URL's last path segment. They agree whenever the generator
+    // echoes the segment, which is the ordinary case, but it often adds the event's year
+    // (the KubeCon Europe page is stored as `kubecon-cloudnativecon-europe-2027`), and then the
+    // bare lookup misses a brief that exists (#5492).
     //
-    // A miss is NOT merely a wasted regeneration, and an earlier version of this comment was
-    // wrong to say so. `saveBrief` runs its own `findBrief` keyed on the GENERATED slug, so
-    // after the user regenerates, the save finds the row this lookup missed and PUTs over it —
-    // the saved edits are gone and Restore was never offered. The two paths agreeing matters
-    // for durability, not just for convenience.
+    // Two things close most of that gap without changing the key. `findSavedBrief` retries a
+    // miss with the year-suffixed slugs, and `lookUpGeneratedSlug` looks the generated slug up
+    // once generation finishes, so the offer appears on the review step at the latest. The key
+    // stays the generated slug on purpose: a URL reused every year would otherwise put each
+    // edition on last year's row, campaigns included.
     //
-    // Not closed here because the fix is not local: the read would have to key off the
-    // generated brief, which does not exist until after generation and so cannot serve the
-    // pre-generation offer this feature is for. Tracked as LFXV2-3200.
+    // A miss no longer loses work either way. The save runs its own `findBrief` on the generated
+    // slug and REFUSES a brief this page does not own (LFXV2-3200); it does not save over it. On
+    // the paid planner the refusal offers Open to edit and Replace saved brief (#4983).
     //
     // Cleared only when the slug changes AND a lookup will follow to replace what was cleared.
     //
@@ -2343,6 +2342,74 @@ export class PlanningTabComponent implements OnInit {
     }
   }
 
+  /**
+   * The stored brief for `slug`, or for the first year-suffixed variant of it that has one (#5492).
+   *
+   * A brief is saved under the generator's `eventDetails.slug`, which often adds the event's year
+   * to the URL's last segment, while this lookup runs before generation and knows only the URL. So
+   * a miss on the bare segment tries `briefSlugYearCandidates` in order. Only a `none` moves on: a
+   * found, unreadable or failed answer is the answer. A survey is skipped, since its slug is not a
+   * URL segment and the generator does not write it.
+   *
+   * `null` is a transport failure, as the subscription that applies this expects.
+   */
+  private findSavedBrief(slug: string, project: string, delivery: CampaignDeliveryType, stage: CampaignSendStage | ''): Observable<CampaignBriefLoadResult | null> {
+    const lookup = (candidate: string): Observable<CampaignBriefLoadResult | null> =>
+      this.campaignService.loadBrief(candidate, project, delivery, stage).pipe(catchError(() => of(null)));
+    const candidates = this.isSurvey() ? [] : briefSlugYearCandidates(slug, new Date().getFullYear());
+    return candidates.reduce(
+      (found$, candidate) => found$.pipe(switchMap((result) => (result !== null && result.status === 'none' ? lookup(candidate) : of(result)))),
+      lookup(slug)
+    );
+  }
+
+  /**
+   * After a generation finishes, look for a brief stored under the slug the generator wrote, when
+   * that differs from the one the URL lookup used (#5492).
+   *
+   * The save is keyed on the generated slug, so a brief the URL lookup could not find is still
+   * found here, and offered on the review step before the user proceeds rather than only surfacing
+   * as the save's refusal. Skipped when an offer is already up, in existing-brief mode, and for a
+   * survey (see `findSavedBrief`).
+   *
+   * Only a found or unreadable brief is applied. A miss or a failed request leaves the page as it
+   * is: the save runs its own lookup on this slug and refuses an unowned brief either way, so a
+   * warning here would add nothing.
+   */
+  private lookUpGeneratedSlug(): void {
+    const generatedSlug = this.eventDetails()?.slug ?? '';
+    const urlSlug = this.currentSlug;
+    if (this.isSurvey() || generatedSlug.trim() === '' || generatedSlug === urlSlug || this.savedBrief() !== null || this.editingExistingBrief()) {
+      return;
+    }
+    const project = this.activeFoundationSlug();
+    const delivery = this.deliveryType();
+    const stage = this.emailStage();
+    const token = this.savedBriefRefreshToken();
+    const generation = this.generateGeneration;
+    this.campaignService
+      .loadBrief(generatedSlug, project, delivery, stage)
+      .pipe(
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => {
+        // Dropped once the page has moved on (a new generation, another event, foundation or send),
+        // or once the URL lookup has put up an offer of its own in the meantime.
+        const moved =
+          this.savedBrief() !== null ||
+          generation !== this.generateGeneration ||
+          urlSlug !== this.currentSlug ||
+          project !== this.activeFoundationSlug() ||
+          delivery !== this.deliveryType() ||
+          stage !== this.emailStage();
+        if (moved || result === null || result.status === 'none') {
+          return;
+        }
+        this.applySavedBrief(result, token);
+      });
+  }
+
   private extractEventName(url: string): string {
     try {
       const pathname = new URL(url).pathname.replace(/\/+$/, '');
@@ -2961,6 +3028,7 @@ export class PlanningTabComponent implements OnInit {
         break;
       case 'done':
         this.step.set('review');
+        this.lookUpGeneratedSlug();
         break;
     }
   }
