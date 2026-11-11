@@ -2482,9 +2482,10 @@ describe('MonitoringTabComponent — campaign-service audience by platform', () 
 });
 
 /**
- * lfx-self-serve-ops#54: the BFF refuses a non-root caller the Google, Reddit, Meta and X monitors
- * (and LinkedIn's legacy arm), because those ad accounts are shared by every foundation. The tab
- * shows that as a notice, not an error, and keeps Google's project-scoped keyword section.
+ * lfx-self-serve-ops#54: the BFF refuses a non-root caller the Reddit, Meta and X monitors, Google's
+ * legacy account-wide arm and LinkedIn's legacy arm, because those ad accounts are shared by every
+ * foundation. The tab shows that as a notice, not an error, and keeps Google's project-scoped keyword
+ * section. Google's campaign-service arm serves a project campaign manager instead (#4837).
  */
 describe('MonitoringTabComponent — shared-account restriction', () => {
   let fixture: ComponentFixture<MonitoringTabComponent>;

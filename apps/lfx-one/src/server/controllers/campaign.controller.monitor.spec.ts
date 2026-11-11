@@ -1141,8 +1141,10 @@ describe('CampaignController monitor reads during a mixed rollout', () => {
 /**
  * lfx-self-serve-ops#54: the Google Ads, Meta, Reddit and X accounts are shared by every foundation,
  * as is LinkedIn's legacy allowlist account, so their account monitors would hand one foundation's
- * campaign manager every foundation's campaigns. They are root-only on every arm, refused before
- * any upstream call and before the cutover's own 409/404 answers.
+ * campaign manager every foundation's campaigns. Meta, Reddit and X are root-only on every arm,
+ * refused before any upstream call and before the cutover's own 409/404 answers. Google is root-only
+ * on its legacy account-wide arm only: its campaign-service arm returns just the project's own
+ * campaigns and is left to campaign-service's project `campaign_manager` check (#4837).
  */
 describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
   function expectRestricted(next: NextFunction): void {

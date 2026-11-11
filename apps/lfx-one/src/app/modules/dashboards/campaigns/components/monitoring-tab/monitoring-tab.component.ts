@@ -454,8 +454,9 @@ export class MonitoringTabComponent implements OnInit {
   protected loadGoogleAccounts(): void {
     const slug = this.activeFoundationSlug();
     this.googleAccountsSub?.unsubscribe();
-    // A caller already known to be restricted (by this read, or by the Google Ads monitor) would only
-    // be refused again: no request, and nothing shown, as for the refusal itself.
+    // A caller this read already refused would only be refused again: no request, and nothing shown,
+    // as for the refusal itself. `googleRestricted()` is set only by the legacy (cutover-off) Google
+    // monitor (#4837), so on this campaign-service path it holds only during a mixed-pod rollout.
     if (this.googleAccountsRefused || this.googleRestricted()) {
       this.googleAccountsLoading.set(false);
       this.googleAccountsError.set(null);
