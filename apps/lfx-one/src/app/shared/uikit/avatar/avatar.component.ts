@@ -9,7 +9,7 @@ import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
  * A person, organization or bot as a photo or initials in a circle. Falls back from the photo to the icon or
- * initials when the image is missing or fails to load, and to a person glyph when there is no photo, icon or initials (a blank name). Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
+ * initials when the image is missing or fails to load, and to a person glyph (a building glyph for `shape="logo"`) when there is no photo, icon or initials (a blank name). Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
  * 48 to 64 in headers. Use `lfx-ui-avatar-group` to stack several. `shape="logo"` is the bordered company logo box used beside a
  * company name in tables.
  */
@@ -54,7 +54,7 @@ export class UiAvatarComponent {
   public readonly shape = input<UiAvatarShape>('circle');
   /** Initials size in px, replacing the 38% scale, such as 11 on the 32px avatar of a dense table. */
   public readonly initialsSize = input<number | null>(null);
-  /** `semibold` for the 600-weight initials of a dense table; `medium` (500) everywhere else. */
+  /** `semibold` for the 600-weight initials of a dense table; `medium` (500) everywhere else. The `logo` shape is always semibold. */
   public readonly initialsWeight = input<UiAvatarInitialsWeight>('medium');
   /** Shows a shimmering shell while the real avatar loads. Never use it as a permanent fallback. */
   public readonly placeholder = input<boolean, unknown>(false, { transform: booleanAttribute });

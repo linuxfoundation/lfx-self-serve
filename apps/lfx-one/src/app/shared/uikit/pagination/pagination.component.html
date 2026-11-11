@@ -15,7 +15,7 @@
         icon="fa-light fa-chevron-left"
         ariaLabel="Previous page"
         [disabled]="isFirst()"
-        (click)="goTo(current() - 1)"
+        (click)="step(-1)"
         data-testid="ui-pagination-previous" />
       @for (item of pages(); track item.index) {
         <lfx-ui-button
@@ -36,7 +36,7 @@
         icon="fa-light fa-chevron-right"
         ariaLabel="Next page"
         [disabled]="isLast()"
-        (click)="goTo(current() + 1)"
+        (click)="step(1)"
         data-testid="ui-pagination-next" />
     </nav>
     <span class="label-12 text-ui-neutral-400" data-testid="ui-pagination-info">{{ info() }}</span>

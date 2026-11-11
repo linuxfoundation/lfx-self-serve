@@ -121,6 +121,27 @@ describe('UiPaginationComponent', () => {
     expect(nav()).toBeNull();
   });
 
+  it('writes the page shown as current back when page is out of range', async () => {
+    await update({ page: 9 });
+
+    pageButtons()[4].click();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.page()).toBe(4);
+  });
+
+  it('moves focus to the current page when an arrow disables itself at the end of the range', async () => {
+    await update({ page: 3 });
+    next().focus();
+
+    next().click();
+    await fixture.whenStable();
+
+    expect(next().disabled).toBe(true);
+    expect(document.activeElement?.getAttribute('aria-current')).toBe('page');
+    expect(document.activeElement?.textContent?.trim()).toBe('5');
+  });
+
   it('keeps an out-of-range page on the last page that exists', async () => {
     await update({ page: 9 });
 
