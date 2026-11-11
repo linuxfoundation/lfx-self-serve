@@ -1,63 +1,59 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact px, not rem: the design's type and spacing. One column per item; two per row on phones. -->
-<div
-  class="grid grid-cols-[repeat(var(--hm-metrics-cols),minmax(0,1fr))] border-y border-gray-200 max-[640px]:grid-cols-2"
-  [style.--hm-metrics-cols]="items().length"
-  [attr.data-testid]="testId()">
-  @for (item of items(); track item.key; let index = $index) {
-    <div
-      class="flex min-w-0 flex-col gap-[8px] py-[18px] pr-[24px] max-[640px]:py-[14px] max-[640px]:pr-[12px]"
-      [class]="itemClasses()[index]"
-      [attr.data-testid]="testId() + '-' + item.key">
-      <span class="block text-[12px] font-medium leading-[16px] text-gray-500" [attr.data-testid]="testId() + '-' + item.key + '-label'">
-        @if (item.dotClass) {
-          <span class="mr-[6px] inline-block h-[8px] w-[8px] rounded-full align-[0]" [class]="item.dotClass" aria-hidden="true"></span>
-        }
-        <!-- Its own span, so the dot's and the tip's 6px margins are the only gaps. -->
-        <span>{{ item.label }}</span>
-        @if (item.tip) {
-          <i
-            class="fa-light fa-circle-question ml-[6px] cursor-help align-[-2px] text-[13px] text-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-            role="img"
-            tabindex="0"
-            [attr.aria-label]="item.tip"
-            [lfxUiTooltip]="item.tip"
-            [attr.data-testid]="testId() + '-' + item.key + '-tip'"></i>
-        }
-      </span>
-      <div class="flex flex-col items-start gap-[4px] max-[640px]:gap-[2px]">
-        <span
-          class="whitespace-nowrap text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900 max-[640px]:text-[28px]"
-          [attr.data-testid]="testId() + '-' + item.key + '-value'"
-          >{{ item.value }}</span
-        >
-        @if (item.trend) {
+<!-- Exact px, not rem: the design's type and spacing. One column per item; the design collapses it only on phones, to two per row. -->
+@if (items().length) {
+  <div
+    class="grid grid-cols-[repeat(var(--hm-metrics-cols),minmax(0,1fr))] border-y border-gray-200 max-[640px]:grid-cols-2"
+    [style.--hm-metrics-cols]="items().length"
+    [attr.data-testid]="testId()">
+    @for (item of items(); track item.key; let index = $index) {
+      <div
+        class="flex min-w-0 flex-col gap-[8px] py-[18px] pr-[24px] max-[640px]:py-[14px] max-[640px]:pr-[12px]"
+        [class]="itemClasses()[index]"
+        [attr.data-testid]="testId() + '-' + item.key">
+        <span class="block text-[12px] font-medium leading-[16px] text-gray-500" [attr.data-testid]="testId() + '-' + item.key + '-label'">
+          @if (item.dotClass) {
+            <span class="mr-[6px] inline-block h-[8px] w-[8px] rounded-full align-[0]" [class]="item.dotClass" aria-hidden="true"></span>
+          }
+          <!-- Its own span, so the dot's and the tip's 6px margins are the only gaps. -->
+          <span>{{ item.label }}</span>
+          @if (item.tip) {
+            <lfx-health-metrics-info-tip class="ml-[6px] align-[-2px]" [text]="item.tip" [testId]="testId() + '-' + item.key + '-tip'" />
+          }
+        </span>
+        <div class="flex flex-col items-start gap-[4px] max-[640px]:gap-[2px]">
           <span
-            class="whitespace-nowrap text-[12px] font-medium"
-            [class]="trendClasses[item.trendTone ?? 'context']"
-            [attr.data-testid]="testId() + '-' + item.key + '-trend'"
-            >{{ item.trend }}</span
+            class="whitespace-nowrap text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900 max-[640px]:text-[28px]"
+            [attr.data-testid]="testId() + '-' + item.key + '-value'"
+            >{{ item.value }}</span
           >
+          @if (item.trend) {
+            <span
+              class="whitespace-nowrap text-[12px] font-medium"
+              [class]="trendClasses[item.trendTone ?? 'context']"
+              [attr.data-testid]="testId() + '-' + item.key + '-trend'"
+              >{{ item.trend }}</span
+            >
+          }
+        </div>
+        @if (item.description) {
+          <span class="-mt-[4px] text-[12px] leading-[16px] text-gray-400" [attr.data-testid]="testId() + '-' + item.key + '-description'">
+            @if (item.descriptionLead) {
+              <span [class]="leadClasses[item.descriptionLeadTone ?? 'up']">{{ item.descriptionLead }}</span>
+            }
+            {{ item.description }}
+          </span>
+        }
+        @if (item.bar; as bar) {
+          <span class="-mt-[2px] flex items-center gap-[8px]" [attr.data-testid]="testId() + '-' + item.key + '-bar'">
+            <span class="h-[4px] flex-[0_1_120px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+              <span class="block h-full rounded-full" [class]="bar.fillClass" [style.width.%]="bar.pct"></span>
+            </span>
+            <span class="whitespace-nowrap text-[12px] leading-[16px] text-gray-500">{{ bar.label }}</span>
+          </span>
         }
       </div>
-      @if (item.description) {
-        <span class="-mt-[4px] text-[12px] leading-[16px] text-gray-400" [attr.data-testid]="testId() + '-' + item.key + '-description'">
-          @if (item.descriptionLead) {
-            <span [class]="leadClasses[item.descriptionLeadTone ?? 'up']">{{ item.descriptionLead }}</span>
-          }
-          {{ item.description }}
-        </span>
-      }
-      @if (item.bar; as bar) {
-        <span class="-mt-[2px] flex items-center gap-[8px]" [attr.data-testid]="testId() + '-' + item.key + '-bar'">
-          <span class="h-[4px] flex-[0_1_120px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
-            <span class="block h-full rounded-full" [class]="bar.fillClass" [style.width.%]="bar.pct"></span>
-          </span>
-          <span class="whitespace-nowrap text-[12px] leading-[16px] text-gray-500">{{ bar.label }}</span>
-        </span>
-      }
-    </div>
-  }
-</div>
+    }
+  </div>
+}

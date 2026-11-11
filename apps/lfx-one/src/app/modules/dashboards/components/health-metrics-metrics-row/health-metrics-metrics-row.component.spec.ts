@@ -54,6 +54,12 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect(classes('row-b')).not.toContain('col-span-full');
   });
 
+  it('draws nothing for an empty list', async () => {
+    await render([]);
+
+    expect(el('row')).toBeNull();
+  });
+
   it('does not span an even last item', async () => {
     await render([metric('a'), metric('b'), metric('c'), metric('d')]);
 

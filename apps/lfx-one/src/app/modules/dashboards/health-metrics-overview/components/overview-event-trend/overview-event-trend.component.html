@@ -31,13 +31,7 @@
             <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
               >{{ kpi.label }}
               @if (kpi.tip; as tip) {
-                <i
-                  class="fa-light fa-circle-question cursor-help rounded-full text-[13px] text-gray-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                  role="img"
-                  tabindex="0"
-                  [attr.aria-label]="tip"
-                  [lfxUiTooltip]="tip"
-                  [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-tip'"></i>
+                <lfx-health-metrics-info-tip [text]="tip" [testId]="'overview-trend-kpi-' + kpi.key + '-tip'" />
               }
             </span>
             <div class="flex items-center gap-[12px]">

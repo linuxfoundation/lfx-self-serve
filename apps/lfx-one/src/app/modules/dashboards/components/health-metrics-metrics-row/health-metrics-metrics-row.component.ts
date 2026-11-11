@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
-import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
+
+import { HealthMetricsInfoTipComponent } from '../health-metrics-info-tip/health-metrics-info-tip.component';
 
 import type { HealthMetricsMetricItem, HealthMetricsMetricTrendTone } from '@lfx-one/shared/interfaces';
 
@@ -12,7 +13,7 @@ import type { HealthMetricsMetricItem, HealthMetricsMetricTrendTone } from '@lfx
  */
 @Component({
   selector: 'lfx-health-metrics-metrics-row',
-  imports: [UiTooltipDirective],
+  imports: [HealthMetricsInfoTipComponent],
   templateUrl: './health-metrics-metrics-row.component.html',
   host: { class: 'block' },
 })
@@ -27,7 +28,10 @@ export class HealthMetricsMetricsRowComponent {
     flat: 'text-gray-400',
     context: 'text-gray-500',
   };
-  protected readonly leadClasses: Record<'up' | 'down', string> = { up: 'text-emerald-600', down: 'text-red-600' };
+  protected readonly leadClasses: Record<NonNullable<HealthMetricsMetricItem['descriptionLeadTone']>, string> = {
+    up: 'text-emerald-600',
+    down: 'text-red-600',
+  };
   protected readonly itemClasses: Signal<string[]> = this.initItemClasses();
 
   private initItemClasses(): Signal<string[]> {
