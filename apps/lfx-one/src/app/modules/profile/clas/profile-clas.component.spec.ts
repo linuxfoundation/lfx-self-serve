@@ -162,7 +162,7 @@ describe('ProfileClasComponent', () => {
   });
 
   describe('account-linking banner (#4191)', () => {
-    const LINK_TEXT = 'Link your Email, GitHub or GitLab accounts →';
+    const LINK_TEXT = 'Link your Email or GitHub accounts →';
 
     /** The banner's Identities link, or null when no banner rendered. */
     function bannerLink(): { text: string; url: string } | null {
@@ -175,10 +175,12 @@ describe('ProfileClasComponent', () => {
       return { text: (link.nativeElement as HTMLElement).textContent?.trim() ?? '', url: TestBed.inject(Router).serializeUrl(urlTree) };
     }
 
-    it('names Email, GitHub and GitLab and still opens Identities', async () => {
+    it('limits linking to Email and GitHub while explaining already-connected GitLab matching', async () => {
       await render([agreement()]);
 
       expect(bannerLink()).toEqual({ text: LINK_TEXT, url: '/profile/identities' });
+      const banner = fixture.nativeElement.querySelector('[data-testid="my-clas-info-banner"]') as HTMLElement;
+      expect(banner.textContent?.replace(/\s+/g, ' ')).toContain('Already-connected GitLab accounts are matched too; new GitLab linking is coming soon.');
     });
 
     it('stays visible for a caller without a linked GitHub account, alongside GitLab-signed agreements', async () => {
