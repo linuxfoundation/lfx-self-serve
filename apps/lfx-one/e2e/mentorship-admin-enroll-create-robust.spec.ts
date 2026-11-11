@@ -61,16 +61,17 @@ test.describe('Admin enroll wizard — term dialog structure', () => {
     await expect(dialog.getByTestId('mentorship-enroll-term-submit')).toBeVisible();
   });
 
-  test('keeps the dialog open and sends nothing when submitted empty', async ({ page }) => {
+  test('keeps the dialog open with its required-field errors when submitted empty', async ({ page }) => {
     await openWizard(page);
-    const writes = await stubEnrollCreateWrites(page, fulfillJson);
     await completeEnrollDetailsStep(page, 'Acme Rocket Mentorship');
     await page.getByTestId('mentorship-enroll-add-term').getByRole('button').click();
 
     await page.getByTestId('mentorship-enroll-term-submit').getByRole('button').click();
 
-    await expect(page.getByTestId('mentorship-enroll-term-dialog')).toBeVisible();
-    expect(writes).toEqual([]);
+    const dialog = page.getByTestId('mentorship-enroll-term-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Term name is required.')).toBeVisible();
+    await expect(dialog.getByText('Application start date is required.')).toBeVisible();
   });
 });
 

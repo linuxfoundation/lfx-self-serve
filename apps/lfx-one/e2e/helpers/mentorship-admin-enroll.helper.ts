@@ -240,5 +240,6 @@ export async function fillEnrollWizardToSubmit(page: Page, programName: string):
   await next.click();
   await expect(page.getByTestId('mentorship-enroll-prerequisites')).toBeVisible();
   await page.getByTestId('mentorship-enroll-terms').click();
+  await expect(page.locator('#mentorship-enroll-terms')).toBeChecked();
   await expect(next).toHaveText('Submit');
 }
