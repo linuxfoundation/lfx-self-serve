@@ -213,7 +213,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(findAll('meeting-details-feature-transcript_enabled')).toHaveLength(1);
     });
 
-    it('keeps the row data and shows an error toast when the detail fails', async () => {
+    it('shows an error with a retry instead of the row data when the detail fails', async () => {
       await render(
         row(MEETING),
         'agenda',
@@ -221,7 +221,17 @@ describe('MeetingDetailsDrawerComponent', () => {
       );
 
       expect(find('meeting-details-title')?.textContent?.trim()).toBe('Synthetic sync');
-      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', message: 'Meeting details unavailable' }));
+      expect(find('meeting-details-load-error')).not.toBeNull();
+      expect(find('meeting-details-side')).toBeNull();
+      expect(find('meeting-details-content')).toBeNull();
+      expect(toastShow).not.toHaveBeenCalled();
+
+      getMeetingDetail.mockReturnValue(of(MEETING));
+      await click('meeting-details-load-retry');
+
+      expect(getMeetingDetail).toHaveBeenCalledTimes(2);
+      expect(find('meeting-details-load-error')).toBeNull();
+      expect(find('meeting-details-side')).not.toBeNull();
     });
 
     it('closes and reloads the list when the meeting is gone or no longer visible', async () => {

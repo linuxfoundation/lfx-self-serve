@@ -5,7 +5,7 @@
 <!-- 16px sides on phones. -->
 <div class="flex w-full flex-col gap-[20px] px-[16px] pb-[48px] pt-[24px] text-gray-900 [--md-head:68px] sm:px-[32px]">
   <div class="sticky top-0 z-[5] -mx-[16px] -mt-[24px] bg-white px-[16px] pb-[12px] pt-[24px] sm:-mx-[32px] sm:px-[32px]">
-    <lfx-meeting-details-header [compact]="compact()" [ownActions]="ownActions" />
+    <lfx-meeting-details-header [compact]="compact()" [ownActions]="ownActions() ?? null" />
     @if (showFades()) {
       <span
         class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
@@ -137,62 +137,82 @@
       }
     </div>
 
-    <div
-      class="col-start-1 row-start-2 flex min-w-0 flex-col gap-[12px] @[720px]:sticky @[720px]:top-[calc(var(--md-head)+20px)] @[720px]:z-[3] @[720px]:col-start-2 @[720px]:row-span-2 @[720px]:row-start-1 @[720px]:self-start"
-      data-testid="meeting-details-side">
-      <lfx-meeting-details-occurrence-nav />
-      <div class="flex flex-col gap-[16px] rounded-ui-md bg-white p-[20px] shadow-small ring-1 ring-gray-200" data-testid="meeting-details-schedule-card">
-        <!-- Schedule slot: date, RSVP and join. -->
-        <lfx-meeting-details-schedule />
-        <!-- Tools slot: host controls, attendance and artifacts. -->
-        <lfx-meeting-details-tools data-testid="meeting-details-tools" />
-      </div>
-      <lfx-meeting-details-own-actions #ownActions />
-    </div>
-
-    <div class="col-start-1 row-start-3 flex min-w-0 flex-col gap-[24px] @[720px]:row-start-2" data-testid="meeting-details-content">
-      @if (context.canViewGuests()) {
-        <div class="sticky top-[var(--md-head)] z-[6] bg-white">
-          <lfx-ui-tabs
-            ariaLabel="Meeting details"
-            idPrefix="meeting-details"
-            [tabs]="tabs()"
-            [value]="activeTab()"
-            (valueChange)="selectTab($event)"
-            data-testid="meeting-details-tabs" />
-          @if (showFades()) {
-            <span
-              class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
-              aria-hidden="true"></span>
-          }
-        </div>
-      }
-      <!-- Agenda slot: agenda and materials. -->
+    @if (context.loadError()) {
+      <lfx-ui-empty-state
+        class="col-start-1 row-start-2 @[720px]:col-span-2"
+        icon="fa-light fa-triangle-exclamation"
+        heading="Couldn't load this meeting"
+        description="Something went wrong. Try again."
+        data-testid="meeting-details-load-error">
+        <lfx-ui-button
+          empty-state-action
+          variant="tertiary-accent"
+          size="small"
+          icon="fa-light fa-arrow-rotate-right"
+          [loading]="context.retrying()"
+          (click)="context.retryLoad()"
+          data-testid="meeting-details-load-retry">
+          Try Again
+        </lfx-ui-button>
+      </lfx-ui-empty-state>
+    } @else {
       <div
-        class="flex-col gap-[24px]"
-        [class.flex]="activeTab() === 'agenda'"
-        [class.hidden]="activeTab() !== 'agenda'"
-        [attr.inert]="activeTab() === 'agenda' ? null : ''"
-        [attr.role]="context.canViewGuests() ? 'tabpanel' : null"
-        [attr.id]="context.canViewGuests() ? 'meeting-details-panel-agenda' : null"
-        [attr.aria-labelledby]="context.canViewGuests() ? 'meeting-details-tab-agenda' : null"
-        data-testid="meeting-details-agenda">
-        <lfx-meeting-details-agenda />
-      </div>
-      @if (context.canViewGuests()) {
-        <!-- Guests slot: guests, or participants once the date has ended. Kept mounted while hidden, so it loads the hosts and count on open. -->
-        <div
-          class="flex-col gap-[4px]"
-          [class.flex]="activeTab() === 'guests'"
-          [class.hidden]="activeTab() !== 'guests'"
-          [attr.inert]="activeTab() === 'guests' ? null : ''"
-          role="tabpanel"
-          id="meeting-details-panel-guests"
-          aria-labelledby="meeting-details-tab-guests"
-          data-testid="meeting-details-guests">
-          <lfx-meeting-details-guests />
+        class="col-start-1 row-start-2 flex min-w-0 flex-col gap-[12px] @[720px]:sticky @[720px]:top-[calc(var(--md-head)+20px)] @[720px]:z-[3] @[720px]:col-start-2 @[720px]:row-span-2 @[720px]:row-start-1 @[720px]:self-start"
+        data-testid="meeting-details-side">
+        <lfx-meeting-details-occurrence-nav />
+        <div class="flex flex-col gap-[16px] rounded-ui-md bg-white p-[20px] shadow-small ring-1 ring-gray-200" data-testid="meeting-details-schedule-card">
+          <!-- Schedule slot: date, RSVP and join. -->
+          <lfx-meeting-details-schedule />
+          <!-- Tools slot: host controls, attendance and artifacts. -->
+          <lfx-meeting-details-tools data-testid="meeting-details-tools" />
         </div>
-      }
-    </div>
+        <lfx-meeting-details-own-actions />
+      </div>
+
+      <div class="col-start-1 row-start-3 flex min-w-0 flex-col gap-[24px] @[720px]:row-start-2" data-testid="meeting-details-content">
+        @if (context.canViewGuests()) {
+          <div class="sticky top-[var(--md-head)] z-[6] bg-white">
+            <lfx-ui-tabs
+              ariaLabel="Meeting details"
+              idPrefix="meeting-details"
+              [tabs]="tabs()"
+              [value]="activeTab()"
+              (valueChange)="selectTab($event)"
+              data-testid="meeting-details-tabs" />
+            @if (showFades()) {
+              <span
+                class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
+                aria-hidden="true"></span>
+            }
+          </div>
+        }
+        <!-- Agenda slot: agenda and materials. -->
+        <div
+          class="flex-col gap-[24px]"
+          [class.flex]="activeTab() === 'agenda'"
+          [class.hidden]="activeTab() !== 'agenda'"
+          [attr.inert]="activeTab() === 'agenda' ? null : ''"
+          [attr.role]="context.canViewGuests() ? 'tabpanel' : null"
+          [attr.id]="context.canViewGuests() ? 'meeting-details-panel-agenda' : null"
+          [attr.aria-labelledby]="context.canViewGuests() ? 'meeting-details-tab-agenda' : null"
+          data-testid="meeting-details-agenda">
+          <lfx-meeting-details-agenda />
+        </div>
+        @if (context.canViewGuests()) {
+          <!-- Guests slot: guests, or participants once the date has ended. Kept mounted while hidden, so it loads the hosts and count on open. -->
+          <div
+            class="flex-col gap-[4px]"
+            [class.flex]="activeTab() === 'guests'"
+            [class.hidden]="activeTab() !== 'guests'"
+            [attr.inert]="activeTab() === 'guests' ? null : ''"
+            role="tabpanel"
+            id="meeting-details-panel-guests"
+            aria-labelledby="meeting-details-tab-guests"
+            data-testid="meeting-details-guests">
+            <lfx-meeting-details-guests />
+          </div>
+        }
+      </div>
+    }
   </div>
 </div>

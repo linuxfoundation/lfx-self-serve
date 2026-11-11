@@ -82,15 +82,44 @@ describe('MeetingDetailsContext', () => {
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting unavailable' }));
   });
 
-  it('keeps the row data open with a toast on any other error', () => {
+  it('flags a load error on any other error, and clears it once a retry loads', () => {
     const context = create(
       buildRow(MEETING),
       throwError(() => new HttpErrorResponse({ status: 500 }))
     );
 
-    expect(context.meeting()).toBe(MEETING);
+    expect(context.loadError()).toBe(true);
     expect(close).not.toHaveBeenCalled();
-    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting details unavailable' }));
+    expect(toast).not.toHaveBeenCalled();
+
+    detail.mockReturnValue(of({ ...MEETING, title: 'Renamed' }));
+    context.retryLoad();
+
+    expect(context.loadError()).toBe(false);
+    expect(context.retrying()).toBe(false);
+    expect(context.meeting().title).toBe('Renamed');
+  });
+
+  it('keeps retrying while a newer retry replaces a pending one', () => {
+    const context = create(
+      buildRow(MEETING),
+      throwError(() => new HttpErrorResponse({ status: 500 }))
+    );
+    const first = new Subject<Meeting>();
+    const second = new Subject<Meeting>();
+    context.meeting();
+
+    detail.mockReturnValue(first);
+    context.retryLoad();
+    detail.mockReturnValue(second);
+    context.retryLoad();
+
+    expect(context.retrying()).toBe(true);
+
+    second.next({ ...MEETING, title: 'Renamed' });
+
+    expect(context.retrying()).toBe(false);
+    expect(context.loadError()).toBe(false);
   });
 
   it('runs from a source alone, outside a dialog and the meetings home page', () => {
