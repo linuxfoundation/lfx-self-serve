@@ -9,17 +9,22 @@ import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** Upstream docs the stubbed query service answers with, keyed by resource type (set per test). */
-const { upstreamContacts, proxyRequest } = vi.hoisted(() => {
+const { control, upstreamContacts, proxyRequest } = vi.hoisted(() => {
   const upstreamContacts: Record<string, unknown>[] = [];
   const MEMBERSHIP = { uid: 'membership-1', status: 'active', project_slug: 'foundation-one', project_name: 'Foundation One' };
   const ENDED_MEMBERSHIP = { uid: 'membership-ended', status: 'Expired', project_slug: 'foundation-two', project_name: 'Foundation Two' };
+  // A second live membership, so a role held on two foundations actually reaches the aggregation.
+  const SECOND_MEMBERSHIP = { uid: 'membership-2', status: 'active', project_slug: 'foundation-three', project_name: 'Foundation Three' };
+  // `gate` holds the upstream read open; `storable` records what the cache wrapper was told it may persist.
+  const control: { gate: Promise<void> | null; storable: boolean[] } = { gate: null, storable: [] };
   return {
+    control,
     upstreamContacts,
     // Answer by the `type` param rather than call order, so the fixture does not depend on the
     // service's Promise.all ordering.
     proxyRequest: vi.fn((_req: unknown, _service: string, _path: string, _method: string, params: { type?: string }) =>
       Promise.resolve({
-        resources: (params.type === 'key_contact' ? upstreamContacts : [MEMBERSHIP, ENDED_MEMBERSHIP]).map((data) => ({ data })),
+        resources: (params.type === 'key_contact' ? upstreamContacts : [MEMBERSHIP, SECOND_MEMBERSHIP, ENDED_MEMBERSHIP]).map((data) => ({ data })),
         page_token: null,
       })
     ),
@@ -29,6 +34,7 @@ const { upstreamContacts, proxyRequest } = vi.hoisted(() => {
 // Drive the real page callback once so the `type` above is what decides the answer.
 vi.mock('../helpers/query-service.helper', () => ({
   fetchAllQueryResources: async (_req: unknown, fetchPage: (token?: string) => Promise<{ resources: { data: unknown }[] }>) => {
+    await control.gate;
     const response = await fetchPage(undefined);
     return response.resources.map((resource) => resource.data);
   },
@@ -40,10 +46,24 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 // Exercise the real read path, not the cache: every call recomputes from the stubbed query service.
+// It records the `storable` fence the service hands it, which is what a write's eviction acts through.
 vi.mock('./valkey.service', () => ({
-  withPerUserCache: (_ns: string, _user: string, _key: string, _ttl: number, compute: () => unknown) => compute(),
+  withPerUserCache: async (
+    _ns: string,
+    _user: string,
+    _key: string,
+    _ttl: number,
+    compute: () => unknown,
+    _accept: unknown,
+    storable?: (value: unknown) => boolean
+  ) => {
+    const value = await compute();
+    control.storable.push(storable ? storable(value) : true);
+    return value;
+  },
 }));
 
+import { evictPerUserOrgFetch, resetSingleFlightForTests } from '../utils/single-flight';
 import { OrgPeopleKeyContactsService } from './org-people-key-contacts.service';
 
 const ORG_UID = '001410000000000AAA';
@@ -173,11 +193,80 @@ describe('OrgPeopleKeyContactsService getActiveEmployees', () => {
     expect(employees).toEqual([expect.objectContaining({ email: 'first.person@vendor-corp.example', fullName: 'First Person', lfUsername: 'fperson' })]);
   });
 
+  // #4401: the All Employees Key Contact column renders `roles` from this producer. The directory folds
+  // them in with addKeyContactRoles, which no-ops on a missing array, so dropping the field here would
+  // empty every Key Contact cell without failing a directory test.
+  it('carries the roles the person holds, deduped across memberships and sorted', async () => {
+    upstream([
+      contact({ username: 'fperson' }),
+      contact({ uid: 'contact-2', username: 'fperson', role: 'Legal Contact' }),
+      // Same role on a second LIVE foundation membership — one pill, not two.
+      contact({ uid: 'contact-3', membership_uid: 'membership-2', username: 'fperson', role: 'Billing Contact' }),
+      // Active role, expired membership: not a role they hold today, so not in the column either.
+      contact({ uid: 'contact-4', membership_uid: 'membership-ended', username: 'fperson', role: 'PR Contact' }),
+    ]);
+
+    const [employee] = await service.getActiveEmployees(req, ORG_UID);
+
+    expect(employee.roles).toEqual(['Billing Contact', 'Legal Contact']);
+  });
+
   it('leaves the username unset when the assignments at one address disagree on it', async () => {
     upstream([contact({ username: 'fperson' }), contact({ uid: 'contact-2', username: 'someone-else', role: 'Legal Contact' })]);
 
     const [employee] = await service.getActiveEmployees(req, ORG_UID);
 
     expect(employee.lfUsername).toBeNull();
+  });
+});
+
+describe('OrgPeopleKeyContactsService getKeyContacts cache fence', () => {
+  const service = new OrgPeopleKeyContactsService();
+  const req = {} as Request;
+
+  beforeEach(() => {
+    upstream([contact({})]);
+    control.gate = null;
+    control.storable.length = 0;
+    resetSingleFlightForTests();
+  });
+
+  it('lets an undisturbed read persist', async () => {
+    await service.getKeyContacts(req, ORG_UID);
+
+    expect(control.storable).toEqual([true]);
+  });
+
+  // The All Employees directory reads through this entry and a key-contact write evicts it. The eviction
+  // only works on a flight that is registered, so a read already in flight when the write lands must be
+  // served to its own caller but not stored over the delete.
+  it('does not persist a read that a write evicted while it was in flight', async () => {
+    let release!: () => void;
+    control.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const pending = service.getKeyContacts(req, ORG_UID);
+    evictPerUserOrgFetch('org-people-kc:v1', 'caller', ORG_UID);
+    release();
+
+    expect((await pending).assignments).toHaveLength(1);
+    expect(control.storable).toEqual([false]);
+  });
+
+  it('joins a concurrent read instead of starting a second upstream fetch', async () => {
+    proxyRequest.mockClear();
+    let release!: () => void;
+    control.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const first = service.getKeyContacts(req, ORG_UID);
+    const second = service.getKeyContacts(req, ORG_UID);
+    release();
+    await Promise.all([first, second]);
+
+    // One read is two upstream calls (contacts and memberships), not four.
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 });
