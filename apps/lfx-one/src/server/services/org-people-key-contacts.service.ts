@@ -18,6 +18,7 @@ import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { withPerUserCache } from './valkey.service';
 
@@ -89,13 +90,21 @@ export class OrgPeopleKeyContactsService {
   /** Bundled GET — joins active key_contact rows to their project_membership and computes the filter-independent stat strip. Caller passes b2b_org UUID directly because the upstream b2b_org index has no indexed sfid field. Served through the per-caller shared cache; only successful reads are cached. */
   public async getKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {
     const username = getEffectiveUsername(req) ?? '';
-    return withPerUserCache(
-      VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE,
-      username,
-      orgUid,
-      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.computeKeyContacts(req, orgUid),
-      isKeyContactsResponse
+    // Coalesced and fenced so a key-contact write can supersede a read already in flight. The All Employees
+    // directory reads through this entry, and OrgLensKeyContactsService evicts it after a write; without a
+    // registered flight that eviction has nothing to unregister, and a read that started before the write
+    // would still persist its pre-write assignments over the delete. `isCurrent` turns false once evicted,
+    // so such a fill is served to its own callers but never stored.
+    return coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE, username, orgUid, (isCurrent) =>
+      withPerUserCache(
+        VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE,
+        username,
+        orgUid,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        () => this.computeKeyContacts(req, orgUid),
+        isKeyContactsResponse,
+        isCurrent
+      )
     );
   }
 
@@ -158,6 +167,11 @@ export class OrgPeopleKeyContactsService {
         initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || '?',
         avatarUrl: avatarUrl ?? null,
         lfUsername: agreedUsername(group.map((assignment) => assignment.username)),
+        // The All Employees Key Contact column (#4401) renders these. `assignments` is already filtered to
+        // active contacts on active or purchased memberships, so every role here is one the person holds
+        // right now, and the tab shows the same set. One assignment per (membership, role), so the same
+        // role on two foundation memberships arrives twice — dedupe to the person-level set the column renders.
+        roles: [...new Set(group.map((assignment) => assignment.role.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
       };
     });
   }
