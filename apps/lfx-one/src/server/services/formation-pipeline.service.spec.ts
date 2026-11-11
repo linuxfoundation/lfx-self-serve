@@ -5,6 +5,7 @@ import '@angular/compiler';
 
 import type { FormationPipelineQuery, UpstreamPipelineProject, UpstreamPipelineSettings } from '@lfx-one/shared/interfaces';
 import { FORMATION_PIPELINE_STAGES } from '@lfx-one/shared/constants';
+import { ProjectFunding } from '@lfx-one/shared/enums';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,6 +37,11 @@ const { logger } = await import('./logger.service');
 const { resetRootProjectUidCacheForTests } = await import('../helpers/root-project.helper');
 
 const req = { path: '/api/formations/pipeline' } as Request;
+/** What the `type=project` index document carries for a membership-funded foundation; `is_foundation` is not stored, `computeIsFoundation` derives it. */
+const FOUNDATION_FIELDS = { stage: 'Active', legal_entity_type: 'Non-profit', funding: ProjectFunding.Funded, funding_model: ['Membership'] };
+/** An ordinary Active project: not funded by membership, so not a foundation. */
+const PLAIN_FIELDS = { stage: 'Active', legal_entity_type: 'Non-profit', funding: ProjectFunding.SupportedByParent, funding_model: [] };
+
 const allStages: FormationPipelineQuery = { stages: [...FORMATION_PIPELINE_STAGES] };
 
 function project(overrides: Partial<UpstreamPipelineProject>): UpstreamPipelineProject {
@@ -50,7 +56,7 @@ interface Fixtures {
   projects?: UpstreamPipelineProject[];
   settings?: UpstreamPipelineSettings[];
   checklistUids?: string[];
-  parents?: Record<string, { uid: string; name: string; parent_uid?: string; is_foundation?: boolean }>;
+  parents?: Record<string, Partial<UpstreamPipelineProject> & { uid: string; name: string }>;
 }
 
 function mockUpstream({ projects = [], settings = [], checklistUids = [], parents = {} }: Fixtures): void {
@@ -192,7 +198,7 @@ describe('FormationPipelineService.getPipeline', () => {
     natsRequest.mockResolvedValue({ data: 'root-uid' });
     mockUpstream({
       projects: [project({ uid: 'a', name: 'A', parent_uid: 'f1' }), project({ uid: 'b', name: 'B', parent_uid: 'root-uid' })],
-      parents: { f1: { uid: 'f1', name: 'Foundation One', is_foundation: true } },
+      parents: { f1: { uid: 'f1', name: 'Foundation One', ...FOUNDATION_FIELDS } },
     });
 
     const { rows } = await service.getPipeline(req, allStages);
@@ -209,9 +215,9 @@ describe('FormationPipelineService.getPipeline', () => {
         project({ uid: 'out', name: 'Outside', parent_uid: 'other' }),
       ],
       parents: {
-        mid: { uid: 'mid', name: 'Mid', parent_uid: 'F' },
-        F: { uid: 'F', name: 'Foundation', is_foundation: true },
-        other: { uid: 'other', name: 'Other' },
+        mid: { uid: 'mid', name: 'Mid', parent_uid: 'F', ...PLAIN_FIELDS },
+        F: { uid: 'F', name: 'Foundation', ...FOUNDATION_FIELDS },
+        other: { uid: 'other', name: 'Other', ...PLAIN_FIELDS },
       },
     });
 
@@ -234,7 +240,7 @@ describe('FormationPipelineService.getPipeline', () => {
 
   it('reads each level of parents in batches, not one read per row', async () => {
     const many = Array.from({ length: 150 }, (_, i) => project({ uid: `c${i}`, name: `N${String(i).padStart(3, '0')}`, parent_uid: `p${i}` }));
-    const parents = Object.fromEntries(many.map((_, i) => [`p${i}`, { uid: `p${i}`, name: `P${i}`, is_foundation: true }]));
+    const parents = Object.fromEntries(many.map((_, i) => [`p${i}`, { uid: `p${i}`, name: `P${i}`, ...FOUNDATION_FIELDS }]));
     mockUpstream({ projects: many, parents });
 
     await service.getPipeline(req, allStages);
@@ -288,8 +294,8 @@ describe('FormationPipelineService.getPipeline', () => {
     mockUpstream({
       projects: [project({ uid: 'c', name: 'Nested', parent_uid: 'm' })],
       parents: {
-        m: { uid: 'm', name: 'Active Mid', parent_uid: 'F' },
-        F: { uid: 'F', name: 'Top Foundation', is_foundation: true },
+        m: { uid: 'm', name: 'Active Mid', parent_uid: 'F', ...PLAIN_FIELDS },
+        F: { uid: 'F', name: 'Top Foundation', ...FOUNDATION_FIELDS },
       },
     });
 
@@ -304,8 +310,8 @@ describe('FormationPipelineService.getPipeline', () => {
     mockUpstream({
       projects: [project({ uid: 'a', name: 'A', parent_uid: 'sub' })],
       parents: {
-        sub: { uid: 'sub', name: 'Sub Foundation', parent_uid: 'F', is_foundation: true },
-        F: { uid: 'F', name: 'Top Foundation', is_foundation: true },
+        sub: { uid: 'sub', name: 'Sub Foundation', parent_uid: 'F', ...FOUNDATION_FIELDS },
+        F: { uid: 'F', name: 'Top Foundation', ...FOUNDATION_FIELDS },
       },
     });
 
@@ -318,8 +324,8 @@ describe('FormationPipelineService.getPipeline', () => {
     mockUpstream({
       projects: [project({ uid: 'c', name: 'Nested', parent_uid: 'm' })],
       parents: {
-        m: { uid: 'm', name: 'Active Mid', parent_uid: 'F' },
-        F: { uid: 'F', name: 'Top Foundation', is_foundation: true },
+        m: { uid: 'm', name: 'Active Mid', parent_uid: 'F', ...PLAIN_FIELDS },
+        F: { uid: 'F', name: 'Top Foundation', ...FOUNDATION_FIELDS },
       },
     });
 
@@ -332,7 +338,7 @@ describe('FormationPipelineService.getPipeline', () => {
   it('gives no foundation for a project whose chain holds none', async () => {
     mockUpstream({
       projects: [project({ uid: 'c', parent_uid: 'm' })],
-      parents: { m: { uid: 'm', name: 'Plain Parent' } },
+      parents: { m: { uid: 'm', name: 'Plain Parent', ...PLAIN_FIELDS } },
     });
 
     const { rows } = await service.getPipeline(req, allStages);
@@ -349,5 +355,44 @@ describe('FormationPipelineService.getPipeline', () => {
     expect(formationRead.tags).toEqual(['project_uid:d']);
     expect(formationRead).not.toHaveProperty('tags_all');
     expect(rows[0].has_checklist).toBe(true);
+  });
+
+  describe('foundation classification (computeIsFoundation, not a stored flag)', () => {
+    const under = (fields: Record<string, unknown>) =>
+      mockUpstream({ projects: [project({ uid: 'c', parent_uid: 'f' })], parents: { f: { uid: 'f', name: 'Candidate', ...fields } } });
+
+    it('counts a pre-launch Formation - Engaged foundation funded by membership', async () => {
+      under({ ...FOUNDATION_FIELDS, stage: 'Formation - Engaged' });
+
+      expect((await service.getPipeline(req, allStages)).rows[0].parent).toEqual({ uid: 'f', name: 'Candidate' });
+    });
+
+    it.each([
+      ['an Internal Allocation', { legal_entity_type: 'Internal Allocation' }],
+      ['an unfunded project', { funding: ProjectFunding.Unfunded }],
+      ['a funded project without a Membership model', { funding_model: ['Sponsorship'] }],
+      ['an Archived project', { stage: 'Archived' }],
+      ['a document with no funding fields at all', { funding: undefined, funding_model: undefined, legal_entity_type: undefined }],
+    ])('does not count %s', async (_label, override) => {
+      under({ ...FOUNDATION_FIELDS, ...override });
+
+      expect((await service.getPipeline(req, allStages)).rows[0].parent).toBeNull();
+    });
+
+    it('ignores a stray is_foundation field on the document: only the derived classification counts', async () => {
+      under({ ...PLAIN_FIELDS, is_foundation: true });
+
+      expect((await service.getPipeline(req, allStages)).rows[0].parent).toBeNull();
+    });
+
+    it('asks query-service for a whole project document (no field projection), so the classifying fields come back', async () => {
+      under(FOUNDATION_FIELDS);
+
+      await service.getPipeline(req, allStages);
+
+      const parentRead = proxyRequest.mock.calls.find((call) => call[4]?.type === 'project' && call[4].filters_or[0].startsWith('uid:'))?.[4];
+      expect(parentRead).not.toHaveProperty('fields');
+      expect(parentRead).not.toHaveProperty('select');
+    });
   });
 });

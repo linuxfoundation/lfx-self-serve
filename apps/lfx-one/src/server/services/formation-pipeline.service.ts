@@ -21,7 +21,7 @@ import type {
   UpstreamPipelineSettings,
   UserInfo,
 } from '@lfx-one/shared/interfaces';
-import { chunkArray, comparePipelineText, countPipelineRows, getPipelineStageKey, matchesPipelineSearch } from '@lfx-one/shared/utils';
+import { chunkArray, comparePipelineText, computeIsFoundation, countPipelineRows, getPipelineStageKey, matchesPipelineSearch } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError } from '../errors';
@@ -118,7 +118,7 @@ export class FormationPipelineService {
 
   /**
    * The ancestors the rows need, one level of the hierarchy per round, each round batched (`filters_or=uid:…`, up to 100
-   * uids per read) rather than read per row. A row's foundation is its nearest `is_foundation` ancestor, which is often
+   * uids per read) rather than read per row. A row's foundation is its nearest ancestor that `computeIsFoundation` classifies as a foundation, which is often
    * not its direct parent (a pipeline project under an Active project under a foundation), so the walk climbs until
    * every row has met one. With `foundationUid` it climbs until each row reaches that foundation (or the chain ends), so
    * the subtree filter can see through intermediate projects. The `project` document carries only its direct parent, so
@@ -185,7 +185,7 @@ export class FormationPipelineService {
           }
           break;
         }
-        if (foundationUid ? uid === foundationUid : node.is_foundation) {
+        if (foundationUid ? uid === foundationUid : this.isFoundation(node)) {
           break;
         }
         uid = collapseRootParentUid(node.parent_uid || null, rootUid);
@@ -194,7 +194,22 @@ export class FormationPipelineService {
     return needed;
   }
 
-  /** The nearest `is_foundation` ancestor of a project (never the project itself), or `null` when its chain holds none. */
+  /**
+   * Whether a project document is a foundation. `is_foundation` is not stored on the index document: the BFF derives it
+   * everywhere with `computeIsFoundation` from the stage, legal entity type, funding and funding model, all of which the
+   * `type=project` read returns (indexer-contract: `stage`, `legal_entity_type`, `funding`, `funding_model`).
+   */
+  private isFoundation(project: UpstreamPipelineProject): boolean {
+    return computeIsFoundation({
+      name: project.name,
+      stage: project.stage ?? '',
+      legal_entity_type: project.legal_entity_type ?? '',
+      funding: project.funding,
+      funding_model: project.funding_model ?? [],
+    });
+  }
+
+  /** The nearest foundation ancestor of a project (never the project itself), or `null` when its chain holds none. */
   private nearestFoundation(
     project: UpstreamPipelineProject,
     known: ReadonlyMap<string, UpstreamPipelineProject>,
@@ -208,7 +223,7 @@ export class FormationPipelineService {
       if (!node) {
         return null;
       }
-      if (node.is_foundation) {
+      if (this.isFoundation(node)) {
         return { uid, name: node.name };
       }
       uid = collapseRootParentUid(node.parent_uid || null, rootUid);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { TagSeverity } from './components.interface';
+import type { ProjectFunding } from '../enums/project-funding.enum';
 import type { ProjectApplicationTab } from './project-application.interface';
 import type { UserInfo } from './project.interface';
 
@@ -17,7 +18,7 @@ export type FormationPipelineCounts = Record<FormationPipelineStage, number> & {
 /** A person as the pipeline serves them — only what query-service returned for this caller. */
 export type FormationPipelinePerson = Pick<UserInfo, 'name' | 'email' | 'username'>;
 
-/** The foundation a pipeline row belongs to: its nearest `is_foundation` ancestor, which need not be its direct parent. */
+/** The foundation a pipeline row belongs to: its nearest ancestor that `computeIsFoundation` classifies as one, which need not be its direct parent. */
 export interface FormationPipelineParent {
   uid: string;
   name: string;
@@ -86,8 +87,9 @@ export interface UpstreamPipelineProject {
   name: string;
   stage?: string;
   parent_uid?: string;
-  /** Set on a foundation; a row's foundation is its nearest ancestor with this flag. */
-  is_foundation?: boolean;
+  /** With `stage`, `legal_entity_type` and `funding_model`, what `computeIsFoundation` classifies an ancestor by; `is_foundation` is not stored on the index document. */
+  funding?: ProjectFunding;
+  funding_model?: string[];
   formation_date?: string;
   legal_entity_name?: string;
   legal_entity_type?: string;
