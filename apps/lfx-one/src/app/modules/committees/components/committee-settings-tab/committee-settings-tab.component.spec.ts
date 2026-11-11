@@ -2243,7 +2243,11 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
 
   it('resets a config-only override miss count the moment it reappears in a fetch, instead of carrying it toward the prune threshold (dealako #4899 review)', async () => {
     const mlService = { getMailingListsByCommittee: vi.fn(), getMailingListsByProject: vi.fn(() => of([])), updateMailingList: vi.fn(() => of({})) };
-    mlService.getMailingListsByCommittee.mockReturnValueOnce(of([makeMl({ uid: 'ml-1', sync_mode: undefined })]));
+    // Persistent, not Once: onSyncSettingsUpdated below fires its own internal refreshMl$ refetch
+    // (see its doc comment), so this default must also cover that second call, not just the initial
+    // committee-driven fetch — otherwise that second call falls through to vi.fn()'s undefined
+    // default and the component's switchMap throws on `.pipe()` of undefined.
+    mlService.getMailingListsByCommittee.mockReturnValue(of([makeMl({ uid: 'ml-1', sync_mode: undefined })]));
     await TestBed.configureTestingModule({
       imports: [CommitteeSettingsTabComponent],
       providers: [
@@ -2312,10 +2316,15 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
       has_slack_webhook: false,
     } as Committee;
     const mlService = {
-      getMailingListsByCommittee: vi.fn(() => of([])),
+      getMailingListsByCommittee: vi.fn(),
       getMailingListsByProject: vi.fn(() => of([])),
       updateMailingList: vi.fn(() => of({})),
     };
+    // Present by default so the initial committee-driven fetch, and onSyncSettingsUpdated's own
+    // internal refreshMl$ refetch (see its doc comment), don't themselves register as a miss — only
+    // the explicit mockReturnValue(of([])) right before each retryMlRefresh() below is the deliberate
+    // miss under test.
+    mlService.getMailingListsByCommittee.mockReturnValue(of([makeMl({ uid: 'ml-1', sync_mode: undefined })]));
     await TestBed.configureTestingModule({
       imports: [CommitteeSettingsTabComponent],
       providers: [
@@ -2346,12 +2355,16 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     // Override + one miss against committee-1, leaving a miss count of 1 for uid 'ml-1'.
     component.onSyncSettingsUpdated(makeMl({ uid: 'ml-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
     await fixture.whenStable();
+    mlService.getMailingListsByCommittee.mockReturnValue(of([]));
     component.retryMlRefresh();
     await fixture.whenStable();
     expect((component as any).associatedMlOverrides().size).toBe(1);
 
     // Switch to a different committee — the constructor's committee-switch effect must clear
     // overrideMissCounts (along with the other per-committee maps), not just associatedMlOverrides.
+    // Restore presence first so the committee-switch's own refetch of the new committee doesn't
+    // itself count as a miss against the fresh override created below.
+    mlService.getMailingListsByCommittee.mockReturnValue(of([makeMl({ uid: 'ml-1', sync_mode: undefined })]));
     fixture.componentRef.setInput('committee', COMMITTEE_2);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -2362,6 +2375,7 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
     // immediately instead of entering the one-miss grace window.
     component.onSyncSettingsUpdated(makeMl({ uid: 'ml-1', sync_mode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST }));
     await fixture.whenStable();
+    mlService.getMailingListsByCommittee.mockReturnValue(of([]));
     component.retryMlRefresh();
     await fixture.whenStable();
     expect((component as any).associatedMlOverrides().size).toBe(1);
@@ -2369,7 +2383,11 @@ describe('CommitteeSettingsTabComponent — Auto Sync drawer (#4899 review)', ()
 
   it('does not count a failed refresh as a miss toward pruning a config-only override (dealako #4899 review)', async () => {
     const mlService = { getMailingListsByCommittee: vi.fn(), getMailingListsByProject: vi.fn(() => of([])), updateMailingList: vi.fn(() => of({})) };
-    mlService.getMailingListsByCommittee.mockReturnValueOnce(of([makeMl({ uid: 'ml-1', sync_mode: undefined })]));
+    // Persistent, not Once: onSyncSettingsUpdated below fires its own internal refreshMl$ refetch
+    // (see its doc comment), so this default must also cover that second call, not just the initial
+    // committee-driven fetch — otherwise that second call falls through to vi.fn()'s undefined
+    // default and the component's switchMap throws on `.pipe()` of undefined.
+    mlService.getMailingListsByCommittee.mockReturnValue(of([makeMl({ uid: 'ml-1', sync_mode: undefined })]));
     await TestBed.configureTestingModule({
       imports: [CommitteeSettingsTabComponent],
       providers: [
