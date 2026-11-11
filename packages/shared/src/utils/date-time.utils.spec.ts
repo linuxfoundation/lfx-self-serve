@@ -483,14 +483,10 @@ describe('isSameMinute', () => {
   // 1:30 AM America/New_York (once EDT, once EST, an hour apart in UTC) -- a real one-hour Start
   // time edit, not sub-minute noise, and must not be treated as unchanged.
   describe('across a DST fall-back transition', () => {
-    const originalTz = process.env.TZ;
-
-    afterEach(() => {
-      process.env.TZ = originalTz;
-    });
+    afterEach(() => vi.unstubAllEnvs());
 
     it('does not collapse two UTC instants an hour apart that share a local wall-clock reading', () => {
-      process.env.TZ = 'America/New_York';
+      vi.stubEnv('TZ', 'America/New_York');
       expect(isSameMinute('2027-11-07T05:30:00.000Z', '2027-11-07T06:30:00.000Z')).toBe(false);
     });
   });
