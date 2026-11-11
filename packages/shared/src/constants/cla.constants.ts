@@ -48,6 +48,13 @@ export const CLA_GROUP_ORG_SOURCE_ICONS = {
 export const MY_CLAS_PATH = '/profile/clas';
 
 /**
+ * Maximum number of values `GET /v4/my-clas` accepts in each repeatable `gitlabId` and `gitlabUsername` query
+ * param (`maxItems: 100` in easycla cla-backend-go/swagger/cla.v2.yaml). Exceeding it fails
+ * validation and 400s the whole request, so each linked-GitLab key list is capped (#4191).
+ */
+export const MY_CLAS_MAX_IDENTITY_KEYS = 100;
+
+/**
  * The Contributor Console's Gerrit signing route, as its own router declares it
  * (`cla/gerrit/project/:projectId/:contractType`). The contract-type segment is chosen on
  * the Gerrit path from the group's enablement flags (#2066).

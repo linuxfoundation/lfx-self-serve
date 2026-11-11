@@ -64,6 +64,7 @@ Five cards at the top count **Employees Active in Open Source**, **In Governance
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Employee**            | The person's name and job title. **Former** marks someone who no longer works at the company                                                     |
 | **Board & Committee**   | How many board and committee seats they hold, such as **2 seats**                                                                                |
+| **Key Contact**         | The key contact roles they hold on the company's memberships, such as **Billing Contact** or **2 roles**                                         |
 | **Code contributions**  | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts             |
 | **Events**              | How many events they attended                                                                                                                    |
 | **Training**            | How many courses they took                                                                                                                       |
@@ -74,6 +75,20 @@ A dash (**—**) means none. Select a row with a chevron to expand it. Rows with
 A question-mark icon next to a name means the person has code credited to the company but no employment record there. They are listed only when **Employment** is **All employees**, not as a current or former employee.
 
 The tab shows 30 people at first. Select **Show All** at the bottom to see the rest.
+
+### What does the Key Contact column show?
+
+The **Key Contact** column shows the key contact roles a person holds on the company's foundation memberships — the people named as the ones to reach for a particular purpose, such as billing or legal. The **Key Contacts** tab lists the same roles by foundation; this column puts them beside everything else the person does.
+
+- **One role** — the role's name, coloured as it is on the **Key Contacts** tab. The roles are Representative/Voting Contact, Authorized Signatory, Billing Contact, Technical Contact, Marketing Contact, PO Contact, PR Contact, Legal Contact and Event Sponsorship Contact.
+- **More than one role** — one chip counting them, such as **2 roles**, so a person with several roles does not stretch the row. Point at the chip, or move to it with the keyboard and leave it focused, to see the roles listed. Screen readers read the full list without focusing it.
+- **No roles** — a dash (**—**).
+
+Sorting by **Key Contact** orders people by how many roles they hold, most first.
+
+Only roles that are currently in force count, and the **Key Contacts** tab counts them the same way. A role is left out of both when the membership it belongs to is no longer active, such as a lapsed or cancelled one; when the contact record itself is not active, such as a pending one; or when the role cannot be matched to any of the company's memberships. So a role missing here is missing from the **Key Contacts** tab too.
+
+Someone whose roles are all left out still appears in **All Employees**, with a dash in this column, whenever they are listed for something else — a board or committee seat, recorded activity in the time range, or Company Lens access. Being listed in the table and holding a role that counts are separate things.
 
 ## What does the Contributors tab show?
 

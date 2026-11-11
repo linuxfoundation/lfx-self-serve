@@ -69,6 +69,11 @@ export class MailingListSyncSettingsComponent {
     { label: `Mailing List → ${COMMITTEE_LABEL.singular}`, value: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE },
   ];
 
+  // Construction-safe default — NOT this.initDirection(): a required input can't be read during
+  // field initialization (part of the constructor), only once Angular has bound it, so doing so
+  // threw NG0950 and broke both the Auto Sync drawer and the mailing-list page (#5578 review). The
+  // constructor effect below reads `mailingList()` once inputs are available and corrects this to
+  // the persisted direction before the initial render.
   public readonly form = new FormGroup({
     direction: new FormControl<MailingListSyncMode>(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST, { nonNullable: true }),
   });
@@ -106,6 +111,11 @@ export class MailingListSyncSettingsComponent {
   // lfx-toggle's [ngModel] binding would see no input change — the switch would stay stuck in the
   // clicked position instead of snapping back (#4899 review / #4880 review). Set optimistically in
   // onToggleChange() and explicitly reverted in save()'s catchError.
+  // Construction-safe default — NOT this.initSyncOn(): a required input can't be read during field
+  // initialization (part of the constructor), only once Angular has bound it, so doing so threw
+  // NG0950 and broke both the Auto Sync drawer and the mailing-list page (#5578 review). The
+  // constructor effect below reads `mailingList()` once inputs are available and corrects this to
+  // the persisted state before the initial render.
   protected readonly syncOn = signal(false);
 
   // Set when the sibling lookup errors — `activeSync()` can't be trusted in this state (we don't know
