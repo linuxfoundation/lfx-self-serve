@@ -63,8 +63,9 @@ export type InitiativesLoadError = 'forbidden' | 'unavailable';
 
 /**
  * Why the initiative detail page could not load: no initiative has that slug (404), CF's writer check refused (403), or
- * CF/FGA is down. CF also answers 403 for an id that doesn't exist (lfx-crowdfunding#363), but the slug is resolved first,
- * so a 403 here means the initiative exists and the caller doesn't manage it.
+ * CF/FGA is down. CF answers 403 on the manage read for an unknown id too (lfx-crowdfunding#363). On a slug route the slug
+ * is resolved first, so a 403 means the initiative exists and the caller doesn't manage it; on a UUID route (hand-typed or
+ * old links only) a 403 can also mean the initiative doesn't exist.
  */
 export type InitiativeDetailLoadError = 'not-found' | 'forbidden' | 'unavailable';
 

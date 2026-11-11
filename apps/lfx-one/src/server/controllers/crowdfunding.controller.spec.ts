@@ -271,6 +271,14 @@ describe('CrowdfundingController initiative writer routes (#259)', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it('reports not-found when /manage 404s after the slug resolves (gateway bypassed)', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [404] });
+    const { res, next } = await getDetail('my-fund');
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('propagates a slug-to-uid failure other than 404', async () => {
     respondByPath(fetchMock, { [SLUG_TO_UID]: [502] });
     const { res, next } = await getDetail('my-fund');

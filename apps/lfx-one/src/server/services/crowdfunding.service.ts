@@ -231,7 +231,8 @@ export class CrowdfundingService {
       ? slug
       : (await cfFetchNullable<BackendSlugToUid>(req, 'resolveInitiativeSlug', `/crowdfunding/initiatives/slug-to-uid/${encodeURIComponent(slug)}`))?.uid;
     if (!id) {
-      logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
+      // Any signed-in user can reach this with a made-up slug, so DEBUG, not WARN.
+      logger.debug(req, 'cf_get_initiative_by_slug', 'No initiative has this slug', { slug });
       return null;
     }
 

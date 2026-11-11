@@ -123,12 +123,6 @@ export class InitiativeDetailComponent {
     this.initiativeOverride.set({ ...updated, isOwner: current?.isOwner ?? false, creator: current?.creator });
   }
 
-  private toLoadError(err: HttpErrorResponse): InitiativeDetailLoadError {
-    if (err.status === 404) return 'not-found';
-    if (err.status === 403) return 'forbidden';
-    return 'unavailable';
-  }
-
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initBackLink(): string | string[] {
     if (this.lens === 'org') return this.orgLensNavigation.orgLensLink('initiatives');
@@ -164,5 +158,11 @@ export class InitiativeDetailComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private toLoadError(err: HttpErrorResponse): InitiativeDetailLoadError {
+    if (err.status === 404) return 'not-found';
+    if (err.status === 403) return 'forbidden';
+    return 'unavailable';
   }
 }
