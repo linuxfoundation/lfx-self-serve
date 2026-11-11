@@ -3063,8 +3063,9 @@ export class CampaignController {
    * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
    * what an operator sees, which is why `brief` is required rather than defaulted. Because the
    * Google Ads, Meta, Reddit and X accounts (and LinkedIn's legacy allowlist account) are shared by
-   * every foundation, those account monitors are root-only on every arm — see
-   * `requireSharedAccountMonitorAccess` (lfx-self-serve-ops#54).
+   * every foundation, those account monitors are root-only — see `requireSharedAccountMonitorAccess`
+   * (lfx-self-serve-ops#54) — except the campaign-service arms of the Google Ads and LinkedIn monitors,
+   * which read only the project's own campaigns and are left to campaign-service's project check (#4837).
    *
    * `window` is optional and is NOT defaulted here, so campaign-service can resolve the default
    * PER ROW, PER PLATFORM: `defaultMetricsWindowFor` (`internal/service/brief.go`) runs inside
@@ -3426,17 +3427,22 @@ export class CampaignController {
   }
 
   /**
-   * Google Ads account monitor. Root-only on both arms (lfx-self-serve-ops#54); the project is still
-   * required, so a request naming none is a 400 for every caller. The legacy arm needs the gate: it
-   * reads the shared customer account-wide, every foundation's campaigns at once. The campaign-service
-   * arm is project-scoped upstream (only the campaigns recorded for the project), so the gate is kept
-   * there only until opening it to project campaign managers is decided (#4526), not because it would
-   * leak another foundation's data.
+   * Google Ads account monitor. The project is required, so a request naming none is a 400 for every
+   * caller.
    *
    * With `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` on, it is read from campaign-service through the
    * project's OWN Google Ads connection (#4526): the account is the one that connection is bound to,
-   * resolved here because the Google panel has no account picker. Off, it is the legacy account-wide
-   * read through the BFF's own `GADS_*` credentials, which fails wherever those were deactivated.
+   * resolved here because the Google panel has no account picker. campaign-service returns only the
+   * campaigns recorded for the project and authorizes both reads with the project's `campaign_manager`
+   * relation, so this arm is open to whoever the route's guard admits, as LinkedIn's campaign-service
+   * arm is (#4837). A caller campaign-service refuses — a ROOT writer or ROOT `global_marketing_ops`
+   * holder without the project role, which `requireGoogleMonitorAccess` admits for the legacy arm —
+   * gets a non-retryable 403 naming that role (`toGoogleMonitorConnectionError`,
+   * `toAccountMonitorClientError`), never a 503.
+   *
+   * Off, it is the legacy account-wide read through the BFF's own `GADS_*` credentials, which fails
+   * wherever those were deactivated. That read covers the shared customer, every foundation's campaigns
+   * at once, so it stays root-only (`requireSharedAccountMonitorAccess`, lfx-self-serve-ops#54).
    */
   public async getMonitorData(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
@@ -3444,11 +3450,11 @@ export class CampaignController {
     if (projectSlug === null) {
       return;
     }
-    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_monitor', 'Google Ads'))) {
-      return;
-    }
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
       await this.serveGoogleConnectionMonitor(req, res, next, projectSlug);
+      return;
+    }
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_monitor', 'Google Ads'))) {
       return;
     }
     const startTime = logger.startOperation(req, 'campaign_monitor', { days, projectSlug });
@@ -4186,8 +4192,9 @@ export class CampaignController {
    * fall back to, so with `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` off the route answers 404 as if it
    * were not mounted — the HubSpot monitor route's gating.
    *
-   * Root-only, as the Google Ads monitor is: a project with no connection of its own is answered
-   * from the LF system credential upstream, so the list is then every account the LF can reach.
+   * Root-only, unlike the Google Ads monitor's campaign-service arm (#4837): a project with no
+   * connection of its own is answered from the LF system credential upstream, so the list is then
+   * every account the LF can reach.
    */
   public async getGoogleAdsAccounts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'google_ads_accounts';
@@ -5830,7 +5837,8 @@ export class CampaignController {
    * after reporting a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE` (lfx-self-serve-ops#54).
    *
    * `requireCampaignManager` authorises the caller for the ONE project it names, but an account
-   * monitor on a shared account (Google Ads, Meta, Reddit, X, and LinkedIn's legacy allowlist account)
+   * monitor on a shared account (Google Ads' legacy account-wide read, Meta, Reddit, X, and LinkedIn's
+   * legacy allowlist account)
    * returns every foundation's campaigns. Only a cross-foundation principal may see that: a ROOT
    * writer, or a holder of ROOT `global_marketing_ops`. LF staff membership is not enough. Both checks
    * are request-cached and fail closed, and the refusal runs before any upstream call. A ROOT writer

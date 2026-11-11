@@ -18,6 +18,7 @@ import {
   campaignPlatformMonitorable,
   MONITOR_CONNECTION_PROVIDERS,
   MONITOR_DATE_RANGE_OPTIONS,
+  MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE,
   MONITOR_KEYWORD_PAGE_SIZE,
   MONITOR_PLATFORM_BUTTON_COLORS,
   MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
@@ -113,7 +114,8 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly error = signal<string | null>(null);
   /**
    * The panels whose last failed read was refused for the caller's role (a 403, #4837), keyed by panel
-   * (`google`, `google-accounts`, `linkedin`, `reddit`, `meta`, `report-backed`, `hubspot`). Retrying
+   * (`google-accounts`, `linkedin`, `reddit`, `meta`, `report-backed`, `hubspot`). The Google Ads
+   * monitor's refusal is `googleRoleRefusal` instead, a notice rather than an error. Retrying
    * repeats the same refusal, so such an error offers no Retry. Written beside every error a panel
    * shows, so a stale entry is never read: the error block it gates is hidden until the next error.
    */
@@ -206,10 +208,17 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly restrictedPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
   /** The Google Ads monitor is independent of the separately authorized keyword and audience reads. */
   protected readonly googleRestricted = signal(false);
+  /**
+   * The BFF's reason when the Google Ads monitor is refused for the caller's project role (#4837): a 403
+   * without the shared-account code, from campaign-service (the project's `campaign_manager` relation)
+   * or from the route's own guard. Shown as a notice with no Retry, since reading again cannot grant
+   * the role; `null` otherwise.
+   */
+  protected readonly googleRoleRefusal = signal<string | null>(null);
   private googleAccountsSub: Subscription | null = null;
   /**
    * Set once the discovery read is refused as shared-account-restricted. The refusal is about the
-   * caller (root-only, as the Google Ads monitor), so loads skip a read that would answer 403 again
+   * caller (the discovery read is root-only), so loads skip a read that would answer 403 again
    * until `resetGoogleAccounts` clears it on a fresh context.
    */
   private googleAccountsRefused = false;
@@ -468,7 +477,7 @@ export class MonitoringTabComponent implements OnInit {
           if (slug !== this.activeFoundationSlug() || !this.monitorViaCampaignService()) return;
           this.googleAccountsLoading.set(false);
           this.googleAccountOptions.set(null);
-          // A non-root caller is refused the list as the Google Ads monitor is: nothing to show, not an error.
+          // A non-root caller is refused the list (it can name every account the LF reaches): nothing to show, not an error.
           if (this.isSharedAccountRestricted(err)) {
             this.googleAccountsRefused = true;
           } else {
@@ -486,6 +495,7 @@ export class MonitoringTabComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     this.googleRestricted.set(false);
+    this.googleRoleRefusal.set(null);
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
@@ -503,12 +513,17 @@ export class MonitoringTabComponent implements OnInit {
             this.monitorData.set(null);
             return;
           }
+          // Any other 403 is a refusal for the caller's project role (#4837), never a load failure.
+          if (err instanceof HttpErrorResponse && err.status === 403) {
+            this.googleRoleRefusal.set(extractErrorMessage(err, MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE));
+            this.monitorData.set(null);
+            return;
+          }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
           // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
-          this.noteRefusal('google', err);
           this.error.set(withHttpStatus(extractErrorMessage(err, 'Failed to load campaign data'), err));
         },
       });
@@ -1580,6 +1595,7 @@ export class MonitoringTabComponent implements OnInit {
     this.metricsDisabledPlatforms.set(new Set());
     this.restrictedPlatforms.set(new Set());
     this.googleRestricted.set(false);
+    this.googleRoleRefusal.set(null);
 
     // Same reason as the per-platform signals above: the templates gate their loading placeholder
     // on `loading() && !monitorData()` (and the keywords equivalent), so leaving the aggregate data
@@ -1994,7 +2010,8 @@ export class MonitoringTabComponent implements OnInit {
 /**
  * Appends the HTTP status to the Google panel's error detail (#4526). The detail is the server's own
  * message for a 4xx but the generic fallback for a 5xx or a dropped connection, so without the status
- * a guard's 403, a Google Ads 5xx and a network failure all read alike on a screenshot.
+ * a 4xx, a Google Ads 5xx and a network failure all read alike on a screenshot. A 403 never gets here:
+ * it is the shared-account notice or the role notice (#4837).
  */
 function withHttpStatus(message: string, err: unknown): string {
   if (err instanceof HttpErrorResponse && err.status > 0) {

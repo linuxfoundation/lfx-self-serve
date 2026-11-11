@@ -11,7 +11,11 @@ import type {
   MonitorConnectionAccount,
   ReportBackedMonitorResponse,
 } from '@lfx-one/shared/interfaces';
-import { CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE, MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_ACT_FOUNDATION_CHANGED_MESSAGE,
+  MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+} from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -2556,26 +2560,76 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     expect(el('monitoring-retry')).not.toBeNull();
   });
 
-  // #4837: a role refusal answers 403 again on every retry, so the error offers no Retry.
-  it('offers no Retry when the Google read is refused for the caller role', async () => {
+  // #4837: a role refusal answers 403 again on every retry, so it is a notice naming the role, with no
+  // Retry, and never the "Failed to load campaign data" error.
+  it.each([
+    [
+      "campaign-service's refusal, mapped by the BFF",
+      "campaign-service refused to read this project's Google Ads connection. Your account needs the campaign manager role on this project.",
+      undefined,
+    ],
+    ["the route guard's refusal", 'campaign_manager access required for this resource', 'MARKETING_ACCESS_REQUIRED'],
+  ] as const)('shows the role notice, not the error or the root-only lock, for %s', async (_case, message, code) => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: message, code } })));
+    fixture.detectChanges();
+
+    expect(el('monitoring-role-refused-title')?.textContent).toContain('Google Ads monitoring needs the campaign manager role');
+    expect(el('monitoring-role-refused-message')?.textContent).toContain(message);
+    expect(el('monitoring-error')).toBeNull();
+    expect(el('monitoring-restricted')).toBeNull();
+    expect(el('monitoring-retry')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Failed to load campaign data');
+    expect(fixture.nativeElement.textContent).not.toContain('limited to LF administrators');
+  });
+
+  it('names the role in a fallback when the 403 carries no reason', async () => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: null })));
+    fixture.detectChanges();
+
+    expect(el('monitoring-role-refused-message')?.textContent).toContain(MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE);
+  });
+
+  it('shows an admitted project campaign manager the data on the campaign-service path, with no lock notice', async () => {
     await setup(flagOn);
     service['getMonitorData'].mockReturnValue(
-      throwError(() => new HttpErrorResponse({ status: 403, error: { error: "campaign-service refused to read this project's Google Ads connection." } }))
+      of({
+        campaigns: [],
+        accountTotals: { budgetDay: 0, spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionsMeasured: false },
+        actionItems: [],
+        dateRange: { mode: 'last_30_days' },
+        pulledAt: '2026-11-11T00:00:00Z',
+      })
     );
     fixture.detectChanges();
 
-    expect(el('monitoring-error')?.textContent).toContain('(HTTP 403)');
-    expect(el('monitoring-retry')).toBeNull();
+    expect(el('monitoring-restricted')).toBeNull();
+    expect(el('monitoring-role-refused')).toBeNull();
+    expect(el('monitoring-error')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('limited to LF administrators');
   });
 
-  // #4526: the detail line names the status, so a guard's 403, a Google Ads 5xx and a dropped
+  it('clears the role notice when a later read succeeds', async () => {
+    await setup(flagOn);
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'refused' } })));
+    fixture.detectChanges();
+    expect(el('monitoring-role-refused')).not.toBeNull();
+
+    service['getMonitorData'].mockReturnValue(of(null));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+    expect(el('monitoring-role-refused')).toBeNull();
+  });
+
+  // #4526: the detail line names the status, so a Google Ads 5xx, another 4xx and a dropped
   // connection no longer all read as the same generic "Failed to load campaign data".
   it.each([
     ['a 5xx, whose body is not read', failed, 'Failed to load campaign data (HTTP 500)'],
     [
-      "a guard's 403, with the server's reason",
-      () => new HttpErrorResponse({ status: 403, error: { error: 'campaign_manager access required for this resource', code: 'MARKETING_ACCESS_REQUIRED' } }),
-      'campaign_manager access required for this resource (HTTP 403)',
+      'a 4xx, with the server reason',
+      () => new HttpErrorResponse({ status: 409, error: { error: "This project's Google Ads connection has no ad account bound to it.", code: 'CONFLICT' } }),
+      "This project's Google Ads connection has no ad account bound to it. (HTTP 409)",
     ],
     [
       'an authored Google Ads advisory',
@@ -2592,6 +2646,7 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     fixture.detectChanges();
 
     expect(el('monitoring-error')?.textContent).toContain(detail);
+    expect(el('monitoring-retry')).not.toBeNull();
   });
 
   it.each([

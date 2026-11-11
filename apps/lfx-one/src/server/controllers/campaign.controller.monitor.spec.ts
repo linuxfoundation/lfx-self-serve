@@ -1153,7 +1153,6 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
   }
 
   it.each([
-    { name: 'getMonitorData', legacy: legacyGoogle, svc: svcGoogle, account: '' },
     { name: 'getRedditMonitor', legacy: legacyReddit, svc: svcReddit, account: REDDIT_ACCOUNT },
     { name: 'getMetaMonitor', legacy: legacyMeta, svc: svcMeta, account: META_ACCOUNT },
   ] as const)('$name refuses a non-root caller with the flag on and off, reading nothing', async ({ name, legacy, svc, account }) => {
@@ -1171,6 +1170,57 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
     expect(legacy).not.toHaveBeenCalled();
     expect(svc).not.toHaveBeenCalled();
     expect(svcConnection).not.toHaveBeenCalled();
+  });
+
+  it("refuses the Google monitor's legacy account-wide arm to a non-root caller, reading nothing", async () => {
+    nonRoot();
+    const next = vi.fn();
+    const res = buildRes();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), res, next);
+
+    expectRestricted(next);
+    expect(res.json).not.toHaveBeenCalled();
+    expect(legacyGoogle).not.toHaveBeenCalled();
+    expect(svcConnection).not.toHaveBeenCalled();
+    expect(svcGoogle).not.toHaveBeenCalled();
+  });
+
+  /**
+   * #4837: the campaign-service arm reads only the project's own campaigns, and campaign-service answers
+   * the project's `campaign_manager` holders, so the BFF adds no root gate there — as on LinkedIn's arm.
+   */
+  it("serves the Google monitor's campaign-service arm to a non-root project campaign manager, consulting no root gate", async () => {
+    nonRoot();
+    flag(true);
+    svcConnection.mockResolvedValueOnce({ account_id: '8666746580', label: 'LF Google Ads' });
+    svcGoogle.mockResolvedValueOnce(monitorPayload({ account_id: '8666746580' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(svcConnection).toHaveBeenCalledWith(expect.anything(), 'tlf', 'google-ads');
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', '8666746580', 30);
+    expect(res.json).toHaveBeenCalledTimes(1);
+    expect(checkRootWriter).not.toHaveBeenCalled();
+    expect(checkRootCampaignManager).not.toHaveBeenCalled();
+  });
+
+  it('answers a non-root caller campaign-service refuses on the Google arm with the role 403, not the shared-account restriction', async () => {
+    nonRoot();
+    flag(true);
+    svcConnection.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'x' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p'));
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['code']).not.toBe(MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE);
+    expect(String(error.toResponse()['error'])).toContain('campaign manager role on this project');
+    expect(svcGoogle).not.toHaveBeenCalled();
   });
 
   it.each([false, true])('getTwitterMonitor refuses a non-root caller with the flag %s, not with the flag-off 404', async (on) => {
