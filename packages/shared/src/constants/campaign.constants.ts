@@ -6107,7 +6107,9 @@ export const GOOGLE_BIDDING_STRATEGY_LABELS = {
  * not because Google refuses it.
  *
  * This is a picker's option list, so it cannot over-refuse: every entry is a value the dispatcher
- * accepts on that channel, and the refusals upstream still owns stay upstream's to make.
+ * accepts on that channel, and the refusals upstream still owns stay upstream's to make. The
+ * Implement tab offers one fewer on Display, where Google refuses a target CPA after the budget is
+ * created: see {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA}.
  */
 export const GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL = {
   search: GOOGLE_BIDDING_STRATEGIES,
