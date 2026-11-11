@@ -73,7 +73,7 @@ To reject an unverified identity instead, use **This is not me** on its row (see
 
 ## Merge two LFX accounts
 
-If you have more than one LFX account — for example, a personal account and a work account — LFX support can merge them into one. There is no merge option in LFX Self Serve, and you don't need to delete either account first.
+If you have more than one LFX account — for example, a personal account and a work account — LFX support can merge them into one. There is no merge option in LFX Self Serve.
 
 To request a merge, contact support and include:
 
