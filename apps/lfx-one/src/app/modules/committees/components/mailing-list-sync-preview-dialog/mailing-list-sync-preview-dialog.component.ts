@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
-import { MailingListSyncMode } from '@lfx-one/shared/enums';
+import { COMMITTEE_LABEL, MAILING_LIST_SYNC_POLL_DEADLINE_MS } from '@lfx-one/shared/constants';
+import { MailingListSyncDirection, MailingListSyncMode } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
   MailingListSyncPreviewDialogData,
@@ -23,6 +23,7 @@ import { MailingListService } from '@services/mailing-list.service';
 import { UserService } from '@services/user.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, EMPTY, exhaustMap, finalize, interval, of, Subscription, takeUntil, takeWhile, tap, throwError, timer } from 'rxjs';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { UiProgressComponent } from '@shared/uikit/progress/progress.component';
 import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { extractErrorMessage, isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -31,7 +32,7 @@ type PreviewTab = 'adds' | 'removes' | 'conflicts';
 
 @Component({
   selector: 'lfx-mailing-list-sync-preview-dialog',
-  imports: [ButtonComponent, CheckboxComponent, FilterPillsComponent, ReactiveFormsModule, UiProgressComponent],
+  imports: [ButtonComponent, CheckboxComponent, FilterPillsComponent, ReactiveFormsModule, SelectButtonComponent, UiProgressComponent],
   templateUrl: './mailing-list-sync-preview-dialog.component.html',
 })
 export class MailingListSyncPreviewDialogComponent {
@@ -54,9 +55,23 @@ export class MailingListSyncPreviewDialogComponent {
   // caught by comparing against it, instead of trusting whatever committee_uid the diff reports
   // (copilot, #4911 review).
   private readonly committeeUid: string = (this.config.data as MailingListSyncPreviewDialogData).committeeUid;
+  // A manual/unset sync_mode has no direction of its own to fall back on — the dialog must prompt
+  // for one and send it on every sync-diff/sync-apply call. An auto_* list always uses its own
+  // configured direction and must never be sent an override (rejected with 400 upstream).
+  public readonly needsDirectionSelector: boolean =
+    (this.config.data as MailingListSyncPreviewDialogData).syncMode === undefined ||
+    (this.config.data as MailingListSyncPreviewDialogData).syncMode === MailingListSyncMode.MANUAL;
+
+  protected readonly directionOptions = [
+    { label: `${COMMITTEE_LABEL.singular} → Mailing List`, value: MailingListSyncDirection.COMMITTEE_TO_MAILING_LIST },
+    { label: `Mailing List → ${COMMITTEE_LABEL.singular}`, value: MailingListSyncDirection.MAILING_LIST_TO_COMMITTEE },
+  ];
 
   public addCheckboxForm = new FormGroup<Record<string, FormControl<boolean>>>({});
   public removeCheckboxForm = new FormGroup<Record<string, FormControl<boolean>>>({});
+  public directionForm = new FormGroup({
+    direction: new FormControl<MailingListSyncDirection>(MailingListSyncDirection.COMMITTEE_TO_MAILING_LIST, { nonNullable: true }),
+  });
 
   public activeTab = signal<PreviewTab>('adds');
   public loadingDiff = signal(true);
@@ -96,6 +111,7 @@ export class MailingListSyncPreviewDialogComponent {
 
   public addedSucceededCount: Signal<number> = computed(() => this.applyResult()?.added_count ?? 0);
   public removedSucceededCount: Signal<number> = computed(() => this.applyResult()?.removed_count ?? 0);
+  public failedCount: Signal<number> = computed(() => this.applyResult()?.error_count ?? 0);
 
   public constructor() {
     // Also locks while the results view is showing — otherwise the header X / Escape stayed usable
@@ -109,6 +125,25 @@ export class MailingListSyncPreviewDialogComponent {
     // roster refresh (copilot, #4911 review). The template's own error-view Close button still works —
     // it calls close() directly regardless of config.closable.
     lockDynamicDialogWhile(computed(() => this.loadingDiff() || this.applying() || !!this.applyResult() || !!this.applyError()));
+
+    if (this.needsDirectionSelector) {
+      // Changing direction invalidates the loaded diff entirely (it's computed against the
+      // opposite source of truth), so re-run loadDiff() rather than trying to patch the existing
+      // one. valueChanges only fires on an actual user change, not on this initial subscribe.
+      this.directionForm.controls.direction.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadDiff());
+
+      // Lock direction while a diff/apply job is in flight — switching mid-poll would leave a
+      // stale job running against the old direction. emitEvent: false so disable()/enable() don't
+      // themselves trigger the valueChanges subscription above.
+      effect(() => {
+        if (this.loadingDiff() || this.applying()) {
+          this.directionForm.controls.direction.disable({ emitEvent: false });
+        } else {
+          this.directionForm.controls.direction.enable({ emitEvent: false });
+        }
+      });
+    }
+
     this.loadDiff();
   }
 
@@ -134,6 +169,7 @@ export class MailingListSyncPreviewDialogComponent {
         committee_uid: diff.committee_uid,
         adds: this.selectedAdds(),
         removes: this.selectedRemoves(),
+        ...(this.needsDirectionSelector ? { direction: this.directionForm.controls.direction.value } : {}),
       })
       .pipe(
         catchError((error) => {
@@ -207,9 +243,10 @@ export class MailingListSyncPreviewDialogComponent {
     this.diffProcessedCount.set(0);
     this.diffTotalCount.set(0);
     const ticker = this.startElapsedTicker();
+    const direction = this.needsDirectionSelector ? this.directionForm.controls.direction.value : undefined;
 
     this.mailingListService
-      .startSyncDiff(this.mailingListUid)
+      .startSyncDiff(this.mailingListUid, direction)
       .pipe(
         catchError((error) => {
           this.loadError.set(error?.error?.error ?? 'Could not load the sync preview. Please try again.');
@@ -221,12 +258,12 @@ export class MailingListSyncPreviewDialogComponent {
       )
       .subscribe((start) => {
         if (!start) return;
-        this.pollSyncDiffStatus(start.job_id, ticker);
+        this.pollSyncDiffStatus(start.job_id, ticker, direction);
       });
   }
 
-  /** Polls `/sync-diff/:jobId/status` every ~2s until the job reaches a terminal state. */
-  private pollSyncDiffStatus(jobId: string, ticker: Subscription): void {
+  /** Polls `/sync-diff/:jobId/status` every ~2s until the job reaches a terminal state. `direction` must match what was passed to `startSyncDiff` for this job. */
+  private pollSyncDiffStatus(jobId: string, ticker: Subscription, direction: MailingListSyncDirection | undefined): void {
     let reachedTerminalState = false;
 
     interval(2000)
@@ -246,7 +283,7 @@ export class MailingListSyncPreviewDialogComponent {
         // (greptile-apps, cursor/Bugbot, copilot, #5489 review).
         exhaustMap(() =>
           this.mailingListService
-            .getSyncDiffStatus(this.mailingListUid, jobId)
+            .getSyncDiffStatus(this.mailingListUid, jobId, direction)
             .pipe(catchError((error: unknown) => (isTransientHttpError(error) ? of(null) : throwError(() => error))))
         ),
         tap((status) => {
@@ -392,13 +429,44 @@ export class MailingListSyncPreviewDialogComponent {
    */
   private friendlyOutcome(result: SyncJobResultEntry, isReverseSync: boolean): string {
     if (result.status === 'error') {
-      return result.error || 'Could not complete this change.';
+      return this.friendlyError(result.error);
     }
     if (result.status === 'skipped') {
       return result.error || 'Skipped — this change was not applied.';
     }
     const destination = isReverseSync ? 'the committee' : 'the mailing list';
     return result.action === 'add' ? `Added to ${destination}.` : `Removed from ${destination}.`;
+  }
+
+  /**
+   * Translates the raw error ITX reports for one failed add/remove (often a bare HTTP status
+   * phrase like "Bad Request") into an actionable explanation. Mirrors the mapping PCC uses for
+   * the same ITX error shapes (sync-preview-modal.component.ts), since both products sync against
+   * the same Groups.io integration and see the same raw error text.
+   */
+  private friendlyError(error: string | undefined): string {
+    if (!error) return 'Could not complete this change — unknown error. Contact support if this persists.';
+    const lower = error.toLowerCase();
+    if (lower.includes('invalid email address') || lower.includes('unprocessable entity') || lower.includes('422')) {
+      return 'Invalid email address — likely a bounce or system-generated address. Remove this address from the mailing list.';
+    }
+    if (lower.includes('already') && lower.includes('member')) {
+      return error;
+    }
+    const suggestionMatch = error.match(/possible match by name:.+?(?:;|$)/i);
+    if (suggestionMatch) {
+      return `No LFX account found for this email address. ${suggestionMatch[0].replace(/;$/, '').trim()}.`;
+    }
+    if (lower.includes('not found') || lower.includes('user not found') || lower.includes('lookup failed')) {
+      return (
+        'No LFX account found for this email address, and no name is on file to suggest a possible match. ' +
+        'Invite the person to create an LFX account, or add them manually once they have one.'
+      );
+    }
+    if (lower.includes('bad request') || lower === '400') {
+      return 'ITX rejected this request (Bad Request) — the mailing list membership state may be out of sync. Try syncing again; contact support if it keeps failing.';
+    }
+    return error;
   }
 
   private startElapsedTicker(): Subscription {
