@@ -33,7 +33,7 @@ import {
   MeetingAttachmentChangeInput,
   MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
-  MeetingProjectScopeOptions,
+  MeetingProjectQueryOptions,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
@@ -182,11 +182,11 @@ export class MeetingService {
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
-  public getMeetingsCountByProject(uid: string, options: MeetingProjectScopeOptions = {}): Observable<number> {
+  public getMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
     return this.getCount('/api/meetings/count', this.projectScopeParams(uid, options));
   }
 
-  public getPastMeetingsCountByProject(uid: string, options: MeetingProjectScopeOptions = {}): Observable<number> {
+  public getPastMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
     return this.getCount('/api/past-meetings/count', this.projectScopeParams(uid, options));
   }
 
@@ -228,7 +228,7 @@ export class MeetingService {
     pageToken?: string,
     searchName?: string,
     filters?: string[],
-    options: MeetingProjectScopeOptions = {}
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<Meeting>> {
     let params = this.projectScopeParams(uid, options);
     if (orderBy) {
@@ -254,7 +254,7 @@ export class MeetingService {
     searchName?: string,
     filters?: string[],
     includeViewerAttendance = false,
-    options: MeetingProjectScopeOptions = {}
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<PastMeeting>> {
     let params = this.projectScopeParams(uid, options).set('sort', PAST_MEETING_SORT.NAME_DESC);
     // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
@@ -1001,10 +1001,11 @@ export class MeetingService {
   /**
    * Scopes a project meetings query: the project alone (`tags=project_uid:`), or, with
    * `includeSubProjects`, the project and every project beneath it (`root_project_uid`, resolved
-   * server-side under the caller's own access).
+   * server-side under the caller's own access). `pageSize` is passed through as `page_size`.
    */
-  private projectScopeParams(uid: string, options: MeetingProjectScopeOptions): HttpParams {
-    return options.includeSubProjects ? new HttpParams().set('root_project_uid', uid) : new HttpParams().set('tags', `project_uid:${uid}`);
+  private projectScopeParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
+    const params = options.includeSubProjects ? new HttpParams().set('root_project_uid', uid) : new HttpParams().set('tags', `project_uid:${uid}`);
+    return options.pageSize ? params.set('page_size', String(options.pageSize)) : params;
   }
 
   /**

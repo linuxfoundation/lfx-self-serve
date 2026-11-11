@@ -7323,8 +7323,11 @@ export class ProjectService {
    * @param foundationUid - The foundation UID to resolve descendant project UIDs for
    * @returns Array of UIDs including the foundation itself and every project discovered while
    *   walking its full descendant tree, up to the depth/node caps above
+   * @param options.onIncomplete - Called when a container's child lookup fails and its children are
+   *   left out. The cap-bounded result above is stable, but this one is transient, so a caller that
+   *   caches the UIDs uses it to avoid storing a scope that a retry would complete.
    */
-  public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
+  public async getFoundationProjectUids(req: Request, foundationUid: string, options: { onIncomplete?: () => void } = {}): Promise<string[]> {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
 
     const uids = new Set<string>([foundationUid]);
@@ -7373,6 +7376,7 @@ export class ProjectService {
         } catch (error) {
           // If one container's child lookup fails, keep the rest — a partial result across
           // a wide descendant tree is better than dropping all of them.
+          options.onIncomplete?.();
           logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve children for a container, omitting its direct children', {
             foundation_uid: foundationUid,
             container_uid: containerUid,

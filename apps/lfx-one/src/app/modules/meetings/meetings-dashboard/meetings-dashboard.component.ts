@@ -16,7 +16,12 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS, MY_MEETINGS_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
+import {
+  MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
+  MEETING_TYPE_CONFIGS,
+  MY_MEETINGS_STATS_WINDOW_DAYS,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 import {
   GroupLinkState,
   Lens,
@@ -1068,8 +1073,13 @@ export class MeetingsDashboardComponent {
           }
           const projectUid = project.uid;
           this.fpUpcomingLoading.set(true);
+          // Max-size pages keep a rolled-up foundation (every sub-project's meetings) well inside the
+          // 10-page cap, so the calendar and stat tiles are not cut short.
           const fetchPage = (pageToken?: string) =>
-            this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, undefined, undefined, { includeSubProjects: true });
+            this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, undefined, undefined, {
+              includeSubProjects: true,
+              pageSize: QUERY_SERVICE_MAX_PAGE_SIZE,
+            });
           return fetchPage().pipe(
             expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
             take(10),
@@ -1103,7 +1113,10 @@ export class MeetingsDashboardComponent {
           const projectUid = project.uid;
           this.fpPastLoading.set(true);
           const fetchPage = (pageToken?: string) =>
-            this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, undefined, undefined, false, { includeSubProjects: true });
+            this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, undefined, undefined, false, {
+              includeSubProjects: true,
+              pageSize: QUERY_SERVICE_MAX_PAGE_SIZE,
+            });
           return fetchPage().pipe(
             expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
             take(10),

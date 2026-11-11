@@ -2443,11 +2443,14 @@ export interface MeetingCreateMenuRow {
 export type MeetingCreateMenuAlign = 'right' | 'center';
 
 /**
- * How a project-scoped meetings query picks its projects.
+ * Options for a project-scoped meetings query.
  * @description With `includeSubProjects`, a foundation or parent project's meetings also include
  * those of every project beneath it (GH-5566); the server resolves the tree under the caller's own
  * access. Off by default, so callers that need one project's meetings only are unaffected.
+ * `pageSize` asks for larger pages, for feeds that walk every page (the dashboard calendar and stat
+ * tiles), so a rolled-up foundation does not hit their page cap.
  */
-export interface MeetingProjectScopeOptions {
+export interface MeetingProjectQueryOptions {
   includeSubProjects?: boolean;
+  pageSize?: number;
 }

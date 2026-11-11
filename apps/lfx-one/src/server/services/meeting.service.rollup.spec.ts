@@ -8,7 +8,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { proxyRequest, getFoundationProjectUids, withPerUserCache } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   getFoundationProjectUids: vi.fn(),
-  withPerUserCache: vi.fn((_ns: string, _user: string, _root: string, _ttl: number, fetcher: () => Promise<unknown>) => fetcher()),
+  // Runs the fetcher (args[4]) uncached; specs read the `storable` gate (args[6]) off the recorded call.
+  withPerUserCache: vi.fn((...args: unknown[]) => (args[4] as () => Promise<unknown>)()),
 }));
 
 // The utils barrel reaches Angular-only modules; this spec needs the two normalizers getMeetings calls and
@@ -69,7 +70,7 @@ describe('MeetingService roll-up scope', () => {
 
     const result = await service.getMeetings(req, { root_project_uid: ROOT, page_token: 'p1', filters: ['meeting_type:Technical'] }, type, false);
 
-    expect(getFoundationProjectUids).toHaveBeenCalledWith(req, ROOT);
+    expect(getFoundationProjectUids).toHaveBeenCalledWith(req, ROOT, { onIncomplete: expect.any(Function) });
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
       page_token: 'p1',
       filters: ['meeting_type:Technical'],
@@ -85,11 +86,45 @@ describe('MeetingService roll-up scope', () => {
     const count = await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_past_meeting');
 
     expect(count).toBe(7);
-    expect(withPerUserCache).toHaveBeenCalledWith('meeting-rollup-scope:v1', 'jdoe', ROOT, 300, expect.any(Function), expect.any(Function));
+    expect(withPerUserCache).toHaveBeenCalledWith(
+      'meeting-rollup-scope:v1',
+      'jdoe',
+      ROOT,
+      300,
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function)
+    );
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
       filters_or: [`project_uid:${ROOT}`, 'project_uid:child-uid'],
       type: 'v1_past_meeting',
     });
+  });
+
+  it('serves but never caches a scope whose tree walk missed a branch', async () => {
+    proxyRequest.mockResolvedValue({ count: 3 });
+    getFoundationProjectUids.mockImplementation(async (_req: unknown, root: string, options?: { onIncomplete?: () => void }) => {
+      options?.onIncomplete?.();
+      return [root];
+    });
+
+    await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_meeting');
+
+    const storable = withPerUserCache.mock.calls[0][6] as (value: string[]) => boolean;
+    expect(storable([ROOT])).toBe(false);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
+      filters_or: [`project_uid:${ROOT}`],
+      type: 'v1_meeting',
+    });
+  });
+
+  it('caches a complete scope', async () => {
+    proxyRequest.mockResolvedValue({ count: 3 });
+
+    await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_meeting');
+
+    const storable = withPerUserCache.mock.calls[0][6] as (value: string[]) => boolean;
+    expect(storable([ROOT, 'child-uid'])).toBe(true);
   });
 
   it('passes a query without the roll-up param through unchanged', async () => {

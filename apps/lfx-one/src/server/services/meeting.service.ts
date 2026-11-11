@@ -2562,9 +2562,20 @@ export class MeetingService {
     // served to another.
     const { MEETING_ROLLUP_SCOPE_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
     const username = getEffectiveUsername(req) ?? '';
-    const scopeUids = await coalescePerUserOrgFetch(namespace, username, rootUid, () =>
-      withPerUserCache(namespace, username, rootUid, ttlSeconds, () => this.projectService.getFoundationProjectUids(req, rootUid), isRollupScope)
-    );
+    // A failed child lookup leaves that branch out; such a scope is still served, but never cached, so
+    // the next request retries instead of hiding those meetings for the whole TTL.
+    const scopeUids = await coalescePerUserOrgFetch(namespace, username, rootUid, () => {
+      let complete = true;
+      return withPerUserCache(
+        namespace,
+        username,
+        rootUid,
+        ttlSeconds,
+        () => this.projectService.getFoundationProjectUids(req, rootUid, { onIncomplete: () => (complete = false) }),
+        isRollupScope,
+        () => complete
+      );
+    });
 
     logger.debug(req, operation, 'Scoped meetings query to project roll-up', { root_project_uid: rootUid, project_count: scopeUids.length });
 
