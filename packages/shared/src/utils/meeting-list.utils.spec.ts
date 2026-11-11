@@ -494,6 +494,10 @@ describe('buildMeetingFilterChips', () => {
     expect(buildMeetingFilterChips(filters({ rsvp: 'pending' }), rows)[0].label).toBe('Needs response');
     expect(buildMeetingFilterChips(filters({ rsvp: 'accepted' }), rows)[0].label).toBe('Going');
   });
+
+  it('prefixes the Foundation/Project chip with Foundation when its pick is a foundation', () => {
+    expect(buildMeetingFilterChips(filters({ project: 'f-1' }), rows)).toEqual([{ key: 'project', prefix: 'Foundation:', label: 'Foundation One' }]);
+  });
 });
 
 describe('getMeetingGroupNames', () => {

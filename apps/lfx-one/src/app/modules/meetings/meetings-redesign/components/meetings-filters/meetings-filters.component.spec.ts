@@ -194,6 +194,20 @@ describe('MeetingsFiltersComponent', () => {
       expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'Envoy', 'Kubernetes', 'Sigstore']);
     });
 
+    it('lists foundations in Foundation/Project when Foundation is hidden', async () => {
+      persona.hasBoardRole.set(false);
+      await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
+      await open();
+
+      expect(await optionLabels('meetings-home-filters-project')).toEqual(['All projects', 'CNCF', 'Envoy', 'Kubernetes', 'OpenSSF', 'Sigstore']);
+
+      await pick('meetings-home-filters-project', 'CNCF');
+      button('meetings-home-filters-apply').click();
+      await settle();
+
+      expect(emitted).toEqual([{ ...MEETINGS_HOME_DEFAULT_FILTERS, project: 'f-1' }]);
+    });
+
     it('narrows Project to the searched names and clears the search on close', async () => {
       await render(MEETINGS_HOME_DEFAULT_FILTERS, 'upcoming', FOUNDATION_ROWS);
       await open();
