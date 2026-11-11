@@ -409,7 +409,7 @@ test.describe('Org People → Board tab', () => {
     await expect(page.getByTestId('person-detail-drawer-email-none')).toBeVisible();
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
 
-    // 2b. UNAVAILABLE → "We couldn't confirm a company email at …"; an empty list here is NOT "none on file".
+    // 2b. UNAVAILABLE → "We can't tell whether this person has an email at …"; an empty list here is NOT "none on file".
     await stubCompanyEmails((route) =>
       route.fulfill({
         status: 200,
