@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { createHash } from 'node:crypto';
+
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   OrgActiveMembership,
@@ -9,10 +11,17 @@ import type {
   OrgDiscoverOpportunity,
   OrgExpiredMembership,
   OrgExpiredMembershipsResponse,
+  OrgLensDiscoverMembershipRow,
+  OrgLensExpiredMembershipRow,
+  OrgLensMembershipSummaryRow,
+  OrgLensRelevantProjectsRow,
+  OrgLensRollUpScope,
+  OrgLensRowOrganization,
   OrgMembershipDetailResponse,
   OrgMembershipFoundationHeader,
   OrgMembershipProject,
   OrgMembershipProjectsResponse,
+  OrgMembershipsSummary,
   ProjectInfluenceBucket,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -25,48 +34,6 @@ import { withOrgCache } from './valkey.service';
 
 // Spec 024: key contacts are sourced live from the query-service indexer (real-time), replacing the
 // spec-015 mock fixture. Only the foundation header is still derived from the Snowflake summary.
-
-interface RawMembershipRow {
-  ACCOUNT_ID: string;
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-  FOUNDATION_SLUG: string | null;
-  FOUNDATION_LOGO_URL: string | null;
-  MEMBERSHIP_TIER_DISPLAY_NAME: string;
-  TIER_START_DATE: string | null;
-  TIER_END_DATE: string | null;
-  FIRST_MEMBERSHIP_STARTED_AT: string | null;
-  BOARD_MEMBER_SEAT_COUNT: number;
-  COMMITTEE_MEMBER_SEAT_COUNT: number;
-  ORG_PROJECTS_COUNT: number;
-  PROJECT_COUNT: number;
-  MEMBER_COUNT: number;
-  IS_RENEWING_WITHIN_90_DAYS: boolean;
-}
-
-interface RawExpiredRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-  FOUNDATION_SLUG: string | null;
-  FOUNDATION_LOGO_URL: string | null;
-  MEMBERSHIP_TIER_DISPLAY_NAME: string;
-  TIER_START_DATE: string | null;
-  TIER_END_DATE: string | null;
-  EXPIRATION_DATE: string | null;
-  ACTION_TYPE: 'renew' | 'contact';
-}
-
-interface RawDiscoverRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-  FOUNDATION_SLUG: string | null;
-  FOUNDATION_LOGO_URL: string | null;
-  PROJECT_TYPE: string | null;
-  SUGGESTED_TIER: string | null;
-  CONTRIBUTORS_COUNT: number;
-  CONTRIBUTION_COUNT: number;
-  RELEVANT_PROJECTS: number;
-}
 
 interface RawFoundationProjectRow {
   PROJECT_ID: string;
@@ -97,7 +64,7 @@ export class OrgLensMembershipsService {
       accountId,
       'memberships-active',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchActiveMembershipRows(accountId),
+      () => this.fetchActiveMembershipRows([accountId]),
       OrgLensMembershipsService.isRawRowArray
     );
 
@@ -113,28 +80,98 @@ export class OrgLensMembershipsService {
       governanceRoles: rows.reduce((sum, r) => sum + r.BOARD_MEMBER_SEAT_COUNT + r.COMMITTEE_MEMBER_SEAT_COUNT, 0),
     };
 
-    let filtered = allMemberships;
+    return { accountId, summary, memberships: OrgLensMembershipsService.filterActive(allMemberships, search, tier, renewal) };
+  }
 
+  public async getFamilyActiveMemberships(
+    scope: OrgLensRollUpScope,
+    filters: { search?: string; tier?: string; renewal?: string; company?: string } = {}
+  ): Promise<OrgActiveMembershipsResponse> {
+    const organizations = OrgLensMembershipsService.rowOrganizations(scope);
+    const nameOf = new Map(organizations.map((organization) => [organization.accountId, organization]));
+    const rows = await this.getFamilyActiveMembershipRows(scope);
+
+    const entries = rows
+      .filter((raw) => nameOf.has(raw.ACCOUNT_ID))
+      .map((raw) => ({ raw, row: { ...this.shapeRow(raw), organization: nameOf.get(raw.ACCOUNT_ID) } }));
+    const byCompany = filters.company ? entries.filter((entry) => entry.raw.ACCOUNT_ID === filters.company) : entries;
+    const shown = new Set(
+      OrgLensMembershipsService.filterActive(
+        byCompany.map((entry) => entry.row),
+        filters.search,
+        filters.tier,
+        filters.renewal
+      )
+    );
+    const kept = byCompany.filter((entry) => shown.has(entry.row));
+
+    return {
+      accountId: scope.rollUpKey,
+      summary: OrgLensMembershipsService.familyMembershipsSummary(kept.map((entry) => entry.raw)),
+      memberships: kept.map((entry) => entry.row),
+      organizations,
+    };
+  }
+
+  public async getFamilyExpiredMemberships(scope: OrgLensRollUpScope, search?: string, company?: string): Promise<OrgExpiredMembershipsResponse> {
+    const organizations = OrgLensMembershipsService.rowOrganizations(scope);
+    const nameOf = new Map(organizations.map((organization) => [organization.accountId, organization]));
+    const companies = OrgLensMembershipsService.memberIds(scope);
+    const [expiredRows, activeRows] = await Promise.all([
+      withOrgCache(
+        scope.rollUpKey,
+        `memberships-expired-family:v1:${OrgLensMembershipsService.memberDigest(companies)}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchExpiredMembershipRows(companies),
+        OrgLensMembershipsService.isRawRowArray
+      ),
+      this.getFamilyActiveMembershipRows(scope),
+    ]);
+
+    const heldFoundations = new Set(activeRows.filter((raw) => nameOf.has(raw.ACCOUNT_ID)).map((raw) => raw.FOUNDATION_ID));
+    const candidates = expiredRows.filter((raw) => raw.ACCOUNT_ID !== undefined && nameOf.has(raw.ACCOUNT_ID) && (!company || raw.ACCOUNT_ID === company));
+
+    let memberships: OrgExpiredMembership[] = OrgLensMembershipsService.familyExpiredRows(candidates, heldFoundations, nameOf).map(({ raw, organization }) => ({
+      ...this.shapeExpiredRow(raw),
+      organization,
+    }));
     if (search) {
       const term = search.toLowerCase();
-      filtered = filtered.filter((m) => m.foundationName.toLowerCase().includes(term));
+      memberships = memberships.filter((m) => m.foundationName.toLowerCase().includes(term));
     }
+    return { accountId: scope.rollUpKey, memberships, organizations };
+  }
 
-    if (tier) {
-      filtered = filtered.filter((m) => m.membershipTier === tier);
-    }
+  public async getFamilyDiscoverOpportunities(scope: OrgLensRollUpScope): Promise<OrgDiscoverOpportunitiesResponse> {
+    const companies = OrgLensMembershipsService.memberIds(scope);
+    const digest = OrgLensMembershipsService.memberDigest(companies);
+    const [discoverRows, activeRows, relevantProjects] = await Promise.all([
+      withOrgCache(
+        scope.rollUpKey,
+        `memberships-discover-family:v1:${digest}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchDiscoverOpportunityRows(companies),
+        OrgLensMembershipsService.isRawRowArray
+      ),
+      this.getFamilyActiveMembershipRows(scope),
+      withOrgCache(
+        scope.rollUpKey,
+        `memberships-discover-projects-family:v1:${digest}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchFamilyRelevantProjectRows(companies),
+        OrgLensMembershipsService.isRawRowArray
+      ),
+    ]);
 
-    if (renewal === '90' || renewal === '30') {
-      const now = new Date();
-      const days = Number(renewal);
-      const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-      filtered = filtered.filter((m) => {
-        if (!m.tierEndDate) return false;
-        return new Date(m.tierEndDate) <= cutoff;
-      });
-    }
+    const members = new Set(companies);
+    const heldFoundations = new Set(activeRows.filter((raw) => members.has(raw.ACCOUNT_ID)).map((raw) => raw.FOUNDATION_ID));
+    const relevantByFoundation = new Map(relevantProjects.map((row) => [row.FOUNDATION_ID, row.RELEVANT_PROJECTS]));
+    const candidates = discoverRows.filter((raw) => raw.ACCOUNT_ID !== undefined && members.has(raw.ACCOUNT_ID));
 
-    return { accountId, summary, memberships: filtered };
+    const opportunities = OrgLensMembershipsService.familyDiscoverRows(candidates, heldFoundations, relevantByFoundation).map((raw) =>
+      this.shapeDiscoverRow(raw)
+    );
+    return { accountId: scope.rollUpKey, opportunities };
   }
 
   public async getExpiredMemberships(accountId: string, search?: string): Promise<OrgExpiredMembershipsResponse> {
@@ -142,7 +179,7 @@ export class OrgLensMembershipsService {
       accountId,
       'memberships-expired',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchExpiredMembershipRows(accountId),
+      () => this.fetchExpiredMembershipRows([accountId]),
       OrgLensMembershipsService.isRawRowArray
     );
 
@@ -150,17 +187,7 @@ export class OrgLensMembershipsService {
       return { accountId, memberships: [] };
     }
 
-    let memberships: OrgExpiredMembership[] = rows.map((raw) => ({
-      foundationId: raw.FOUNDATION_ID,
-      foundationName: raw.FOUNDATION_NAME,
-      foundationSlug: raw.FOUNDATION_SLUG ?? '',
-      foundationLogo: raw.FOUNDATION_LOGO_URL,
-      membershipTier: raw.MEMBERSHIP_TIER_DISPLAY_NAME,
-      tierStartDate: this.formatDate(raw.TIER_START_DATE),
-      tierEndDate: this.formatDate(raw.TIER_END_DATE),
-      expirationDate: this.formatDate(raw.EXPIRATION_DATE),
-      actionType: raw.ACTION_TYPE,
-    }));
+    let memberships: OrgExpiredMembership[] = rows.map((raw) => this.shapeExpiredRow(raw));
 
     if (search) {
       const term = search.toLowerCase();
@@ -175,7 +202,7 @@ export class OrgLensMembershipsService {
       accountId,
       'memberships-discover',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchDiscoverOpportunityRows(accountId),
+      () => this.fetchDiscoverOpportunityRows([accountId]),
       OrgLensMembershipsService.isRawRowArray
     );
 
@@ -183,17 +210,7 @@ export class OrgLensMembershipsService {
       return { accountId, opportunities: [] };
     }
 
-    const opportunities: OrgDiscoverOpportunity[] = rows.map((raw) => ({
-      foundationId: raw.FOUNDATION_ID,
-      foundationName: raw.FOUNDATION_NAME,
-      foundationSlug: raw.FOUNDATION_SLUG ?? '',
-      foundationLogo: raw.FOUNDATION_LOGO_URL,
-      category: raw.PROJECT_TYPE ?? '',
-      suggestedTier: raw.SUGGESTED_TIER ?? '',
-      relevantProjects: raw.RELEVANT_PROJECTS,
-      contributors: raw.CONTRIBUTORS_COUNT,
-      contributions: raw.CONTRIBUTION_COUNT,
-    }));
+    const opportunities: OrgDiscoverOpportunity[] = rows.map((raw) => this.shapeDiscoverRow(raw));
 
     return { accountId, opportunities };
   }
@@ -306,6 +323,118 @@ export class OrgLensMembershipsService {
     return row ? row.foundationSlug : null;
   }
 
+  private static familyMembershipsSummary(rows: readonly OrgLensMembershipSummaryRow[]): OrgMembershipsSummary {
+    return {
+      activeMemberships: rows.length,
+      renewingWithin90Days: rows.filter((row) => row.IS_RENEWING_WITHIN_90_DAYS).length,
+      governanceRoles: rows.reduce((sum, row) => sum + row.BOARD_MEMBER_SEAT_COUNT + row.COMMITTEE_MEMBER_SEAT_COUNT, 0),
+    };
+  }
+
+  private static familyExpiredRows(
+    rows: readonly OrgLensExpiredMembershipRow[],
+    heldFoundations: ReadonlySet<string>,
+    organizationOf: ReadonlyMap<string, OrgLensRowOrganization>
+  ): { raw: OrgLensExpiredMembershipRow; organization: OrgLensRowOrganization }[] {
+    const latest = new Map<string, { raw: OrgLensExpiredMembershipRow; organization: OrgLensRowOrganization }>();
+    for (const raw of rows) {
+      const organization = raw.ACCOUNT_ID ? organizationOf.get(raw.ACCOUNT_ID) : undefined;
+      if (!organization || heldFoundations.has(raw.FOUNDATION_ID)) continue;
+      const current = latest.get(raw.FOUNDATION_ID);
+      if (!current || OrgLensMembershipsService.isLaterExpiry(raw, organization, current.raw, current.organization)) {
+        latest.set(raw.FOUNDATION_ID, { raw, organization });
+      }
+    }
+    return [...latest.values()].sort((a, b) => a.raw.FOUNDATION_NAME.localeCompare(b.raw.FOUNDATION_NAME));
+  }
+
+  private static familyDiscoverRows(
+    rows: readonly OrgLensDiscoverMembershipRow[],
+    heldFoundations: ReadonlySet<string>,
+    relevantProjectsByFoundation: ReadonlyMap<string, number>
+  ): OrgLensDiscoverMembershipRow[] {
+    const byFoundation = new Map<string, OrgLensDiscoverMembershipRow>();
+    for (const raw of rows) {
+      if (heldFoundations.has(raw.FOUNDATION_ID)) continue;
+      const current = byFoundation.get(raw.FOUNDATION_ID);
+      byFoundation.set(
+        raw.FOUNDATION_ID,
+        current
+          ? {
+              ...current,
+              CONTRIBUTORS_COUNT: current.CONTRIBUTORS_COUNT + raw.CONTRIBUTORS_COUNT,
+              CONTRIBUTION_COUNT: current.CONTRIBUTION_COUNT + raw.CONTRIBUTION_COUNT,
+            }
+          : { ...raw }
+      );
+    }
+    return [...byFoundation.values()]
+      .map((raw) => ({ ...raw, ACCOUNT_ID: undefined, RELEVANT_PROJECTS: relevantProjectsByFoundation.get(raw.FOUNDATION_ID) ?? raw.RELEVANT_PROJECTS }))
+      .sort((a, b) => b.CONTRIBUTION_COUNT - a.CONTRIBUTION_COUNT || a.FOUNDATION_NAME.localeCompare(b.FOUNDATION_NAME));
+  }
+
+  private static isLaterExpiry(
+    candidate: OrgLensExpiredMembershipRow,
+    candidateOrganization: OrgLensRowOrganization,
+    current: OrgLensExpiredMembershipRow,
+    currentOrganization: OrgLensRowOrganization
+  ): boolean {
+    const candidateTime = candidate.EXPIRATION_DATE ? new Date(candidate.EXPIRATION_DATE).getTime() : Number.NEGATIVE_INFINITY;
+    const currentTime = current.EXPIRATION_DATE ? new Date(current.EXPIRATION_DATE).getTime() : Number.NEGATIVE_INFINITY;
+    if (candidateTime !== currentTime) return candidateTime > currentTime;
+    const byName = candidateOrganization.name.localeCompare(currentOrganization.name);
+    if (byName !== 0) return byName < 0;
+    return candidateOrganization.accountId < currentOrganization.accountId;
+  }
+
+  private static rowOrganizations(scope: OrgLensRollUpScope): OrgLensRowOrganization[] {
+    return scope.members.map((member) => ({ accountId: member.accountId, name: member.name }));
+  }
+
+  private static memberIds(scope: OrgLensRollUpScope): string[] {
+    return [...new Set(scope.members.map((member) => member.accountId))].sort();
+  }
+
+  private static memberDigest(accountIds: readonly string[]): string {
+    return createHash('sha256').update(JSON.stringify(accountIds)).digest('hex').slice(0, 16);
+  }
+
+  private getFamilyActiveMembershipRows(scope: OrgLensRollUpScope): Promise<OrgLensMembershipSummaryRow[]> {
+    const companies = OrgLensMembershipsService.memberIds(scope);
+    return withOrgCache(
+      scope.rollUpKey,
+      `memberships-active-family:v1:${OrgLensMembershipsService.memberDigest(companies)}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchActiveMembershipRows(companies),
+      OrgLensMembershipsService.isRawRowArray
+    );
+  }
+
+  private static filterActive(memberships: OrgActiveMembership[], search?: string, tier?: string, renewal?: string): OrgActiveMembership[] {
+    let filtered = memberships;
+
+    if (search) {
+      const term = search.toLowerCase();
+      filtered = filtered.filter((m) => m.foundationName.toLowerCase().includes(term));
+    }
+
+    if (tier) {
+      filtered = filtered.filter((m) => m.membershipTier === tier);
+    }
+
+    if (renewal === '90' || renewal === '30') {
+      const now = new Date();
+      const days = Number(renewal);
+      const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      filtered = filtered.filter((m) => {
+        if (!m.tierEndDate) return false;
+        return new Date(m.tierEndDate) <= cutoff;
+      });
+    }
+
+    return filtered;
+  }
+
   // Rejects a corrupt/legacy raw-row entry (degrade to a miss) before mapping/filtering runs over it; an
   // empty array is a legitimate cacheable result. Every cached row in this service carries FOUNDATION_ID.
   private static isRawRowArray(value: unknown): boolean {
@@ -315,7 +444,11 @@ export class OrgLensMembershipsService {
     );
   }
 
-  private async fetchActiveMembershipRows(accountId: string): Promise<RawMembershipRow[]> {
+  private static accountPredicate(accountIds: readonly string[]): string {
+    return accountIds.length === 1 ? 'ACCOUNT_ID = ?' : `ACCOUNT_ID IN (${accountIds.map(() => '?').join(', ')})`;
+  }
+
+  private async fetchActiveMembershipRows(accountIds: readonly string[]): Promise<OrgLensMembershipSummaryRow[]> {
     const query = `
       SELECT
         ACCOUNT_ID,
@@ -334,17 +467,18 @@ export class OrgLensMembershipsService {
         MEMBER_COUNT,
         IS_RENEWING_WITHIN_90_DAYS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_MEMBERSHIPS_SUMMARY
-      WHERE ACCOUNT_ID = ?
-      ORDER BY FOUNDATION_NAME ASC
+      WHERE ${OrgLensMembershipsService.accountPredicate(accountIds)}
+      ORDER BY FOUNDATION_NAME ASC, ACCOUNT_ID ASC
     `;
 
-    const result = await this.snowflakeService.execute<RawMembershipRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<OrgLensMembershipSummaryRow>(query, [...accountIds]);
     return result.rows;
   }
 
-  private async fetchExpiredMembershipRows(accountId: string): Promise<RawExpiredRow[]> {
+  private async fetchExpiredMembershipRows(accountIds: readonly string[]): Promise<OrgLensExpiredMembershipRow[]> {
     const query = `
       SELECT
+        ACCOUNT_ID,
         FOUNDATION_ID,
         FOUNDATION_NAME,
         FOUNDATION_SLUG,
@@ -355,17 +489,18 @@ export class OrgLensMembershipsService {
         EXPIRATION_DATE,
         ACTION_TYPE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_EXPIRED_MEMBERSHIPS
-      WHERE ACCOUNT_ID = ?
-      ORDER BY FOUNDATION_NAME ASC
+      WHERE ${OrgLensMembershipsService.accountPredicate(accountIds)}
+      ORDER BY FOUNDATION_NAME ASC, ACCOUNT_ID ASC
     `;
 
-    const result = await this.snowflakeService.execute<RawExpiredRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<OrgLensExpiredMembershipRow>(query, [...accountIds]);
     return result.rows;
   }
 
-  private async fetchDiscoverOpportunityRows(accountId: string): Promise<RawDiscoverRow[]> {
+  private async fetchDiscoverOpportunityRows(accountIds: readonly string[]): Promise<OrgLensDiscoverMembershipRow[]> {
     const query = `
       SELECT
+        ACCOUNT_ID,
         FOUNDATION_ID,
         FOUNDATION_NAME,
         FOUNDATION_SLUG,
@@ -376,11 +511,26 @@ export class OrgLensMembershipsService {
         CONTRIBUTION_COUNT,
         RELEVANT_PROJECTS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_DISCOVER_MEMBERSHIPS
-      WHERE ACCOUNT_ID = ?
+      WHERE ${OrgLensMembershipsService.accountPredicate(accountIds)}
       ORDER BY CONTRIBUTION_COUNT DESC
     `;
 
-    const result = await this.snowflakeService.execute<RawDiscoverRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<OrgLensDiscoverMembershipRow>(query, [...accountIds]);
+    return result.rows;
+  }
+
+  private async fetchFamilyRelevantProjectRows(accountIds: readonly string[]): Promise<OrgLensRelevantProjectsRow[]> {
+    const query = `
+      SELECT
+        FOUNDATION_ID,
+        COUNT(DISTINCT PROJECT_ID) AS RELEVANT_PROJECTS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_FOUNDATION_PROJECTS_DETAIL
+      WHERE ${OrgLensMembershipsService.accountPredicate(accountIds)}
+        AND IS_LF_PROJECT = TRUE
+      GROUP BY FOUNDATION_ID
+    `;
+
+    const result = await this.snowflakeService.execute<OrgLensRelevantProjectsRow>(query, [...accountIds]);
     return result.rows;
   }
 
@@ -420,7 +570,7 @@ export class OrgLensMembershipsService {
     };
   }
 
-  private shapeRow(raw: RawMembershipRow): OrgActiveMembership {
+  private shapeRow(raw: OrgLensMembershipSummaryRow): OrgActiveMembership {
     return {
       foundationId: raw.FOUNDATION_ID,
       foundationName: raw.FOUNDATION_NAME,
@@ -435,6 +585,34 @@ export class OrgLensMembershipsService {
       boardMembers: raw.BOARD_MEMBER_SEAT_COUNT,
       committeeMembers: raw.COMMITTEE_MEMBER_SEAT_COUNT,
       orgProjects: raw.ORG_PROJECTS_COUNT,
+    };
+  }
+
+  private shapeExpiredRow(raw: OrgLensExpiredMembershipRow): OrgExpiredMembership {
+    return {
+      foundationId: raw.FOUNDATION_ID,
+      foundationName: raw.FOUNDATION_NAME,
+      foundationSlug: raw.FOUNDATION_SLUG ?? '',
+      foundationLogo: raw.FOUNDATION_LOGO_URL,
+      membershipTier: raw.MEMBERSHIP_TIER_DISPLAY_NAME,
+      tierStartDate: this.formatDate(raw.TIER_START_DATE),
+      tierEndDate: this.formatDate(raw.TIER_END_DATE),
+      expirationDate: this.formatDate(raw.EXPIRATION_DATE),
+      actionType: raw.ACTION_TYPE,
+    };
+  }
+
+  private shapeDiscoverRow(raw: OrgLensDiscoverMembershipRow): OrgDiscoverOpportunity {
+    return {
+      foundationId: raw.FOUNDATION_ID,
+      foundationName: raw.FOUNDATION_NAME,
+      foundationSlug: raw.FOUNDATION_SLUG ?? '',
+      foundationLogo: raw.FOUNDATION_LOGO_URL,
+      category: raw.PROJECT_TYPE ?? '',
+      suggestedTier: raw.SUGGESTED_TIER ?? '',
+      relevantProjects: raw.RELEVANT_PROJECTS,
+      contributors: raw.CONTRIBUTORS_COUNT,
+      contributions: raw.CONTRIBUTION_COUNT,
     };
   }
 
