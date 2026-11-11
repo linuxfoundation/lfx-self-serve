@@ -408,7 +408,7 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
     expect(sql).toContain('AND NOT COALESCE(is_cdp_team_member, FALSE)');
     expect(sql).toContain('AND ((account_id IN (?) AND is_insights_scope) OR account_id IN (?))');
     expect(sql).toContain('AND family_account_id = ?');
-    expect(binds).toEqual([ALL_CO, INSIGHTS_CO, ALL_CO, INSIGHTS_CO, INSIGHTS_CO, ALL_CO, ROOT]);
+    expect(binds).toEqual([ALL_CO, INSIGHTS_CO, ROOT, INSIGHTS_CO, ALL_CO]);
     expect(options).toEqual({ expectMissingObject: 'ORG_CONTRIBUTORS_MONTHLY_PEOPLE', expectInvalidIdentifier: ['FAMILY_ACCOUNT_ID'] });
   });
 
@@ -420,7 +420,7 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
     expect(String(headlineCall()[0])).not.toMatch(/insights/i);
     expect(headlineCall()[1]).toEqual([ALL_CO, INSIGHTS_CO, ROOT]);
     expect(String(trendCall()[0])).not.toMatch(/insights/i);
-    expect(trendCall()[1]).toEqual([ALL_CO, INSIGHTS_CO, ALL_CO, INSIGHTS_CO, ROOT]);
+    expect(trendCall()[1]).toEqual([ALL_CO, INSIGHTS_CO, ROOT]);
   });
 
   it('keeps only Insights-scoped rows, without an OR term, when every company has an Insights organization', async () => {
@@ -443,9 +443,9 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly', () => {
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
     expect(execute.mock.calls.map(([query, binds]) => [isContributorsTrend(String(query)), (binds as string[]).length])).toEqual([
       [false, 5],
-      [true, 7],
+      [true, 5],
       [false, 5],
-      [true, 7],
+      [true, 5],
     ]);
 
     await service.getFamilyContributorsMonthly(ROLL_UP, [INSIGHTS_CO]);
@@ -622,20 +622,20 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly — against fixture
       UNIQUE_CONTRIBUTORS: people(rows.filter((row) => row.month === index)),
     }));
   };
-  // The family trend: the month list from ORG_CONTRIBUTORS_MONTHLY's bound companies, then the per-person rows counted
-  // distinct per month under the people CTE's companies, team-member rule and scope split.
+  // The family trend: the bound companies the family filter keeps, their months from ORG_CONTRIBUTORS_MONTHLY, then
+  // their per-person rows counted distinct per month under the people CTE's team-member rule and scope split.
   const familyMonthlyRows = (sql: string, binds: string[]): { MONTH_START_DATE: Date; UNIQUE_CONTRIBUTORS: number }[] => {
-    const monthsList = /ACCOUNT_ID IN \(([?, ]+)\)/.exec(sql)!;
-    const monthsCompanies = binds.slice(0, monthsList[1].split(',').length);
-    const filter = familyFilter(sql.slice(monthsList.index + monthsList[0].length), binds.slice(monthsCompanies.length));
+    const listed = binds.slice(0, /account_id IN \(([?, ]+)\)/.exec(sql)![1].split(',').length);
+    const familyBound = sql.includes('AND family_account_id = ?');
+    const companies = familyBound ? listed.filter((account) => familyOf(account) === binds[listed.length]) : listed;
+    const filter = familyFilter(sql.slice(sql.indexOf('people AS')), binds.slice(listed.length + (familyBound ? 1 : 0)));
     const rows = MONTHLY_PEOPLE.filter(
       (row) =>
-        filter.companies.includes(row.account) &&
-        (filter.family === null || familyOf(row.account) === filter.family) &&
+        companies.includes(row.account) &&
         !(filter.excludeTeam && row.teamMember) &&
         (filter.insights === null || (filter.insights.includes(row.account) && row.insightsScope) || filter.all.includes(row.account))
     );
-    return monthsWithCode(monthsCompanies).map((index) => ({
+    return monthsWithCode(companies).map((index) => ({
       MONTH_START_DATE: MONTHS[index],
       UNIQUE_CONTRIBUTORS: people(rows.filter((row) => row.month === index)),
     }));
@@ -693,6 +693,12 @@ describe('OrgInvolvementService.getFamilyContributorsMonthly — against fixture
 
     expect(family).toEqual(familyAlone);
     expect((await service.getContributorsMonthly(OTHER_FAMILY_CO)).monthlyData[2]).toBe(1);
+  });
+
+  it('answers no months when the only company with code belongs to another warehouse family', async () => {
+    const family = await new OrgInvolvementService().getFamilyContributorsMonthly(ROLL_UP, [OTHER_FAMILY_CO]);
+
+    expect(family).toMatchObject({ totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] });
   });
 
   it('leaves a company without code in the window out, so a family of one such company has an empty trend', async () => {
@@ -785,13 +791,15 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
           ],
         };
       }
+      // A family trend binds the companies and then the family, and reads both its months and its roles from the
+      // companies the family filter keeps.
       const family = sql.includes('ORG_MAINTAINER_ROLE_MONTHS');
-      const listLength = (binds.length - 1) / 2;
-      const monthCompanies = family ? binds.slice(0, listLength) : [binds[0]];
-      const roleCompanies = family ? binds.slice(listLength, -1) : [binds[0]];
-      const rows = counted(ROLE_MONTHS, roleCompanies, excludeTeam, sql.includes('AND r.FAMILY_ACCOUNT_ID = ?') ? binds.at(-1) : null);
+      const familyBound = sql.includes('AND FAMILY_ACCOUNT_ID = ?');
+      const listed = family ? binds.slice(0, familyBound ? -1 : undefined) : [binds[0]];
+      const companies = familyBound ? listed.filter((account) => familyOf(account) === binds.at(-1)) : listed;
+      const rows = counted(ROLE_MONTHS, companies, excludeTeam);
       return {
-        rows: monthlyViewMonths(monthCompanies).map((month) => ({
+        rows: monthlyViewMonths(companies).map((month) => ({
           METRIC_MONTH: MONTHS[month],
           ACTIVE_ROLES: distinct(rows.filter((row) => row.month === month)),
         })),
@@ -858,16 +866,18 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
 
     const [sql, binds, options] = trendCall();
     expect(sql).toContain(
-      'SELECT DISTINCT METRIC_MONTH\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY\n        WHERE ACCOUNT_ID IN (?, ?)'
+      'SELECT DISTINCT METRIC_MONTH\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY\n        WHERE ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)'
     );
     expect(sql).toContain('SELECT m.METRIC_MONTH, COUNT(DISTINCT r.PERSON_KEY, r.SEGMENT_ID) AS ACTIVE_ROLES');
     expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r');
-    expect(sql).toContain('ON r.METRIC_MONTH = m.METRIC_MONTH\n        AND r.ACCOUNT_ID IN (?, ?)');
+    expect(sql).toContain('ON r.METRIC_MONTH = m.METRIC_MONTH\n        AND r.ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)');
     expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
     expect(sql).not.toContain('GENERATOR');
     expect(sql).not.toContain('ROLE_START_DATE');
-    expect(sql).toContain('AND r.FAMILY_ACCOUNT_ID = ?');
-    expect(binds).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO, ROOT]);
+    expect(sql).toContain(
+      'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS\n        WHERE ACCOUNT_ID IN (?, ?)\n          AND FAMILY_ACCOUNT_ID = ?'
+    );
+    expect(binds).toEqual([PARENT_CO, CHILD_CO, ROOT]);
     expect(options).toEqual({ expectMissingObject: 'ORG_MAINTAINER_ROLE_MONTHS', expectInvalidIdentifier: ['FAMILY_ACCOUNT_ID'] });
   });
 
@@ -875,7 +885,7 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     const service = new OrgInvolvementService();
     await service.getFamilyMaintainersMonthly(ROLL_UP, [CHILD_CO, PARENT_CO, CHILD_CO]);
     const firstKey = withOrgCache.mock.calls.at(-1)?.[1];
-    expect(trendCall()[1]).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO, ROOT]);
+    expect(trendCall()[1]).toEqual([PARENT_CO, CHILD_CO, ROOT]);
     await service.getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
@@ -906,6 +916,12 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
 
     expect(family).toEqual(familyAlone);
     expect((await service.getMaintainersMonthly(OTHER_FAMILY_CO)).maintainerRoles).toBe(1);
+  });
+
+  it('answers no months when the only company with roles belongs to another warehouse family', async () => {
+    const family = await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [OTHER_FAMILY_CO]);
+
+    expect(family).toMatchObject({ maintainerRoles: 0, monthlyData: [], monthlyLabels: [] });
   });
 
   it('answers an empty trend when no company of the family holds a role in the window', async () => {
@@ -1137,16 +1153,15 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
 
   /** The family read over the same rows: the months the bound companies' monthly rows list, the people the participation rows hold. */
   const familyRead = (sql: string, binds: unknown[]): Record<string, unknown>[] => {
-    // The companies twice, then the window, then the family.
-    const companies = binds.slice(0, (binds.length - 2) / 2);
-    const windowed = sql.includes('AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())') && binds.at(-2) === 730;
-    const family = sql.includes('AND family_account_id = ?') ? binds.at(-1) : null;
+    // The companies, then the family, then the window; the months and the people come from the companies the family keeps.
+    const familyBound = sql.includes('AND family_account_id = ?');
+    const listed = binds.slice(0, binds.length - (familyBound ? 2 : 1));
+    const companies = familyBound ? listed.filter((account) => familyOf(account) === binds.at(-2)) : listed;
+    const windowed = sql.includes('AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())') && binds.at(-1) === 730;
     const months = [...new Set(companies.flatMap((account) => monthlyTable(account).map((row) => (row['MONTH_START_DATE'] as Date).getTime())))].sort(
       (a, b) => a - b
     );
-    const participants = PARTICIPATION.filter(
-      (row) => binds.slice(companies.length, -2).includes(row.account) && (family === null || familyOf(row.account) === family) && (!windowed || row.inWindow)
-    );
+    const participants = PARTICIPATION.filter((row) => companies.includes(row.account) && (!windowed || row.inWindow));
     return months.map((time) => ({
       MONTH_START_DATE: new Date(time),
       ATTENDEES: distinct(inMonth(participants, time), 'attendee'),
@@ -1197,9 +1212,10 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
 
     const [sql, binds, options] = execute.mock.calls[0] as [string, unknown[], unknown];
     expect(sql).toContain(
-      'SELECT DISTINCT MONTH_START_DATE\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY\n        WHERE ACCOUNT_ID IN (?, ?)'
+      'SELECT DISTINCT MONTH_START_DATE\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY\n        WHERE ACCOUNT_ID IN (SELECT account_id FROM family_companies)'
     );
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION\n        WHERE account_id IN (?, ?)');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION\n        WHERE account_id IN (?, ?)\n          AND family_account_id = ?');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION\n        WHERE account_id IN (SELECT account_id FROM family_companies)');
     expect(sql).toContain('CROSS_ACCOUNT_PARTICIPANT_REF AS PARTICIPANT');
     expect(sql).toContain('AND event_date < CURRENT_DATE()');
     expect(sql).toContain('AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())');
@@ -1208,7 +1224,7 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
     expect(sql).toContain('LEFT JOIN participants AS p ON p.MONTH_START_DATE = m.MONTH_START_DATE');
     expect(sql).toContain('AND family_account_id = ?');
     expect(sql).not.toMatch(/HAVING|IS_SHOWN|person_key|participant_ref\b|SELF_REPORTED|_COMPANY_EMAIL|is_counted_all_all/);
-    expect(binds).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO, 730, ROOT]);
+    expect(binds).toEqual([PARENT_CO, CHILD_CO, ROOT, 730]);
     expect(options).toEqual({ expectInvalidIdentifier: ['FAMILY_ACCOUNT_ID', 'CROSS_ACCOUNT_PARTICIPANT_REF'] });
   });
 
@@ -1216,7 +1232,7 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
     const service = new OrgInvolvementService();
     await service.getFamilyEventAttendanceMonthly(ROLL_UP, [CHILD_CO, PARENT_CO, CHILD_CO]);
     const firstKey = withOrgCache.mock.calls.at(-1)?.[1];
-    expect((execute.mock.calls[0] as [string, unknown[]])[1]).toEqual([PARENT_CO, CHILD_CO, PARENT_CO, CHILD_CO, 730, ROOT]);
+    expect((execute.mock.calls[0] as [string, unknown[]])[1]).toEqual([PARENT_CO, CHILD_CO, ROOT, 730]);
     await service.getFamilyEventAttendanceMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     expect(withOrgCache.mock.calls.at(-1)?.[1]).toBe(firstKey);
@@ -1255,6 +1271,12 @@ describe('OrgInvolvementService.getFamilyEventAttendanceMonthly', () => {
 
     expect(family).toEqual(familyAlone);
     expect((await service.getEventAttendanceMonthly(OTHER_FAMILY_CO)).totalAttended).toBe(1);
+  });
+
+  it('answers no months when the only company with events belongs to another warehouse family', async () => {
+    const family = await new OrgInvolvementService().getFamilyEventAttendanceMonthly(ROLL_UP, [OTHER_FAMILY_CO]);
+
+    expect(family).toMatchObject({ totalAttended: 0, totalSpeakers: 0, monthlyLabels: [] });
   });
 
   it('answers zero people and no months when no company of the family took part in the window', async () => {

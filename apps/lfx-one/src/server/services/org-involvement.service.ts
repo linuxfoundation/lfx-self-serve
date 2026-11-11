@@ -338,8 +338,9 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Active Contributors card for a family, each company under its own organization scope. Both reads keep only
-   * the rows of the warehouse's family (FAMILY_ACCOUNT_ID), narrowed to the companies the viewer may see. The headline is
+   * Overview Active Contributors card for a family, each company under its own organization scope. Both reads, and the
+   * trend's months, keep only the companies of the warehouse's family (FAMILY_ACCOUNT_ID) among the ones the viewer may
+   * see. The headline is
    * counted live from the daily table with the single-company headline rule, over every company at once, so a person
    * credited to two companies counts once. The trend is the warehouse's ORG_CONTRIBUTORS_MONTHLY_PEOPLE rows (one per company,
    * person and month) counted distinct per month across the companies, over the months ORG_CONTRIBUTORS_MONTHLY lists
@@ -376,18 +377,23 @@ export class OrgInvolvementService {
         AND family_account_id = ?
     `;
     const trendQuery = `
-      WITH months AS (
+      WITH family_companies AS (
+        SELECT DISTINCT account_id
+        FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW}
+        WHERE account_id IN (${placeholders(companies)})
+          AND family_account_id = ?
+      ),
+      months AS (
         SELECT DISTINCT MONTH_START_DATE
         FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_VIEW}
-        WHERE ACCOUNT_ID IN (${placeholders(companies)})
+        WHERE ACCOUNT_ID IN (SELECT account_id FROM family_companies)
       ),
       people AS (
         SELECT month_start_date, person_key
         FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW}
-        WHERE account_id IN (${placeholders(companies)})
+        WHERE account_id IN (SELECT account_id FROM family_companies)
           ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS)}
           ${scopePredicate('is_insights_scope')}
-          AND family_account_id = ?
       )
       SELECT m.MONTH_START_DATE, COUNT(DISTINCT p.person_key) AS UNIQUE_CONTRIBUTORS
       FROM months AS m
@@ -407,7 +413,7 @@ export class OrgInvolvementService {
       this.snowflakeService
         .execute<ContributorsMonthlyRow>(
           trendQuery,
-          [...companies, ...companies, ...scopeBinds, familyAccountId],
+          [...companies, familyAccountId, ...scopeBinds],
           withFamilyColumnExpected({ expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW })
         )
         .then((result) => result.rows)
@@ -493,8 +499,8 @@ export class OrgInvolvementService {
 
   /**
    * Overview Maintainers card for a family. A role is one person (PERSON_KEY, the same under every company) on one project
-   * (SEGMENT_ID), so a role credited to two companies of the family counts once. Both reads keep only the rows of the
-   * warehouse's family (FAMILY_ACCOUNT_ID), narrowed to the companies the viewer may see. The headline counts the roles
+   * (SEGMENT_ID), so a role credited to two companies of the family counts once. Both reads, and the trend's months, keep
+   * only the companies of the warehouse's family (FAMILY_ACCOUNT_ID) among the ones the viewer may see. The headline counts the roles
    * table with the single-company headline's overlap rule (the last 2 years to today); the trend counts lf-dbt's
    * ORG_MAINTAINER_ROLE_MONTHS rows, the same window and overlap rule ORG_MAINTAINER_ROLES_MONTHLY counts, over the months
    * that view lists for the companies. CDP team members' roles are left out of both.
@@ -517,19 +523,24 @@ export class OrgInvolvementService {
         AND FAMILY_ACCOUNT_ID = ?
     `;
     const trendQuery = `
-      WITH months AS (
+      WITH family_companies AS (
+        SELECT DISTINCT ACCOUNT_ID
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS
+        WHERE ACCOUNT_ID IN (${accountList})
+          AND FAMILY_ACCOUNT_ID = ?
+      ),
+      months AS (
         SELECT DISTINCT METRIC_MONTH
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
-        WHERE ACCOUNT_ID IN (${accountList})
+        WHERE ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)
       )
       SELECT m.METRIC_MONTH, COUNT(DISTINCT r.PERSON_KEY, r.SEGMENT_ID) AS ACTIVE_ROLES
       FROM months AS m
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r
         ON r.METRIC_MONTH = m.METRIC_MONTH
-        AND r.ACCOUNT_ID IN (${accountList})
+        AND r.ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)
         ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
         ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS, 'IS_CDP_TEAM_MEMBER')}
-        AND r.FAMILY_ACCOUNT_ID = ?
       GROUP BY m.METRIC_MONTH
       ORDER BY m.METRIC_MONTH ASC
     `;
@@ -546,7 +557,7 @@ export class OrgInvolvementService {
         this.snowflakeService,
         'ORG_MAINTAINER_ROLE_MONTHS',
         trendQuery,
-        [...companies, ...companies, familyAccountId],
+        [...companies, familyAccountId],
         withFamilyColumnExpected()
       ),
     ]);
@@ -611,8 +622,8 @@ export class OrgInvolvementService {
    * attended, ended events in the last 2 years) over every company of the family at once. The months are the ones
    * ORG_EVENT_PARTICIPATION_MONTHLY lists for those companies, so a family of one has that company's own series; the
    * people are counted distinct per month and over the window from the person-level participation table through the
-   * participant number every company shares, so a person credited to two companies counts once. The people are the rows
-   * of the warehouse's family (FAMILY_ACCOUNT_ID) only, narrowed to the companies the viewer may see. Until those columns
+   * participant number every company shares, so a person credited to two companies counts once. The months and the people
+   * come only from the companies of the warehouse's family (FAMILY_ACCOUNT_ID) among the ones the viewer may see. Until those columns
    * are in the warehouse the read fails rather than serve per-company counts that would count such a person twice.
    */
   private async fetchFamilyEventAttendanceMonthly(
@@ -622,10 +633,16 @@ export class OrgInvolvementService {
   ): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     const accountList = companies.map(() => '?').join(', ');
     const query = `
-      WITH months AS (
+      WITH family_companies AS (
+        SELECT DISTINCT account_id
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
+        WHERE account_id IN (${accountList})
+          AND family_account_id = ?
+      ),
+      months AS (
         SELECT DISTINCT MONTH_START_DATE
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY
-        WHERE ACCOUNT_ID IN (${accountList})
+        WHERE ACCOUNT_ID IN (SELECT account_id FROM family_companies)
       ),
       participants AS (
         SELECT
@@ -634,10 +651,9 @@ export class OrgInvolvementService {
           is_counted_all_verified AS IS_ATTENDEE,
           is_counted_speaker_verified AS IS_SPEAKER
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
-        WHERE account_id IN (${accountList})
+        WHERE account_id IN (SELECT account_id FROM family_companies)
           AND event_date < CURRENT_DATE()
           AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())
-          AND family_account_id = ?
       )
       SELECT
         m.MONTH_START_DATE,
@@ -654,7 +670,7 @@ export class OrgInvolvementService {
     // The columns are expected to be missing until they are built, so their absence does not count toward the circuit breaker.
     const { rows } = await this.snowflakeService.execute<OrgFamilyEventAttendanceMonthlyRow>(
       query,
-      [...companies, ...companies, ORG_LENS_TIME_RANGE_DAYS['730d'], familyAccountId],
+      [...companies, familyAccountId, ORG_LENS_TIME_RANGE_DAYS['730d']],
       withFamilyColumnExpected({ expectInvalidIdentifier: ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN })
     );
 
