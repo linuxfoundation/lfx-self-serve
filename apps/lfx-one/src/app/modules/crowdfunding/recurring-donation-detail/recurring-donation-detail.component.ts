@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Subject } from 'rxjs';
-import { concatMap, filter, map, scan, startWith, switchMap, tap } from 'rxjs/operators';
+import { concatMap, filter, finalize, map, scan, startWith, switchMap, take, tap } from 'rxjs/operators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
@@ -45,12 +45,15 @@ export class RecurringDonationDetailComponent {
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────
   protected readonly isLoading = signal(true);
+  protected readonly anonymitySaving = signal(false);
 
   // ─── Private Fields ───────────────────────────────────────────────────────
   private readonly emptyChargeHistoryState = { items: [] as CrowdfundingTransaction[], hasMore: false };
 
   // ─── Complex Signals ──────────────────────────────────────────────────────
-  protected readonly donation: Signal<RecurringDonation | undefined> = this.initDonation();
+  private readonly fetchedDonation: Signal<RecurringDonation | undefined> = this.initDonation();
+  // Writable so a saved name-visibility change shows without refetching; resets whenever a new donation loads.
+  protected readonly donation: WritableSignal<RecurringDonation | undefined> = linkedSignal(() => this.fetchedDonation());
   private readonly chargeHistoryState: Signal<{ items: CrowdfundingTransaction[]; hasMore: boolean }> = this.initChargeHistory();
   protected readonly chargeHistory = computed(() => this.chargeHistoryState().items);
   protected readonly chargeHistoryHasMore = computed(() => this.chargeHistoryState().hasMore);
@@ -81,6 +84,38 @@ export class RecurringDonationDetailComponent {
     });
   }
 
+  /** Hides or shows the donor's name on every charge of this subscription (lfx-crowdfunding#466). */
+  protected onToggleAnonymity(): void {
+    const donation = this.donation();
+    if (!donation || this.anonymitySaving()) return;
+
+    this.anonymitySaving.set(true);
+    this.crowdfundingService
+      .updateSubscriptionAnonymity(donation.id, !donation.anonymous)
+      .pipe(
+        take(1),
+        finalize(() => this.anonymitySaving.set(false))
+      )
+      .subscribe({
+        next: (result) => {
+          this.donation.update((current) => (current && current.id === donation.id ? { ...current, anonymous: result.anonymous } : current));
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Saved',
+            detail: result.anonymous
+              ? 'Your name is now hidden on every charge of this recurring donation. It shows as Anonymous.'
+              : 'Your name is now shown on every charge of this recurring donation.',
+          });
+        },
+        error: () =>
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to update who can see your name on this donation. Please try again.',
+          }),
+      });
+  }
+
   protected onLoadMore(): void {
     this.loadMore$.next();
   }
@@ -103,7 +138,8 @@ export class RecurringDonationDetailComponent {
 
   private initChargeHistory(): Signal<{ items: CrowdfundingTransaction[]; hasMore: boolean }> {
     return toSignal(
-      toObservable(this.donation).pipe(
+      // Keyed on the fetched donation: a name-visibility toggle must not reset the loaded pages.
+      toObservable(this.fetchedDonation).pipe(
         filter((d): d is RecurringDonation => d !== undefined),
         map((d) => d.initiativeSlug),
         switchMap((slug) =>

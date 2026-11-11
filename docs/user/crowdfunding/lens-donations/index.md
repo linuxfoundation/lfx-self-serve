@@ -4,7 +4,7 @@ description: View the crowdfunding donations made on behalf of an organization i
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, organization, lens]
-last_updated: 2026-11-05
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
@@ -26,7 +26,7 @@ The page header reads **Donations**, with the description "Donations on LFX Crow
 
 - **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made
-- **Donor** and **Email** — the person who donated
+- **Donor** and **Email** — the person who donated. When the donor chose to hide their name, **Donor** shows **Anonymous** and **Email** shows a dash; the donation and its amount are still listed
 - **Amount** — in USD; a recurring donation shows its amount per charge
 
 The newest donations come first. Select **Load more** to see older ones.
