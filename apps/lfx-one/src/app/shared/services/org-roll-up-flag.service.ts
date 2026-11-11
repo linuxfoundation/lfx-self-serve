@@ -27,18 +27,21 @@ export class OrgRollUpFlagService {
   private readonly flagValue: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ROLLUP_ENABLED_FLAG, false);
   private readonly waitExpired: WritableSignal<boolean> = signal<boolean>(false);
 
-  /** True while the flag's value for the signed-in viewer is not known yet — always on the server. */
-  public readonly unsettled: Signal<boolean> = computed(() => {
-    // A locally pinned value (non-production builds only) is an answer on its own.
-    if (this.featureFlagService.getFlagOverride(ORG_LENS_ROLLUP_ENABLED_FLAG) !== undefined) {
-      return false;
-    }
-    const identified = this.featureFlagService.initialized() && this.featureFlagService.providerReady();
-    return !identified && !this.waitExpired();
-  });
+  /**
+   * True once LaunchDarkly has answered for the signed-in viewer, or a value is pinned locally
+   * (non-production builds only) — either is an answer on its own.
+   */
+  private readonly answered: Signal<boolean> = computed(
+    () =>
+      this.featureFlagService.getFlagOverride(ORG_LENS_ROLLUP_ENABLED_FLAG) !== undefined ||
+      (this.featureFlagService.initialized() && this.featureFlagService.providerReady())
+  );
 
-  /** True once the flag is known to be on for this viewer. False while it is unsettled. */
-  public readonly enabled: Signal<boolean> = computed(() => !this.unsettled() && this.flagValue());
+  /** True while the flag's value for the signed-in viewer is not known yet — always on the server. */
+  public readonly unsettled: Signal<boolean> = computed(() => !this.answered() && !this.waitExpired());
+
+  /** True once the flag is known to be on for this viewer. False while unsettled, and after an expired wait with no answer. */
+  public readonly enabled: Signal<boolean> = computed(() => this.answered() && this.flagValue());
 
   public constructor() {
     // Browser only: a pending timer would hold SSR's render open, and the server never settles anyway.

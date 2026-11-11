@@ -80,6 +80,11 @@ describe('OrgRollUpFlagService', () => {
     vi.advanceTimersByTime(1);
     expect(service.unsettled()).toBe(false);
     expect(service.enabled()).toBe(false);
+
+    // An answer that arrives after the budget still counts.
+    initialized.set(true);
+    providerReady.set(true);
+    expect(service.enabled()).toBe(true);
   });
 
   it('treats a locally pinned value as settled', () => {
