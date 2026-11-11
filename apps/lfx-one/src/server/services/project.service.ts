@@ -9392,6 +9392,11 @@ export class ProjectService {
    * Rejects (409) when a project folder still holds a link or an uploaded file. The upstream folder delete
    * enforces this too, but its 409 is shared with revision mismatches, so the BFF checks first to give a clear
    * message. Unlike the list view, a lookup failure is not swallowed into "empty": a destructive call must fail closed.
+   *
+   * Links and files are looked up by the folder's own `folder_uid` tag (with the project's, so another project can never
+   * match), not by listing every link and file of the project, so a large unrelated collection cannot hit the pagination
+   * cap and make an empty folder undeletable. The query service checks access after it paginates, so a page can come back
+   * with no visible rows while more remain: the pages are followed, stopping at the first match, rather than trusting one.
    */
   private async assertProjectFolderEmpty(req: Request, projectId: string, folderId: string): Promise<void> {
     const [links, files] = await Promise.all([
@@ -9400,20 +9405,20 @@ export class ProjectService {
         (pageToken) =>
           this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'project_link',
-            tags: `project_uid:${projectId}`,
+            tags_all: [`project_uid:${projectId}`, `folder_uid:${folderId}`],
             ...(pageToken && { page_token: pageToken }),
           }),
-        { failOnPartial: true }
+        { failOnPartial: true, maxResults: 0 }
       ),
       fetchAllQueryResources<ProjectDocumentQueryResult>(
         req,
         (pageToken) =>
           this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'project_document',
-            tags: `project_uid:${projectId}`,
+            tags_all: [`project_uid:${projectId}`, `folder_uid:${folderId}`],
             ...(pageToken && { page_token: pageToken }),
           }),
-        { failOnPartial: true }
+        { failOnPartial: true, maxResults: 0 }
       ),
     ]);
 

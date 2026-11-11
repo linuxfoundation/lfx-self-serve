@@ -2904,6 +2904,11 @@ export class CommitteeService {
    * Rejects (409) when a committee folder still holds a link or an uploaded file. The upstream folder delete only
    * mentions links, so the BFF checks files itself. Unlike the list view, a lookup failure is not swallowed into
    * "empty": a destructive call must fail closed.
+   *
+   * The files are looked up by the folder's own `folder_uid` tag (with the committee's, so another committee can never
+   * match), not by listing every file of the committee, so a large unrelated collection cannot hit the pagination cap and
+   * make an empty folder undeletable. The query service checks access after it paginates, so a page can come back with no
+   * visible rows while more remain: the pages are followed, stopping at the first file found, rather than trusting one.
    */
   private async assertCommitteeFolderEmpty(req: Request, committeeId: string, folderId: string): Promise<void> {
     const [links, files] = await Promise.all([
@@ -2913,10 +2918,10 @@ export class CommitteeService {
         (pageToken) =>
           this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'committee_document',
-            tags: `committee_uid:${committeeId}`,
+            tags_all: [`committee_uid:${committeeId}`, `folder_uid:${folderId}`],
             ...(pageToken && { page_token: pageToken }),
           }),
-        { failOnPartial: true }
+        { failOnPartial: true, maxResults: 0 }
       ),
     ]);
 

@@ -451,6 +451,28 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
     expect(deleteWithETag).not.toHaveBeenCalled();
   });
 
+  it("looks the folder's files up by its own folder_uid tag and stops at the first one, not by listing every file of the committee", async () => {
+    proxyRequest.mockResolvedValueOnce([]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([]);
+
+    await service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder');
+
+    const [, fetchPage, options] = vi.mocked(fetchAllQueryResources).mock.calls[0];
+    expect(options).toEqual({ failOnPartial: true, maxResults: 0 });
+    proxyRequest.mockClear();
+    await fetchPage();
+    await fetchPage('next-page');
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'committee_document',
+      tags_all: ['committee_uid:committee-1', 'folder_uid:folder-1'],
+    });
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'committee_document',
+      tags_all: ['committee_uid:committee-1', 'folder_uid:folder-1'],
+      page_token: 'next-page',
+    });
+  });
+
   it('rejects an unknown document type before any upstream call', async () => {
     await expect(service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
     expect(fetchWithETag).not.toHaveBeenCalled();

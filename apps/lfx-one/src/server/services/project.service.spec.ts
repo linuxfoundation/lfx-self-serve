@@ -3248,6 +3248,52 @@ describe('ProjectService.deleteProjectDocument', () => {
     expect(deleteWithETag).not.toHaveBeenCalled();
   });
 
+  it("looks links and files up by the folder's own folder_uid tag, not by listing every link and file of the project", async () => {
+    mockChildren({});
+
+    await service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder');
+
+    const queries = proxyRequest.mock.calls.map((call) => call[4]);
+    expect(queries).toHaveLength(2);
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        { type: 'project_link', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+        { type: 'project_document', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+      ])
+    );
+  });
+
+  // The query service checks access after it paginates, so a page can have no visible rows while more remain.
+  it('follows the page token past a page with no visible rows and refuses when a later page holds a file', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string; page_token?: string }) => {
+      if (params?.type === 'project_document' && !params.page_token) {
+        return Promise.resolve({ resources: [], page_token: 'page-2' });
+      }
+      if (params?.type === 'project_document') {
+        return Promise.resolve({ resources: [{ id: 'project_document:f', data: { uid: 'file-1', folder_uid: 'folder-1' } }] });
+      }
+      return Promise.resolve({ resources: [] });
+    });
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409, code: 'FOLDER_NOT_EMPTY' });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('stops at the first match instead of paging on', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      Promise.resolve(
+        params?.type === 'project_link'
+          ? { resources: [{ id: 'project_link:l', data: { uid: 'link-1', folder_uid: 'folder-1' } }], page_token: 'more' }
+          : { resources: [] }
+      )
+    );
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409 });
+
+    const linkPages = proxyRequest.mock.calls.filter((call) => call[4]?.type === 'project_link');
+    expect(linkPages).toHaveLength(1);
+  });
+
   it('rejects an unknown document type before any upstream call', async () => {
     await expect(service.deleteProjectDocument(req, 'project-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
     expect(fetchWithETag).not.toHaveBeenCalled();
