@@ -31,6 +31,7 @@ import {
   NewsletterScheduleResult,
   NewsletterScheduleWindowError,
   NewsletterSendResult,
+  NewsletterAudience,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -78,7 +79,9 @@ import {
   Subject,
   switchMap,
   take,
+  takeWhile,
   tap,
+  timer,
 } from 'rxjs';
 
 import { NewsletterAudienceStepComponent } from '../components/newsletter-audience-step/newsletter-audience-step.component';
@@ -87,6 +90,10 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
 import { NewsletterPublicationPickerComponent } from '../components/newsletter-publication-picker/newsletter-publication-picker.component';
 import { NewsletterReviewComponent } from '../components/newsletter-review/newsletter-review.component';
 import { NewsletterSendStepComponent } from '../components/newsletter-send-step/newsletter-send-step.component';
+
+// How often the manage page polls a processing audience snapshot, and for how long (2s x 300 = 10 minutes).
+const AUDIENCE_POLL_MS = 2000;
+const AUDIENCE_POLL_MAX = 300;
 
 @Component({
   selector: 'lfx-newsletter-manage',
@@ -407,7 +414,10 @@ export class NewsletterManageComponent {
   // pipeline (rather than each firing its own independent subscription)
   // cancels the stale in-flight request instead of letting it race the
   // normalized one and clobber the displayed count.
-  private readonly recipientCountTrigger$ = new Subject<string[]>();
+  private readonly recipientCountTrigger$ = new Subject<{ uids: string[]; refresh: boolean }>();
+  // The draft's audience snapshot (#4352). A send reads the recipients from it, so Send and Schedule wait until
+  // it is ready for the committees on screen. Null until a saved draft's committees have been resolved.
+  protected readonly audience = signal<NewsletterAudience | null>(null);
 
   // === Audience email adds ===
   // Owned here (not by the audience step) because the stepper destroys the step
@@ -512,9 +522,17 @@ export class NewsletterManageComponent {
   });
   // The editor-only release sends tests only, so a real send or schedule is locked for a layout draft.
   public readonly liveSendLocked = computed(() => isNewsletterLiveSendLocked(this.isBlocksMode()));
+  // A saved draft sends from its audience snapshot, so it has to be ready for the committees on screen.
+  // A draft that is not saved yet can't be sent either way (runSend saves first).
+  public readonly audienceReady = computed(() => {
+    if (!this.newsletterId()) return true;
+    const audience = this.audience();
+    return audience?.status === 'ready' && this.uidsEqual([...audience.committee_uids].sort(), [...this.committeeUidsValue()].sort());
+  });
   public readonly canSend = computed(
     () =>
       !this.liveSendLocked() &&
+      this.audienceReady() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
@@ -552,6 +570,7 @@ export class NewsletterManageComponent {
   public readonly canSchedule = computed(
     () =>
       !this.liveSendLocked() &&
+      this.audienceReady() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
@@ -908,7 +927,7 @@ export class NewsletterManageComponent {
         // audience — an add resolving after a group switch must not clobber
         // the new group's count.
         if (this.committeeUidsValue()[0] === committeeUid) {
-          this.fetchRecipientCountFor(this.committeeUidsValue());
+          this.fetchRecipientCountFor(this.committeeUidsValue(), true);
         }
       },
       error: (err: HttpErrorResponse) => {
@@ -1061,29 +1080,45 @@ export class NewsletterManageComponent {
   }
 
   private initRecipientCount(): void {
-    merge(this.form.controls.committeeUids.valueChanges.pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual)), this.recipientCountTrigger$)
+    merge(
+      this.form.controls.committeeUids.valueChanges.pipe(
+        debounceTime(300),
+        distinctUntilChanged(this.uidsEqual),
+        map((uids) => ({ uids: uids ?? [], refresh: false }))
+      ),
+      this.recipientCountTrigger$
+    )
       .pipe(
-        switchMap((uids) => this.fetchRecipientCount$(uids ?? [])),
+        switchMap(({ uids, refresh }) => this.fetchRecipientCount$(uids ?? [], refresh)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe();
   }
 
-  private fetchRecipientCountFor(uids: string[]): void {
-    this.recipientCountTrigger$.next(uids);
+  /** refresh rebuilds a ready snapshot, e.g. after an email was added to the group. */
+  private fetchRecipientCountFor(uids: string[], refresh = false): void {
+    this.recipientCountTrigger$.next({ uids, refresh });
   }
 
   private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
     this.audienceEmailAdds.update((entries) => entries.map((e) => (e.committeeUid === committeeUid && e.email === email ? { ...e, ...patch } : e)));
   }
 
-  private fetchRecipientCount$(uids: string[]) {
+  private fetchRecipientCount$(uids: string[], refresh = false) {
     if (!uids || uids.length === 0) {
       this.recipientCount.set(0);
+      this.audience.set(null);
       return EMPTY;
     }
     if (!this.hasContext()) {
       return EMPTY;
+    }
+    // A saved draft's committees go through its audience snapshot, which the send reads. A selection not
+    // saved yet (or a scheduled newsletter) keeps the live count as a preview; the autosave that follows
+    // re-triggers this for the saved committees (see recordSavedSnapshot).
+    const id = this.newsletterId();
+    if (id && this.newsletterStatus() === 'draft' && this.uidsEqual(uids, this.lastSavedSnapshot()?.committeeUids)) {
+      return this.resolveAudience$(id, uids, refresh);
     }
     this.recipientCountLoading.set(true);
     return this.newsletterService.getRecipientCount(this.projectUid(), { committee_uids: uids }).pipe(
@@ -1107,6 +1142,65 @@ export class NewsletterManageComponent {
       }),
       catchError(() => EMPTY)
     );
+  }
+
+  /**
+   * Starts (or reuses) the draft's audience snapshot and polls until the background read finishes. The count
+   * comes from the snapshot, and Send waits on audienceReady. A long committee can take a while, so the
+   * spinner stays up while it is processing.
+   */
+  private resolveAudience$(id: string, uids: string[], refresh: boolean) {
+    const projectUid = this.projectUid();
+    this.recipientCountLoading.set(true);
+    return this.newsletterService.resolveAudience(projectUid, id, { committee_uids: uids, refresh }).pipe(
+      switchMap((audience) =>
+        audience.status === 'processing'
+          ? timer(AUDIENCE_POLL_MS, AUDIENCE_POLL_MS).pipe(
+              switchMap(() => this.newsletterService.getAudience(projectUid, id)),
+              takeWhile((polled) => polled.status === 'processing', true),
+              take(AUDIENCE_POLL_MAX)
+            )
+          : of(audience)
+      ),
+      tap((audience) => {
+        // Ignore a result for a selection that changed while the read ran.
+        if (!this.uidsEqual(uids, this.committeeUidsValue())) return;
+        this.audience.set(audience);
+        if (audience.status === 'ready') {
+          this.recipientCount.set(audience.recipient_count);
+        } else if (audience.status === 'failed') {
+          this.recipientCount.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Could not build the recipient list',
+            detail: audience.error ? `${audience.error}. Change the group or try again.` : 'Change the group or try again.',
+            life: 8000,
+          });
+        }
+      }),
+      finalize(() => this.recipientCountLoading.set(false)),
+      catchError(() => {
+        if (this.uidsEqual(uids, this.committeeUidsValue())) {
+          this.audience.set(null);
+          this.recipientCount.set(null);
+        }
+        return EMPTY;
+      })
+    );
+  }
+
+  /** A send or schedule refused because the snapshot isn't ready: rebuild it and tell the author. */
+  private handleAudienceNotReady(err: HttpErrorResponse): boolean {
+    if (err?.status !== 409 || err?.error?.upstreamCode !== 'audience_not_ready') return false;
+    this.audience.set(null);
+    this.fetchRecipientCountFor(this.committeeUidsValue());
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Preparing the recipient list',
+      detail: 'The recipient list was not ready or the group changed. It is being rebuilt, so try again once the count shows.',
+      life: 8000,
+    });
+    return true;
   }
 
   private initCommittees(): Signal<Committee[]> {
@@ -1252,6 +1346,7 @@ export class NewsletterManageComponent {
    * latter, inviting the duplicate delivery in LFXV2-2604.
    */
   private handleSendError(err: HttpErrorResponse, id: string): void {
+    if (this.handleAudienceNotReady(err)) return;
     this.resolvingSend.set(true);
     this.newsletterService
       .getNewsletter(this.projectUid(), id)
@@ -1385,6 +1480,7 @@ export class NewsletterManageComponent {
    * simpler than a send race, so it gets its own message rather than a refetch.
    */
   private handleScheduleError(err: HttpErrorResponse, id: string): void {
+    if (this.handleAudienceNotReady(err)) return;
     const upstreamCode = err?.error?.upstreamCode;
     // A 503 alone no longer identifies "scheduling is switched off here". The BFF now raises 503
     // for its own TRANSPORT failures too (a lost connection is an unconfirmed outcome, not proof
@@ -2009,6 +2105,7 @@ export class NewsletterManageComponent {
   }
 
   private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[]; scheduledAt: string | null }): void {
+    const committeesChanged = !this.uidsEqual(this.lastSavedSnapshot()?.committeeUids, payload.committeeUids);
     this.lastSavedSnapshot.set({
       subject: payload.subject,
       bodyHtml: payload.bodyHtml,
@@ -2016,6 +2113,10 @@ export class NewsletterManageComponent {
       committeeUids: [...payload.committeeUids],
       scheduledAt: payload.scheduledAt,
     });
+    // The draft's audience snapshot is built from its saved committees, so resolve it once they are saved.
+    if (committeesChanged && this.newsletterId()) {
+      this.fetchRecipientCountFor(payload.committeeUids);
+    }
   }
 
   /**

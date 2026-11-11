@@ -42,6 +42,40 @@ export interface NewsletterCommitteeOption {
 
 export interface NewsletterRecipientCountPayload {
   committee_uids: string[];
+  /**
+   * The draft whose audience snapshot to read (lfx-self-serve#4352). With it, the count and preview come
+   * from the snapshot and return 409 `audience_not_ready` until it is ready. Without it, the committees are
+   * read live, which is only safe for small committees.
+   */
+  newsletter_uid?: string;
+}
+
+/** State of a newsletter's audience snapshot in lfx-v2-newsletter-service. */
+export type NewsletterAudienceStatus = 'processing' | 'ready' | 'failed';
+
+/** Why a snapshot can't be used, from a 409 `audience_not_ready`. `none` means it was never resolved. */
+export type NewsletterAudienceNotReadyStatus = 'none' | 'processing' | 'failed' | 'stale';
+
+/** The stored recipient list for one newsletter, built by a background job (`AudienceResponse`). */
+export interface NewsletterAudience {
+  status: NewsletterAudienceStatus;
+  /** Recipients in the snapshot, after unsubscribes at the time it was taken. 0 until `ready`. */
+  recipient_count: number;
+  skipped_no_email: number;
+  /** The sorted committee list the snapshot was built from. */
+  committee_uids: string[];
+  requested_at: string;
+  resolved_at?: string;
+  /** A short reason, set only when `failed`. */
+  error?: string;
+}
+
+/** Body of `POST …/newsletters/:newsletterUid/audience`. */
+export interface NewsletterResolveAudiencePayload {
+  /** Must be the committees saved on the draft. */
+  committee_uids: string[];
+  /** Rebuild a ready snapshot for the same committees. */
+  refresh?: boolean;
 }
 
 /**
