@@ -6153,6 +6153,26 @@ export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'tar
 export const GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS = ['demand-gen'] as const;
 
 /**
+ * The channels that take no target CPA from LFX One for now: Display. campaign-service v1.0.35 sends
+ * a target CPA there folded into `maximizeConversions.targetCpaMicros`, which Google refuses on
+ * Display, so every Display create carrying one fails AFTER its budget is created
+ * (linuxfoundation/lfx-v2-campaign-service#578 — Display needs the standalone `targetCpa` strategy).
+ * The Target CPA field is hidden and its value withheld on these channels, and the Target CPA
+ * strategy is not offered, so a pick of it falls back to the channel default (Maximize Conversions
+ * with no target) exactly as a Target ROAS pick does on Demand Gen. Unlike
+ * {@link GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS} this is a WORKAROUND, not upstream's contract:
+ * remove it once campaign-service#578 is released and that release is pinned in lfx-v2-argocd.
+ */
+export const GOOGLE_CHANNELS_WITHOUT_TARGET_CPA = ['display'] as const;
+
+/**
+ * Why a channel in {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA} shows no Target CPA field, shown where
+ * the field would have been. Goes with that constant when campaign-service#578 ships.
+ */
+export const GOOGLE_TARGET_CPA_WITHHELD_MESSAGE =
+  "Google Display doesn't accept a target CPA from LFX One yet, so this campaign bids on Maximize Conversions without one.";
+
+/**
  * The two spellings whose target is REQUIRED rather than optional.
  *
  * `target-cpa` with no CPA is not the same request as `maximize-conversions` — the operator named
