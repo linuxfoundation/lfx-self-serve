@@ -16828,6 +16828,24 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).canSubmit()).toBe(false);
     });
 
+    it('cancels an upload still running when the brief re-seeds its variant away, so Create is not held', async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+      expect(at(f).canSubmit()).toBe(false);
+
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+
+      expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
     it('frees the upload slot when an upload fails after the brief re-seeded its variant away', async () => {
       const pending = new Subject<unknown>();
       uploadCreativeAsset.mockReturnValue(pending);

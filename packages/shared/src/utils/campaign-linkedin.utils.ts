@@ -9,11 +9,23 @@ import { LINKEDIN_CHAR_LIMITS } from '../constants/campaign.constants';
  * (`internal/platform/linkedin/client.go`), which both the empty-copy check and the length cut run on.
  */
 export function normalizeLinkedInCreativeText(text: string): string {
-  let stripped = text.trim().replaceAll(' — ', ', ').replaceAll(' – ', ', ').replaceAll('—', ', ').replaceAll('–', ', ');
+  let stripped = goTrimSpace(text).replaceAll(' — ', ', ').replaceAll(' – ', ', ').replaceAll('—', ', ').replaceAll('–', ', ');
   // Go's TrimPrefix and TrimSuffix: one ", " off each end, at most.
   if (stripped.startsWith(', ')) stripped = stripped.slice(2);
   if (stripped.endsWith(', ')) stripped = stripped.slice(0, -2);
-  return stripped.trim();
+  return goTrimSpace(stripped);
+}
+
+/**
+ * Go's `strings.TrimSpace`: trims the Unicode White_Space set `unicode.IsSpace` reads. JavaScript's
+ * `trim()` differs both ways (it keeps U+0085 and drops U+FEFF), which would let copy through that
+ * campaign-service then blanks or cuts.
+ */
+function goTrimSpace(text: string): string {
+  return text.replace(
+    /^[\t\n\v\f\r \u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+|[\t\n\v\f\r \u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+$/g,
+    ''
+  );
 }
 
 /**

@@ -51,4 +51,12 @@ describe('linkedInVariantTextError', () => {
   it('judges the normalized text, so surrounding spaces do not count', () => {
     expect(linkedInVariantTextError('headline', `  ${'a'.repeat(LINKEDIN_CHAR_LIMITS.headline)}  `)).toBeNull();
   });
+
+  it("trims Go's whitespace set, not JavaScript's: U+0085 is trimmed and U+FEFF is kept", () => {
+    expect(linkedInVariantTextError('headline', '\u0085')).toBe('Enter the headline.');
+    expect(linkedInVariantTextError('headline', `\u0085${'a'.repeat(LINKEDIN_CHAR_LIMITS.headline)}\u3000`)).toBeNull();
+    expect(linkedInVariantTextError('headline', `\uFEFF${'a'.repeat(LINKEDIN_CHAR_LIMITS.headline)}`)).toBe(
+      "The headline is 201 characters, over LinkedIn's 200. Shorten it."
+    );
+  });
 });

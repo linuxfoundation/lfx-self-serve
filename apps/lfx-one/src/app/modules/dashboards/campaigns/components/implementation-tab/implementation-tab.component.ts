@@ -9143,6 +9143,11 @@ export class ImplementationTabComponent implements OnInit {
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants.map((variant) => this.newLinkedInVariant(variant)));
+      // The re-seed gives every variant a new key, so an upload still running for an old one has no
+      // variant to land on and no Cancel on screen; left alone, a hung upload would hold Create. It
+      // is cancelled here. A draft restore that follows brings its own variants and upload back.
+      const slotKey = this.linkedInImageUploadVariantKey();
+      if (slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey)) this.clearLinkedInImageUpload();
       // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
       // holds nothing" guard does not survive contact with the call order (LFXV2-3230).
       //
