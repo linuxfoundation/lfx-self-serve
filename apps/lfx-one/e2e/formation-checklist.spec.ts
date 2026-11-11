@@ -138,6 +138,16 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(page.getByTestId('formation-item-drawer')).toBeHidden();
   });
 
+  test('the no-checklist empty state renders, with no Retry, when the checklist read is a 404 (#5541)', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'no-checklist' });
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
+
+    await expect(page.getByTestId('formation-checklist-empty-no-checklist')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formation-checklist-retry')).toHaveCount(0);
+    await expect(page.getByTestId('formation-checklist-inline-error')).toHaveCount(0);
+  });
+
   test('the "Choose a template" empty state renders when no template has been chosen', async ({ page }) => {
     await stubFormationFlag(page, true);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), checklistState: 'no-template' });
