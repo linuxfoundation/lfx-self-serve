@@ -179,6 +179,25 @@ describe('FormationDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')).toBeNull();
   });
 
+  // #5541: a Draft project, or a live one formation-service has not started, has no checklist. The section
+  // owns that empty state (its read 404s), so the page must keep it mounted, with no rail, and not turn it into
+  // its own error or "no longer in formation" body.
+  it.each(['Prospect', 'Formation - Exploratory'])(
+    'keeps the checklist section mounted, without a rail, for a %s project whose checklist read is empty',
+    async (stage) => {
+      getProjectStrict.mockReturnValue(of(buildProject({ stage })));
+      await render('child-project');
+      const section = fixture.debugElement.query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent);
+      (section.componentInstance as StubFormationChecklistSectionComponent).responseLoaded.emit(null);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="stub-formation-checklist-section"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-sidebar"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-error"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')).toBeNull();
+    }
+  );
+
   // #2719: this page shipped without the rail that `/project/formation` has, so staff saw a
   // checklist with no project info card beside it. The card is fed from the checklist response the
   // section here already fetched — never from ProjectContextService, which on this page describes

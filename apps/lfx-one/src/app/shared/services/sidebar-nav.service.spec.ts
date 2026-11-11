@@ -185,7 +185,13 @@ describe('SidebarNavService', () => {
         // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
         // the cases that assert the org-scoped form.
         { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
-        { provide: AccountContextService, useValue: { selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }) } },
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }),
+            isRollUp: () => selectedOrgUid()?.startsWith('family-') ?? false,
+          },
+        },
         { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
         { provide: SocialListeningService, useValue: { getAccess: getSocialListeningAccess } },
       ],
@@ -494,6 +500,55 @@ describe('SidebarNavService', () => {
 
     expect(items[items.length - 1]).toEqual(expect.objectContaining({ label: 'Security', isSection: true }));
     expect(findByLink(sectionItems(items, 'Security'), '/akrites')).toEqual(expect.objectContaining({ label: 'Akrites Program' }));
+  });
+
+  /**
+   * Copilot on PR #4415. `orgLensPath` prefixes every item with the selected segment, so in
+   * roll-up mode Profile linked to `/org/family-{id}/profile`, where the page asks for
+   * `/api/orgs/uid/family-{id}`, the SFID validator refuses the sentinel and the caller lands on an error
+   * page. Profile is single-org by definition (#4125), so it is dropped rather than re-pointed.
+   */
+  it('drops Organization Profile in roll-up mode, and keeps every other Org Lens item', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('family-0014100000RootAAAA');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('Organization Profile');
+    expect(findByLink(items, '/org/family-0014100000RootAAAA/profile')).toBeUndefined();
+    expect(labels(items)).toContain('Dashboard');
+    expect(labels(items)).toContain('Memberships');
+    expect(labels(sectionItems(items, 'Organization Engagement'))).toContain('People');
+  });
+
+  // EasyCLA is single-organization for the same reason as Profile: a corporate CLA belongs to one
+  // company, so `/org/family-{id}/easycla` could only error (#4415, Copilot).
+  it('drops EasyCLA in roll-up mode', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('family-0014100000RootAAAA');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('EasyCLA');
+    expect(findByLink(items, '/org/family-0014100000RootAAAA/easycla')).toBeUndefined();
+  });
+
+  // Crowdfunding Donations is single-organization too: its endpoint takes one `orgUid` (#4415, Copilot).
+  it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
+    activeLens.set('org');
+    cfOrgDonationsEnabled.set(true);
+    selectedOrgUid.set('family-0014100000RootAAAA');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('Crowdfunding Donations');
+  });
+
+  it('keeps Organization Profile for a concrete organization', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Organization Profile');
   });
 
   it('places EasyCLA as a top-level item directly before Organization Profile, under the org-admin divider', () => {

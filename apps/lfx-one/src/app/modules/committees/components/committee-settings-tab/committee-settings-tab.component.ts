@@ -621,7 +621,7 @@ export class CommitteeSettingsTabComponent {
       modal: true,
       closable: true,
       draggable: false,
-      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid: this.committee().uid },
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid: this.committee().uid, syncMode: ml.sync_mode },
     });
 
     if (!ref) return;
@@ -1316,19 +1316,15 @@ export class CommitteeSettingsTabComponent {
     return computed(() =>
       this.associatedMailingLists().map((ml) => {
         const removable = ml.writer === true;
-        const syncModeSupported =
-          ml.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST || ml.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE;
 
-        let syncTooltip = `Preview and apply committee sync for ${ml.group_name}`;
-        if (!removable) {
-          syncTooltip = 'You need Manage access to this mailing list to sync it.';
-        } else if (!syncModeSupported) {
-          syncTooltip = `Set a sync direction for ${ml.group_name} in Mailing List Settings before syncing.`;
-        }
+        // Direction is no longer a precondition for syncing — a manual/unset list now picks its
+        // direction in the sync preview dialog itself (parity with PCC's manual sync), rather than
+        // requiring it be configured up front in Mailing List Settings.
+        const syncTooltip = removable ? `Preview and apply committee sync for ${ml.group_name}` : 'You need Manage access to this mailing list to sync it.';
 
         const removeTooltip = removable ? `Remove mailing list ${ml.group_name}` : 'You need Manage access to this mailing list to unlink it.';
 
-        return { ...ml, removable, syncModeSupported, syncTooltip, removeTooltip };
+        return { ...ml, removable, syncTooltip, removeTooltip };
       })
     );
   }

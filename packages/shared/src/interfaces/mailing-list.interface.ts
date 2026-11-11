@@ -9,6 +9,7 @@ import type {
   MailingListMemberDeliveryMode,
   MailingListMemberModStatus,
   MailingListMemberType,
+  MailingListSyncDirection,
   MailingListSyncMode,
   MailingListType,
   SyncApplyOutcome,
@@ -526,6 +527,13 @@ export interface SyncApplyRequest {
   adds: SyncDiffAdd[];
   /** Approved subset of the diff's proposed removes */
   removes: SyncDiffRemove[];
+  /**
+   * Explicit direction override — required when the mailing list's `sync_mode` is `manual` or
+   * unset, since those have no direction of their own; must match the direction the diff being
+   * applied was computed with. Omit (or rejected with 400 if supplied) for an auto_* list, which
+   * always uses its own configured direction.
+   */
+  direction?: MailingListSyncDirection;
 }
 
 /**

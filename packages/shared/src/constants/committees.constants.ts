@@ -756,3 +756,6 @@ export const GROUPS_ENGAGEMENT_ICON_CLASS = {
  * so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
  */
 export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];
+
+/** How often the Members tab re-evaluates which pending invitations have expired while it stays open. */
+export const COMMITTEE_INVITE_EXPIRY_TICK_MS = 60 * 1000;

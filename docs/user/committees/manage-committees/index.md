@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Committees
 ---
 
@@ -59,7 +59,7 @@ The Members tab loads the complete roster before enabling **Add Member** and **I
 
 ### Pending invitations
 
-When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog.
+When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires, or **No expiration** for an older invitation that never expires, which can be revoked but not resent. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and organization from the original.
 
 ### Pending applications
 

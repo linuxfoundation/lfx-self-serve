@@ -7,7 +7,6 @@ import { DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
   Meeting,
   MeetingComposerSectionId,
@@ -18,6 +17,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { buildMeetingOccurrenceRoute, getActiveOccurrences, getCurrentOrNextOccurrence, getEntityCommands, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
@@ -41,7 +41,7 @@ export class MeetingsHomeEditService {
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  private readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(inject(FeatureFlagService));
   private readonly checkingIds = signal<ReadonlySet<string>>(new Set());
 
   /** True while the permission re-check for this meeting runs. */

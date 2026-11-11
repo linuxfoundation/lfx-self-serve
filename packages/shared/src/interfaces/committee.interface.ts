@@ -1289,6 +1289,12 @@ export interface MailingListSyncPreviewDialogData {
   mailingListUid: string;
   mailingListName: string;
   committeeUid: string;
+  /**
+   * The mailing list's current `sync_mode`, used to decide whether the dialog needs to show a
+   * direction selector — `manual`/unset has no direction of its own, an `auto_*` list always uses
+   * its own configured direction and must not be prompted.
+   */
+  syncMode?: MailingListSyncMode;
 }
 
 export interface MailingListSyncPreviewDialogResult {
@@ -1302,7 +1308,6 @@ export interface MailingListSyncPreviewDialogResult {
  */
 export interface CommitteeAssociatedMailingListRow extends GroupsIOMailingList {
   removable: boolean;
-  syncModeSupported: boolean;
   syncTooltip: string;
   removeTooltip: string;
 }

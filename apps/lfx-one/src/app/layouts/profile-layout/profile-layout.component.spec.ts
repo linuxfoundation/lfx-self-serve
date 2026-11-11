@@ -1,19 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
+import { computed, NO_ERRORS_SCHEMA, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { Toast, ToastModule } from 'primeng/toast';
+import { PrimeTemplate } from 'primeng/api';
+import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@shared/providers/runtime-config.provider';
 import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
   EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CALLBACK_RETRY_MESSAGE,
+  EMAIL_LINKED_SUPPORT_TITLE,
+  EMAIL_LINKED_SUPPORT_TOAST_KEY,
   IDENTITY_ALREADY_CONNECTED_STATUS,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
 } from '@lfx-one/shared/constants';
-import { CombinedProfile, EnrichedIdentity, User } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, EnrichedIdentity, LinkedEmailSupportDraft, User } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
@@ -586,6 +596,7 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
       updateUserProfile: vi.fn(() => of({})),
       getIdentities: vi.fn(() => of([])),
       refreshUserIdentities,
+      consumeLinkedEmailSupportContext: vi.fn(() => of({})),
     };
 
     TestBed.resetTestingModule();
@@ -643,7 +654,15 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
       email_status: 'already_linked',
     });
 
-    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'warn', summary: 'Email already linked', detail: EMAIL_ALREADY_LINKED_MESSAGE });
+    // #5511: a sticky toast on the layout's own key, carrying an address-free support-chat pre-fill.
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      key: EMAIL_LINKED_SUPPORT_TOAST_KEY,
+      severity: 'warn',
+      summary: EMAIL_LINKED_SUPPORT_TITLE,
+      detail: EMAIL_ALREADY_LINKED_MESSAGE,
+      sticky: true,
+      data: { supportMessage: buildLinkedEmailSupportMessage() },
+    });
     expect(EMAIL_ALREADY_LINKED_MESSAGE).not.toMatch(/new (verification )?code/i);
     expect(refreshUserIdentities).not.toHaveBeenCalled();
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith(cleanUrl, { replaceUrl: true });
@@ -703,7 +722,7 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     });
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Authorization complete' }));
-    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Email already linked' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ key: EMAIL_LINKED_SUPPORT_TOAST_KEY, summary: EMAIL_LINKED_SUPPORT_TITLE, sticky: true }));
     expect(add).toHaveBeenCalledTimes(2);
     expect(refreshUserIdentities).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
@@ -859,5 +878,135 @@ describe('ProfileLayoutComponent — nav name sync after a profile save', () => 
 
     expect(user()?.name).toBe('Ada Lovelace');
     expect(applyDisplayName).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileLayoutComponent — rendered linked-email callback support (#5511)', () => {
+  async function setup(url: string, context$: Observable<LinkedEmailSupportDraft> = of({ email: 'linked@example.test' })) {
+    TestBed.resetTestingModule();
+    const user = signal({ sub: 'synthetic-user' } as User);
+    const consume = vi.fn(() => context$);
+    const navigateByUrl = vi.fn();
+    const openMessenger = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent, ToastModule],
+      providers: [
+        MessageService,
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        {
+          provide: ActivatedRoute,
+          useValue: { queryParams: of({ success: 'profile_token_obtained', email_status: 'already_linked', email_support_context: 'a'.repeat(64) }) },
+        },
+        { provide: Router, useValue: { url, navigateByUrl } },
+        { provide: IntercomService, useValue: { update: vi.fn(), openMessenger } },
+        {
+          provide: UserService,
+          useValue: {
+            user,
+            impersonating: signal(false),
+            uploadedAvatarUrl: signal(null),
+            effectiveAvatarUrl: computed(() => ''),
+            identitiesRefresh$: EMPTY,
+            getCurrentUserProfile: () => of({ user: {}, profile: null }),
+            getIdentities: () => of([]),
+            consumeLinkedEmailSupportContext: consume,
+          },
+        },
+      ],
+    });
+    // Keep the actual layout template, real Toast, wrapper, directive and MessageService.
+    // Only unrelated page/panel/drawer/router children are inert custom elements.
+    TestBed.overrideComponent(ProfileLayoutComponent, {
+      set: {
+        imports: [ToastModule, PrimeTemplate, ToastMessageComponent, OpenIntercomDirective],
+        schemas: [NO_ERRORS_SCHEMA],
+      },
+    });
+    TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+    const globalToast = TestBed.createComponent(Toast);
+    globalToast.detectChanges();
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    // Synchronous initial query params must not emit to an unmounted consumer.
+    expect(consume).not.toHaveBeenCalled();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { fixture, globalToast, consume, navigateByUrl, openMessenger, user };
+  }
+
+  it.each([
+    [
+      '/profile/settings?success=profile_token_obtained&email_status=already_linked&email_support_context=opaque#email-settings',
+      '/profile/settings#email-settings',
+    ],
+    ['/profile/identities?success=profile_token_obtained&email_status=already_linked&email_support_context=opaque', '/profile/identities'],
+  ])('renders one sticky, dismissible, actionable notice from initial params on %s', async (url, cleanUrl) => {
+    const { fixture, globalToast, consume, navigateByUrl, openMessenger } = await setup(url);
+    const toast = fixture.debugElement.query(By.directive(Toast)).componentInstance as Toast;
+    expect(consume).toHaveBeenCalledExactlyOnceWith('a'.repeat(64));
+    expect(toast.messages).toHaveLength(1);
+    expect(toast.messages?.[0].sticky).toBe(true);
+    expect(globalToast.componentInstance.messages ?? []).toHaveLength(0);
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith(cleanUrl, { replaceUrl: true });
+    const root = fixture.nativeElement as HTMLElement;
+    const action = root.querySelector<HTMLButtonElement>('[data-testid="profile-linked-support-toast-button"]');
+    expect(action).not.toBeNull();
+    expect(root.querySelectorAll('[data-testid="profile-linked-support-toast-button"]')).toHaveLength(1);
+    action!.click();
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage('linked@example.test'));
+    const close = root.querySelector<HTMLButtonElement>('.p-toast-close-button');
+    expect(close).not.toBeNull();
+    close!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(toast.messages ?? []).toHaveLength(0);
+    expect(root.querySelector('[data-testid="profile-linked-support-toast-button"]')).toBeNull();
+  });
+
+  it('keeps concurrent global notices and the sticky support action in distinct corners', async () => {
+    const response$ = new Subject<LinkedEmailSupportDraft>();
+    const { fixture, globalToast } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', response$);
+    TestBed.inject(MessageService).add({ severity: 'info', summary: 'Authorization complete', detail: 'Please re-select your image to upload it.' });
+    response$.next({ email: 'linked@example.test' });
+    fixture.detectChanges();
+    globalToast.detectChanges();
+    await fixture.whenStable();
+    const supportToast = fixture.debugElement.query(By.directive(Toast)).componentInstance as Toast;
+    expect(supportToast.position).toBe('bottom-left');
+    expect(globalToast.componentInstance.position).toBe('top-right');
+    expect(supportToast.messages).toHaveLength(1);
+    expect(globalToast.componentInstance.messages).toHaveLength(1);
+    expect(globalToast.componentInstance.messages?.[0].summary).toBe('Authorization complete');
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.p-toast-bottom-left [data-testid="profile-linked-support-toast-button"]')).not.toBeNull();
+    expect(globalToast.nativeElement.classList.contains('p-toast-top-right')).toBe(true);
+    root.querySelector<HTMLButtonElement>('.p-toast-close-button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(supportToast.messages ?? []).toHaveLength(0);
+    expect(globalToast.componentInstance.messages).toHaveLength(1);
+  });
+
+  it('keeps the notice and generic draft when the private context is unavailable', async () => {
+    const { fixture, openMessenger } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', of({}));
+    fixture.nativeElement.querySelector('[data-testid="profile-linked-support-toast-button"]').click();
+    expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage());
+  });
+
+  it('does not publish an old user draft after the identity changes during consumption', async () => {
+    const response$ = new Subject<LinkedEmailSupportDraft>();
+    const { fixture, user } = await setup('/profile/identities?success=profile_token_obtained&email_status=already_linked', response$);
+    user.set({ sub: 'different-synthetic-user' } as User);
+    response$.next({ email: 'linked@example.test' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="profile-linked-support-toast-button"]')).toBeNull();
+  });
+
+  it('cancels the private-context request when the layout is destroyed', async () => {
+    const response$ = new Subject<LinkedEmailSupportDraft>();
+    const { fixture } = await setup('/profile/identities?success=profile_token_obtained&email_status=already_linked', response$);
+    expect(response$.observed).toBe(true);
+    fixture.destroy();
+    expect(response$.observed).toBe(false);
   });
 });

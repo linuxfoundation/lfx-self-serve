@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { agreedUsername, composeFullName, formatUserLabel, isEmailShape, isIdentityAlreadyLinkedError } from './identity.utils';
+import { agreedUsername, buildLinkedEmailSupportMessage, composeFullName, formatUserLabel, isEmailShape, isIdentityAlreadyLinkedError } from './identity.utils';
 
 describe('isEmailShape', () => {
   it('accepts a well-formed address', () => {
@@ -116,5 +116,24 @@ describe('formatUserLabel', () => {
   it('treats a whitespace-only half as absent, so no empty parens are rendered', () => {
     expect(formatUserLabel('Ada Lovelace', '   ')).toBe('Ada Lovelace');
     expect(formatUserLabel('   ', '   ')).toBe('');
+  });
+});
+
+describe('buildLinkedEmailSupportMessage', () => {
+  it('names the verified address and asks to add it to the signed-in account', () => {
+    const message = buildLinkedEmailSupportMessage('user@example.com');
+    expect(message).toContain('user@example.com');
+    expect(message).toContain("add it to the account I'm signed in to");
+  });
+
+  it('falls back to "an email address" when no address is known', () => {
+    expect(buildLinkedEmailSupportMessage()).toContain('I verified an email address with');
+    expect(buildLinkedEmailSupportMessage('   ')).toContain('I verified an email address with');
+  });
+
+  it('produces the exact support wording for a fixed input', () => {
+    expect(buildLinkedEmailSupportMessage(' user@example.com ')).toBe(
+      "Hi, I verified user@example.com with the code Self Serve sent me, but it says the address is already linked to an LFX account. Please help me add it to the account I'm signed in to."
+    );
   });
 });
