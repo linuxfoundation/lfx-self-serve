@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, organization, company, employer]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Dashboards
 ---
 
@@ -45,7 +45,7 @@ The **Projects** lens (`/project/overview`) focuses on a single project. Select 
 
 ## Org lens
 
-The **Organization** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Organization" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your organization has granted you access. See [Who can access this](../#who-can-access-this).
+The **Organization** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Organization" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your organization has granted you access. See [Who can access this](../#who-can-access-this). If you have a role on an organization whose corporate family has two or more organizations, the lens can also show them together — see [What is an organization family roll-up?](../../organization/choose-an-organization/#what-is-an-organization-family-roll-up).
 
 ## Switch project context
 

@@ -1,16 +1,16 @@
 ---
 title: Choose and switch an organization
-description: Pick the organization you are viewing in the Organization lens, switch to another one, read the organization in a page address, and understand the messages on a link that does not open an organization.
+description: Pick the organization you are viewing in the Organization lens, switch to another one, use a family roll-up combined view, read the organization in a page address, and understand the messages on a link that does not open an organization.
 audience: [all]
 product_area: Organization
-tags: [organization, org, org-lens, switcher, switch-organization, url, not-found, access]
-last_updated: 2026-11-06
+tags: [organization, org, org-lens, switcher, switch-organization, all-organizations, combined-view, url, not-found, access]
+last_updated: 2026-11-11
 intercom_collection: Organization
 ---
 
 These steps apply to anyone with access to at least one organization in the Organization lens, such as an organization admin (editor or viewer), a CLA (Contributor License Agreement) Manager, or an initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager). Admin and viewer access to an organization is granted by that organization's own Organization Lens administrators, not by the Linux Foundation.
 
-The Organization lens always shows one organization at a time. The organization switcher at the top of the sidebar names the organization you are viewing, and every page in the lens (**Dashboard**, **Memberships**, **Projects**, and the rest) is about that organization.
+The organization switcher at the top of the sidebar names what you are viewing, and every page in the lens (**Dashboard**, **Memberships**, **Projects**, and the rest) follows it. Usually that is a single organization. If you have a role on an organization whose corporate family has two or more organizations, the switcher also offers a roll-up for that family, a combined view across them.
 
 ## How do I choose an organization in the Organization lens?
 
@@ -34,6 +34,31 @@ Open the organization switcher at the top of the sidebar and select another orga
 
 After a switch, the browser's Back button returns you to the organization you were viewing before. If the address you switched from had no organization in it, such as `/org` or `/org/projects`, Back takes you to the page you visited before that one instead. If you switched from a page that says why a link did not open an organization, Back returns you to that page. An **Employees** selection on a page does not carry over to the new organization, because it was a list of the previous organization's people.
 
+## What is an organization family roll-up?
+
+A family roll-up is a combined view across the organizations you have access to in one corporate family, instead of one at a time. A corporate family is a parent company and the subsidiaries under it. A roll-up is useful when you administer several related companies and want to see them together rather than switching between them.
+
+Each roll-up is named after the family's top company, for example **All Acme Organizations**. Roll-ups appear first in the organization switcher, above your organizations and separated from them, each with the line **Combined view of related organizations** and the number of organizations it covers. Selecting one is like selecting an organization: the switcher then shows the roll-up's name and, in place of your role, the number of organizations being combined. A view across several organizations has no single role, so no role is shown.
+
+**When one is offered.** For each family that has two or more organizations and where you have a role on at least one of them. A role on one organization in a family also gives you access to the others in it, so a role on any one of them is enough. If your organizations belong to two families, you get two roll-ups, one per family; organizations from different families are never combined. A family with only one organization has nothing to combine, so it gets no roll-up.
+
+**What it covers.** The organizations on your list that belong to that family, including those you reach through access to a related organization. Organizations where your only role is CLA Manager or initial CLA Manager designee are not part of the combined view; manage those in the [Corporate CLA Console](https://corporate.lfcla.com).
+
+To select one:
+
+1. Select the organization switcher at the top of the sidebar.
+2. Select the roll-up you want at the top of the list. On a keyboard, use the arrow keys to reach it and press Enter.
+
+To leave it, open the switcher again and select a single organization, or another roll-up.
+
+Searching does not hide roll-ups: when a search matches none of your organizations, they stay at the top of the list and **No organizations found** appears below them, so you can always get back to a combined view.
+
+Like an organization, your choice is remembered for 30 days, and the address names it, so a link to a combined page opens as a combined page for anyone else who can use it. See [What does the organization in a page address mean?](#what-does-the-organization-in-a-page-address-mean) below. Right after you sign in, a remembered roll-up can briefly show as **All Organizations Roll-Up** until LFX has loaded your families; it then shows the family's name.
+
+If LFX cannot load your families, the switcher shows no roll-ups and says **Some of your organizations may be missing from this list. Retry to reload.** Select **Retry** to load them again. A remembered roll-up stays selected in the meantime.
+
+If your access later changes so that the roll-up is no longer offered to you, it is no longer available. LFX moves you to one of your organizations, preferring one in the same family, and the page you were on reloads for it, rather than leaving you on a view you can no longer use.
+
 ## What does my role in the organization switcher mean?
 
 The line under the organization's name in the switcher is your role on that organization. Hover over it to see what it lets you do.
@@ -55,7 +80,7 @@ The organization switcher lists the organizations where you have an admin or vie
 Messages in the switcher:
 
 - **No organizations found** — you have no organizations to list.
-- **Some of your organizations may be missing from this list. Retry to reload.** — part of your list did not load. Select **Retry** to reload it. You can still select the organizations that are listed.
+- **Some of your organizations may be missing from this list. Retry to reload.** — part of your list, or your family roll-ups, did not load. Select **Retry** to reload it. You can still select the organizations that are listed.
 
 ## What does the organization in a page address mean?
 
@@ -63,6 +88,7 @@ Every Organization lens page address names the organization it shows, in the for
 
 - `<organization>` is the organization's short name, in lowercase letters, numbers, and hyphens. An organization without a short name is addressed by its 18-character account ID, which starts with `001`.
 - `/org/<organization>` on its own opens that organization's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager or initial CLA Manager designee.
+- `/org/family-<account ID>/<page>` is a family roll-up: it opens the combined view of that family on that page, where `<account ID>` is the 18-character account ID of the family's top company. Opening a `/org/family-…` address switches you to that roll-up, the same way an organization address switches you to that organization. If that roll-up is not offered to you, LFX opens the page for one of your organizations instead, preferring one in that family, and if it cannot, you land on the page described below.
 - A link you share names the organization, so the person who opens it sees the same organization, as long as they have access to it.
 - An older address without an organization, such as `/org/projects`, still opens. It shows the organization you have selected, which may not be the one the sender was viewing. The address usually fills in that organization's name when the page loads, but not always, so before you share a link, check that it reads `/org/<organization>/<page>`.
 
