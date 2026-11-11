@@ -154,6 +154,22 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.incomplete()).toBe(true);
   });
 
+  // A 200 with no usable body is no more an answer than a failure: "no families" would let a restored roll-up demote.
+  it('reports an empty or malformed body as unknown rather than empty', () => {
+    grantsLoad(1);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush(null);
+
+    expect(service.lookupOutcome()).toBe('failed');
+    expect(service.hasServerFamilies()).toBe(false);
+    expect(service.unsettled()).toBe(true);
+
+    grantsLoad(2);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush({ degraded: false });
+
+    expect(service.lookupOutcome()).toBe('failed');
+    expect(service.unsettled()).toBe(true);
+  });
+
   // An outage must never read as a family that shrank: unusable, and unsettled so nothing demotes.
   it('reports any failure as unknown rather than empty', () => {
     grantsLoad(1);

@@ -6,7 +6,13 @@ import { HttpClient } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
-import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_NOT_FOUND_PATH, ROLLUP_MIN_ORGANIZATIONS } from '@lfx-one/shared/constants';
+import {
+  ACCOUNT_COOKIE_KEY,
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_LENS_SWITCH_PARAMS_RESET,
+  ORG_NOT_FOUND_PATH,
+  ROLLUP_MIN_ORGANIZATIONS,
+} from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, normalizeOrgSegment, orgRollUpAccount, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -202,12 +208,19 @@ export class AccountContextService {
 
   /**
    * The window in which a roll-up already selected — restored from the cookie or adopted from an
-   * address — is neither confirmed nor demoted: the grants are unsettled, or the
-   * `org-lens-rollup-enabled` flag has not answered for the signed-in viewer yet. LaunchDarkly
+   * address — is neither confirmed nor demoted: the `org-lens-rollup-enabled` flag has not
+   * answered for the signed-in viewer yet, or it is on and the grants are unsettled. LaunchDarkly
    * answers for an anonymous context first, so treating that answer as "off" would demote a viewer
    * the flag targets.
+   *
+   * A flag settled off withdraws the roll-up whatever the grants say, so it waits only for the
+   * grants to have answered at all — the demotion needs them to pick an organization the caller
+   * holds — and not for a good answer: a grants or families outage must not keep a withdrawn
+   * roll-up selected.
    */
-  private readonly rollUpEligibilityUnsettled: Signal<boolean> = computed(() => this.grantsUnsettled() || this.rollUpFlag.unsettled());
+  private readonly rollUpEligibilityUnsettled: Signal<boolean> = computed(
+    () => this.rollUpFlag.unsettled() || (this.rollUpFlag.enabled() ? this.grantsUnsettled() : !this.orgRoleGrantsService.loaded())
+  );
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -527,9 +540,10 @@ export class AccountContextService {
     // — an organization this caller does not have, in the cookie, over the one they do. The server
     // still fails closed, so the pages would simply be empty rather than wrong (#4415, Copilot).
     //
-    // Only reached from `orgPathParamGuard` once the grants and the roll-up flag have settled —
+    // Only reached from `orgPathParamGuard` once the roll-up flag and the grants have settled —
     // `admitWhilePending` admits every unsettled visit — so the held set is authoritative here, not
-    // a lower bound.
+    // a lower bound. The one exception is a flag settled off, which waits only for the grants to
+    // answer: a failed or partial answer is then the best there is, and still names what is held.
     const concrete = !isOrgRollUpSegment(current.uid) && orgUrlSegment(current) && this.canAddressOrganization(current.uid) ? current : null;
     // The addressed family first: a link to family A lands in A while the caller still holds an
     // organization there, whatever company they happened to be viewing before.
@@ -924,6 +938,10 @@ export class AccountContextService {
     }
     primary.segments[1].path = segment;
     primary.segments[1].parameters = {};
+    // A change of organization, so the per-organization query state goes, as a switch drops it.
+    for (const key of Object.keys(ORG_LENS_SWITCH_PARAMS_RESET)) {
+      delete tree.queryParams[key];
+    }
     void this.router.navigateByUrl(tree, { replaceUrl: true });
   }
 

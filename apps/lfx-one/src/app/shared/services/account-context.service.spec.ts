@@ -821,6 +821,39 @@ describe('AccountContextService — family roll-up', () => {
       expect(JSON.parse(cookies.get(COOKIE) as string).uid).not.toBe(SEGMENT);
     });
 
+    // An outage must not keep a withdrawn roll-up selected: a flag settled off waits only for the
+    // grants to answer, not for a good answer.
+    it('demotes a restored roll-up when the flag settles off during a families outage', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      serverFamilies.unsettled.set(true);
+      grants.lookupOutcome.set('failed');
+      rollUpFlag.enabled.set(false);
+      rollUpFlag.unsettled.set(true);
+      service.initializeUserOrganizations([seedA, seedB]);
+      TestBed.tick();
+      expect(service.isRollUp()).toBe(true);
+
+      rollUpFlag.unsettled.set(false);
+      TestBed.tick();
+
+      expect(service.grantsUnsettled()).toBe(true);
+      expect(service.isRollUp()).toBe(false);
+      expect([UID_A, UID_B]).toContain(service.selectedAccount().uid);
+    });
+
+    it('holds a roll-up address with the flag off until the grants have answered at all', () => {
+      grants.loaded.set(false);
+      rollUpFlag.enabled.set(false);
+
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+
+      grants.loaded.set(true);
+      service.initializeUserOrganizations([seedA, seedB]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(false);
+    });
+
     it('keeps a restored roll-up once the flag settles on', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
       rollUpFlag.enabled.set(false);
@@ -1103,6 +1136,20 @@ describe('AccountContextService — family roll-up', () => {
     const [tree, extras] = navigateByUrl.mock.calls[0];
     expect(TestBed.inject(UrlSerializer).serialize(tree)).toBe(`/org/${UID_A}/people`);
     expect(extras).toEqual({ replaceUrl: true });
+  });
+
+  // The roster selection names a person in the family, not in the organization it demotes to.
+  it('drops the per-organization query state when it demotes, keeping the rest', () => {
+    routerUrl = `/org/${SEGMENT}/people?employees=jdoe&tab=board`;
+    grants.loaded.set(false);
+    cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+    service.initializeUserOrganizations([seedA]);
+
+    grants.loaded.set(true);
+    TestBed.tick();
+
+    expect(navigateByUrl).toHaveBeenCalledTimes(1);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people?tab=board`);
   });
 
   it('leaves the address alone when demoting away from an Org Lens page', () => {

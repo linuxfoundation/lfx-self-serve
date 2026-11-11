@@ -114,7 +114,10 @@ export class OrgRollUpFamiliesService {
 
     this.familiesInternal.set(families);
     this.orgsByUidInternal.set(orgsByUid);
-    this.lookupOutcomeInternal.set(response?.lookupOutcome ?? (response?.degraded === true ? 'partial' : 'ok'));
+    // A body that is not the documented shape is unknown, not "no families" — the same as a failed request.
+    this.lookupOutcomeInternal.set(
+      response && Array.isArray(response.families) ? (response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok')) : 'failed'
+    );
     this.sourceInternal.set('server');
     this.loadingInternal.set(false);
   }

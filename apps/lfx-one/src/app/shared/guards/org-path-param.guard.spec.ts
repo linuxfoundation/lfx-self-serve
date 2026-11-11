@@ -356,6 +356,14 @@ describe('orgPathParamGuard', () => {
       expect(demoteAddressedRollUp).toHaveBeenCalledWith(ROOT);
     });
 
+    // A roster selection names a person in the family, not in the organization it demotes to.
+    it('drops the per-organization query state on the re-point, keeping the rest', async () => {
+      selectRollUp.mockReturnValue(false);
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people?employees=jdoe&tab=board`)).toBe('/org/beta-llc/people?tab=board');
+    });
+
     // Which organization, whether the stored choice survives, and the address pin are all the
     // service's call — the guard only turns its answer into an address (#4415 review 9).
     it('lands on not-found only when the service has nothing to demote to', async () => {

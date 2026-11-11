@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_LENS_SWITCH_PARAMS_RESET, ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
@@ -104,8 +104,20 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     // The service owns which organization that is, and the address pin: it is the same decision
     // `demoteFromRollUp` makes when eligibility changes under a page that is already open, and the
     // two must not drift (#4415 review 9).
+    //
+    // Unlike a slug canonicalization this is a change of organization, so the per-organization
+    // query state (`ORG_LENS_SWITCH_PARAMS_RESET`) is dropped as a switch drops it.
     const fallback = accountContext.demoteAddressedRollUp(rollUpRootUid);
-    return fallback ? canonicalizeAddress(router, state.url, addressed, fallback) : notFound;
+    if (!fallback) {
+      return notFound;
+    }
+    const target = canonicalizeAddress(router, state.url, addressed, fallback);
+    if (target instanceof UrlTree) {
+      for (const key of Object.keys(ORG_LENS_SWITCH_PARAMS_RESET)) {
+        delete target.queryParams[key];
+      }
+    }
+    return target;
   }
 
   // `slug === null` is a confirmed "no slug"; `undefined` is a slug not known from the index yet — a
