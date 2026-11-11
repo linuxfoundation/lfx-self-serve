@@ -16828,7 +16828,35 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).canSubmit()).toBe(false);
     });
 
-    it('cancels an upload still running when the brief re-seeds its variant away, so Create is not held', async () => {
+    it('keeps an upload running through a re-seed when the parent restores its draft, and lands it on its variant', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const mounted = await mount(true);
+      const f = mounted.fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+
+      // The service still holds the upload (nothing cancelled it), so the draft restore resumes it.
+      resumeCreativeAssetUpload.mockReturnValue(pending);
+      // As the parent does on a refine: it holds the emitted draft and hands the tab a new brief.
+      f.componentRef.setInput('draft', mounted.latest());
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+
+      expect(cancelCreativeAssetUpload).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+      expect(at(f).linkedInImageUploadError()).toBe('');
+
+      pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+      pending.complete();
+      f.detectChanges();
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect(submitVariants(f).map((variant) => variant['imageAssetId'])).toEqual([undefined, ASSET_ID]);
+    });
+
+    it('lets an upload orphaned by a re-seed hold neither the pickers nor Create', async () => {
       uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
       const f = (await mount(true)).fixture;
       fillForm(f);
@@ -16840,9 +16868,9 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       await f.whenStable();
       f.detectChanges();
 
-      expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
-      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
       expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).createBlockedReason()).not.toBe('Waiting for the LinkedIn Ads image upload to finish.');
       expect(at(f).canSubmit()).toBe(true);
     });
 

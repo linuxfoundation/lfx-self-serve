@@ -1724,6 +1724,15 @@ export class ImplementationTabComponent implements OnInit {
    * the previous one; otherwise the state mirrors the Meta fields above one for one.
    */
   protected readonly linkedInImageUploadVariantKey = signal('');
+  /**
+   * The one LinkedIn upload belongs to no variant on screen: the brief re-seeded the variants (new
+   * keys) while it ran. It is not cancelled, because a draft restore that follows the re-seed brings
+   * that variant back and the upload lands on it; until then it holds no picker and not Create.
+   */
+  private readonly linkedInImageUploadOrphaned = computed(() => {
+    const slotKey = this.linkedInImageUploadVariantKey();
+    return slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey);
+  });
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   private readonly linkedInImageUploadPendingName = signal('');
   private readonly linkedInImageUploadPendingBriefId = signal('');
@@ -3834,7 +3843,13 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
       return 'Waiting for the Google Ads image upload to finish.';
-    if (this.showLinkedInSection() && this.linkedInAssetUploadAvailable() && this.linkedInImageUploadStatus() === 'uploading')
+    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen.
+    if (
+      this.showLinkedInSection() &&
+      this.linkedInAssetUploadAvailable() &&
+      this.linkedInImageUploadStatus() === 'uploading' &&
+      !this.linkedInImageUploadOrphaned()
+    )
       return 'Waiting for the LinkedIn Ads image upload to finish.';
     if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading')
       return 'Waiting for the X image upload to finish.';
@@ -7243,11 +7258,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /**
    * Whether the one LinkedIn upload belongs to ANOTHER variant and must not be replaced: still
-   * running, or failed for the open brief (whose block holds Create until it is removed).
+   * running, or failed for the open brief (whose block holds Create until it is removed). An orphaned
+   * upload (`linkedInImageUploadOrphaned`) holds nothing, so a new pick simply replaces it.
    */
   private linkedInImageSlotHeldByOther(key: string): boolean {
     const slotKey = this.linkedInImageUploadVariantKey();
-    if (slotKey === '' || slotKey === key) return false;
+    if (slotKey === '' || slotKey === key || this.linkedInImageUploadOrphaned()) return false;
     if (this.linkedInImageUploadStatus() === 'uploading') return true;
     const briefId = this.briefPersistence().briefId ?? '';
     return this.linkedInImageUploadStatus() === 'error' && briefId !== '' && this.linkedInImageUploadFailedBriefId() === briefId;
@@ -7267,11 +7283,7 @@ export class ImplementationTabComponent implements OnInit {
         const imageUploading = ownsSlot && uploading;
         const forThisBrief = this.linkedInVariantImageForThisBrief(variant);
         const heldByOther = this.linkedInImageSlotHeldByOther(variant.key);
-        let imagePickerNote = '';
-        // A key no variant holds is an upload left running after the brief re-seeded the variants.
-        if (heldByOther)
-          imagePickerNote =
-            slotIndex === -1 ? 'Wait for the LinkedIn image upload to finish.' : `Finish or remove the image for variant ${slotIndex + 1} first.`;
+        const imagePickerNote = heldByOther ? `Finish or remove the image for variant ${slotIndex + 1} first.` : '';
         let imageStatusMessage = '';
         if (imageUploading) imageStatusMessage = 'Uploading image…';
         else if (forThisBrief) imageStatusMessage = `Uploaded: ${variant.imageAssetName || 'image'}`;
@@ -9143,11 +9155,6 @@ export class ImplementationTabComponent implements OnInit {
 
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants.map((variant) => this.newLinkedInVariant(variant)));
-      // The re-seed gives every variant a new key, so an upload still running for an old one has no
-      // variant to land on and no Cancel on screen; left alone, a hung upload would hold Create. It
-      // is cancelled here. A draft restore that follows brings its own variants and upload back.
-      const slotKey = this.linkedInImageUploadVariantKey();
-      if (slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey)) this.clearLinkedInImageUpload();
       // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
       // holds nothing" guard does not survive contact with the call order (LFXV2-3230).
       //

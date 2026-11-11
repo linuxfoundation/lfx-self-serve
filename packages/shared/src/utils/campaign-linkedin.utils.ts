@@ -22,9 +22,29 @@ export function normalizeLinkedInCreativeText(text: string): string {
  * campaign-service then blanks or cuts.
  */
 function goTrimSpace(text: string): string {
-  return text.replace(
-    /^[\t\n\v\f\r \u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+|[\t\n\v\f\r \u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]+$/g,
-    ''
+  // An index scan rather than an anchored regex, whose trailing `[…]+$` backtracks polynomially on a
+  // long run of spaces (CodeQL js/polynomial-redos).
+  let start = 0;
+  let end = text.length;
+  while (start < end && isGoSpace(text.charCodeAt(start))) start++;
+  while (end > start && isGoSpace(text.charCodeAt(end - 1))) end--;
+  return text.slice(start, end);
+}
+
+/** `unicode.IsSpace`: tab through carriage return, space, U+0085, U+00A0, and the rest of Unicode White_Space. */
+function isGoSpace(code: number): boolean {
+  return (
+    (code >= 0x09 && code <= 0x0d) ||
+    code === 0x20 ||
+    code === 0x85 ||
+    code === 0xa0 ||
+    code === 0x1680 ||
+    (code >= 0x2000 && code <= 0x200a) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    code === 0x202f ||
+    code === 0x205f ||
+    code === 0x3000
   );
 }
 

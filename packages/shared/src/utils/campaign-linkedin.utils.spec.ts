@@ -52,6 +52,13 @@ describe('linkedInVariantTextError', () => {
     expect(linkedInVariantTextError('headline', `  ${'a'.repeat(LINKEDIN_CHAR_LIMITS.headline)}  `)).toBeNull();
   });
 
+  it('trims a long run of whitespace in linear time', () => {
+    const started = Date.now();
+    expect(linkedInVariantTextError('headline', `a${'\t'.repeat(100_000)}a`)).toBe("The headline is 100002 characters, over LinkedIn's 200. Shorten it.");
+    expect(linkedInVariantTextError('headline', `${'\t'.repeat(100_000)}a`)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it("trims Go's whitespace set, not JavaScript's: U+0085 is trimmed and U+FEFF is kept", () => {
     expect(linkedInVariantTextError('headline', '\u0085')).toBe('Enter the headline.');
     expect(linkedInVariantTextError('headline', `\u0085${'a'.repeat(LINKEDIN_CHAR_LIMITS.headline)}\u3000`)).toBeNull();
