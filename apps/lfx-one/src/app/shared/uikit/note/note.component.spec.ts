@@ -80,6 +80,7 @@ describe('UiNoteComponent', () => {
     expect(host.className).toContain('bg-ui-neutral-50');
     expect(host.className).toContain('text-ui-neutral-500');
     expect(host.className).not.toContain('text-ui-danger-800');
+    expect(host.className).not.toContain('bg-ui-danger-50');
   });
 
   it('centres the icon on the first line at every size', async () => {
