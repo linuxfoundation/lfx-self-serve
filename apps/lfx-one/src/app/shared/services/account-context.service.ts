@@ -224,8 +224,7 @@ export class AccountContextService {
       this.rollUpFlag.unsettled() ||
       (this.rollUpFlag.enabled()
         ? this.grantsUnsettled()
-        : !this.orgRoleGrantsService.loaded() ||
-          (this.orgRoleGrantsService.lookupOutcome() !== 'failed' && !this.rollUpFamiliesService.answered()))
+        : !this.orgRoleGrantsService.loaded() || (this.orgRoleGrantsService.lookupOutcome() !== 'failed' && !this.rollUpFamiliesService.answered()))
   );
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
