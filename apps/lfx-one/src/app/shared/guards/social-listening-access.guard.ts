@@ -3,7 +3,8 @@
 
 import { EnvironmentInjector, inject, runInInjectionContext } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, GuardResult, Router, RouterStateSnapshot } from '@angular/router';
-import { from, isObservable, Observable, of, switchMap } from 'rxjs';
+import type { SocialListeningAccessResponse } from '@lfx-one/shared/interfaces';
+import { from, isObservable, map, Observable, of, switchMap } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
@@ -34,18 +35,40 @@ export const socialListeningAccessGuard: CanActivateFn = (route: ActivatedRouteS
     return isObservable(result) ? result : from(Promise.resolve(result));
   };
 
-  if (personaService.currentPersona() === 'executive-director') {
-    return seedFromQueryParam();
-  }
-
   const projectParam = route.queryParamMap.get('project');
   const foundationSlug = projectParam ?? projectContextService.selectedFoundation()?.slug;
   const deny = router.createUrlTree(['/foundation/overview'], { queryParams: { project: projectParam } });
 
+  const applyGroupGrant = (access: SocialListeningAccessResponse): boolean => {
+    if (!access.canView || !access.foundation) {
+      return false;
+    }
+    projectContextService.setRouteLensKind('foundation');
+    projectContextService.setFoundation(access.foundation);
+    socialListeningService.groupGrant.set({ foundation: access.foundation, foundationSfid: access.foundationSfid ?? null });
+    return true;
+  };
+
+  // ED or staff: the project lookup needs project viewer. An ED of another foundation can still hold a
+  // group grant on this one, so when the lookup can't resolve it, fall back to the probe's context.
+  const seedExecutive = (): Observable<GuardResult> =>
+    seedFromQueryParam().pipe(
+      switchMap((result) => {
+        if (result === true || !foundationSlug) {
+          return of(result);
+        }
+        return socialListeningService.getAccess(foundationSlug).pipe(map((access) => (applyGroupGrant(access) ? true : result)));
+      })
+    );
+
+  if (personaService.currentPersona() === 'executive-director') {
+    return seedExecutive();
+  }
+
   return personaService.refreshEnrichedPersonas().pipe(
     switchMap(() => {
       if (personaService.canViewExecutiveDashboards()) {
-        return seedFromQueryParam();
+        return seedExecutive();
       }
       if (!foundationSlug) {
         return of(deny);
@@ -55,13 +78,7 @@ export const socialListeningAccessGuard: CanActivateFn = (route: ActivatedRouteS
           if (!access.canView) {
             return of(deny);
           }
-          if (!access.foundation) {
-            return seedFromQueryParam();
-          }
-          projectContextService.setRouteLensKind('foundation');
-          projectContextService.setFoundation(access.foundation);
-          socialListeningService.groupGrant.set({ foundation: access.foundation, foundationSfid: access.foundationSfid ?? null });
-          return of(true);
+          return applyGroupGrant(access) ? of(true) : seedFromQueryParam();
         })
       );
     })

@@ -75,6 +75,18 @@ describe('socialListeningAccessGuard', () => {
     expect((result as unknown as { redirectTo: unknown }).redirectTo).toEqual({ parsed: '/not-found' });
   });
 
+  it("seeds a cross-foundation ED's group grant when the viewer-gated lookup can't resolve the foundation", async () => {
+    currentPersona.set('executive-director');
+    resolveProject.mockReturnValue(throwError(() => ({ status: 403 })));
+    const foundation = { uid: 'b-uid', name: 'B', slug: 'b' };
+    getAccess.mockReturnValue(of({ canView: true, reason: 'group-member', foundation, foundationSfid: 'b-sfid' }));
+
+    await expect(runGuard(route({ project: 'b' }))).resolves.toBe(true);
+    expect(getAccess).toHaveBeenCalledWith('b');
+    expect(setFoundation).toHaveBeenCalledWith(foundation);
+    expect(groupGrant.set).toHaveBeenCalledWith({ foundation, foundationSfid: 'b-sfid' });
+  });
+
   it('admits LF Staff without asking the access endpoint', async () => {
     canViewExecutiveDashboards.set(true);
 
