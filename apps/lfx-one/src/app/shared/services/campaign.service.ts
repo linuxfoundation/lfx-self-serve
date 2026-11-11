@@ -99,6 +99,7 @@ import {
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
   LinkedInAccount,
+  LinkedInTargetingProfileConfig,
   LinkedInMonitorResponse,
   ListAudiencesResult,
   MetaAccountOption,
@@ -645,6 +646,11 @@ export class CampaignService {
 
   public getLinkedInAccounts(projectSlug: string): Observable<LinkedInAccount[]> {
     return this.http.get<LinkedInAccount[]>('/api/campaigns/linkedin/accounts', { params: { project: projectSlug } });
+  }
+
+  /** The configured LinkedIn targeting profiles and the facet URNs each one targets (#5546). */
+  public getLinkedInTargetingProfiles(projectSlug: string): Observable<LinkedInTargetingProfileConfig[]> {
+    return this.http.get<LinkedInTargetingProfileConfig[]>('/api/campaigns/linkedin/targeting-profiles', { params: { project: projectSlug } });
   }
 
   public getLinkedInMonitorData(

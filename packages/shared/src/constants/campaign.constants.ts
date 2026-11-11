@@ -263,6 +263,19 @@ export const GOOGLE_MIN_DAILY_BUDGET_USD = 1;
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
+/**
+ * Selections campaign-service resolves to another configured profile before reading its facets:
+ * `custom` reads `cloud-native` (`internal/platform/linkedin/targeting.go` `buildTargetingCriteria`,
+ * and `validatePrerequisites` in `client.go`). The Implement tab shows, and the BFF checks an edit
+ * against, the profile the selection resolves to.
+ */
+/** The create request field an edited LinkedIn targeting profile rides in (#5546), as a refusal names it. */
+export const LINKEDIN_TARGETING_PROFILE_EDIT_FIELD = 'linkedInConfig.targetingProfileEdit';
+
+export const LINKEDIN_TARGETING_PROFILE_ALIASES: Readonly<Partial<Record<LinkedInTargetingProfile, LinkedInTargetingProfile>>> = {
+  custom: 'cloud-native',
+};
+
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
 /**

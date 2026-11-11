@@ -80,6 +80,7 @@ function listResult(campaigns: CampaignIndexDoc[]): CampaignListResult {
     metaCreativeEnabled: false,
     metaAssetUploadEnabled: false,
     linkedInAssetUploadEnabled: false,
+    linkedInTargetingEditEnabled: false,
     microsoftAssetUploadEnabled: false,
     biddingEnabled: false,
     microsoftScheduleEnabled: false,

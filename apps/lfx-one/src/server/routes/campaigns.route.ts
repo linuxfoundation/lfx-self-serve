@@ -153,6 +153,8 @@ router.post('/send-workflow', (req, res, next) => campaignController.createSendW
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
 router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
+// The configured targeting profiles, so the Implement tab can show what each one targets (#5546).
+router.get('/linkedin/targeting-profiles', (req, res) => campaignController.getLinkedInTargetingProfiles(req, res));
 router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
 router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccounts(req, res));
 router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
