@@ -68,6 +68,37 @@ describe('LinkedEmailSupportService', () => {
     expect(await service.consume('synthetic-user', second)).toBe('second@example.test');
   });
 
+  it.each([1, 1000, VALKEY_CACHE.EMAIL_LINKED_SUPPORT_CLOCK_SKEW_MS])(
+    'accepts a consuming clock %i ms behind the issuer without allowing replay',
+    async (skewMs) => {
+      vi.useFakeTimers();
+      const issuedAt = Date.now();
+      const handle = await service.issue('synthetic-user', 'linked@example.test');
+      vi.setSystemTime(issuedAt - skewMs);
+      expect(await service.consume('synthetic-user', handle)).toBe('linked@example.test');
+      expect(await service.consume('synthetic-user', handle)).toBeUndefined();
+      expect(store.size).toBe(0);
+    }
+  );
+
+  it('rejects an expiry beyond the bounded clock-skew allowance', async () => {
+    vi.useFakeTimers();
+    const issuedAt = Date.now();
+    const handle = await service.issue('synthetic-user', 'linked@example.test');
+    vi.setSystemTime(issuedAt - VALKEY_CACHE.EMAIL_LINKED_SUPPORT_CLOCK_SKEW_MS - 1);
+    expect(await service.consume('synthetic-user', handle)).toBeUndefined();
+    expect(store.size).toBe(0);
+  });
+
+  it.each([-1, 0, 1])('preserves the expiry boundary at TTL plus %i ms', async (offsetMs) => {
+    vi.useFakeTimers();
+    const issuedAt = Date.now();
+    const handle = await service.issue('synthetic-user', 'linked@example.test');
+    vi.setSystemTime(issuedAt + VALKEY_CACHE.EMAIL_LINKED_SUPPORT_TTL_SECONDS * 1000 + offsetMs);
+    expect(await service.consume('synthetic-user', handle)).toBe(offsetMs < 0 ? 'linked@example.test' : undefined);
+    expect(store.size).toBe(0);
+  });
+
   it('rejects expired context even if the backend has not removed it yet', async () => {
     const handle = await service.issue('synthetic-user', 'linked@example.test');
     vi.setSystemTime(Date.now() + VALKEY_CACHE.EMAIL_LINKED_SUPPORT_TTL_SECONDS * 1000 + 1);

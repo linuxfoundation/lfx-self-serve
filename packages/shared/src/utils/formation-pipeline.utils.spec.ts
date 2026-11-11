@@ -226,14 +226,14 @@ describe('chunkArray', () => {
 });
 
 describe('row link and table row', () => {
-  it('links to the checklist only when one exists and the stage can show it, otherwise to the project dashboard', () => {
-    const checklist = { commands: ['/foundation/formations', 'a'], queryParams: null };
+  it('links to the formation page for every stage but Archived, with or without a checklist', () => {
+    const formation = { commands: ['/foundation/formations', 'a'], queryParams: null };
     const dashboard = { commands: ['/project/overview'], queryParams: { project: 'a' } };
-    expect(getPipelineRowLink({ slug: 'a', stage: 'engaged', has_checklist: true })).toEqual(checklist);
-    expect(getPipelineRowLink({ slug: 'a', stage: 'disengaged', has_checklist: true })).toEqual(checklist);
-    expect(getPipelineRowLink({ slug: 'a', stage: 'archived', has_checklist: true })).toEqual(dashboard);
-    expect(getPipelineRowLink({ slug: 'a', stage: 'prospect', has_checklist: false })).toEqual(dashboard);
-    expect(getPipelineRowLink({ slug: 'a', stage: 'disengaged', has_checklist: false })).toEqual(dashboard);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'engaged' })).toEqual(formation);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'disengaged' })).toEqual(formation);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'prospect' })).toEqual(formation);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'exploratory' })).toEqual(formation);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'archived' })).toEqual(dashboard);
   });
 
   it('resolves display strings', () => {

@@ -15,8 +15,8 @@
   64px a 16px-root assumption would give) that also apply once the sidebar shows — at lg that leaves
   only a 380px content column next to a 300px rail; at 2xl it leaves 796px.
 -->
-<!-- Sticky already-linked notice from the Flow C callback, on its own key so the app's unkeyed toast never renders it. -->
-<p-toast [key]="linkedSupportToastKey" position="top-right">
+<!-- Separate key and corner keep the sticky support action clear of global notices and the Intercom launcher. -->
+<p-toast [key]="linkedSupportToastKey" position="bottom-left">
   <ng-template let-message pTemplate="message">
     <lfx-toast-message [message]="message">
       <button

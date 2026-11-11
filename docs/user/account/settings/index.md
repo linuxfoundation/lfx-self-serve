@@ -4,7 +4,7 @@ description: Manage your email addresses, password, two-factor authentication, a
 audience: [all]
 product_area: Account
 tags: [account, settings, email, password, developer, api-token, security, meeting-invitations]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Account
 ---
 
@@ -49,7 +49,7 @@ The **Meeting Invites** badge marks the address that receives meeting invitation
 1. Type the address in the **Add New Email Address** field and select **Send Code**. LFX shows the same confirmation whether or not the address is already linked to an LFX account, and the 6-digit verification code is sent to that address. While the request is pending, the button shows **Requesting code…** and is disabled.
 2. Enter the code in **Enter verification code** and select **Verify**.
 
-If the code is wrong or has expired, you see **Verification failed. Please try again or request a new code.** — enter the code again or request a new one. If the code is correct but the address is already linked to an LFX account, an **Email already linked** callout replaces the code guidance with **This email is already linked to an LFX account. Contact support if you need help.** The address is not added, and requesting a new code won't change the outcome. Select **Contact support** in the callout to open a support chat with a message already filled in: it names the address you verified and asks for it to be added to the account you're signed in to. You can edit or delete the message before sending it.
+If the code is wrong or has expired, you see **Verification failed. Please try again or request a new code.** — enter the code again or request a new one. If the code is correct but the address is already linked to an LFX account, an **Email already linked** callout replaces the code guidance with **This email is already linked to an LFX account. Contact support if you need help.** The address is not added, and requesting a new code won't change the outcome. Select **Contact support** in the callout to open a support chat with a message already filled in: it names the address you verified and asks for it to be added to the account you're signed in to. You can edit or delete the message before sending it. If the address belongs to another LFX account of yours, support can [merge the two accounts](../identities/#merge-two-lfx-accounts).
 
 If the code doesn't arrive, the **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance.
 

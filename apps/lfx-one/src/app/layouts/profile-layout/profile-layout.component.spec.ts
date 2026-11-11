@@ -963,6 +963,30 @@ describe('ProfileLayoutComponent — rendered linked-email callback support (#55
     expect(root.querySelector('[data-testid="profile-linked-support-toast-button"]')).toBeNull();
   });
 
+  it('keeps concurrent global notices and the sticky support action in distinct corners', async () => {
+    const response$ = new Subject<LinkedEmailSupportDraft>();
+    const { fixture, globalToast } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', response$);
+    TestBed.inject(MessageService).add({ severity: 'info', summary: 'Authorization complete', detail: 'Please re-select your image to upload it.' });
+    response$.next({ email: 'linked@example.test' });
+    fixture.detectChanges();
+    globalToast.detectChanges();
+    await fixture.whenStable();
+    const supportToast = fixture.debugElement.query(By.directive(Toast)).componentInstance as Toast;
+    expect(supportToast.position).toBe('bottom-left');
+    expect(globalToast.componentInstance.position).toBe('top-right');
+    expect(supportToast.messages).toHaveLength(1);
+    expect(globalToast.componentInstance.messages).toHaveLength(1);
+    expect(globalToast.componentInstance.messages?.[0].summary).toBe('Authorization complete');
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.p-toast-bottom-left [data-testid="profile-linked-support-toast-button"]')).not.toBeNull();
+    expect(globalToast.nativeElement.classList.contains('p-toast-top-right')).toBe(true);
+    root.querySelector<HTMLButtonElement>('.p-toast-close-button')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(supportToast.messages ?? []).toHaveLength(0);
+    expect(globalToast.componentInstance.messages).toHaveLength(1);
+  });
+
   it('keeps the notice and generic draft when the private context is unavailable', async () => {
     const { fixture, openMessenger } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', of({}));
     fixture.nativeElement.querySelector('[data-testid="profile-linked-support-toast-button"]').click();

@@ -71,6 +71,8 @@ export const VALKEY_CACHE = {
   /** Private callback support drafts, keyed by a digest of subject and random attempt handle. */
   EMAIL_LINKED_SUPPORT_NAMESPACE: 'email-linked-support:v1',
   EMAIL_LINKED_SUPPORT_TTL_SECONDS: 300,
+  /** Upper expiry sanity-check allowance between pods; never extends the Valkey TTL. */
+  EMAIL_LINKED_SUPPORT_CLOCK_SKEW_MS: 30000,
 
   /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
   MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',

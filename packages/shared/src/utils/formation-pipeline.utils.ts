@@ -233,14 +233,14 @@ export function buildPipelineStatCards(
 }
 
 /**
- * The formation checklist (keeping the foundation context) when the project has one and it can be shown; otherwise the
- * project's own dashboard. The checklist page renders a frozen checklist (Disengaged) read-only but blocks an Archived
- * project, so an Archived row goes to its dashboard even when a checklist exists.
+ * The formation page (keeping the foundation context) for every row except an Archived one, which goes to the project's own
+ * dashboard: the formation page replaces its whole body for an Archived project. A row without a checklist (a Draft project,
+ * or a live one formation-service has not started) still opens the formation page, which shows an empty state for it.
  */
-export function getPipelineRowLink(row: Pick<FormationPipelineRow, 'slug' | 'has_checklist' | 'stage'>): FormationPipelineRowLink {
-  return row.has_checklist && row.stage !== 'archived'
-    ? { commands: ['/foundation/formations', row.slug], queryParams: null }
-    : { commands: ['/project/overview'], queryParams: { project: row.slug } };
+export function getPipelineRowLink(row: Pick<FormationPipelineRow, 'slug' | 'stage'>): FormationPipelineRowLink {
+  return row.stage === 'archived'
+    ? { commands: ['/project/overview'], queryParams: { project: row.slug } }
+    : { commands: ['/foundation/formations', row.slug], queryParams: null };
 }
 
 /** Resolves every display string of a row once. */

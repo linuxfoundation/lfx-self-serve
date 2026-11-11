@@ -31,7 +31,10 @@ export class LinkedEmailSupportService {
     );
     if (result.status !== 'hit' || !LinkedEmailSupportService.isContext(result.value)) return undefined;
     const { email, expiresAt } = result.value;
-    return expiresAt > Date.now() && expiresAt <= Date.now() + VALKEY_CACHE.EMAIL_LINKED_SUPPORT_TTL_SECONDS * 1000 ? email : undefined;
+    const now = Date.now();
+    // Another pod may have issued this record with a slightly faster clock. Valkey still enforces the five-minute TTL.
+    const latestExpiry = now + VALKEY_CACHE.EMAIL_LINKED_SUPPORT_TTL_SECONDS * 1000 + VALKEY_CACHE.EMAIL_LINKED_SUPPORT_CLOCK_SKEW_MS;
+    return expiresAt > now && expiresAt <= latestExpiry ? email : undefined;
   }
 
   private static isContext(value: unknown): value is LinkedEmailSupportContext {

@@ -3,8 +3,8 @@ title: Identities
 description: Link, verify, and remove the social and email identities used to attribute your work in LFX Self Serve; GitLab linking is coming soon
 audience: [all]
 product_area: Account
-tags: [account, identities, github, gitlab, email, verification, linux-com-alias, meeting-invitations]
-last_updated: 2026-11-10
+tags: [account, identities, github, gitlab, email, verification, linux-com-alias, meeting-invitations, merge-accounts]
+last_updated: 2026-11-11
 intercom_collection: Account
 ---
 
@@ -15,6 +15,7 @@ The **Identities** tab is where you manage the accounts used to identify you and
 - Link a new GitHub, social, or email identity to your account
 - Verify an identity that is connected but not yet confirmed
 - Remove an identity you no longer want linked
+- Ask support to merge a second LFX account into this one
 - Claim and manage a personal **Linux.com email** alias (an Individual Supporter add-on)
 
 ## Open Identities
@@ -34,7 +35,7 @@ Your primary email is always listed, with a **Primary** badge. If you also sign 
 
 The profile sidebar and the **Primary** badge use your current primary email. Changing it in **Edit profile** refreshes both displays without signing out and back in.
 
-> **Note:** A single identity can only be linked to one LFX account. For email addresses, LFX shows the same code-entry step whether or not the address is already linked elsewhere, and only tells you the address is already linked after you enter the correct code — the code is what proves you own the inbox. The **No code yet?** guidance asks you to check the email address and your spam or junk folder, and **Contact support** is available from the start. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. Social-account conflicts still show a conflict message after provider sign-in. Signing in again with a social account that is already yours shows **Already connected** instead.
+> **Note:** A single identity can only be linked to one LFX account. For email addresses, LFX shows the same code-entry step whether or not the address is already linked elsewhere, and only tells you the address is already linked after you enter the correct code — the code is what proves you own the inbox. The **No code yet?** guidance asks you to check the email address and your spam or junk folder, and **Contact support** is available from the start. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. Social-account conflicts still show a conflict message after provider sign-in. Signing in again with a social account that is already yours shows **Already connected** instead. If the identity is linked to another LFX account that is also yours, ask support to merge the two accounts — see [Merge two LFX accounts](#merge-two-lfx-accounts).
 
 ## Add an identity
 
@@ -72,10 +73,21 @@ To reject an unverified identity instead, use **This is not me** on its row (see
 >
 > A verified email currently set to receive meeting invitations can't be removed — its **Remove** option is disabled, with the tooltip _This email is set for meeting invitations. Choose a different meeting-invitation email in Account Settings before removing it._ Choose a different meeting-invitation email in [Settings](../settings/#email-settings) first.
 
+## Merge two LFX accounts
+
+If you have more than one LFX account — for example, a personal account and a work account — LFX support can merge them into one. There is no merge option in LFX Self Serve.
+
+To request a merge, contact support and include:
+
+- The LFX usernames (LFIDs) or email addresses of both accounts
+- Which account you want to keep
+
+Merging LFX accounts does not move training course or certification exam records between accounts.
+
 ## If the Identities tab shows a message
 
 - **Identity service unavailable** — _Identity verification status cannot be loaded right now. Please try again in a few minutes._
-- _This identity is already linked to another LFX account. A single identity can only be linked to one account._ — the account you just signed in with belongs to a different LFX account. If you believe this is an error, select **contact support** in the message.
+- _This identity is already linked to another LFX account. A single identity can only be linked to one account._ — the account you just signed in with belongs to a different LFX account. If you believe this is an error, select **contact support** in the message. If that other account is also yours, ask support to [merge the two accounts](#merge-two-lfx-accounts).
 - **No identities found** — _No connected accounts were found for your profile._ Use **Add identity** to link one.
 
 ## Your Linux.com email alias

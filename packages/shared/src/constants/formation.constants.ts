@@ -461,3 +461,12 @@ export const FORMATION_CHECKLIST_PATH = '/project/formation';
  * append (#2573, #2616, #1961).
  */
 export const FORMATION_ITEM_QUERY_PARAM = 'item';
+
+/**
+ * Empty state of the checklist section when the checklist read is not-found. Neutral on purpose: the BFF masks 403 and 404 alike, so the copy
+ * must not claim the project lacks access or does not exist.
+ */
+export const FORMATION_NO_CHECKLIST_COPY = {
+  title: 'Nothing to track for this project yet',
+  subtitle: 'Formation items start when the project moves into a formation stage.',
+} as const;
