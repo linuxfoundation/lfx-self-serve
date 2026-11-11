@@ -263,10 +263,10 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('recovers from a rejected file when a corrected file is chosen', async () => {
-      await upload('email,permission\nada@example.com,manage');
+      await upload('Email,email\nada@example.com,ada@example.com');
       await render();
       expect(component.phase()).toBe('select');
-      expect(query('import-members-file-errors')?.textContent).toContain('Unknown columns: "permission"');
+      expect(query('import-members-file-errors')?.textContent).toContain('The column "email" appears more than once.');
 
       await upload('email\nada@example.com', 'fixed.csv');
       await render();
@@ -275,13 +275,50 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.fileName()).toBe('fixed.csv');
     });
 
-    it.each([
-      ['a non-CSV file', 'email\nada@example.com', 'members.xlsx', 'Choose a .csv file'],
-      ['malformed UTF-8', new Uint8Array([0x65, 0x6d, 0x61, 0x69, 0x6c, 0x0a, 0xc3, 0x28]), 'members.csv', 'could not be read as UTF-8'],
-    ])('rejects %s before previewing', async (_label, content, name, message) => {
-      await upload(content, name);
+    it('rejects a non-CSV file before previewing', async () => {
+      await upload('email\nada@example.com', 'members.xlsx');
       expect(component.rows()).toEqual([]);
-      expect(component.fileErrors()[0]).toContain(message);
+      expect(component.fileErrors()[0]).toContain('Choose a .csv file');
+    });
+
+    it('previews flexible headers and values, listing ignored columns in a notice', async () => {
+      await upload('Email,First Name,Last Name,Notes,Role\nada@example.com,Ada,Lovelace,met at summit,chair');
+      await render();
+
+      expect(component.phase()).toBe('preview');
+      expect(component.fileErrors()).toEqual([]);
+      expect(component.readyCount()).toBe(1);
+      expect(component.rows()[0].cells).toEqual({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Lovelace', role: 'Chair' });
+      expect(query('import-members-row-2')?.textContent).toContain('Chair');
+      const notices = query('import-members-file-notices');
+      expect(notices?.getAttribute('role')).toBeNull();
+      expect(notices?.textContent).toContain("Ignored columns: Notes. The import doesn't use them.");
+      expect(notices?.textContent).not.toContain('UTF-8');
+    });
+
+    it('reads a non-UTF-8 file as Windows-1252 and says so in the preview', async () => {
+      await upload(new Uint8Array([...new TextEncoder().encode('email,first_name\nada@example.com,Jos'), 0xe9]));
+      await render();
+
+      expect(component.phase()).toBe('preview');
+      expect(component.rows()[0].cells.first_name).toBe('José');
+      expect(query('import-members-row-2')?.textContent).toContain('José');
+      expect(component.fileNotices()).toEqual([
+        "This file wasn't saved as UTF-8, so it was read as Windows (Western European) text. Check that names with accents look right before adding.",
+      ]);
+      expect(query('import-members-file-notices')?.textContent).toContain('read as Windows (Western European) text');
+    });
+
+    it('clears file notices when a different file is chosen', async () => {
+      await upload(new Uint8Array([...new TextEncoder().encode('email,notes\nada@example.com,Jos'), 0xe9]));
+      await render();
+      expect(component.fileNotices()).toHaveLength(2);
+
+      await upload('email\ngrace@example.com', 'clean.csv');
+      await render();
+      expect(component.phase()).toBe('preview');
+      expect(component.fileNotices()).toEqual([]);
+      expect(query('import-members-file-notices')).toBeNull();
     });
 
     it('rejects a file over the size limit without reading it', async () => {

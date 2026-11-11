@@ -10,8 +10,8 @@
         <div class="flex flex-col gap-1">
           <h3 id="import-members-format-title" class="text-sm font-semibold text-gray-900">CSV format for {{ committeeName }}</h3>
           <p class="text-sm text-gray-600">
-            One member per row, up to {{ maxRecords }} rows and {{ maxFileMegabytes }} MB. Use the template's column names in any order; other columns are
-            rejected. No invitations are created.
+            One member per row, up to {{ maxRecords }} rows and {{ maxFileMegabytes }} MB. Column names can be in any order and capitalization; columns the
+            import doesn't use are ignored. No invitations are created.
             @if (collectOnly) {
               Members stay pending in the form until you select Done (when creating) or Update Group (when editing).
             } @else {
@@ -82,6 +82,16 @@
       <ul class="flex max-h-40 list-disc flex-col gap-1 overflow-y-auto pl-5 text-sm text-red-700">
         @for (error of fileErrors(); track $index) {
           <li>{{ error }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+  @if (phase() === 'preview' && fileNotices().length > 0) {
+    <div class="flex flex-col gap-1 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="import-members-file-notices">
+      <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-amber-800">
+        @for (notice of fileNotices(); track $index) {
+          <li>{{ notice }}</li>
         }
       </ul>
     </div>
