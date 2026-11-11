@@ -72,6 +72,22 @@ export const MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG = 'mailing-list-committee-
 export const ORG_LENS_PRIVATE_RELEASE_FLAG = 'org-lens-private-release';
 
 /**
+ * Dark-launch gate for the Org Lens family roll-up (#4132): the All Organizations rows in the
+ * organization selector and every `/org/family-{top account id}/…` address. Default false. The
+ * per-page roll-up views ship behind this same flag, so the public release is one flip once the
+ * last page lands.
+ *
+ * Read through `OrgRollUpFlagService`, which separates "off" from "not known yet": LaunchDarkly
+ * answers for an anonymous context before the signed-in one, and a roll-up restored from the
+ * cookie or an address must ride that window out rather than be demoted by it.
+ *
+ * **UI-only** — evaluated through the OpenFeature Web SDK, which never runs server-side, so it
+ * cannot gate an Express handler: `/api/orgs/me/roll-up-set` and every other BFF route answer the same
+ * with the flag off. This flag only controls whether Self Serve offers and renders the roll-up.
+ */
+export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';
+
+/**
  * Dark-launch gate for FGA-based (`marketing_auditor` / `campaign_manager`) Marketing Impact and
  * Campaigns access (LFXV2-2235/LFXV2-2236). Default false: the reverted PR #1112 caused a total
  * lockout for all users when these guards shipped without a kill switch (see the LFXV2-2231
