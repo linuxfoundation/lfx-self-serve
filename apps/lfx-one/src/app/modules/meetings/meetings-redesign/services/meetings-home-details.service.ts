@@ -41,6 +41,17 @@ export class MeetingsHomeDetailsService {
 
   /** Opens the drawer on the row's date, replacing one already open, and reports where it was opened from. */
   public open(row: MeetingHomeRow, entryPoint: MeetingDetailsEntryPoint, options: MeetingDetailsOpenOptions = {}): void {
+    this.show(row, options);
+    // Its own event, not a meeting page view, so drawer opens and page visits stay apart.
+    // The series id, so opens of a past date group with its meeting.
+    const meetingId = isPastMeetingCalendarRow(row.meeting) ? row.meeting.meeting_id : row.meeting.id;
+    const properties = { meetingId, entryPoint };
+    this.plausible.trackEvent(MEETING_DETAILS_OPENED_EVENT, properties);
+    this.segment.trackEvent(MEETING_DETAILS_OPENED_EVENT, properties);
+  }
+
+  /** Opens the drawer without reporting it, so a date switch inside the drawer is not counted as an open. */
+  private show(row: MeetingHomeRow, options: MeetingDetailsOpenOptions = {}): void {
     if (this.ref) {
       this.ref.close();
     } else {
@@ -49,7 +60,12 @@ export class MeetingsHomeDetailsService {
       // The support launcher steps aside while a drawer is open.
       this.overlayState.register(MEETING_DETAILS_OVERLAY_ID);
     }
-    const data: MeetingDetailsDrawerData = { row, tab: options.tab ?? 'agenda', injector: this.injector };
+    const data: MeetingDetailsDrawerData = {
+      row,
+      tab: options.tab ?? 'agenda',
+      injector: this.injector,
+      open: (next) => this.show(next),
+    };
     const ref = this.drawer.open<unknown, MeetingDetailsDrawerData, MeetingDetailsDrawerComponent>(MeetingDetailsDrawerComponent, { width: 1080, data });
     this.ref = ref;
     ref.closed.pipe(take(1)).subscribe(() => {
@@ -59,11 +75,5 @@ export class MeetingsHomeDetailsService {
       if (this.router.url === this.pageUrl) this.title.setTitle(this.pageTitle);
       this.overlayState.unregister(MEETING_DETAILS_OVERLAY_ID);
     });
-    // Its own event, not a meeting page view, so drawer opens and page visits stay apart.
-    // The series id, so opens of a past date group with its meeting.
-    const meetingId = isPastMeetingCalendarRow(row.meeting) ? row.meeting.meeting_id : row.meeting.id;
-    const properties = { meetingId, entryPoint };
-    this.plausible.trackEvent(MEETING_DETAILS_OPENED_EVENT, properties);
-    this.segment.trackEvent(MEETING_DETAILS_OPENED_EVENT, properties);
   }
 }

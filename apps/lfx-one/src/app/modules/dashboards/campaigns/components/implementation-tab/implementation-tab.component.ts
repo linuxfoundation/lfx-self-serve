@@ -171,6 +171,7 @@ import {
   GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
   GOOGLE_CHANNELS_WITH_SITELINKS,
   GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_CPA,
   GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CONVERSION_ACTION_PICKER_EMPTY,
@@ -196,6 +197,7 @@ import {
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_REFUSAL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_SHORTFALL,
   GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+  GOOGLE_TARGET_CPA_WITHHELD_MESSAGE,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_USER_LIST_PICKER_EMPTY,
   GOOGLE_USER_LIST_PICKER_LOADING,
@@ -3998,6 +4000,8 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
   protected readonly googleTakesTargetCpa: Signal<boolean> = this.initGoogleTakesTargetCpa();
   protected readonly googleTakesTargetRoas: Signal<boolean> = this.initGoogleTakesTargetRoas();
+  /** The sentence shown where the Target CPA field would be on a channel that withholds it, or `null`. */
+  protected readonly googleTargetCpaWithheldMessage: Signal<string | null> = this.initGoogleTargetCpaWithheldMessage();
   protected readonly googleLanguagesChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleLanguagesChannel();
   /**
    * Whether the targeting panel offers ad schedules / device adjustments, and so whether the request
@@ -10906,16 +10910,38 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The strategies the selected channel accepts, labelled for the picker.
    *
-   * Straight from the shared catalogue, which reproduces campaign-service's five per-channel sets.
-   * Nothing is added here and nothing is filtered out — a strategy missing from a channel's list
-   * is missing because the dispatcher refuses it there, and one that appears is one it takes.
+   * From {@link googleOfferedBiddingStrategies}: the shared catalogue, which reproduces
+   * campaign-service's five per-channel sets, less the Target CPA strategy on a channel in
+   * {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA}. Nothing else is added or filtered out — apart from
+   * that one exception, which Google refuses rather than the dispatcher, a strategy missing from a
+   * channel's list is missing because the dispatcher refuses it there, and one that appears is one
+   * it takes.
    */
   private initGoogleBiddingOptions(): Signal<GoogleBiddingOption[]> {
     return computed(() => {
       const channel = this.googleBiddingChannel();
       if (!channel) return [];
-      return GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel].map((value) => ({ value, label: GOOGLE_BIDDING_STRATEGY_LABELS[value] }));
+      return this.googleOfferedBiddingStrategies(channel).map((value) => ({ value, label: GOOGLE_BIDDING_STRATEGY_LABELS[value] }));
     });
+  }
+
+  /**
+   * The strategies offered on `channel`: its catalogue set, without the strategies that REQUIRE a
+   * target CPA when the channel is in {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA} (Display, until
+   * campaign-service#578 ships). The picker, `googleBiddingStrategy` and `googleBiddingPayload` all
+   * read this one list, so a Target CPA pick carried onto Display — by a channel switch or a restored
+   * draft — falls back to the channel default and is left out of the request, the same route a
+   * Target ROAS pick takes on Demand Gen, whose catalogue set leaves it out. Maximize Conversions
+   * stays: it is offered there, only without its optional target.
+   */
+  private googleOfferedBiddingStrategies(channel: GoogleCampaignChannel): readonly GoogleBiddingStrategy[] {
+    const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly GoogleBiddingStrategy[];
+    if (!(GOOGLE_CHANNELS_WITHOUT_TARGET_CPA as readonly string[]).includes(channel)) return accepted;
+    return accepted.filter(
+      (strategy) =>
+        !(GOOGLE_BIDDING_CPA_STRATEGIES as readonly string[]).includes(strategy) ||
+        !(GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES as readonly string[]).includes(strategy)
+    );
   }
 
   /**
@@ -10935,7 +10961,7 @@ export class ImplementationTabComponent implements OnInit {
       const channel = this.googleBiddingChannel();
       if (!channel) return null;
       const chosen = this.campaignForm.controls.googleBiddingStrategy.value.trim();
-      const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly GoogleBiddingStrategy[];
+      const accepted = this.googleOfferedBiddingStrategies(channel);
       return accepted.find((strategy) => strategy === chosen) ?? GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel];
     });
   }
@@ -10956,11 +10982,35 @@ export class ImplementationTabComponent implements OnInit {
    * REFUSES a target on a strategy that cannot carry it, and refuses a CPC bid under anything but
    * manual CPC, rather than dropping either — so a value left behind in a hidden control has to be
    * withheld at submit, not merely hidden on screen.
+   *
+   * A target CPA is never offered on a channel in {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA} —
+   * Display, until campaign-service#578 ships — so a value typed on another channel is withheld
+   * there too, and {@link initGoogleTargetCpaWithheldMessage} says why.
    */
   private initGoogleTakesTargetCpa(): Signal<boolean> {
     return computed(() => {
-      const strategy = this.googleBiddingStrategy();
-      return strategy !== null && (GOOGLE_BIDDING_CPA_STRATEGIES as readonly string[]).includes(strategy);
+      const channel = this.googleBiddingChannel();
+      if (channel === null || (GOOGLE_CHANNELS_WITHOUT_TARGET_CPA as readonly string[]).includes(channel)) return false;
+      return this.googleStrategyCarriesTargetCpa();
+    });
+  }
+
+  /** Whether the effective strategy is one that carries a target CPA, whatever the channel. */
+  private googleStrategyCarriesTargetCpa(): boolean {
+    const strategy = this.googleBiddingStrategy();
+    return strategy !== null && (GOOGLE_BIDDING_CPA_STRATEGIES as readonly string[]).includes(strategy);
+  }
+
+  /**
+   * Why no Target CPA field is shown, on a channel in {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA}
+   * (Display) whose strategy in force would otherwise carry one, or `null`. Read where the field
+   * would have rendered, so the operator learns the target is withheld rather than finding it gone.
+   */
+  private initGoogleTargetCpaWithheldMessage(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      if (channel === null || !(GOOGLE_CHANNELS_WITHOUT_TARGET_CPA as readonly string[]).includes(channel)) return null;
+      return this.googleStrategyCarriesTargetCpa() ? GOOGLE_TARGET_CPA_WITHHELD_MESSAGE : null;
     });
   }
 
@@ -11535,7 +11585,7 @@ export class ImplementationTabComponent implements OnInit {
     const payload: Partial<CampaignCreateRequest> = {};
 
     const chosen = form.googleBiddingStrategy.value.trim();
-    const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel] as readonly GoogleBiddingStrategy[];
+    const accepted = this.googleOfferedBiddingStrategies(channel);
     const strategy = accepted.find((candidate) => candidate === chosen);
     if (strategy) payload.biddingStrategy = strategy;
 

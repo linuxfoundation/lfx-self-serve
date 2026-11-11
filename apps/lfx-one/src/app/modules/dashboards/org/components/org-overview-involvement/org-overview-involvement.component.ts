@@ -9,13 +9,12 @@ import { MetricCardComponent } from '@components/metric-card/metric-card.compone
 import {
   BASE_BAR_CHART_OPTIONS,
   BASE_LINE_CHART_OPTIONS,
-  DEFAULT_ORG_EVENTS_ATTRIBUTION,
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   lfxColors,
   ORG_INVOLVEMENT_METRICS,
   ORG_MAINTAINER_ROLES_LABEL,
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
-  ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
+  ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_SPEAKERS_CAPTION_PHRASE,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
@@ -439,7 +438,7 @@ export class OrgOverviewInvolvementComponent {
 
   /** Overview Events tooltip: what is counted, by whom (the pinned Employee match default), and the distinct-people rule. */
   private static eventsTooltip(countPhrase: string): string {
-    return `${countPhrase} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[DEFAULT_ORG_EVENTS_ATTRIBUTION]} ${ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE}`;
+    return `${countPhrase} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE} ${ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE}`;
   }
 
   /** Events chart caption: the points are distinct people per month. */

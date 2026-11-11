@@ -76,7 +76,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
 import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
@@ -103,6 +103,7 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { OverlayStateService } from '@services/overlay-state.service';
@@ -202,7 +203,7 @@ export class MeetingJoinComponent implements OnInit {
    * 10-hour duration, and defaulted off so a slow flag provider keeps the pre-v2 cap. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  private readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly overlayState = inject(OverlayStateService);
   private readonly registrantsOverlayId = 'meeting-join-registrants-drawer';

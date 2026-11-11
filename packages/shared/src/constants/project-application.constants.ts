@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ProjectStage } from '../enums/project-stage.enum';
+import { FORMATION_PIPELINE_TAB_ID } from './formation-pipeline.constants';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   ProjectApplicationOption,
@@ -62,6 +63,27 @@ export const PROJECT_APPLICATION_TEXT_MAX = 255;
 
 /** Character limit on the mission statement. */
 export const PROJECT_APPLICATION_MISSION_MAX = 500;
+
+/** Quiet period after the last keystroke in the project name before it is checked against existing projects (#5251). */
+export const PROJECT_APPLICATION_NAME_SEARCH_DEBOUNCE_MS = 400;
+
+/** Shortest project name worth checking against existing projects (#5251). */
+export const PROJECT_APPLICATION_NAME_SEARCH_MIN_CHARS = 3;
+
+/** Inline note when the proposed name matches a project the submitter can see; `{name}` is the existing project's name (#5251). */
+export const PROJECT_APPLICATION_DUPLICATE_NAME_MESSAGE = 'A project named {name} already exists.';
+
+/** Placeholder for the legal contact's directory search (#5251). */
+export const PROJECT_APPLICATION_LEGAL_SEARCH_PLACEHOLDER = 'Search people by name or email';
+
+/** Lead-in to the manual-entry link under the legal contact's directory search (#5251). */
+export const PROJECT_APPLICATION_LEGAL_SEARCH_HINT = 'Not finding them?';
+
+/** Link that swaps the legal contact's directory search for a plain email input (#5251). */
+export const PROJECT_APPLICATION_LEGAL_MANUAL_ENTRY_LABEL = 'Enter an email address';
+
+/** Link that swaps the legal contact's plain email input back to the directory search (#5251). */
+export const PROJECT_APPLICATION_LEGAL_BACK_TO_SEARCH_LABEL = 'Search the directory instead';
 
 /** Most additional formation contacts one application may list. */
 export const PROJECT_APPLICATION_FORMATION_LIST_MAX = 25;
@@ -253,6 +275,7 @@ export const MY_FORMATIONS_PAGE_TAB_OPTIONS: FilterPillOption[] = [
 
 /** Page-level tabs on the foundation Formations queue (The Linux Foundation + formation team only). */
 export const FORMATIONS_QUEUE_PAGE_TAB_OPTIONS: FilterPillOption[] = [
+  { id: FORMATION_PIPELINE_TAB_ID, label: 'Pipeline' },
   { id: PROJECT_APPLICATION_TABS.formations, label: 'Formations' },
   { id: PROJECT_APPLICATION_TABS.proposals, label: 'Project proposals' },
 ];

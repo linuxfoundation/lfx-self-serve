@@ -328,6 +328,8 @@ export interface MeetingDetailsDrawerData {
   tab: MeetingDetailsTab;
   /** The meetings home page's injector, so the drawer reaches the page's store and edit flow. */
   injector: Injector;
+  /** Reopens the drawer on another row, such as an upcoming date picked from a past one. */
+  open: (row: MeetingHomeRow) => void;
 }
 
 /** A meeting feature badge in the meeting details drawer, such as Recording, shown when its setting is on. */

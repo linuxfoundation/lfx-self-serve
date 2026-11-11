@@ -22,6 +22,7 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
  * Project, Meeting type, RSVP and two switches; Past has Foundation, Project and Meeting type. Foundation and Project options come from the tab's
  * unfiltered rows; Meeting type lists every selectable type. Project has a search field.
  * Foundation shows for board personas and Project for project personas, each only with an option; a foundation narrows Project to its children.
+ * Without the Foundation field, Project lists foundations too.
  */
 @Component({
   selector: 'lfx-meetings-filters',
@@ -62,8 +63,8 @@ export class MeetingsFiltersComponent implements UiFocusable {
   protected readonly appliedCount: Signal<number> = computed(() => countAppliedMeetingFilters(this.filters()));
   protected readonly buttonLabel: Signal<string> = computed(() => (this.appliedCount() ? `Filters, ${this.appliedCount()} applied` : ''));
   protected readonly foundationOptions: Signal<FilterOption<string>[]> = this.initFoundationOptions();
-  protected readonly projectOptions: Signal<FilterOption<string>[]> = this.initProjectOptions();
   protected readonly showFoundation: Signal<boolean> = computed(() => this.personaService.hasBoardRole() && this.foundationOptions().length > 0);
+  protected readonly projectOptions: Signal<FilterOption<string>[]> = this.initProjectOptions();
   protected readonly showProject: Signal<boolean> = computed(() => this.personaService.hasProjectRole() && this.projectOptions().length > 0);
   protected readonly projectMatches: Signal<FilterOption<string>[]> = this.initProjectMatches();
   protected readonly changed: Signal<boolean> = computed(() => !this.sameFilters(this.draft(), this.filters()));
@@ -123,11 +124,16 @@ export class MeetingsFiltersComponent implements UiFocusable {
     return computed(() => this.entityOptions(this.rows().filter(({ meeting }) => meeting.is_foundation)));
   }
 
-  /** Non-foundation projects, only the drafted foundation's children when one is picked. */
+  /** Non-foundation projects, only the drafted foundation's children when one is picked; foundations too while Foundation is hidden. */
   private initProjectOptions(): Signal<FilterOption<string>[]> {
     return computed(() => {
       const foundation = this.draft().foundation;
-      return this.entityOptions(this.rows().filter(({ meeting }) => !meeting.is_foundation && (!foundation || meeting.parent_project_uid === foundation)));
+      const withFoundations = !this.showFoundation();
+      return this.entityOptions(
+        this.rows().filter(
+          ({ meeting }) => (withFoundations || !meeting.is_foundation) && (!foundation || (meeting.parent_project_uid === foundation && !meeting.is_foundation))
+        )
+      );
     });
   }
 

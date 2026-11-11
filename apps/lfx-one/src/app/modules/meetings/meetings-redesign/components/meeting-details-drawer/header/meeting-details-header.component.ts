@@ -17,8 +17,6 @@ import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 
-import { take } from 'rxjs';
-
 import { MeetingsHomeDeleteService } from '../../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
@@ -95,10 +93,8 @@ export class MeetingDetailsHeaderComponent {
   }
 
   protected editMeeting(): void {
-    // An explicit leave: close without the close guard, then open the editor once focus is handed back.
-    const row = this.context.shownRow();
-    this.dialogRef.closed.pipe(take(1)).subscribe(() => this.editService.edit(row));
-    this.dialogRef.close();
+    // A recurring meeting's scope question opens over the drawer, which closes only once the editor opens.
+    this.editService.edit(this.context.shownRow(), undefined, this.dialogRef);
   }
 
   protected cancelOccurrence(): void {

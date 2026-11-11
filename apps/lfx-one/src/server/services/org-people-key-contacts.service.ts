@@ -3,6 +3,7 @@
 
 import { ORG_KEY_CONTACT_REQUIRED_ROLES, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
+  KeyContactEmployee,
   KeyContactIndexedDoc,
   OrgKeyContactAssignment,
   OrgKeyContactsResponse,
@@ -12,6 +13,7 @@ import type {
   ProjectMembershipIndexedDoc,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
+import { agreedUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -125,6 +127,39 @@ export class OrgPeopleKeyContactsService {
       return unmatched;
     }
     return { assignments: matched, status: 'resolved' };
+  }
+
+  /**
+   * The org's key contacts as people, for the All Employees roster: the assignments this tab lists (active key-contact
+   * roles on active or purchased memberships), grouped by address. A role on an expired or cancelled membership does not
+   * list anyone, matching this tab and the warehouse roster. Reads through the tab's per-caller cache. The LF username is
+   * set only when every assignment at the address carries the same one (`agreedUsername`), as the tab's drawer does.
+   */
+  public async getActiveEmployees(req: Request, orgUid: string): Promise<KeyContactEmployee[]> {
+    const { assignments } = await this.getKeyContacts(req, orgUid);
+    const byEmail = new Map<string, OrgKeyContactAssignment[]>();
+    for (const assignment of assignments) {
+      const email = assignment.email.trim().toLowerCase();
+      const group = byEmail.get(email);
+      if (group) {
+        group.push(assignment);
+      } else {
+        byEmail.set(email, [assignment]);
+      }
+    }
+    return [...byEmail].map(([email, group]) => {
+      const { firstName, lastName, displayName, title, avatarUrl } = group[0];
+      return {
+        email,
+        firstName,
+        lastName,
+        fullName: displayName,
+        jobTitle: title?.trim() || null,
+        initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || '?',
+        avatarUrl: avatarUrl ?? null,
+        lfUsername: agreedUsername(group.map((assignment) => assignment.username)),
+      };
+    });
   }
 
   private async computeKeyContacts(req: Request, orgUid: string): Promise<OrgKeyContactsResponse> {

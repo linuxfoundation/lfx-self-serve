@@ -90,6 +90,7 @@
         <button
           type="button"
           class="underline underline-offset-2 hover:text-blue-600"
+          [class.hidden]="!cookieSettingsAvailable"
           (click)="onCookieSettings()"
           data-testid="newsletter-guest-modal-cookie-settings">
           Cookie settings
@@ -106,6 +107,7 @@
         <button
           type="button"
           class="underline underline-offset-2 hover:text-blue-600"
+          [class.hidden]="!cookieSettingsAvailable"
           (click)="onCookieSettings()"
           data-testid="newsletter-guest-modal-cookie-settings">
           Cookie settings

@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The service imports the `@lfx-one/shared/utils` barrel, whose graph reaches Angular's partially-compiled
+// @angular/common, which needs the JIT compiler under vitest (as in clas.controller.spec.ts).
+import '@angular/compiler';
+
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,13 +12,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { upstreamContacts, proxyRequest } = vi.hoisted(() => {
   const upstreamContacts: Record<string, unknown>[] = [];
   const MEMBERSHIP = { uid: 'membership-1', status: 'active', project_slug: 'foundation-one', project_name: 'Foundation One' };
+  const ENDED_MEMBERSHIP = { uid: 'membership-ended', status: 'Expired', project_slug: 'foundation-two', project_name: 'Foundation Two' };
   return {
     upstreamContacts,
     // Answer by the `type` param rather than call order, so the fixture does not depend on the
     // service's Promise.all ordering.
     proxyRequest: vi.fn((_req: unknown, _service: string, _path: string, _method: string, params: { type?: string }) =>
       Promise.resolve({
-        resources: (params.type === 'key_contact' ? upstreamContacts : [MEMBERSHIP]).map((data) => ({ data })),
+        resources: (params.type === 'key_contact' ? upstreamContacts : [MEMBERSHIP, ENDED_MEMBERSHIP]).map((data) => ({ data })),
         page_token: null,
       })
     ),
@@ -137,5 +142,33 @@ describe('OrgPeopleKeyContactsService getKeyContactsForPerson', () => {
 
     expect(result.status).toBe('resolved');
     expect(result.assignments.map((a) => a.role)).toEqual(['Billing Contact']);
+  });
+});
+
+describe('OrgPeopleKeyContactsService getActiveEmployees', () => {
+  const service = new OrgPeopleKeyContactsService();
+  const req = {} as Request;
+
+  beforeEach(() => upstream([]));
+
+  it('lists only people holding a role on an active membership, one per address', async () => {
+    upstream([
+      contact({ username: 'fperson' }),
+      contact({ uid: 'contact-2', email: 'first.person@VENDOR-CORP.example', username: 'FPerson', role: 'Legal Contact' }),
+      // Still an active role, but on an expired membership: the person behind it is not a key contact today.
+      contact({ uid: 'contact-3', membership_uid: 'membership-ended', email: 'lapsed@vendor-corp.example', first_name: 'Lapsed', last_name: 'Contact' }),
+    ]);
+
+    const employees = await service.getActiveEmployees(req, ORG_UID);
+
+    expect(employees).toEqual([expect.objectContaining({ email: 'first.person@vendor-corp.example', fullName: 'First Person', lfUsername: 'fperson' })]);
+  });
+
+  it('leaves the username unset when the assignments at one address disagree on it', async () => {
+    upstream([contact({ username: 'fperson' }), contact({ uid: 'contact-2', username: 'someone-else', role: 'Legal Contact' })]);
+
+    const [employee] = await service.getActiveEmployees(req, ORG_UID);
+
+    expect(employee.lfUsername).toBeNull();
   });
 });

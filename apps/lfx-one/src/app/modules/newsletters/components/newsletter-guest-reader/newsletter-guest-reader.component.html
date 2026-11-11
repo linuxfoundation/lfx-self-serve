@@ -101,7 +101,12 @@
       data-testid="newsletter-guest-reader-terms"
       >Terms of Use</a
     >
-    <button type="button" class="hover:text-gray-900 hover:underline" (click)="onCookieSettings()" data-testid="newsletter-guest-reader-cookie-settings">
+    <button
+      type="button"
+      class="hover:text-gray-900 hover:underline"
+      [class.hidden]="!cookieSettingsAvailable"
+      (click)="onCookieSettings()"
+      data-testid="newsletter-guest-reader-cookie-settings">
       Cookie settings
     </button>
   </footer>

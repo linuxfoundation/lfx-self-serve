@@ -5,7 +5,12 @@ import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
-import { EMAIL_LINKED_SUPPORT_HANDLE_PATTERN, USER_MEETINGS_INCLUDE_ATTENDANCE, USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
+import {
+  CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS,
+  EMAIL_LINKED_SUPPORT_HANDLE_PATTERN,
+  USER_MEETINGS_INCLUDE_ATTENDANCE,
+  USER_PAST_MEETINGS_INCLUDE_ARTIFACTS,
+} from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
   ChangePasswordRequest,
@@ -38,7 +43,14 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { buildDisplayName, isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import {
+  buildDisplayName,
+  currentEmployerFromWorkExperiences,
+  isRsvpSupersededBy,
+  resolveRsvpOccurrenceId,
+  retainConfirmedRsvp,
+  selectApplicableRsvp,
+} from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -57,6 +69,7 @@ import {
   takeUntil,
   tap,
   throwError,
+  timeout,
 } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
@@ -635,6 +648,25 @@ export class UserService {
    */
   public getWorkExperience(): Observable<WorkExperience[]> {
     return this.http.get<WorkExperience[]>('/api/profile/work-experience').pipe(catchError(() => of([])));
+  }
+
+  /**
+   * The name of the signed-in user's current employer, for prefilling a form. A quiet read: it is
+   * bounded by {@link CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS} and every failure (error, timeout, no history)
+   * is a null, never a toast, so a convenience lookup cannot interrupt the form it serves. Not
+   * {@link getWorkExperiences}, which toasts on failure.
+   */
+  public getCurrentEmployerName(): Observable<string | null> {
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
+      take(1),
+      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      // Only a job with no end date: the helper's fallback to the latest past job would prefill a company the user has left.
+      map((experiences) => currentEmployerFromWorkExperiences(experiences.filter((experience) => !experience.endDate))?.name ?? null),
+      catchError((error) => {
+        console.warn('[UserService] getCurrentEmployerName failed; leaving the organization blank', error);
+        return of(null);
+      })
+    );
   }
 
   /**

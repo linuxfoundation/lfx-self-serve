@@ -190,6 +190,8 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
  * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
+ *
+ * {@link MEETINGS_REDESIGN_FLAG} also enables v2: the UI reads both through `meetingsV2EnabledSignal`.
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
 /**
@@ -212,7 +214,8 @@ export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
  * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
  * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat
  * `/meetings` route in the Me lens; `/foundation/meetings`, `/project/meetings` and the org lens stay on
- * the existing page whatever this reads.
+ * the existing page whatever this reads. It also turns on the v2 composer at every entry point (see
+ * {@link MEETING_V2_ENABLED_FLAG}).
  *
  * **UI-only** — evaluated through `FeatureFlagService` in the browser, so the server renders a loading
  * state and the browser picks the page. A provider that is not ready within `FEATURE_FLAG_READY_TIMEOUT_MS` means

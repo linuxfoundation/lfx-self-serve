@@ -9,7 +9,7 @@ import { Meeting, MeetingDetailsDrawerData, MeetingHomeRow, MeetingOccurrence, P
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
@@ -29,6 +29,8 @@ describe('MeetingDetailsContext', () => {
   let toast: ReturnType<typeof vi.fn>;
   let close: ReturnType<typeof vi.fn>;
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
+  let open: ReturnType<typeof vi.fn<(row: MeetingHomeRow) => void>>;
+  const upcomingRows = signal<MeetingHomeRow[]>([]);
   const now = signal(new Date('2049-12-31T09:00:00.000Z'));
 
   const create = (row: MeetingHomeRow, detail$: Observable<Meeting> = of(row.meeting)): MeetingDetailsContext => {
@@ -36,7 +38,8 @@ describe('MeetingDetailsContext', () => {
     toast = vi.fn();
     close = vi.fn();
     refreshUserMeetings = vi.fn();
-    const data: MeetingDetailsDrawerData = { row, tab: 'agenda', injector: Injector.NULL };
+    open = vi.fn<(row: MeetingHomeRow) => void>();
+    const data: MeetingDetailsDrawerData = { row, tab: 'agenda', injector: Injector.NULL, open };
     TestBed.configureTestingModule({
       providers: [
         MeetingDetailsContext,
@@ -44,7 +47,7 @@ describe('MeetingDetailsContext', () => {
         { provide: DialogRef, useValue: { close } },
         { provide: MeetingService, useValue: { getMeetingDetail: detail, removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { refreshUserMeetings, refreshUserPastMeetings: vi.fn() } },
-        { provide: MeetingsHomeStore, useValue: { now } },
+        { provide: MeetingsHomeStore, useValue: { now, upcomingRows } },
         { provide: UiToastService, useValue: { show: toast } },
       ],
     });
@@ -54,6 +57,7 @@ describe('MeetingDetailsContext', () => {
   beforeEach(() => {
     TestBed.resetTestingModule();
     now.set(new Date('2049-12-31T09:00:00.000Z'));
+    upcomingRows.set([]);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
@@ -164,5 +168,54 @@ describe('MeetingDetailsContext', () => {
     const context = create(buildRow({ ...(PAST as unknown as Meeting), visibility: 'private' } as Meeting));
 
     expect(context.fullAccess()).toBe(true);
+  });
+
+  it('reopens a past row on the listed upcoming date, or on the live meeting for another date', () => {
+    const listed = { ...buildRow(MEETING), key: `mtg-1:${NEXT.occurrence_id}`, occurrence: NEXT, startTime: NEXT.start_time };
+    upcomingRows.set([listed]);
+    const context = create(buildRow(PAST as unknown as Meeting));
+
+    context.showUpcoming(NEXT);
+    expect(open).toHaveBeenCalledWith(listed);
+
+    upcomingRows.set([]);
+    detail.mockReturnValue(of(MEETING));
+    const later = { ...NEXT, occurrence_id: '2525850000', start_time: '2050-01-15T09:00:00.000Z' };
+    context.showUpcoming(later);
+    expect(detail).toHaveBeenLastCalledWith('mtg-1');
+    expect(open).toHaveBeenLastCalledWith(
+      expect.objectContaining({ key: 'mtg-1:2525850000', meeting: MEETING, occurrence: later, startTime: later.start_time, durationMinutes: 45 })
+    );
+    const titled = { ...later, title: 'Release review', description: 'Cut the release' };
+    detail.mockReturnValue(of({ ...MEETING, occurrences: [titled] }));
+    context.showUpcoming(later);
+    expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ occurrence: titled, title: 'Release review' }));
+  });
+
+  it('drops a pending live meeting load when a listed date is picked next', () => {
+    const context = create(buildRow(PAST as unknown as Meeting));
+    const live = new Subject<Meeting>();
+    detail.mockReturnValue(live);
+    context.showUpcoming(NEXT);
+
+    const listed = { ...buildRow(MEETING), key: 'mtg-1:2525850000', startTime: '2050-01-15T09:00:00.000Z' };
+    upcomingRows.set([listed]);
+    context.showUpcoming({ ...NEXT, occurrence_id: '2525850000', start_time: listed.startTime });
+    live.next(MEETING);
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith(listed);
+  });
+
+  it('drops a live meeting load once the viewer moved to another date', () => {
+    const context = create(buildRow(PAST as unknown as Meeting));
+    const live = new Subject<Meeting>();
+    detail.mockReturnValue(live);
+
+    context.showUpcoming(NEXT);
+    context.occurrence.set({ ...NEXT, start_time: START });
+    live.next(MEETING);
+
+    expect(open).not.toHaveBeenCalled();
   });
 });

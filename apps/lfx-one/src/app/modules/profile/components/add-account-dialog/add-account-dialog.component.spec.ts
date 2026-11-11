@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
@@ -23,6 +24,7 @@ import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -518,5 +520,106 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
       expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
       expect(hint).not.toContain('already linked');
     });
+  });
+});
+
+/**
+ * Guards #4190: GitLab is visible but unavailable pending #4151 rollout verification; LF ID stays excluded.
+ */
+describe('AddAccountDialogComponent — provider list (#4190)', () => {
+  let fixture: ComponentFixture<AddAccountDialogComponent>;
+
+  function setup(data: Record<string, unknown> = { existingProviders: [] }) {
+    TestBed.configureTestingModule({
+      imports: [AddAccountDialogComponent],
+      providers: [
+        { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+        { provide: DynamicDialogConfig, useValue: { data } },
+        { provide: UserService, useValue: {} },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    fixture = TestBed.createComponent(AddAccountDialogComponent);
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+  });
+
+  it('lists GitLab with its icon and excludes LF ID', () => {
+    const component = setup();
+
+    expect(component.providers.find((provider) => provider.id === 'gitlab')).toEqual(expect.objectContaining({ name: 'GitLab', icon: 'fa-brands fa-gitlab' }));
+    expect(component.providers.some((provider) => provider.id === 'lfid')).toBe(false);
+  });
+
+  it('disables the GitLab button and does not start linking when clicked', async () => {
+    const component = setup();
+    await fixture.whenStable();
+    const selectProvider = vi.spyOn(component, 'onSelectProvider');
+    const root = fixture.nativeElement as HTMLElement;
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="provider-action-gitlab"] button');
+
+    expect(button).not.toBeNull();
+    expect(button?.disabled).toBe(true);
+    button?.click();
+    root.querySelector<HTMLElement>('[data-testid="provider-action-hint-gitlab"]')?.click();
+
+    expect(selectProvider).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-testid="provider-gitlab-coming-soon"]')?.textContent).toBe('Coming soon');
+  });
+
+  it.each([
+    { showEvent: 'focus', hideEvent: 'blur' },
+    { showEvent: 'mouseenter', hideEvent: 'mouseleave' },
+  ])('shows the GitLab tooltip on $showEvent and hides it on $hideEvent', async ({ showEvent, hideEvent }) => {
+    setup();
+    await fixture.whenStable();
+    const hint = fixture.debugElement.query(By.css('[data-testid="provider-action-hint-gitlab"]'));
+    const target = hint.nativeElement as HTMLElement;
+
+    expect(target.getAttribute('tabindex')).toBe('0');
+    expect(target.getAttribute('aria-label')).toBe('GitLab account linking: Coming soon');
+    expect(target.querySelector('.p-component')).toBeNull();
+    expect(hint.injector.get(Tooltip).tooltipEvent).toBe('both');
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+
+    // Dispatch to the actual focus/hover target, not directly to the directive's show method.
+    target.dispatchEvent(new Event(showEvent));
+    const tooltip = document.body.querySelector<HTMLElement>('[role="tooltip"]');
+    expect(tooltip?.textContent).toBe('Coming soon');
+    expect(tooltip?.style.display).toBe('inline-block');
+
+    target.dispatchEvent(new Event(hideEvent));
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
+  it('keeps the existing providers enabled and the email flow usable', async () => {
+    const component = setup();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+
+    for (const provider of ['github', 'linkedin', 'google', 'email']) {
+      const button = root.querySelector<HTMLButtonElement>(`[data-testid="provider-action-${provider}"] button`);
+      expect(button).not.toBeNull();
+      expect(button?.disabled).toBe(false);
+      expect(root.querySelector(`[data-testid="provider-action-hint-${provider}"]`)).toBeNull();
+    }
+
+    root.querySelector<HTMLButtonElement>('[data-testid="provider-action-email"] button')?.click();
+    await fixture.whenStable();
+
+    expect(component.step()).toBe('connect');
+    expect(root.querySelector('[data-testid="add-account-email"]')).not.toBeNull();
+  });
+
+  it('leaves GitLab out when the caller restricts the providers', () => {
+    const component = setup({ existingProviders: [], allowedProviders: ['github', 'linkedin'] });
+
+    expect(component.providers.map((provider) => provider.id)).toEqual(['github', 'linkedin']);
   });
 });

@@ -1,14 +1,14 @@
 ---
 title: Identities
-description: Link, verify, and remove the GitHub, social, and email identities used to attribute your work in LFX Self Serve
+description: Link, verify, and remove the social and email identities used to attribute your work in LFX Self Serve; GitLab linking is coming soon
 audience: [all]
 product_area: Account
-tags: [account, identities, github, email, verification, linux-com-alias, meeting-invitations]
+tags: [account, identities, github, gitlab, email, verification, linux-com-alias, meeting-invitations]
 last_updated: 2026-11-10
 intercom_collection: Account
 ---
 
-The **Identities** tab is where you manage the accounts used to identify you and attribute your contributions across Linux Foundation projects — your GitHub and social accounts and your verified email addresses. Keeping these linked and verified helps ensure accurate project affiliations and work history. It lives under the Profile & Account hub at `/profile/identities`.
+The **Identities** tab is where you manage the accounts used to identify you and attribute your contributions across Linux Foundation projects — your GitHub and social accounts and your verified email addresses. Keeping these linked and verified helps ensure accurate project affiliations and work history. It lives under the Profile & Account hub at `/profile/identities`. GitLab account linking is coming soon.
 
 ## What you can do
 
@@ -41,6 +41,7 @@ The profile sidebar and the **Primary** badge use your current primary email. Ch
 1. Select **Add identity**.
 2. Choose a provider:
    - For a social account, select **Continue with GitHub**, **Continue with LinkedIn**, or **Continue with Google** and complete the provider's sign-in. Linked identities are used to attribute contributions and participation across projects.
+   - **Continue with GitLab** is disabled while GitLab account linking is being prepared. The GitLab row shows **Coming soon**, and hovering over or focusing the disabled button's surrounding area shows the same explanation. You cannot start a new GitLab connection from this dialog yet.
    - If that social account is already connected to your own account, LFX confirms **This identity is already connected to your account.** instead of linking it again, and refreshes your identities. Nothing new is linked.
    - For an email address, select **Add email**, enter the address, and select **Send verification code**. A 6-digit code is sent to the address; enter that code and select **Verify email**. A wrong or expired code shows **Verification failed. Please try again or request a new code.** After the cooldown, use **Resend code** once if needed. The button shows **Requesting code…** and is disabled while the request is pending. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. After one successful resend request, the **Still waiting for your code?** callout directs you to **Contact support**, while code entry remains available. To correct the address, select **Use a different email** without closing the dialog; the action is disabled while requesting or verifying a code.
    - If the address turns out to be already connected to your own account, LFX still asks for the code — the code is what proves you own the inbox — and then confirms **This email is already connected to your account.** instead of adding it a second time. If the code is correct but the address is already linked to an LFX account, the dialog shows **This email is already linked to an LFX account. If you believe this is an error, contact support.** with a **contact support** link. The link opens a support chat with a message already filled in that names the address and asks for it to be added to your account; you can edit or delete it before sending. The address is not added, and a new code won't change the outcome.
@@ -62,6 +63,8 @@ To verify an email identity, use its own **Verify** action and enter the code se
 
 1. Open the actions menu on a verified identity and select **Remove**.
 2. In **Remove verified identity**, check _I understand that removing this verified identity may affect my contribution attribution_, then select **Remove identity**.
+
+If LFX cannot unlink the account, it shows _Failed to remove identity. Please try again._ The identity stays connected; try removing it again later.
 
 To reject an unverified identity instead, use **This is not me** on its row (see [Verify an unverified identity](#verify-an-unverified-identity)). Your primary email itself can't be removed. If a Google or email login uses your primary address, you can remove that login to unlink it. The primary email stays listed.
 

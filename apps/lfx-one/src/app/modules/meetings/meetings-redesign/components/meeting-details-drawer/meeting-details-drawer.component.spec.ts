@@ -99,7 +99,7 @@ describe('MeetingDetailsDrawerComponent', () => {
         { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence } },
       ],
     });
-    const data: MeetingDetailsDrawerData = { row: value, tab, injector: page };
+    const data: MeetingDetailsDrawerData = { row: value, tab, injector: page, open: vi.fn() };
     TestBed.overrideProvider(DIALOG_DATA, { useValue: data });
     fixture = TestBed.createComponent(MeetingDetailsDrawerComponent);
     await settle();
@@ -418,17 +418,15 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(document.querySelector('[data-testid="meeting-details-remove-dialog"]')).not.toBeNull();
     });
 
-    it('offers Edit Meeting to an organizer, closing the drawer first', async () => {
+    it('offers Edit Meeting to an organizer, handing it the drawer to close', async () => {
       const organizerRow = row({ ...MEETING, organizer: true });
       await render(organizerRow);
       await click('meeting-details-more');
       (TestBed.inject(OverlayContainer).getContainerElement().querySelector('[data-testid="meeting-details-edit"]') as HTMLElement).click();
       await settle();
 
-      expect(closeDialog).toHaveBeenCalled();
-      expect(edit).not.toHaveBeenCalled();
-      dialogClosed.next();
-      expect(edit).toHaveBeenCalledWith(organizerRow);
+      expect(closeDialog).not.toHaveBeenCalled();
+      expect(edit).toHaveBeenCalledWith(organizerRow, undefined, TestBed.inject(DialogRef));
     });
 
     it('offers no Edit Meeting on a past row, even for a coming date', async () => {

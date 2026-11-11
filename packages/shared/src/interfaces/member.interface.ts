@@ -131,6 +131,54 @@ export interface CreateCommitteeMemberOptions {
   skipNotification?: boolean;
 }
 
+/**
+ * Committee bulk member create request body
+ * @description Mirrors committee-service `POST /committees/{uid}/members/bulk`: 1–100 rows,
+ * processed in submission order, each with the same attributes as a single member create.
+ */
+export interface CommitteeMemberBulkCreateRequest {
+  /** Members to add, in submission order */
+  members: CreateCommitteeMemberRequest[];
+}
+
+/**
+ * Outcome of one submitted row of a bulk member create
+ * @description Mirrors the upstream `committee-member-bulk-create-row-result` type
+ */
+export interface CommitteeMemberBulkCreateRowResult {
+  /** Zero-based position of the row in the submitted `members` list */
+  index: number;
+  /** Email address of the submitted row */
+  email: string;
+  /** Outcome of the row */
+  status: 'added' | 'skipped' | 'failed';
+  /** Why the row was skipped or failed; omitted for added rows */
+  reason?: 'already_member' | 'duplicate_in_request' | 'invalid' | 'temporary' | 'not_attempted';
+  /** Whether resubmitting the row later may succeed */
+  retryable: boolean;
+  /** Human-readable detail for a skipped or failed row */
+  message?: string;
+  /** UID of the added member, or of the existing member for an already_member row */
+  member_uid?: string;
+  /** The created member; present only for added rows */
+  member?: CommitteeMember;
+}
+
+/**
+ * Committee bulk member create response
+ * @description One result per submitted row, in submission order, plus per-status counts
+ */
+export interface CommitteeMemberBulkCreateResult {
+  /** Per-row outcomes, in submission order */
+  results: CommitteeMemberBulkCreateRowResult[];
+  /** Number of rows added */
+  added: number;
+  /** Number of rows skipped */
+  skipped: number;
+  /** Number of rows that failed */
+  failed: number;
+}
+
 /** Client-only wizard state. Strip these options before sending the native member request body. */
 export interface StagedCommitteeMemberRequest extends CreateCommitteeMemberRequest {
   createOptions?: CreateCommitteeMemberOptions;

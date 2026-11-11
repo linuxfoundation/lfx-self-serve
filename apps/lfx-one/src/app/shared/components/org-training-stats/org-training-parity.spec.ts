@@ -179,7 +179,7 @@ async function renderTrainingPage(
           error: signal(false),
           emailError: signal(false),
           emailsLoading: signal(false),
-          identityUnavailable: signal(false),
+          companyEmailsUnavailableReason: signal(null),
           companyEmailsResolved: signal(false),
           detail: signal(null),
           companyEmails: signal([]),

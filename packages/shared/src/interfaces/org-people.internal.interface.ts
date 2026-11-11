@@ -104,17 +104,35 @@ export interface OrgAllEmployeesRaw {
   foundationRaw: OrgPeopleFoundationOptionRow[];
 }
 
-/** Answer of the keyed former-employee check; `failed` answers are never cached. */
-export interface OrgFormerEmployeeCheck {
-  isFormer: boolean;
-  failed: boolean;
-}
-
-/** One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS`. */
+/**
+ * One address row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS` or `ORG_PEOPLE_EXTENDED_COMPANY_EMAILS`. `ADDRESS_SOURCE`
+ * is `current` for the current-people view and the extended view's own `lf_account` / `key_contact_record`.
+ */
 export interface OrgPersonCompanyEmailRow {
   EMAIL: string | null;
   /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
   IS_PRIMARY: boolean | number | null;
+  ADDRESS_SOURCE: string | null;
+}
+
+/**
+ * One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAIL_KEYS`: what the drawer's lookup answers for one identity at the
+ * account. KEY_TYPE `person_key` (a roster person key holding an address), `lf_username` (the username's lookup finds an
+ * address) or `lf_username_none` (the username names exactly one roster person, who holds no address).
+ */
+export interface OrgPeopleCompanyEmailKeyRow {
+  KEY_TYPE: string | null;
+  KEY_VALUE: string | null;
+}
+
+/** The account's company-email keys, as cached for the All Employees Company email filter. */
+export interface OrgCompanyEmailKeys {
+  /** PERSON_KEY values (as stored) holding at least one address. */
+  personKeys: string[];
+  /** LOWER(TRIM(LF_USERNAME)) values whose drawer lookup finds at least one address. */
+  usernames: string[];
+  /** LOWER(TRIM(LF_USERNAME)) values naming exactly one roster person, who holds no address ("none on file"). */
+  noneUsernames: string[];
 }
 
 /** A person's employment at the account — current or former; the Employment filter's `all` is not a classification. */

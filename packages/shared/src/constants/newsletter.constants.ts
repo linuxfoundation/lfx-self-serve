@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { NewsletterPublicationOption } from '../interfaces/newsletter.interface';
+
 export const NEWSLETTER_TOTAL_STEPS = 3;
 
 export const NEWSLETTER_STEP_TITLES: Record<number, string> = {
@@ -90,6 +92,9 @@ export const NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH = 64;
 export const NEWSLETTER_PUBLICATION_MAX_PAGES = 25;
 // The most committees one newsletter or publication audience can name.
 export const NEWSLETTER_MAX_COMMITTEES = 50;
+// The first options of the publication form's template picker and the create flow's publication picker.
+export const NEWSLETTER_PUBLICATION_NO_TEMPLATE_OPTION: NewsletterPublicationOption = { label: 'Each edition picks its own template', value: '' };
+export const NEWSLETTER_PUBLICATION_ONE_OFF_OPTION: NewsletterPublicationOption = { label: 'No publication (one-off newsletter)', value: '' };
 // Every newsletter status, for validating a status filter.
 export const NEWSLETTER_STATUSES: readonly string[] = ['draft', 'sending', 'scheduled', 'sent'];
 

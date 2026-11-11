@@ -31,7 +31,9 @@
     [attr.role]="showProposalsTab() ? 'tabpanel' : null"
     [attr.id]="showProposalsTab() ? 'formations-queue-page-tabs-panel-' + pageTab() : null"
     [attr.aria-labelledby]="showProposalsTab() ? 'formations-queue-page-tabs-tab-' + pageTab() : null">
-    @if (pageTab() === tabs.proposals) {
+    @if (pageTab() === pipelineTab) {
+      <lfx-formations-pipeline data-testid="formations-queue-pipeline" />
+    } @else if (pageTab() === tabs.proposals) {
       <lfx-project-applications-panel mode="staff" data-testid="formations-queue-proposals" />
     } @else if (loadFailed()) {
       <div class="flex flex-col items-center gap-3 py-8 border border-red-200 bg-red-50 rounded-xl" data-testid="formations-queue-inline-error">
