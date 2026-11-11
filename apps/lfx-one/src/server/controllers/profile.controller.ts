@@ -1949,10 +1949,14 @@ export class ProfileController {
     res.set('Cache-Control', 'no-store');
     const sub = req.oidc?.user?.['sub'];
     if (isImpersonating(req) || typeof sub !== 'string' || !sub) {
+      // Preserve the deliberately empty defensive response; never log the subject or handle.
+      logger.warning(req, 'consume_linked_email_support_context', 'Rejected linked-email support context request');
       res.status(403).json({});
       return;
     }
+    const startTime = logger.startOperation(req, 'consume_linked_email_support_context');
     const email = await linkedEmailSupportService.consume(sub, req.body?.handle);
+    logger.success(req, 'consume_linked_email_support_context', startTime, { has_context: !!email });
     res.json(email ? { email } : {});
   }
 

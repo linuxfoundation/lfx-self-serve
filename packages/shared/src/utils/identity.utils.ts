@@ -52,7 +52,8 @@ export function isIdentityAlreadyLinkedError(...texts: (string | undefined | nul
  * Editable support-chat pre-fill for a verified address that is already linked to an LFX account.
  * The only input is the address the user themselves entered and verified — never upstream error
  * text or anything about the owning account — so the message cannot disclose the other account.
- * Without an address (the Flow C callback marker carries none) it says "an email address" instead.
+ * Without an address (for example when the Flow C support context is expired or unavailable)
+ * it says "an email address" instead.
  */
 export function buildLinkedEmailSupportMessage(email?: string): string {
   const address = email?.trim() || 'an email address';

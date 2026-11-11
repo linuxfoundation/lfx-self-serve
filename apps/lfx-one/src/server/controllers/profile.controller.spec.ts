@@ -3406,28 +3406,37 @@ describe('ProfileController.consumeLinkedEmailSupportContext', () => {
     vi.clearAllMocks();
     isImpersonatingMock.mockReturnValue(false);
   });
-  it('returns only this authenticated user/attempt address with no-store caching', async () => {
+  it('returns only this authenticated user/attempt address with no-store caching and non-identifying logs', async () => {
     linkedEmailSupportSvc.consume.mockResolvedValueOnce('linked@example.test');
+    const req = buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: { handle: 'a'.repeat(64) } });
     const res = buildRes();
-    await new ProfileController().consumeLinkedEmailSupportContext(
-      buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: { handle: 'a'.repeat(64) } }),
-      res
-    );
+    await new ProfileController().consumeLinkedEmailSupportContext(req, res);
     expect(linkedEmailSupportSvc.consume).toHaveBeenCalledExactlyOnceWith('synthetic-user', 'a'.repeat(64));
     expect(res.set).toHaveBeenCalledExactlyOnceWith('Cache-Control', 'no-store');
     expect(res.json).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+    expect(logger.startOperation).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context');
+    expect(logger.success).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context', 0, { has_context: true });
+    expect(logger.warning).not.toHaveBeenCalled();
   });
-  it('returns no address for missing, expired or consumed context', async () => {
+  it('returns no address and logs only context absence for missing, expired or consumed context', async () => {
     linkedEmailSupportSvc.consume.mockResolvedValueOnce(undefined);
+    const req = buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: {} });
     const res = buildRes();
-    await new ProfileController().consumeLinkedEmailSupportContext(buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: {} }), res);
+    await new ProfileController().consumeLinkedEmailSupportContext(req, res);
     expect(res.json).toHaveBeenCalledExactlyOnceWith({});
+    expect(logger.success).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context', 0, { has_context: false });
   });
   it.each([false, true])('rejects missing identity or impersonation before reading context (impersonating=%s)', async (impersonating) => {
     isImpersonatingMock.mockReturnValue(impersonating);
+    const req = buildReq({ oidc: impersonating ? { user: { sub: 'synthetic-user' } } : undefined });
     const res = buildRes();
-    await new ProfileController().consumeLinkedEmailSupportContext(buildReq({ oidc: impersonating ? { user: { sub: 'synthetic-user' } } : undefined }), res);
+    await new ProfileController().consumeLinkedEmailSupportContext(req, res);
     expect(res.status).toHaveBeenCalledExactlyOnceWith(403);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({});
+    expect(res.set).toHaveBeenCalledExactlyOnceWith('Cache-Control', 'no-store');
+    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context', 'Rejected linked-email support context request');
+    expect(logger.startOperation).not.toHaveBeenCalled();
+    expect(logger.success).not.toHaveBeenCalled();
     expect(linkedEmailSupportSvc.consume).not.toHaveBeenCalled();
   });
 });

@@ -51,11 +51,17 @@ describe('UserService', () => {
       expect(next).toHaveBeenCalledExactlyOnceWith({});
     });
 
-    it('degrades a failed/expired-context request to the generic draft', () => {
-      vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('unavailable')));
-      const next = vi.fn();
-      service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
-      expect(next).toHaveBeenCalledExactlyOnceWith({});
+    it('logs a failed context request without sensitive error data and keeps the generic draft', () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('linked@example.test; handle=' + 'a'.repeat(64))));
+        const next = vi.fn();
+        service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+        expect(next).toHaveBeenCalledExactlyOnceWith({});
+        expect(log).toHaveBeenCalledExactlyOnceWith('Linked-email support context unavailable; using the generic support draft.');
+      } finally {
+        log.mockRestore();
+      }
     });
   });
 

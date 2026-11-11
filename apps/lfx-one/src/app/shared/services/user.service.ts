@@ -758,7 +758,11 @@ export class UserService {
     if (typeof handle !== 'string' || !EMAIL_LINKED_SUPPORT_HANDLE_PATTERN.test(handle)) return of({});
     return this.http.post<LinkedEmailSupportDraft>('/api/profile/auth/email-support-context', { handle }).pipe(
       take(1),
-      catchError(() => of({}))
+      catchError(() => {
+        // Do not log the HTTP error: its body may contain sensitive response data.
+        console.error('Linked-email support context unavailable; using the generic support draft.');
+        return of({});
+      })
     );
   }
 
