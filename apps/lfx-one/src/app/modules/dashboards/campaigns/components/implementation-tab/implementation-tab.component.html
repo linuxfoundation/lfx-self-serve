@@ -2633,6 +2633,10 @@
             </div>
           }
 
+          @if (googleTargetCpaWithheldMessage(); as message) {
+            <p class="text-xs text-gray-500" data-testid="implementation-google-target-cpa-withheld">{{ message }}</p>
+          }
+
           @if (googleTakesTargetRoas()) {
             <div class="flex flex-col gap-2">
               <label class="block text-xs font-medium text-gray-700" for="google-target-roas">Target ROAS (ratio)</label>

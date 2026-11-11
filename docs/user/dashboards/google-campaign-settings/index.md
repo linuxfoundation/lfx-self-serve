@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab, and set the brief's registration URL.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, Display bidding, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab, and set the brief's registration URL.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -37,7 +37,7 @@ tags:
     implement,
     registration url,
   ]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Dashboards
 ---
 
@@ -119,6 +119,10 @@ On a Display campaign, a **Placement exclusions** box appears below **More demog
 - `example.com` and `www.example.com` are sent as written. Neither is turned into the other, so list both if you mean both.
 
 The exclusions cover the whole campaign. If you switch to another campaign type, the box disappears and a notice says the websites you entered will not be sent. They are kept, so switching back to Display restores them.
+
+## Display bidding
+
+A Display campaign can bid with **Maximize Clicks**, **Maximize Conversions**, the default, **Maximize Conversion Value** or **Target ROAS**. For now, Display has no target CPA: **Target CPA** is not offered as a strategy, and Maximize Conversions has no **Target CPA** box. Google Display doesn't accept a target CPA from LFX One yet, so a Display campaign bids on Maximize Conversions without one, and the bidding settings say so. A target CPA you entered on another campaign type is kept but not sent. If you chose Target CPA and then switch to Display, the campaign uses the Display default, Maximize Conversions, instead.
 
 ## Demand Gen bidding and languages
 
