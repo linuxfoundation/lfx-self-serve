@@ -238,8 +238,8 @@ export interface ProjectApplicationValidationIssue {
   message: string;
 }
 
-/** How the legal contact field is entered on the proposal form: the directory search, or a plain email input (#5251). */
 /** Whether the form is proposing a new project (create) or editing a held proposal (revise). Set by the host. (#5251) */
 export type ProjectApplicationFormMode = 'create' | 'revise';
 
+/** How the legal contact field is entered on the proposal form: the directory search, or a plain email input (#5251). */
 export type ProjectApplicationLegalContactMode = 'search' | 'manual';

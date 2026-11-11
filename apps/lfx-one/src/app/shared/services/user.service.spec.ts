@@ -1062,13 +1062,27 @@ describe('UserService', () => {
       expect(lookup().name).toBeNull();
     });
 
-    it('returns null without raising a toast when the request fails', () => {
+    it('returns null when every job has ended, rather than a company the user has left', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Old Co', organizationId: null, startDate: 'Jan 2015', endDate: 'Dec 2019' },
+          { organization: 'Older Co', organizationId: null, startDate: 'Jan 2010', endDate: 'Dec 2014' },
+        ])
+      );
+
+      expect(lookup().name).toBeNull();
+    });
+
+    it('returns null without raising a toast, and logs, when the request fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       httpGet.mockReturnValue(throwError(() => new Error('boom')));
 
       const { name, messages } = lookup();
 
       expect(name).toBeNull();
       expect(messages).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
     });
 
     it('returns null without raising a toast when the request does not answer within two seconds', () => {

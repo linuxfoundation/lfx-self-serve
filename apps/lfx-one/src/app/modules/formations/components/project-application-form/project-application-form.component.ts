@@ -52,7 +52,7 @@ import { isEmailShape, parseEmailList } from '@lfx-one/shared/utils';
 import { projectApplicationEmailListValidator, projectApplicationLegalEmailValidator, projectApplicationUrlValidator } from '@lfx-one/shared/validators';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { catchError, concat, filter, map, Observable, of, switchMap, timer } from 'rxjs';
+import { concat, map, Observable, of, switchMap, timer } from 'rxjs';
 
 /**
  * The "Propose a project" intake form (#3037), shared by the propose page (create) and the
@@ -268,20 +268,20 @@ export class ProjectApplicationFormComponent {
     const control = this.form.controls.project_name;
     return toSignal(
       control.valueChanges.pipe(
-        filter(() => control.dirty),
         map((value) => (value ?? '').trim()),
-        // Every edit drops the previous note at once and cancels its timer and request; a note comes
-        // back only if the new name, once typing settles, matches a project.
+        // Every change drops the previous note at once and cancels its timer and request; a note comes
+        // back only if the user edited the name and, once typing settles, it matches a project. A pristine
+        // control (a stored or newly bound name loaded by a form reset) clears the note and asks nothing.
+        // The search itself never errors: ProjectService.searchProjects turns a failure into no results.
         switchMap((name): Observable<string | null> => {
-          if (name.length < PROJECT_APPLICATION_NAME_SEARCH_MIN_CHARS) {
+          if (!control.dirty || name.length < PROJECT_APPLICATION_NAME_SEARCH_MIN_CHARS) {
             return of(null);
           }
           return concat(
             of(null),
             timer(PROJECT_APPLICATION_NAME_SEARCH_DEBOUNCE_MS).pipe(
               switchMap(() => this.projectService.searchProjects(name)),
-              map((projects) => projects.find((project) => project.name?.trim().toLowerCase() === name.toLowerCase())?.name ?? null),
-              catchError(() => of(null))
+              map((projects) => projects.find((project) => project.name?.trim().toLowerCase() === name.toLowerCase())?.name ?? null)
             )
           );
         })

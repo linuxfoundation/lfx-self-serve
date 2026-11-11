@@ -34,9 +34,8 @@
           id="pa-project-name-duplicate"
           class="text-xs text-amber-700 m-0 empty:hidden"
           role="status"
-          data-testid="project-application-form-project-name-duplicate">
-          {{ duplicateProjectMessage() }}
-        </p>
+          data-testid="project-application-form-project-name-duplicate"
+          [textContent]="duplicateProjectMessage()"></p>
       </div>
 
       <div class="flex flex-col gap-1.5">

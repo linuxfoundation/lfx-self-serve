@@ -654,8 +654,12 @@ export class UserService {
     return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
       take(1),
       timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
-      map((experiences) => currentEmployerFromWorkExperiences(experiences)?.name ?? null),
-      catchError(() => of(null))
+      // Only a job with no end date: the helper's fallback to the latest past job would prefill a company the user has left.
+      map((experiences) => currentEmployerFromWorkExperiences(experiences.filter((experience) => !experience.endDate))?.name ?? null),
+      catchError((error) => {
+        console.warn('[UserService] getCurrentEmployerName failed; leaving the organization blank', error);
+        return of(null);
+      })
     );
   }
 

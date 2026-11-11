@@ -616,6 +616,27 @@ describe('ProjectApplicationFormComponent duplicate project name warning (#5251)
     expect(note()).toBe('A project named Acme Widgets already exists.');
   });
 
+  it('clears the note when a different proposal is bound to the form', async () => {
+    await render();
+    typeName('Acme Widgets');
+    settle();
+    answer('Acme Widgets', ['Acme Widgets']);
+    expect(note()).toBe('A project named Acme Widgets already exists.');
+
+    fixture.componentRef.setInput('initialAnswers', { ...VALID, project_name: 'Another Project' });
+    fixture.detectChanges();
+
+    expect(note()).toBeNull();
+    http.expectNone((req) => req.url === PROJECT_SEARCH_URL);
+  });
+
+  it('renders an empty note element with no text, so the empty:hidden rule can hide it', async () => {
+    await render();
+
+    const element = root().querySelector('[data-testid="project-application-form-project-name-duplicate"]') as HTMLElement;
+    expect(element.childNodes.length).toBe(0);
+  });
+
   it('matches case-insensitively and ignoring surrounding spaces', async () => {
     await render();
     typeName('  acme widgets  ');
