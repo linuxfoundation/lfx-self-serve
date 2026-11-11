@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -63,6 +63,9 @@ export class DocumentsTableComponent {
   /** Emitted after the user confirms deleting a manageable row. The page makes the API call and refreshes. */
   public readonly documentDelete = output<MyDocumentItem>();
 
+  /** The row whose actions menu is open, so its button can report `aria-expanded`. */
+  protected readonly openMenuRowId = signal<string | null>(null);
+
   protected readonly colSpan = computed(() => (this.showFoundation() ? 7 : 6));
   protected readonly hasDocuments = computed(() => this.documents().length > 0);
   protected readonly rows: Signal<MyDocumentTableRow[]> = this.initRows();
@@ -79,6 +82,15 @@ export class DocumentsTableComponent {
   // would leave another row's menu open when this one opens.
   protected toggleManageMenu(event: Event, menu: MenuComponent): void {
     menu.toggle(event);
+  }
+
+  protected onManageMenuShow(rowId: string): void {
+    this.openMenuRowId.set(rowId);
+  }
+
+  // Clear only if the flag is still this row's: when another row's menu opens, its show can arrive before this hide.
+  protected onManageMenuHide(rowId: string): void {
+    this.openMenuRowId.update((openId) => (openId === rowId ? null : openId));
   }
 
   protected onFolderClick(doc: MyDocumentItem): void {

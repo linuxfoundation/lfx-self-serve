@@ -253,6 +253,9 @@ describe('DocumentsTableComponent row actions menu', () => {
       rowButton(id)?.click();
       fixture.detectChanges();
       await fixture.whenStable();
+      // PrimeNG emits the menu's show and hide events from its overlay animation callbacks, a tick after the click.
+      await new Promise<void>((resolve) => setTimeout(resolve));
+      fixture.detectChanges();
     }
 
     it('closes the first row’s menu when another row’s menu is opened', async () => {
@@ -263,6 +266,19 @@ describe('DocumentsTableComponent row actions menu', () => {
 
       await open('b');
       expect(openMenus()).toHaveLength(1);
+    });
+
+    it('reports aria-expanded only on the button whose menu is open', async () => {
+      await renderTwoRows();
+      const expanded = (id: string): string | null | undefined => rowButton(id)?.getAttribute('aria-expanded');
+
+      expect([expanded('a'), expanded('b')]).toEqual(['false', 'false']);
+
+      await open('a');
+      expect([expanded('a'), expanded('b')]).toEqual(['true', 'false']);
+
+      await open('b');
+      expect([expanded('a'), expanded('b')]).toEqual(['false', 'true']);
     });
 
     it('asks about the row whose menu was opened, not the one opened before it', async () => {

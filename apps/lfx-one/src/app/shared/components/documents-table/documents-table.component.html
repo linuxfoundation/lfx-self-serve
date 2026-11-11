@@ -277,7 +277,13 @@
             </lfx-button>
           }
           @if (canManage() && doc.manageableType) {
-            <lfx-menu #manageMenu [model]="manageMenus().get(doc.id)" [popup]="true" appendTo="body" />
+            <lfx-menu
+              #manageMenu
+              [model]="manageMenus().get(doc.id)"
+              [popup]="true"
+              appendTo="body"
+              (onShow)="onManageMenuShow(doc.id)"
+              (onHide)="onManageMenuHide(doc.id)" />
             <lfx-button
               icon="fa-light fa-ellipsis-vertical"
               severity="secondary"
@@ -286,6 +292,7 @@
               [rounded]="true"
               ariaLabel="More actions"
               ariaHaspopup="menu"
+              [ariaExpanded]="openMenuRowId() === doc.id"
               (onClick)="toggleManageMenu($event, manageMenu)"
               [attr.data-testid]="testIdPrefix() + '-actions-' + doc.id">
             </lfx-button>
