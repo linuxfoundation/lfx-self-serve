@@ -1,10 +1,10 @@
 ---
 title: Manage Recurring Donations
-description: How to view recurring donation details and cancel a recurring subscription in LFX Self Serve.
+description: How to view recurring donation details, hide your name on a recurring donation, and cancel a recurring subscription in LFX Self Serve.
 audience: [all]
 product_area: Crowdfunding
-tags: [crowdfunding, recurring donations, cancel, subscription, manage]
-last_updated: 2026-10-29
+tags: [crowdfunding, recurring donations, cancel, subscription, manage, anonymous]
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
@@ -32,9 +32,19 @@ The detail page shows:
 - Billing description
 - Start date and total amount contributed to date
 - **Next Charge** date for an active subscription, or **Paused Since** for a paused one
+- **Your Name** — **Shown**, or **Hidden: shown as Anonymous** when you have hidden your name on this subscription, with **Hide my name** or **Show my name** to change it
 - **Charge History**, listing the period, date charged, and amount of each past charge. Select **Load more** to see older charges.
 
 Select **Back to Donations** to return to the Donations page.
+
+## Hide or show your name on a recurring donation
+
+Hiding your name on a recurring donation lists every charge of the subscription, past and future, as **Anonymous** wherever donations are listed, including to the initiative's team. The amount still shows, and if you donated on behalf of an organization its name and logo still show. Only you can see that the donation is yours.
+
+1. Open the recurring donation detail page (see steps above).
+2. Under **Your Name**, select **Hide my name**. To show your name again, select **Show my name**.
+
+A confirmation message appears and **Your Name** updates. You can make the same change from the **More options** menu (⋯) on the subscription in the **Recurring Donations** list, or on any of its charges in **Donation History** (see [View Donations](../view-donations/#hide-or-show-your-name)). Canceled subscriptions keep this setting and can still change it.
 
 ## Cancel a recurring donation
 
@@ -52,7 +62,7 @@ You can cancel from the detail page or directly from the list.
 2. In the **Recurring Donations** list, select the **More options** menu (⋯) on the donation.
 3. Select **Cancel**, then **Cancel Donation** to confirm.
 
-Cancelling a recurring donation stops all future charges for that subscription immediately and cannot be undone. Past charges are not refunded. The subscription stays in your **Recurring Donations** list with a red **Canceled** status, and its detail page no longer shows the **Cancel** button. Past charges remain visible in its charge history and in your donation history on the [View Donations](../view-donations/) page.
+Cancelling a recurring donation stops all future charges for that subscription immediately and cannot be undone. Past charges are not refunded. The subscription stays in your **Recurring Donations** list with a red **Canceled** status, and neither its detail page nor its **More options** menu offers **Cancel** any more. Past charges remain visible in its charge history and in your donation history on the [View Donations](../view-donations/) page.
 
 ## Frequently asked
 
@@ -67,6 +77,9 @@ Canceled subscriptions stay in your **Recurring Donations** list, marked **Cance
 
 **Can I restart a canceled recurring donation?**
 No. Cancellation cannot be undone. To give monthly again, start a new recurring donation from the initiative's page on the [LFX Crowdfunding site](https://crowdfunding.linuxfoundation.org).
+
+**Does hiding my name on a recurring donation affect past charges?**
+Yes. The setting belongs to the subscription, so it applies to every charge of it, including charges made before you changed it.
 
 **What does a Paused subscription mean?**
 A Paused subscription is temporarily on hold. No charges are processed while the subscription is paused, and no action is needed from you. The subscription resumes automatically when the pause period ends.

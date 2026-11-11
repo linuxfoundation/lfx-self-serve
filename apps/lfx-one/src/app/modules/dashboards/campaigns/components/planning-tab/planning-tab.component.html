@@ -583,6 +583,66 @@
     </div>
 
     <!--
+      The saved-brief offer on the review step (#5492). Either the input step's offer, which survives
+      generation, or a brief `lookUpGeneratedSlug` found under the generator's slug, which is the one the
+      save is keyed on. The input step's banner is gone with that step, so its actions are offered here
+      too. Only when the offer is stored under the generated slug and is not this session's own
+      (`savedBriefBlocksSave`) does it say the generated brief can't be saved over it; no other offer stops
+      the save.
+      The live region stays outside the @if, as on the input step, so a brief found here is announced.
+    -->
+    <div role="status" aria-live="polite" class="sr-only" data-testid="planning-review-saved-brief-live">
+      {{ editingExistingBrief() ? '' : savedBriefAnnouncement() }}
+    </div>
+    @if (!editingExistingBrief() && savedBrief(); as saved) {
+      <div class="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2" data-testid="planning-review-saved-brief">
+        <i class="fa-light fa-rotate-left mt-0.5 text-blue-600" aria-hidden="true"></i>
+        <div class="flex flex-col gap-2">
+          <p class="text-xs text-blue-900">
+            A brief was already saved for <span class="font-medium">{{ saved.eventDetails.name || saved.eventDetails.slug }}</span
+            >.
+            @if (!savedBriefBlocksSave()) {
+              @if (isEmailLike()) {
+                Restore it if you want it instead of this one.
+              } @else {
+                Open it to edit, or restore it as it is, if you want it instead of this one.
+              }
+            } @else if (isEmailLike()) {
+              This one can't be saved over it as it is, so restore the saved brief instead.
+            } @else {
+              This one can't be saved over it as it is. Open the saved brief to edit it, or restore it as it is. If you proceed with this one, you'll be asked
+              whether to replace the saved brief.
+            }
+          </p>
+          @if (savedBriefWarning(); as warning) {
+            <p class="text-xs text-amber-700" data-testid="planning-review-saved-brief-warning">
+              <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>{{ warning }}
+            </p>
+          }
+          <div class="flex flex-wrap items-center gap-2">
+            @if (!isEmailLike()) {
+              <lfx-button
+                label="Open to edit"
+                size="small"
+                icon="fa-light fa-pen-to-square"
+                (click)="openSavedBriefToEdit()"
+                ariaLabel="Open the saved brief to edit it"
+                data-testid="planning-review-open-saved-brief" />
+            }
+            <lfx-button label="Restore saved brief" size="small" [outlined]="true" (click)="restoreSavedBrief()" data-testid="planning-review-restore-brief" />
+          </div>
+        </div>
+      </div>
+    } @else if (!editingExistingBrief() && savedBriefWarningBlocksSave() && savedBriefWarning(); as warning) {
+      <!-- An unreadable brief stored under the save key, so nothing to offer and Proceed will be refused.
+           Only that one, whichever lookup found it: an unreadable brief under another slug (a later
+           edition) does not stop the save, and its warning would say it does. -->
+      <p class="text-xs text-amber-700" data-testid="planning-review-saved-brief-warning">
+        <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>{{ warning }}
+      </p>
+    }
+
+    <!--
       The email brief itself (LFXV2-2770). An email brief returns event details and a UTM token
       and no `structuredCopy`, so the paid editor above is hidden for it — but the SCRAPE is what
       gets things wrong, and these are the fields the content generator is instructed to use

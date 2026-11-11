@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DialogRef } from '@angular/cdk/dialog';
 import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RecurrenceType } from '@lfx-one/shared/enums';
@@ -14,7 +15,6 @@ import {
   PastMeetingAttachment,
 } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, throwError } from 'rxjs';
@@ -55,7 +55,7 @@ describe('MeetingDetailsAgendaComponent', () => {
   let getPastMeetingAttachmentDownloadUrl: ReturnType<typeof vi.fn>;
   let edit: ReturnType<typeof vi.fn>;
   let drawerOpen: ReturnType<typeof vi.fn>;
-  let requestClose: ReturnType<typeof vi.fn>;
+  let dialogRef: DialogRef;
   let toastShow: ReturnType<typeof vi.fn>;
 
   const render = async (): Promise<void> => {
@@ -83,10 +83,8 @@ describe('MeetingDetailsAgendaComponent', () => {
     getPastMeetingAttachmentDownloadUrl = vi.fn(() => of({ download_url: 'https://files.example/past' }));
     edit = vi.fn();
     drawerOpen = vi.fn();
-    requestClose = vi.fn();
+    dialogRef = { close: vi.fn() } as unknown as DialogRef;
     toastShow = vi.fn();
-    const drawer = new UiDrawerContext();
-    drawer.requestClose = requestClose as () => void;
 
     TestBed.configureTestingModule({
       providers: [
@@ -121,7 +119,7 @@ describe('MeetingDetailsAgendaComponent', () => {
         },
         { provide: MeetingsHomeEditService, useValue: { edit } },
         { provide: UiDrawerService, useValue: { open: drawerOpen } },
-        { provide: UiDrawerContext, useValue: drawer },
+        { provide: DialogRef, useValue: dialogRef },
         { provide: UiToastService, useValue: { show: toastShow } },
       ],
     });
@@ -326,32 +324,48 @@ describe('MeetingDetailsAgendaComponent', () => {
     expect(query('meeting-details-materials-host')).toBeNull();
   });
 
-  it('lets an organizer edit the agenda in the composer, closing the drawer', async () => {
+  it('lets an organizer edit the agenda in the composer, handing it the drawer to close', async () => {
     organizer.set(true);
     occurrence.set(OCCURRENCE);
     await render();
 
     await click('meeting-details-agenda-edit');
 
-    expect(requestClose).toHaveBeenCalled();
+    expect(dialogRef.close).not.toHaveBeenCalled();
     expect(edit).toHaveBeenCalledWith(
       expect.objectContaining({ occurrence: OCCURRENCE, occurrenceId: OCCURRENCE.occurrence_id, meeting: MEETING }),
-      'agenda-resources'
+      'agenda-resources',
+      dialogRef
     );
+  });
+
+  it('opens materials in the composer, or adds the first ones there', async () => {
+    organizer.set(true);
+    await render();
+
+    await click('meeting-details-materials-edit');
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ meeting: MEETING }), 'agenda-resources', dialogRef, true);
+    expect(drawerOpen).not.toHaveBeenCalled();
+
+    getMeetingAttachments.mockReturnValue(of([]));
+    meeting.set({ ...MEETING, id: 'synthetic-other' });
+    await fixture.whenStable();
+    await click('meeting-details-materials-add');
+    expect(edit).toHaveBeenCalledTimes(2);
   });
 
   it('lets an organizer edit the agenda, or add one when there is none', async () => {
     organizer.set(true);
     await render();
     await click('meeting-details-agenda-edit');
-    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ meeting: MEETING }), 'agenda-resources');
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ meeting: MEETING }), 'agenda-resources', dialogRef);
 
     meeting.set({ ...MEETING, description: '' });
     await fixture.whenStable();
     expect(query('meeting-details-agenda-add')).not.toBeNull();
   });
 
-  it('opens Manage Materials over the drawer for the shown date of an upcoming series', async () => {
+  it('opens the series in the composer for the materials of an upcoming series', async () => {
     organizer.set(true);
     meeting.set({ ...MEETING, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 } } as unknown as Meeting);
     occurrence.set(OCCURRENCE);
@@ -359,11 +373,8 @@ describe('MeetingDetailsAgendaComponent', () => {
 
     await click('meeting-details-materials-edit');
 
-    expect(edit).not.toHaveBeenCalled();
-    expect(requestClose).not.toHaveBeenCalled();
-    expect(drawerOpen).toHaveBeenCalledWith(MeetingMaterialsDrawerComponent, {
-      data: expect.objectContaining({ meetingId: 'synthetic-meeting', occurrence: OCCURRENCE, canScopeToOccurrence: true }),
-    });
+    expect(drawerOpen).not.toHaveBeenCalled();
+    expect(edit).toHaveBeenCalledWith(expect.objectContaining({ occurrenceId: OCCURRENCE.occurrence_id }), 'agenda-resources', dialogRef, true);
   });
 
   it('lists materials saved this session without a refetch', async () => {

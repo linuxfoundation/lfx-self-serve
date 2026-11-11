@@ -178,16 +178,9 @@ export class MeetingDetailsGuestsComponent {
     this.reload.update((count) => count + 1);
   }
 
-  /** Closes the drawer, then runs Edit Meeting's checks and scope question and opens the editor at its Guests step. */
+  /** Runs Edit Meeting's checks and scope question over the drawer and opens the editor at its Guests step. */
   protected addGuests(): void {
-    // An explicit leave, as Edit Meeting: close without the close guard, then open the editor once focus is handed back.
-    const row = this.context.shownRow();
-    if (!this.dialogRef) {
-      this.editService.edit(row, 'guests');
-      return;
-    }
-    this.dialogRef.closed.pipe(take(1)).subscribe(() => this.editService.edit(row, 'guests'));
-    this.dialogRef.close();
+    this.editService.edit(this.context.shownRow(), 'guests', this.dialogRef);
   }
 
   protected confirmResend(registrant: MeetingRegistrant): void {

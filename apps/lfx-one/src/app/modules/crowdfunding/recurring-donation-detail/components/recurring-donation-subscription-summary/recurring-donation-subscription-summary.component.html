@@ -70,4 +70,30 @@
       </div>
     }
   </div>
+
+  <!-- Donor name visibility (lfx-crowdfunding#466): applies to every charge of this subscription -->
+  <div class="flex items-center justify-between gap-4 flex-wrap pt-4 border-t border-gray-100" data-testid="donor-name-setting">
+    <div class="flex flex-col gap-0.5">
+      <span class="text-xs font-medium text-gray-400 uppercase tracking-wide">Your Name</span>
+      @if (donation().anonymous) {
+        <span class="text-sm font-semibold text-gray-800" data-testid="donor-name-status">Hidden: shown as Anonymous</span>
+        <span class="text-xs text-gray-500">
+          Every charge of this donation is listed as Anonymous, including to the initiative's team. The amount still shows. Only you can see it's yours.
+        </span>
+      } @else {
+        <span class="text-sm font-semibold text-gray-800" data-testid="donor-name-status">Shown</span>
+        <span class="text-xs text-gray-500">Your name is listed with every charge of this donation.</span>
+      }
+    </div>
+    <lfx-button
+      [label]="donation().anonymous ? 'Show my name' : 'Hide my name'"
+      [icon]="donation().anonymous ? 'fa-light fa-eye' : 'fa-light fa-eye-slash'"
+      severity="secondary"
+      size="small"
+      [outlined]="true"
+      [loading]="anonymitySaving()"
+      [disabled]="anonymitySaving()"
+      data-testid="toggle-anonymity-btn"
+      (onClick)="toggleAnonymity.emit()" />
+  </div>
 </div>
