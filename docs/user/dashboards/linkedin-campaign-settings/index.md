@@ -65,7 +65,7 @@ The **Targeting Profile** buttons in the LinkedIn section choose who sees the ad
 - **Member groups**: LinkedIn groups, shown by their LinkedIn ID (for example `urn:li:group:12345`).
 - **Skills**: LinkedIn skills, shown by their LinkedIn ID (for example `urn:li:skill:12345`).
 
-In the chosen locations, LinkedIn shows the ads to members who are in any of these groups, have any of these skills, or work in one of a fixed set of job functions. The campaign service adds the same job functions to every LinkedIn campaign, and they can't be changed here. Each heading shows how many entries are left out of the profile's total, for example **Member groups (1 of 2)**.
+In the chosen locations, LinkedIn shows the ads to members who are in any of these groups, have any of these skills, or work in one of a fixed set of job functions. The campaign service adds the same job functions to every LinkedIn campaign, and they can't be changed here. Each heading shows how many entries this campaign keeps, then the profile's total, for example **Member groups (1 of 2)**.
 
 ### Remove entries
 

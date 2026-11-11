@@ -456,11 +456,11 @@ import {
   linkedInTargetingAfterRemovals,
   linkedInVariantTextError,
   parseNegativeKeywordInput,
+  resolveLinkedInTargetingProfileId,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
   twitterTweetTextError,
-  resolveLinkedInTargetingProfileId,
 } from '@lfx-one/shared/utils';
 
 import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
@@ -3767,7 +3767,7 @@ export class ImplementationTabComponent implements OnInit {
     // profile catalogue they cannot be applied — are a block rather than a silent revert to the
     // profile as configured.
     if (linkedInSelected && this.linkedInTargetingRemovalsHeld()) {
-      if (this.linkedInTargetingEditEnabled() === false) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
+      if (!this.linkedInTargetingEditAvailable()) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
       if (!this.linkedInSelectedTargetingProfile())
         return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
     }

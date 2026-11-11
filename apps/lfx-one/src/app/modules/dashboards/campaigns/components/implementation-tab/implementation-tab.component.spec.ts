@@ -22707,6 +22707,52 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
   });
 
+  it('blocks a create holding removals while the capability is unanswered, rather than reaching the BFF', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:skill:101');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const { fixture } = await mount({ draft, edit: null });
+    makeSubmittable(fixture);
+
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
+  });
+
+  it('never blocks an unedited campaign on the capability, whatever it says', async () => {
+    for (const edit of [null, false, true]) {
+      const { fixture } = await mount({ edit });
+      makeSubmittable(fixture);
+
+      expect(at(fixture).createBlockedReason()).toBeNull();
+      fixture.destroy();
+    }
+  });
+
+  it('shows the empty text for each kind once every entry of that kind is removed', async () => {
+    const { fixture } = await mount({});
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-empty')).toBeNull();
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')).toBeNull();
+
+    removeChip(fixture, 'urn:li:group:201');
+    removeChip(fixture, 'urn:li:group:202');
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-empty')?.textContent).toContain('No member groups');
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')).toBeNull();
+
+    removeChip(fixture, 'urn:li:skill:101');
+    removeChip(fixture, 'urn:li:skill:102');
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')?.textContent).toContain('No skills');
+  });
+
+  it("says the profile isn't configured when the catalogue loads without an entry for it", async () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => of([PROFILES[1]]);
+    const { fixture } = await mount({});
+
+    expect(q(fixture, 'implementation-linkedin-targeting-unconfigured')?.textContent).toContain("This profile isn't configured on this deployment.");
+    expect(q(fixture, 'implementation-linkedin-targeting-groups')).toBeNull();
+  });
+
   it('blocks a create holding removals when the profile catalogue failed to load, rather than sending the profile unedited', async () => {
     const first = await mount({});
     removeChip(first.fixture, 'urn:li:skill:101');
