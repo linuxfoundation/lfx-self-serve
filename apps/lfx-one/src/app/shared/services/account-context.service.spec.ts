@@ -843,6 +843,28 @@ describe('AccountContextService — family roll-up', () => {
       expect([UID_A, UID_B]).toContain(service.selectedAccount().uid);
     });
 
+    // A grants request that fails outright never starts the families request, so `answered` never
+    // turns true; the flag-off demotion must not wait on it.
+    it('demotes a restored roll-up when the flag settles off and a cold grants request failed', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      grants.lookupOutcome.set('failed');
+      serverFamilies.hasServerFamilies.set(false);
+      serverFamilies.unsettled.set(true);
+      serverFamilies.answered.set(false);
+      rollUpFlag.enabled.set(false);
+      rollUpFlag.unsettled.set(true);
+      service.initializeUserOrganizations([seedA, seedB]);
+      TestBed.tick();
+      expect(service.isRollUp()).toBe(true);
+
+      rollUpFlag.unsettled.set(false);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(false);
+      expect([UID_A, UID_B]).toContain(service.selectedAccount().uid);
+      expect(JSON.parse(cookies.get(COOKIE) as string).uid).not.toBe(SEGMENT);
+    });
+
     it('holds a roll-up address with the flag off until the grants have answered at all', () => {
       grants.loaded.set(false);
       rollUpFlag.enabled.set(false);
