@@ -214,12 +214,14 @@ export class AccountContextService {
    * the flag targets.
    *
    * A flag settled off withdraws the roll-up whatever the grants say, so it waits only for the
-   * grants to have answered at all — the demotion needs them to pick an organization the caller
-   * holds — and not for a good answer: a grants or families outage must not keep a withdrawn
-   * roll-up selected.
+   * grants and the families to have answered at all — the demotion needs them to pick an
+   * organization the caller holds, in the addressed family first — and not for a good answer: a
+   * grants or families outage must not keep a withdrawn roll-up selected.
    */
   private readonly rollUpEligibilityUnsettled: Signal<boolean> = computed(
-    () => this.rollUpFlag.unsettled() || (this.rollUpFlag.enabled() ? this.grantsUnsettled() : !this.orgRoleGrantsService.loaded())
+    () =>
+      this.rollUpFlag.unsettled() ||
+      (this.rollUpFlag.enabled() ? this.grantsUnsettled() : !this.orgRoleGrantsService.loaded() || !this.rollUpFamiliesService.answered())
   );
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */

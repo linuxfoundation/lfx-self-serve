@@ -170,6 +170,40 @@ describe('OrgRollUpFamiliesService', () => {
     expect(service.unsettled()).toBe(true);
   });
 
+  // Dropping one malformed family or organization would shrink a family; the whole answer is unknown instead.
+  it.each([
+    ['a family without a top account', { rootUid: undefined, rootName: 'Alpha', rootLogoUrl: null, orgs: [org(UID_A, 'Alpha')] }],
+    ['a family without an organization list', { rootUid: UID_A, rootName: 'Alpha', rootLogoUrl: null, orgs: undefined }],
+    ['an organization without a uid', { rootUid: UID_A, rootName: 'Alpha', rootLogoUrl: null, orgs: [org(UID_A, 'Alpha'), { name: 'Bravo' }] }],
+  ])('reports %s as unknown rather than a smaller family', (_label, family) => {
+    grantsLoad(1);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
+    grantsLoad(2);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush({ ...response(), families: [family, response().families[1]] });
+
+    expect(service.lookupOutcome()).toBe('failed');
+    expect(service.hasServerFamilies()).toBe(false);
+    expect(service.families()).toEqual([]);
+    expect(service.unsettled()).toBe(true);
+    expect(service.answered()).toBe(true);
+  });
+
+  it('is answered once any answer lands for the current grants load, and not before', () => {
+    TestBed.tick();
+    expect(service.answered()).toBe(false);
+
+    grantsLoad(1);
+    expect(service.answered()).toBe(false);
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush('boom', { status: 503, statusText: 'Service Unavailable' });
+    expect(service.answered()).toBe(true);
+
+    loadedAtMs.set(2);
+    expect(service.answered()).toBe(false);
+    TestBed.tick();
+    http.expectOne(ORG_ROLL_UP_SET_PATH).flush(response());
+    expect(service.answered()).toBe(true);
+  });
+
   // An outage must never read as a family that shrank: unusable, and unsettled so nothing demotes.
   it('reports any failure as unknown rather than empty', () => {
     grantsLoad(1);

@@ -563,6 +563,7 @@ describe('AccountContextService — family roll-up', () => {
     hasServerFamilies: WritableSignal<boolean>;
     families: Signal<OrgRollUpFamily[]>;
     unsettled: WritableSignal<boolean>;
+    answered: WritableSignal<boolean>;
     incomplete: WritableSignal<boolean>;
     loading: WritableSignal<boolean>;
   };
@@ -616,6 +617,7 @@ describe('AccountContextService — family roll-up', () => {
       hasServerFamilies: signal(true),
       families: computed(() => serverAnswer() ?? groupLikeServer()),
       unsettled: signal(false),
+      answered: signal(true),
       incomplete: signal(false),
       loading: signal(false),
     };
@@ -852,6 +854,31 @@ describe('AccountContextService — family roll-up', () => {
       TestBed.tick();
 
       expect(service.isRollUp()).toBe(false);
+    });
+
+    // On a cold visit the grants answer before the families do: demoting then would fall back to
+    // whichever organization sorts first, not one in the family the address named.
+    it('holds a roll-up address with the flag off until the families have answered, then demotes into its family', () => {
+      const UID_Z = '0014100000MgzZZZZZ';
+      const seedZ: Account = { accountId: UID_Z, accountName: 'Zulu', membershipTier: '', uid: UID_Z };
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      grants.writerSet.set(new Set([UID_B, UID_Z]));
+      serverFamilies.hasServerFamilies.set(false);
+      serverFamilies.unsettled.set(true);
+      serverFamilies.answered.set(false);
+      rollUpFlag.enabled.set(false);
+      service.initializeUserOrganizations([seedZ, seedB]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+
+      serverFamilies.hasServerFamilies.set(true);
+      serverFamilies.unsettled.set(false);
+      serverFamilies.answered.set(true);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(false);
+      expect(service.selectedAccount().uid).toBe(UID_B);
     });
 
     it('keeps a restored roll-up once the flag settles on', () => {

@@ -59,6 +59,14 @@ export class OrgRollUpFamiliesService {
     () => this.sourceInternal() === 'pending' || this.lookupOutcomeInternal() !== 'ok' || this.answeredForInternal() !== this.roleGrants.loadedAtMs()
   );
 
+  /**
+   * True once the server has answered for the current grants load — completely, partly or with a
+   * failure. Unlike `!unsettled`, a bad answer counts: this says only that no answer is still owed.
+   */
+  public readonly answered: Signal<boolean> = computed(
+    () => this.sourceInternal() !== 'pending' && this.answeredForInternal() === this.roleGrants.loadedAtMs()
+  );
+
   /** True once an answer has landed that is a lower bound or unknown — the switcher's incomplete-list notice and its Retry cover it. */
   public readonly incomplete: Signal<boolean> = computed(() => this.sourceInternal() === 'server' && this.lookupOutcomeInternal() !== 'ok');
 
@@ -94,16 +102,19 @@ export class OrgRollUpFamiliesService {
   }
 
   private applyResponse(response: OrgRollUpSetResponse | null): void {
+    // A body that is not the documented shape is unknown, not a smaller set of families: dropping a
+    // malformed family or organization would let a restored roll-up demote and overwrite its cookie.
+    // Thrown so `fetch`'s error path records it exactly as it records a failed request.
+    if (!isRollUpSetShaped(response)) {
+      throw new Error('[OrgRollUpFamiliesService] roll-up set response is malformed');
+    }
     const orgsByUid = new Map<string, OrgRollUpSetOrg>();
     const families: OrgRollUpFamily[] = [];
-    for (const family of Array.isArray(response?.families) ? response.families : []) {
-      if (!family?.rootUid) {
-        continue;
-      }
+    for (const family of response.families) {
       const orgUids: string[] = [];
-      for (const org of Array.isArray(family.orgs) ? family.orgs : []) {
+      for (const org of family.orgs) {
         // An organization belongs to exactly one family; a repeat is ignored rather than double counted.
-        if (!org?.uid || orgsByUid.has(org.uid)) {
+        if (orgsByUid.has(org.uid)) {
           continue;
         }
         orgsByUid.set(org.uid, org);
@@ -114,11 +125,23 @@ export class OrgRollUpFamiliesService {
 
     this.familiesInternal.set(families);
     this.orgsByUidInternal.set(orgsByUid);
-    // A body that is not the documented shape is unknown, not "no families" — the same as a failed request.
-    this.lookupOutcomeInternal.set(
-      response && Array.isArray(response.families) ? (response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok')) : 'failed'
-    );
+    this.lookupOutcomeInternal.set(response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok'));
     this.sourceInternal.set('server');
     this.loadingInternal.set(false);
   }
+}
+
+/** Every family names its top account and lists its organizations, and every organization has a uid. */
+function isRollUpSetShaped(response: OrgRollUpSetResponse | null): response is OrgRollUpSetResponse {
+  return (
+    !!response &&
+    Array.isArray(response.families) &&
+    response.families.every(
+      (family) =>
+        typeof family?.rootUid === 'string' &&
+        family.rootUid !== '' &&
+        Array.isArray(family.orgs) &&
+        family.orgs.every((org) => typeof org?.uid === 'string' && org.uid !== '')
+    )
+  );
 }
