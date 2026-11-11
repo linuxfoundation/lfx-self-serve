@@ -201,16 +201,21 @@ export function countAppliedMeetingFilters(filters: MeetingsHomeFilters): number
   return [filters.foundation, filters.project, filters.meetingType, filters.rsvp !== 'all', filters.organizedByMe, filters.hideDeclined].filter(Boolean).length;
 }
 
-/** One chip per applied filter, in popover order, keyed like "Project:"; foundation and project chips take the name from `rows`, else the UID. */
+/**
+ * One chip per applied filter, in popover order, keyed like "Project:"; foundation and project chips take the name from `rows`, else the UID.
+ * The Foundation/Project chip reads "Foundation:" when its pick is a foundation.
+ */
 export function buildMeetingFilterChips(filters: MeetingsHomeFilters, rows: readonly MeetingHomeRow[]): MeetingFilterChip[] {
   const chips: MeetingFilterChip[] = [];
-  const nameOf = (uid: string): string => rows.find((row) => row.meeting.project_uid === uid)?.meeting.project_name || uid;
+  const meetingOf = (uid: string) => rows.find((row) => row.meeting.project_uid === uid)?.meeting;
+  const nameOf = (uid: string): string => meetingOf(uid)?.project_name || uid;
 
   if (filters.foundation) {
     chips.push({ key: 'foundation', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.foundation}:`, label: nameOf(filters.foundation) });
   }
   if (filters.project) {
-    chips.push({ key: 'project', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.project}:`, label: nameOf(filters.project) });
+    const kind = meetingOf(filters.project)?.is_foundation ? 'foundation' : 'project';
+    chips.push({ key: 'project', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS[kind]}:`, label: nameOf(filters.project) });
   }
   if (filters.meetingType) {
     chips.push({ key: 'meetingType', prefix: `${MEETINGS_HOME_FILTER_CHIP_LABELS.meetingType}:`, label: filters.meetingType });
