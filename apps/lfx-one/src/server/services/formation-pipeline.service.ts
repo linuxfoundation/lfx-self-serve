@@ -21,7 +21,7 @@ import type {
   UpstreamPipelineSettings,
   UserInfo,
 } from '@lfx-one/shared/interfaces';
-import { chunkArray, countPipelineRows, getPipelineStageKey, matchesPipelineSearch } from '@lfx-one/shared/utils';
+import { chunkArray, comparePipelineText, countPipelineRows, getPipelineStageKey, matchesPipelineSearch } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError } from '../errors';
@@ -86,7 +86,7 @@ export class FormationPipelineService {
           has_checklist: checklistUids.has(row.uid),
         };
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => comparePipelineText(a.name, b.name));
 
     logger.debug(req, operation, 'Built formation pipeline', { row_count: rows.length, total: counts.total, foundation_scoped: !!query.foundationUid });
     return { rows, counts };

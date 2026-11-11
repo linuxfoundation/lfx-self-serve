@@ -38,6 +38,7 @@ import {
   downloadCsv,
   buildPipelinePillOptions,
   buildPipelineStatCards,
+  comparePipelineText,
   countPipelineRows,
   emptyPipelineCounts,
   filterPipelineRowsByStage,
@@ -105,7 +106,7 @@ export class FormationsPipelineComponent {
   protected readonly isFiltered = computed(() => this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE || !!this.searchTerm().trim() || !!this.foundationUid());
   protected readonly foundationOptions = computed(() => [
     { label: this.copy.allFoundations, value: null },
-    ...[...this.knownFoundations()].map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label)),
+    ...[...this.knownFoundations()].map(([value, label]) => ({ label, value })).sort((a, b) => comparePipelineText(a.label, b.label)),
   ]);
   protected readonly pillOptions: Signal<FilterPillOption[]> = computed(() => buildPipelinePillOptions(this.counts()));
   protected readonly statCards: Signal<StatCardItem[]> = computed(() => buildPipelineStatCards(this.counts(), this.searchedRows(), this.stage()));

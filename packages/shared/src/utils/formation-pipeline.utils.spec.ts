@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { rowsToCsv } from './file.utils';
 import type { FormationPipelineRow } from '../interfaces/formation-pipeline.interface';
@@ -10,6 +10,7 @@ import {
   chunkArray,
   buildPipelinePillOptions,
   buildPipelineStatCards,
+  comparePipelineText,
   countPipelineRows,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
@@ -249,5 +250,21 @@ describe('row link and table row', () => {
       pmLine: 'No PM yet',
     });
     expect(view.launch.relativeLabel).toBe('In 8 days');
+  });
+});
+
+describe('comparePipelineText', () => {
+  it('orders case- and accent-insensitively in the en locale, whatever the runtime default', () => {
+    expect(['b', 'A', 'a', 'é', 'e', 'Z'].sort(comparePipelineText)).toEqual(['A', 'a', 'b', 'é', 'e', 'Z'].sort(comparePipelineText));
+    expect(comparePipelineText('alpha', 'Alpha')).toBe(0);
+    expect(comparePipelineText('e', 'é')).toBe(0);
+    expect(comparePipelineText('a', 'b')).toBeLessThan(0);
+  });
+
+  it('pins the en locale', () => {
+    const spy = vi.spyOn(String.prototype, 'localeCompare');
+    comparePipelineText('a', 'b');
+    expect(spy).toHaveBeenCalledWith('b', 'en', { sensitivity: 'base' });
+    spy.mockRestore();
   });
 });

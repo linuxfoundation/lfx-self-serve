@@ -134,8 +134,12 @@ function timeOf(value: string | null | undefined): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
-function compareText(a: string, b: string): number {
-  return a.localeCompare(b, undefined, { sensitivity: 'base' });
+/**
+ * Case- and accent-insensitive text order, pinned to `en` so the server render and the browser agree: with the runtime's
+ * default locale the name tie-breaks and the foundation list could order differently on each side and fail hydration.
+ */
+export function comparePipelineText(a: string, b: string): number {
+  return a.localeCompare(b, 'en', { sensitivity: 'base' });
 }
 
 /** A sortable cell value: absent (`null`) always sorts last, whichever direction. */
@@ -180,10 +184,10 @@ export function sortPipelineRows(rows: readonly FormationPipelineRow[], sort: Fo
         if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1;
         return (leftUpcoming ? (left as number) - (right as number) : (right as number) - (left as number)) * factor;
       }
-      const order = typeof left === 'number' && typeof right === 'number' ? left - right : compareText(String(left), String(right));
+      const order = typeof left === 'number' && typeof right === 'number' ? left - right : comparePipelineText(String(left), String(right));
       if (order !== 0) return order * factor;
     }
-    return compareText(a.name, b.name);
+    return comparePipelineText(a.name, b.name);
   });
 }
 
