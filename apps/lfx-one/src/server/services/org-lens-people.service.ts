@@ -72,6 +72,7 @@ import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { logger } from './logger.service';
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
+import { OrgPeopleKeyContactsService } from './org-people-key-contacts.service';
 import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
@@ -175,6 +176,8 @@ export class OrgLensPeopleService {
   // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
   // so eagerly instantiating it here would recurse infinitely between the two constructors.
   private directoryService: OrgPeopleDirectoryService | undefined;
+  // Lazily constructed too: only a client-supplied username lookup needs the org's key-contact assignments.
+  private keyContactsService: OrgPeopleKeyContactsService | undefined;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
@@ -433,9 +436,9 @@ export class OrgLensPeopleService {
    *
    * The LF-account read answers any LF user, so it runs only for a person proven to be in this org: `subjectInOrg` from
    * callers that derived the username server-side from the org's own data (the live directory, the org's key-contact
-   * assignments); otherwise (a client-supplied username) a row of the org's live directory must carry the username, read
-   * as {@link resolveLiveOnlyUsername} reads it, before the cache. An unproven username answers `unconfirmed`, exactly
-   * as an unknown one does, so the read cannot be used to test whether an LF account exists.
+   * assignments); otherwise (a client-supplied username) {@link isUsernameInOrg} must find it in the org's authorized
+   * sources, before the cache. An unproven username answers `unconfirmed`, exactly as an unknown one does, so the read
+   * cannot be used to test whether an LF account exists.
    */
   public async getCompanyEmailsByUsername(
     req: Request,
@@ -452,11 +455,8 @@ export class OrgLensPeopleService {
       if (personKey) {
         return await this.getCompanyEmailsForPersonKey(req, accountId, personKey);
       }
-      if (!options.subjectInOrg) {
-        const listed = await this.findLiveDirectoryRow(req, accountId, null, (row) => row.lfUsername?.trim().toLowerCase() === normalizedUsername);
-        if (!listed) {
-          return UNCONFIRMED_COMPANY_EMAILS;
-        }
+      if (!options.subjectInOrg && !(await this.isUsernameInOrg(req, accountId, normalizedUsername))) {
+        return UNCONFIRMED_COMPANY_EMAILS;
       }
       // `v3`: reads the username's LF account (any LF user), so a known account without an address is "none on file".
       return await withOrgCache(
@@ -707,6 +707,29 @@ export class OrgLensPeopleService {
       }
     }
     return null;
+  }
+
+  /**
+   * Whether a client-supplied (normalized) LF username belongs to this org, from its authorized sources: a row of the
+   * live directory carrying it (see {@link findLiveDirectoryRow}), or one of the org's key-contact assignments carrying it
+   * (the per-caller cached read the Key Contacts tab and the key-contact lookup use). Both are needed: the directory
+   * merges a key contact into an existing row by email without taking the key contact's username, so a key contact's
+   * username can be on no directory row. A failed read rejects (the caller answers `failed`).
+   */
+  private async isUsernameInOrg(req: Request, accountId: string, normalizedUsername: string): Promise<boolean> {
+    const carries = (username: string | null | undefined): boolean => username?.trim().toLowerCase() === normalizedUsername;
+    if (await this.findLiveDirectoryRow(req, accountId, null, (row) => carries(row.lfUsername))) {
+      return true;
+    }
+    const { assignments } = await this.getKeyContactsService().getKeyContacts(req, accountId);
+    return assignments.some((assignment) => carries(assignment.username));
+  }
+
+  private getKeyContactsService(): OrgPeopleKeyContactsService {
+    if (!this.keyContactsService) {
+      this.keyContactsService = new OrgPeopleKeyContactsService();
+    }
+    return this.keyContactsService;
   }
 
   private getDirectoryService(): OrgPeopleDirectoryService {

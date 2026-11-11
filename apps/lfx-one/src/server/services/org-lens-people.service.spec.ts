@@ -13,10 +13,11 @@ import type {
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, getLive, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
+const { execute, getLive, getKeyContacts, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
   resolveOrgScope: vi.fn(),
   execute: vi.fn(),
   getLive: vi.fn(),
+  getKeyContacts: vi.fn(),
   cacheValues: new Map<string, string>(),
 }));
 
@@ -44,6 +45,11 @@ vi.mock('@lfx-one/shared/constants', async () => ({
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute }) },
+}));
+vi.mock('./org-people-key-contacts.service', () => ({
+  OrgPeopleKeyContactsService: class {
+    public getKeyContacts = getKeyContacts;
+  },
 }));
 vi.mock('./org-people-directory.service', () => ({
   OrgPeopleDirectoryService: class {
@@ -362,6 +368,7 @@ beforeEach(() => {
     return { rows };
   });
   getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
+  getKeyContacts.mockResolvedValue({ assignments: [] });
   resolveOrgScope.mockResolvedValue('all');
   service = new OrgLensPeopleService();
 });
@@ -597,6 +604,26 @@ describe('OrgLensPeopleService username company emails', () => {
     });
   });
 
+  // The directory merges a key contact into an existing row by email without taking the key contact's username.
+  it("resolves a key contact's username that no directory row carries, from the org's key-contact assignments", async () => {
+    addLfUser('lf-kc', 'kcuser', { [ACCOUNT]: ['kc@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: 'person-kc', lfUsername: null }] });
+    getKeyContacts.mockResolvedValue({ assignments: [{ contactUid: 'a0F000000000001AAA', username: ' KCUser ', email: 'kc@personal.example' }] });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'kcuser')).toEqual({
+      companyEmails: ['kc@company.example'],
+      primaryEmail: 'kc@company.example',
+      companyEmailsStatus: 'resolved',
+    });
+    expect(getKeyContacts).toHaveBeenCalledWith(REQ, ACCOUNT);
+
+    addLfUser('lf-stranger', 'stranger', { [ACCOUNT]: ['stranger@company.example'] });
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'stranger')).toEqual(UNCONFIRMED);
+    expect((execute.mock.calls as [string, unknown[]][]).some(([query, binds]) => query.includes('ORG_PEOPLE_LF_USERNAMES') && binds[0] === 'stranger')).toBe(
+      false
+    );
+  });
+
   it('checks the directory before the cache, so a cached LF-account answer never reaches an unproven caller', async () => {
     addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
     getLive.mockResolvedValue({ rows: [{ personKey: 'live-committee-outsider', lfUsername: 'outsider' }] });
@@ -617,6 +644,7 @@ describe('OrgLensPeopleService username company emails', () => {
     const viaKeyContacts = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ['a0F000000000001AAA'], 'mixeduser', new Set(), false);
     expect(viaKeyContacts.companyEmails).toEqual(['first@company.example']);
     expect(getLive).not.toHaveBeenCalled();
+    expect(getKeyContacts).not.toHaveBeenCalled();
   });
 
   it('reads the LF-account views as an expected-missing object, so a pre-deploy view cannot trip the circuit breaker', async () => {
