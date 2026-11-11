@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid]
-last_updated: 2026-11-10
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
+last_updated: 2026-11-11
 intercom_collection: Account
 ---
 
