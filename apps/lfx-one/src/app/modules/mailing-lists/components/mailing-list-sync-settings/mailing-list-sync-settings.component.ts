@@ -69,11 +69,13 @@ export class MailingListSyncSettingsComponent {
     { label: `Mailing List → ${COMMITTEE_LABEL.singular}`, value: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE },
   ];
 
-  // Seeded from the initial `mailingList()` input, not a hardcoded default — same reasoning as
-  // `syncOn`'s seed above: the mirroring effect below only runs post-construction, so a list already
-  // synced Mailing List → Committee would otherwise flash the C→ML option selected for one frame.
+  // Construction-safe default — NOT this.initDirection(): a required input can't be read during
+  // field initialization (part of the constructor), only once Angular has bound it, so doing so
+  // threw NG0950 and broke both the Auto Sync drawer and the mailing-list page (#5578 review). The
+  // constructor effect below reads `mailingList()` once inputs are available and corrects this to
+  // the persisted direction before the initial render.
   public readonly form = new FormGroup({
-    direction: new FormControl<MailingListSyncMode>(this.initDirection(), { nonNullable: true }),
+    direction: new FormControl<MailingListSyncMode>(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST, { nonNullable: true }),
   });
 
   // Dark-launch gate for this whole section (#4024). UI-only — see constant doc comment for the
@@ -109,12 +111,12 @@ export class MailingListSyncSettingsComponent {
   // lfx-toggle's [ngModel] binding would see no input change — the switch would stay stuck in the
   // clicked position instead of snapping back (#4899 review / #4880 review). Set optimistically in
   // onToggleChange() and explicitly reverted in save()'s catchError.
-  // Seeded from the initial `mailingList()` input rather than `false` — the mirroring effect below
-  // only runs post-construction, so a `false` seed on an already-synced list rendered the "Sync
-  // direction"/"Sync Now" block collapsed for one frame and then expanded it, producing a visible
-  // layout jump (and a tooltip positioned against the pre-jump layout) right as the Auto Sync drawer
-  // opened.
-  protected readonly syncOn = signal(this.initSyncOn());
+  // Construction-safe default — NOT this.initSyncOn(): a required input can't be read during field
+  // initialization (part of the constructor), only once Angular has bound it, so doing so threw
+  // NG0950 and broke both the Auto Sync drawer and the mailing-list page (#5578 review). The
+  // constructor effect below reads `mailingList()` once inputs are available and corrects this to
+  // the persisted state before the initial render.
+  protected readonly syncOn = signal(false);
 
   // Set when the sibling lookup errors — `activeSync()` can't be trusted in this state (we don't know
   // whether another list already has a direction configured), so the template disables sync controls
@@ -292,16 +294,6 @@ export class MailingListSyncSettingsComponent {
       auditors: ml.auditors,
       sync_mode: syncMode,
     };
-  }
-
-  private initSyncOn(): boolean {
-    const syncMode = this.mailingList().sync_mode;
-    return !!syncMode && syncMode !== MailingListSyncMode.MANUAL;
-  }
-
-  private initDirection(): MailingListSyncMode {
-    const syncMode = this.mailingList().sync_mode;
-    return syncMode && syncMode !== MailingListSyncMode.MANUAL ? syncMode : MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
   }
 
   private initSiblingLists(): Signal<GroupsIOMailingList[]> {

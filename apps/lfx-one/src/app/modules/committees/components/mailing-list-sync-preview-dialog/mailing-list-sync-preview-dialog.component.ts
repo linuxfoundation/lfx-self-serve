@@ -79,6 +79,11 @@ export class MailingListSyncPreviewDialogComponent {
   public diff = signal<SyncDiff | null>(null);
   public diffProcessedCount = signal(0);
   public diffTotalCount = signal(0);
+  // The direction the currently-loaded (or loading) diff was requested with. For a manual/unset
+  // sync_mode list, diff.sync_mode stays "manual"/unset — it never reflects the user's selected
+  // direction — so isReverseSync() below must read this instead of diff()?.sync_mode when
+  // needsDirectionSelector is true (copilot, cursor/Bugbot, #5578 review).
+  public loadedDirection = signal<MailingListSyncDirection | undefined>(undefined);
 
   public applying = signal(false);
   public applyError = signal<string | null>(null);
@@ -101,7 +106,12 @@ export class MailingListSyncPreviewDialogComponent {
   public tabOptions: Signal<FilterPillOption[]> = this.initTabOptions();
   public selectedAdds: Signal<SyncDiffAdd[]> = this.initSelectedAdds();
   public selectedRemoves: Signal<SyncDiffRemove[]> = this.initSelectedRemoves();
-  public isReverseSync: Signal<boolean> = computed(() => this.diff()?.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE);
+  public isReverseSync: Signal<boolean> = computed(() => {
+    if (this.needsDirectionSelector) {
+      return this.loadedDirection() === MailingListSyncDirection.MAILING_LIST_TO_COMMITTEE;
+    }
+    return this.diff()?.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE;
+  });
 
   // Outcome text precomputed here rather than called as a method from the template — the template
   // re-invokes a bound method on every change-detection pass, not just when applyResult() changes
@@ -242,8 +252,15 @@ export class MailingListSyncPreviewDialogComponent {
     this.loadError.set(null);
     this.diffProcessedCount.set(0);
     this.diffTotalCount.set(0);
+    // A direction change re-runs loadDiff() after a failed apply attempt — without clearing these,
+    // the template's `@else if (loadError() || applyError())` branch keeps priority over the
+    // `diff()` branch and hides the freshly-loaded preview behind the stale apply error
+    // (greptile-apps, #5578 review).
+    this.applyError.set(null);
+    this.applyResult.set(null);
     const ticker = this.startElapsedTicker();
     const direction = this.needsDirectionSelector ? this.directionForm.controls.direction.value : undefined;
+    this.loadedDirection.set(direction);
 
     this.mailingListService
       .startSyncDiff(this.mailingListUid, direction)
