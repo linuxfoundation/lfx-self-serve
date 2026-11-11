@@ -171,11 +171,12 @@ export interface OrgAllEmployeeRow {
   isUnclassified?: boolean;
   /**
    * What the person drawer's company-email lookup answers for this row, from the account's company-email keys and, for
-   * live-only rows off the warehouse roster, their LF accounts: `has` an address on file; `none` on file (a person key
-   * the warehouse knows, or a username naming exactly one roster person or one LF account, with no qualifying address);
-   * `unconfirmed` (a `cdp:` row, or a live-only row whose username is missing, unknown or names more than one person or
-   * account — the lookup cannot confirm either way). Absent when the keys could not be read; such rows are listed only
-   * under the filter's `all`.
+   * live-only rows off the warehouse roster, their LF accounts or (without a username) the key-contact records at their
+   * address: `has` an address on file; `none` on file (a person key the warehouse knows, or a username naming exactly one
+   * roster person or one LF account, with no qualifying address); `unconfirmed` (a `cdp:` row, a live-only row whose
+   * username is unknown or names more than one person or account, or one without a username whose records carry no
+   * qualifying address — the lookup cannot confirm either way). Absent when the keys could not be read; such rows are
+   * listed only under the filter's `all`.
    */
   companyEmailStatus?: OrgAllEmployeeCompanyEmailStatus;
 }
