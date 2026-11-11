@@ -61,6 +61,13 @@ export interface InitiativesScope {
 /** Why a lens-scoped initiatives list could not load: CF's writer check refused (403), or CF/FGA is down. */
 export type InitiativesLoadError = 'forbidden' | 'unavailable';
 
+/**
+ * Why the initiative detail page could not load: no initiative has that slug (404), CF's writer check refused (403), or
+ * CF/FGA is down. CF also answers 403 for an id that doesn't exist (lfx-crowdfunding#363), but the slug is resolved first,
+ * so a 403 here means the initiative exists and the caller doesn't manage it.
+ */
+export type InitiativeDetailLoadError = 'not-found' | 'forbidden' | 'unavailable';
+
 // Initiative detail types — GET /api/crowdfunding/initiatives/:slug.
 
 export interface SponsorEntry {

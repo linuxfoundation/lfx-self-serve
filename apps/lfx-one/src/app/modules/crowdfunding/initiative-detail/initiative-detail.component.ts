@@ -1,14 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { filter, firstValueFrom, map, switchMap, take, tap } from 'rxjs';
+import { catchError, filter, firstValueFrom, map, of, switchMap, take, tap } from 'rxjs';
 import { ButtonComponent } from '@components/button/button.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { NAV_LENSES } from '@lfx-one/shared/constants';
-import { CrowdfundingInitiativeStatus, EditAttributionDialogData, InitiativeDetail, Lens, NavLens } from '@lfx-one/shared/interfaces';
+import {
+  CrowdfundingInitiativeStatus,
+  EditAttributionDialogData,
+  InitiativeDetail,
+  InitiativeDetailLoadError,
+  Lens,
+  NavLens,
+} from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { MessageService } from 'primeng/api';
@@ -23,6 +32,7 @@ import { InitiativeSettingsDrawerComponent } from './components/initiative-setti
   selector: 'lfx-initiative-detail',
   imports: [
     ButtonComponent,
+    EmptyStateComponent,
     RouteLoadingComponent,
     InitiativeDetailHeaderComponent,
     InitiativeOverviewComponent,
@@ -55,6 +65,8 @@ export class InitiativeDetailComponent {
   protected readonly isLoading = signal(true);
   protected readonly activeTab = signal<string>('overview');
   protected readonly settingsDrawerVisible = signal(false);
+  protected readonly loadError = signal<InitiativeDetailLoadError | null>(null);
+  private readonly reloadCount = signal(0);
 
   // Holds a server-returned update so children reflect changes without re-fetching.
   private readonly initiativeOverride: WritableSignal<InitiativeDetail | null> = signal(null);
@@ -64,6 +76,10 @@ export class InitiativeDetailComponent {
   private readonly initiativeFetched: Signal<InitiativeDetail | null> = this.initInitiative();
   protected readonly initiative = computed(() => this.initiativeOverride() ?? this.initiativeFetched());
   protected readonly canEditAttribution: Signal<boolean> = this.initCanEditAttribution();
+
+  protected onRetry(): void {
+    this.reloadCount.update((count) => count + 1);
+  }
 
   protected onInitiativeSaved(updated: InitiativeDetail): void {
     this.applyUpdate(updated);
@@ -107,6 +123,12 @@ export class InitiativeDetailComponent {
     this.initiativeOverride.set({ ...updated, isOwner: current?.isOwner ?? false, creator: current?.creator });
   }
 
+  private toLoadError(err: HttpErrorResponse): InitiativeDetailLoadError {
+    if (err.status === 404) return 'not-found';
+    if (err.status === 403) return 'forbidden';
+    return 'unavailable';
+  }
+
   // ─── Private Initializers ──────────────────────────────────────────────────
   private initBackLink(): string | string[] {
     if (this.lens === 'org') return this.orgLensNavigation.orgLensLink('initiatives');
@@ -124,10 +146,21 @@ export class InitiativeDetailComponent {
 
   private initInitiative(): Signal<InitiativeDetail | null> {
     return toSignal(
-      toObservable(this.initiativeSlug).pipe(
-        filter((slug) => !!slug),
-        tap(() => this.isLoading.set(true)),
-        switchMap((slug) => this.crowdfundingService.getInitiativeBySlug(slug).pipe(tap(() => this.isLoading.set(false))))
+      toObservable(computed(() => ({ slug: this.initiativeSlug(), reload: this.reloadCount() }))).pipe(
+        filter(({ slug }) => !!slug),
+        tap(() => {
+          this.isLoading.set(true);
+          this.loadError.set(null);
+        }),
+        switchMap(({ slug }) =>
+          this.crowdfundingService.getInitiativeBySlug(slug).pipe(
+            catchError((err: HttpErrorResponse) => {
+              this.loadError.set(this.toLoadError(err));
+              return of(null);
+            }),
+            tap(() => this.isLoading.set(false))
+          )
+        )
       ),
       { initialValue: null }
     );
