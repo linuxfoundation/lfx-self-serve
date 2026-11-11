@@ -624,6 +624,18 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(byTestId('person-detail-drawer-email-primary')).toBeNull();
   });
 
+  it('shows one decorative envelope icon per email row', async () => {
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next(emails(['first@example.org', 'second@example.org']));
+    await render();
+
+    for (const index of [0, 1]) {
+      expect(byTestId(`person-detail-drawer-email-icon-${index}`)?.getAttribute('aria-hidden')).toBe('true');
+    }
+    expect(byTestId('person-detail-drawer-email-icon-2')).toBeNull();
+  });
+
   it('copies an address and confirms it, without confirming the others', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     stubClipboard(writeText);

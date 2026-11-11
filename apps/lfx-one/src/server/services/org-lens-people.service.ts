@@ -71,6 +71,8 @@ import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.
 import { isMissingObjectError } from '../helpers/snowflake-error.helper';
 import { logger } from './logger.service';
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
+import { OrgLensAccessService } from './org-lens-access.service';
+import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { OrgPeopleKeyContactsService } from './org-people-key-contacts.service';
 import { toWireResponse } from './org-people-wire.mapper';
@@ -147,6 +149,9 @@ const UNCONFIRMED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
 /** The lookup ran and errored. The rest of the detail response still renders. */
 const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
 
+/** The two LF-account views (any LF user) behind the username lookups; only these may be missing before their dbt deploy. */
+const LF_ACCOUNT_VIEWS: readonly string[] = ['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS'];
+
 /** The extended view's ADDRESS_SOURCE for an address known only from a corporate key-contact record. */
 const KEY_CONTACT_RECORD_SOURCE = 'key_contact_record';
 
@@ -176,8 +181,10 @@ export class OrgLensPeopleService {
   // Lazily constructed: OrgPeopleDirectoryService's own constructor builds an OrgLensPeopleService,
   // so eagerly instantiating it here would recurse infinitely between the two constructors.
   private directoryService: OrgPeopleDirectoryService | undefined;
-  // Lazily constructed too: only a client-supplied username lookup needs the org's key-contact assignments.
+  // Lazily constructed too: only a client-supplied username lookup reads the governance sources that prove membership.
   private keyContactsService: OrgPeopleKeyContactsService | undefined;
+  private boardCommitteeService: OrgLensBoardCommitteeService | undefined;
+  private accessService: OrgLensAccessService | undefined;
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
@@ -436,9 +443,9 @@ export class OrgLensPeopleService {
    *
    * The LF-account read answers any LF user, so it runs only for a person proven to be in this org: `subjectInOrg` from
    * callers that derived the username server-side from the org's own data (the live directory, the org's key-contact
-   * assignments); otherwise (a client-supplied username) {@link isUsernameInOrg} must find it in the org's authorized
+   * assignments); otherwise (a client-supplied username) {@link proveUsernameInOrg} must find it in the org's authorized
    * sources, before the cache. An unproven username answers `unconfirmed`, exactly as an unknown one does, so the read
-   * cannot be used to test whether an LF account exists.
+   * cannot be used to test whether an LF account exists; one not found while a source failed answers `failed`.
    */
   public async getCompanyEmailsByUsername(
     req: Request,
@@ -455,8 +462,12 @@ export class OrgLensPeopleService {
       if (personKey) {
         return await this.getCompanyEmailsForPersonKey(req, accountId, personKey);
       }
-      if (!options.subjectInOrg && !(await this.isUsernameInOrg(req, accountId, normalizedUsername))) {
-        return UNCONFIRMED_COMPANY_EMAILS;
+      if (!options.subjectInOrg) {
+        const membership = await this.proveUsernameInOrg(req, accountId, normalizedUsername);
+        if (membership !== 'proven') {
+          // Not found with a source down is retryable, never "unconfirmed"; neither answer is cached.
+          return membership === 'failed' ? FAILED_COMPANY_EMAILS : UNCONFIRMED_COMPANY_EMAILS;
+        }
       }
       // `v3`: reads the username's LF account (any LF user), so a known account without an address is "none on file".
       return await withOrgCache(
@@ -710,19 +721,49 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * Whether a client-supplied (normalized) LF username belongs to this org, from its authorized sources: a row of the
-   * live directory carrying it (see {@link findLiveDirectoryRow}), or one of the org's key-contact assignments carrying it
-   * (the per-caller cached read the Key Contacts tab and the key-contact lookup use). Both are needed: the directory
-   * merges a key contact into an existing row by email without taking the key contact's username, so a key contact's
-   * username can be on no directory row. A failed read rejects (the caller answers `failed`).
+   * Whether a client-supplied (normalized) LF username belongs to this org, from its authorized sources, cheapest first
+   * and stopping at the first that carries it: the org's key-contact assignments, its board and committee seats and its
+   * Org Lens access principals (each the per-caller cached read its People tab uses), then the live directory as a last
+   * resort (a cold one merges every source). The directory alone is not enough: it merges a key contact into an
+   * existing row by email without taking the key contact's username. `failed` when no source carried it and any of
+   * them failed (logged): the caller cannot tell "not in the org" from "could not check".
    */
-  private async isUsernameInOrg(req: Request, accountId: string, normalizedUsername: string): Promise<boolean> {
+  private async proveUsernameInOrg(req: Request, accountId: string, normalizedUsername: string): Promise<'proven' | 'unproven' | 'failed'> {
     const carries = (username: string | null | undefined): boolean => username?.trim().toLowerCase() === normalizedUsername;
-    if (await this.findLiveDirectoryRow(req, accountId, null, (row) => carries(row.lfUsername))) {
-      return true;
+    const sources: { name: string; carriesUsername: () => Promise<boolean> }[] = [
+      {
+        name: 'key_contacts',
+        carriesUsername: async () => (await this.getKeyContactsService().getKeyContacts(req, accountId)).assignments.some((a) => carries(a.username)),
+      },
+      {
+        name: 'seats',
+        carriesUsername: async () => (await this.getBoardCommitteeService().fetchAllOrgSeats(req, accountId)).some((seat) => carries(seat.username)),
+      },
+      {
+        name: 'access_principals',
+        carriesUsername: async () => (await this.getAccessService().getAccessPrincipals(req, accountId)).some((principal) => carries(principal.username)),
+      },
+      {
+        name: 'live_directory',
+        carriesUsername: async () => (await this.findLiveDirectoryRow(req, accountId, null, (row) => carries(row.lfUsername))) !== null,
+      },
+    ];
+    let failed = false;
+    for (const source of sources) {
+      try {
+        if (await source.carriesUsername()) {
+          return 'proven';
+        }
+      } catch (error) {
+        failed = true;
+        logger.warning(req, 'get_org_lens_people_company_emails_by_username', 'org membership source failed', {
+          org_uid: accountId,
+          source: source.name,
+          err: error,
+        });
+      }
     }
-    const { assignments } = await this.getKeyContactsService().getKeyContacts(req, accountId);
-    return assignments.some((assignment) => carries(assignment.username));
+    return failed ? 'failed' : 'unproven';
   }
 
   private getKeyContactsService(): OrgPeopleKeyContactsService {
@@ -730,6 +771,20 @@ export class OrgLensPeopleService {
       this.keyContactsService = new OrgPeopleKeyContactsService();
     }
     return this.keyContactsService;
+  }
+
+  private getBoardCommitteeService(): OrgLensBoardCommitteeService {
+    if (!this.boardCommitteeService) {
+      this.boardCommitteeService = new OrgLensBoardCommitteeService();
+    }
+    return this.boardCommitteeService;
+  }
+
+  private getAccessService(): OrgLensAccessService {
+    if (!this.accessService) {
+      this.accessService = new OrgLensAccessService();
+    }
+    return this.accessService;
   }
 
   private getDirectoryService(): OrgPeopleDirectoryService {
@@ -1156,7 +1211,7 @@ export class OrgLensPeopleService {
     `;
     // A view missing before its dbt deploy rejects (`failed`) without counting toward the pod-wide circuit breaker.
     const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow & { PERSON_KEY: string }>(query, [username, accountId], {
-      expectMissingObject: true,
+      expectMissingObject: LF_ACCOUNT_VIEWS,
     });
     if (result.rows.length === 0) {
       return UNCONFIRMED_COMPANY_EMAILS;
@@ -1200,8 +1255,9 @@ export class OrgLensPeopleService {
           GROUP BY identities.LF_USERNAME
         `,
         [accountId, ...chunk, ...chunk, accountId],
-        // A view missing before its dbt deploy rejects (rows stay `unconfirmed`) without tripping the circuit breaker.
-        { expectMissingObject: true }
+        // A view missing before its dbt deploy rejects (rows stay `unconfirmed`) without tripping the circuit breaker; a
+        // missing ORG_PEOPLE_ALL (core) still counts.
+        { expectMissingObject: LF_ACCOUNT_VIEWS }
       );
       for (const row of rows) {
         (Number(row.EMAIL_COUNT) > 0 ? statuses.usernames : statuses.noneUsernames).push(row.LF_USERNAME);

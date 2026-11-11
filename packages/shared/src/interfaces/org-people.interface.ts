@@ -167,10 +167,12 @@ export interface OrgAllEmployeeRow {
    */
   isUnclassified?: boolean;
   /**
-   * What the person drawer's company-email lookup answers for this row, from the account's company-email keys:
-   * `has` an address on file; `none` on file (a person key the warehouse knows, with no address); `unconfirmed` (a
-   * `cdp:` or live-only row whose username has no address — the lookup cannot confirm either way). Absent when the
-   * keys could not be read; such rows are listed only under the filter's `all`.
+   * What the person drawer's company-email lookup answers for this row, from the account's company-email keys and, for
+   * live-only rows off the warehouse roster, their LF accounts: `has` an address on file; `none` on file (a person key
+   * the warehouse knows, or a username naming exactly one roster person or one LF account, with no qualifying address);
+   * `unconfirmed` (a `cdp:` row, or a live-only row whose username is missing, unknown or names more than one person or
+   * account — the lookup cannot confirm either way). Absent when the keys could not be read; such rows are listed only
+   * under the filter's `all`.
    */
   companyEmailStatus?: OrgAllEmployeeCompanyEmailStatus;
 }
@@ -333,8 +335,9 @@ export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
  * Why a company-email lookup answered `unavailable`. `no_identity`: the opener supplied nothing to look up (set
  * client-side; no request is made). `unlinked_identity`: a `cdp:` person key, an identity not linked to an LF account in
  * the warehouse, or a key contact whose records name no LF username — not a claim that the person has no LF account.
- * `unconfirmed`: a username the warehouse does not know (or that names more than one LF account), or a key-contact lookup
- * without an agreed username, finished without a qualifying address.
+ * `unconfirmed`: a username the warehouse does not know (or that names more than one LF account), a client-supplied
+ * username not proven to be in the org, or a key-contact lookup without an agreed username, finished without a
+ * qualifying address.
  */
 export type OrgCompanyEmailsUnavailableReason = 'no_identity' | 'unlinked_identity' | 'unconfirmed';
 

@@ -181,8 +181,9 @@ export class SnowflakeService {
             // callback fires with an error and the connection goes back to the pool instead of
             // being held until Snowflake finishes. A timeout while still waiting for a pooled
             // connection has no statement to cancel; `timedOut` makes the callback release that
-            // connection at once, without executing, when it finally arrives. `runningStatement`
-            // is cleared on completion, so a statement that finished is never cancelled.
+            // connection at once, without executing, when it finally arrives. A statement is kept
+            // for cancelling only while not `completed` (`complete` may fire synchronously, before
+            // `execute` returns), so a statement that finished is never cancelled.
             let timedOut = false;
             let runningStatement: Pick<RowStatement, 'cancel'> | undefined;
             const executePromise = pool.use(
@@ -192,11 +193,13 @@ export class SnowflakeService {
                     reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
                     return;
                   }
-                  runningStatement = connection.execute({
+                  let completed = false;
+                  const statement = connection.execute({
                     sqlText,
                     binds: binds as any[],
                     fetchAsString: options?.fetchAsString,
                     complete: (err: SnowflakeError | undefined, stmt: RowStatement, rows: any[] | undefined) => {
+                      completed = true;
                       runningStatement = undefined;
                       if (err) {
                         reject(err);
@@ -209,6 +212,9 @@ export class SnowflakeService {
                       }
                     },
                   });
+                  if (!completed) {
+                    runningStatement = statement;
+                  }
                 })
             );
 
@@ -251,10 +257,15 @@ export class SnowflakeService {
             // A caller that named an object exempts only that one: a missing CORE table in the same
             // statement is a genuine fault and must keep its error telemetry and breaker failure.
             const expectedObject = options?.expectMissingObject;
+            // A list exempts only an error blaming one of its objects, as a single name does.
+            const listedMissingObject =
+              typeof expectedObject === 'object' ? expectedObject.find((name) => SnowflakeService.isMissingObjectError(error, name)) : undefined;
             const expectedMissing =
               expectedObject !== undefined &&
               expectedObject !== false &&
-              SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined);
+              (typeof expectedObject === 'object'
+                ? listedMissingObject !== undefined
+                : SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined));
             const expectedIdentifier = [options?.expectInvalidIdentifier ?? []].flat().find((identifier) => isInvalidIdentifierError(error, identifier));
             const expectedInvalidIdentifier = expectedIdentifier !== undefined;
             const poolQueueFull = isPoolQueueFullError(error);
@@ -264,7 +275,7 @@ export class SnowflakeService {
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
               if (expectedMissing) {
-                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : true);
+                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : (listedMissingObject ?? true));
               }
               if (expectedInvalidIdentifier) {
                 span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);

@@ -13,11 +13,13 @@ import type {
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, getLive, getKeyContacts, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
+const { execute, getLive, getKeyContacts, fetchAllOrgSeats, getAccessPrincipals, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
   resolveOrgScope: vi.fn(),
   execute: vi.fn(),
   getLive: vi.fn(),
   getKeyContacts: vi.fn(),
+  fetchAllOrgSeats: vi.fn(),
+  getAccessPrincipals: vi.fn(),
   cacheValues: new Map<string, string>(),
 }));
 
@@ -49,6 +51,16 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./org-people-key-contacts.service', () => ({
   OrgPeopleKeyContactsService: class {
     public getKeyContacts = getKeyContacts;
+  },
+}));
+vi.mock('./org-lens-board-committee.service', () => ({
+  OrgLensBoardCommitteeService: class {
+    public fetchAllOrgSeats = fetchAllOrgSeats;
+  },
+}));
+vi.mock('./org-lens-access.service', () => ({
+  OrgLensAccessService: class {
+    public getAccessPrincipals = getAccessPrincipals;
   },
 }));
 vi.mock('./org-people-directory.service', () => ({
@@ -369,6 +381,8 @@ beforeEach(() => {
   });
   getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
   getKeyContacts.mockResolvedValue({ assignments: [] });
+  fetchAllOrgSeats.mockResolvedValue([]);
+  getAccessPrincipals.mockResolvedValue([]);
   resolveOrgScope.mockResolvedValue('all');
   service = new OrgLensPeopleService();
 });
@@ -624,6 +638,52 @@ describe('OrgLensPeopleService username company emails', () => {
     );
   });
 
+  it.each([
+    ['a board or committee seat', () => fetchAllOrgSeats.mockResolvedValue([{ username: 'SeatUser ' }]), [getAccessPrincipals, getLive]],
+    ['an Org Lens access principal', () => getAccessPrincipals.mockResolvedValue([{ username: 'seatuser' }]), [getLive]],
+  ])('proves membership from %s, cheapest source first, without reading later sources', async (_label, seed, unread) => {
+    addLfUser('lf-seat', 'seatuser', { [ACCOUNT]: ['seat@company.example'] });
+    seed();
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'seatuser')).toMatchObject({
+      companyEmailsStatus: 'resolved',
+      companyEmails: ['seat@company.example'],
+    });
+    expect(getKeyContacts).toHaveBeenCalledWith(REQ, ACCOUNT);
+    for (const read of unread) expect(read).not.toHaveBeenCalled();
+  });
+
+  it('stops at the key-contact assignments when they carry the username', async () => {
+    addLfUser('lf-kc', 'kcuser', { [ACCOUNT]: ['kc@company.example'] });
+    getKeyContacts.mockResolvedValue({ assignments: [{ contactUid: 'a0F000000000001AAA', username: 'kcuser', email: 'kc@company.example' }] });
+
+    expect((await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'kcuser')).companyEmailsStatus).toBe('resolved');
+    expect(fetchAllOrgSeats).not.toHaveBeenCalled();
+    expect(getAccessPrincipals).not.toHaveBeenCalled();
+    expect(getLive).not.toHaveBeenCalled();
+  });
+
+  it('answers failed, caching nothing, when no source carries the username and one of them failed', async () => {
+    addLfUser('lf-seat', 'seatuser', { [ACCOUNT]: ['seat@company.example'] });
+    getLive.mockResolvedValue({ rows: [] });
+    fetchAllOrgSeats.mockRejectedValue(new Error('committee-service down'));
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'seatuser')).toEqual(FAILED);
+    expect(getLive).toHaveBeenCalled();
+    expect([...cacheValues.keys()].some((key) => key.includes('people-username-emails'))).toBe(false);
+    expect((execute.mock.calls as [string][]).some(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'))).toBe(false);
+    expect(logger.warning).toHaveBeenCalledWith(
+      REQ,
+      'get_org_lens_people_company_emails_by_username',
+      expect.any(String),
+      expect.objectContaining({ source: 'seats' })
+    );
+
+    // A later source still proves membership past a failed one.
+    getAccessPrincipals.mockResolvedValue([{ username: 'seatuser' }]);
+    expect((await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'seatuser')).companyEmails).toEqual(['seat@company.example']);
+  });
+
   it('checks the directory before the cache, so a cached LF-account answer never reaches an unproven caller', async () => {
     addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
     getLive.mockResolvedValue({ rows: [{ personKey: 'live-committee-outsider', lfUsername: 'outsider' }] });
@@ -655,7 +715,10 @@ describe('OrgLensPeopleService username company emails', () => {
 
     const reads = (execute.mock.calls as [string, unknown[], unknown][]).filter(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'));
     expect(reads).toHaveLength(2);
-    expect(reads.every(([, , options]) => (options as { expectMissingObject?: unknown })?.expectMissingObject === true)).toBe(true);
+    // Only the two LF-account views are exempt: the batch read also reads ORG_PEOPLE_ALL, a core table.
+    for (const [, , options] of reads) {
+      expect((options as { expectMissingObject?: unknown }).expectMissingObject).toEqual(['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS']);
+    }
   });
 
   it('reports warehouse failures without claiming there are no addresses', async () => {
