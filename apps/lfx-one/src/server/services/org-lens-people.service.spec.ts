@@ -787,10 +787,14 @@ describe('OrgLensPeopleService live key contacts without an LF username', () => 
     expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual({ ...UNCONFIRMED, companyEmailsReason: 'unlinked_identity' });
   });
 
-  it('answers unconfirmed when a record names an LF username the others do not', async () => {
-    getKeyContacts.mockResolvedValue({ assignments: [assignment(ids[0], ADDRESS), assignment(ids[1], ADDRESS, 'someone')] });
+  // The directory merges a key contact into a username-less row by address without its username (DR-010), so the drawer
+  // must not read that username's LF account either: the row's filter status is read from the records alone.
+  it("never reads the LF account of a username the row's records carry, answering unconfirmed without a record address", async () => {
+    addLfUser('lf-someone', 'someone', { [ACCOUNT]: ['someone@company.example'] });
+    getKeyContacts.mockResolvedValue({ assignments: [assignment(ids[0], ADDRESS, 'someone'), assignment(ids[1], ADDRESS, ' Someone ')] });
 
     expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual(UNCONFIRMED);
+    expect((execute.mock.calls as [string][]).some(([sql]) => sql.includes('ORG_PEOPLE_LF_USERNAMES'))).toBe(false);
   });
 
   it('keeps a username-less row holding no assignment at its address unconfirmed, without reading any record', async () => {

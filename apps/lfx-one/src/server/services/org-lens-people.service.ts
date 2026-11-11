@@ -53,16 +53,7 @@ import type {
   OrgTeamMemberKeys,
   OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
-import {
-  agreedUsername,
-  fromColumnar,
-  hasExactColumns,
-  isColumnarAbsent,
-  isColumnarTable,
-  isFilterSafeIdentifier,
-  splitDisplayName,
-  toColumnar,
-} from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -427,8 +418,10 @@ export class OrgLensPeopleService {
    *
    * A live-only (synthetic) key joins to nothing in the warehouse, so it reads on the live roster's LF username instead.
    * Without one, the directory keyed the person on their address, and when key-contact assignments are at that address
-   * (the roles their row lists) the person is read as the Key Contacts tab's drawer reads them, by those records
-   * ({@link getCompanyEmailsByKeyContacts}). Anyone else → `unavailable` (`unconfirmed`), never "no company address".
+   * (the roles their row lists) their records are read as the Key Contacts tab's drawer reads them
+   * ({@link getCompanyEmailsByKeyContacts}), but never with a username those records carry: such a row is a key contact
+   * merged by address into a row without one, and the directory deliberately does not give it the key contact's username.
+   * Anyone else → `unavailable` (`unconfirmed`), never "no company address".
    */
   public async getCompanyEmails(
     req: Request,
@@ -438,7 +431,7 @@ export class OrgLensPeopleService {
   ): Promise<OrgPersonCompanyEmailsResponse> {
     if (personKey.startsWith('live-')) {
       const row = await this.findLiveDirectoryRow(req, accountId, directoryView, (candidate) => candidate.personKey === personKey);
-      // Both identities come from the org's own live directory, so the person is already proven to be in this org.
+      // The username comes from the org's own live directory, so the person is already proven to be in this org.
       if (row?.lfUsername?.trim()) {
         return this.getCompanyEmailsByUsername(req, accountId, row.lfUsername, { subjectInOrg: true });
       }
@@ -446,14 +439,13 @@ export class OrgLensPeopleService {
       if (!holder) {
         return UNCONFIRMED_COMPANY_EMAILS;
       }
-      const usernames = holder.assignments.map((assignment) => assignment.username);
       return this.getCompanyEmailsByKeyContacts(
         req,
         accountId,
         [...new Set(holder.assignments.map((assignment) => assignment.contactUid))],
-        agreedUsername(usernames),
+        null,
         new Set([holder.address]),
-        usernames.every((username) => !username?.trim())
+        holder.assignments.every((assignment) => !assignment.username?.trim())
       );
     }
     return this.getCompanyEmailsForPersonKey(req, accountId, personKey);
