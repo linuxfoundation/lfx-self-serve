@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid]
-last_updated: 2026-11-09
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
+last_updated: 2026-11-11
 intercom_collection: Account
 ---
 
@@ -142,9 +142,13 @@ You can only see your own transactions. Other users and project administrators c
 
 For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). For other purchases, contact LFX support. Either way, include the transaction date, amount, item name, and order ID so the team can investigate.
 
+## Can I merge two LFX accounts?
+
+Yes. LFX support can merge two LFX accounts into one — for example, a personal account and a work account. There is no merge option in LFX Self Serve. Contact support with the LFX usernames (LFIDs) or email addresses of both accounts and tell them which account to keep. Merging does not move training course or certification exam records. See [Merge two LFX accounts](../identities/#merge-two-lfx-accounts).
+
 ## How do I delete my account or personal data?
 
-You can't delete your Linux Foundation account from LFX Self Serve. To request deletion of your account or personal data, email privacyrights@linuxfoundation.org. See the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for how your data is handled.
+You can't delete your Linux Foundation account from LFX Self Serve. To request deletion of your account or personal data, email privacyrights@linuxfoundation.org. See the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for how your data is handled. If you want to combine a duplicate account with the one you use, ask support to [merge the accounts](../identities/#merge-two-lfx-accounts) instead of requesting deletion.
 
 ## Who do I contact if a setting isn't working?
 
