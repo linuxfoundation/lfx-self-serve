@@ -677,6 +677,31 @@ export function compareDateTimesInTimezone(dateTime1: string | Date, dateTime2: 
 }
 
 /**
+ * Whether two ISO datetime strings fall in the same minute (seconds and milliseconds ignored).
+ * @description Tells a genuine edit from round-tripping noise: a stored value's seconds/ms and a
+ * freshly-combined date+time value's zeroed seconds should not count as a change, but any
+ * difference of a full minute or more -- the smallest increment a time picker supports -- should.
+ * A plain `<= 60_000` millisecond tolerance is the wrong shape for this: it also accepts a genuine
+ * one-minute edit (exactly 60000ms), silently discarding it.
+ *
+ * Truncates in UTC (`setUTCSeconds`), not local time (`setSeconds`): local truncation reads and
+ * reconstructs through the host's wall-clock fields, and during a DST fall-back the repeated local
+ * hour makes two UTC instants a full hour apart reconstruct to the same result -- not the
+ * sub-minute noise this is meant to absorb. UTC has no repeated or skipped hours, so truncating
+ * there can never collapse two genuinely different minutes together.
+ * @param a First ISO datetime string
+ * @param b Second ISO datetime string
+ */
+export function isSameMinute(a: string, b: string): boolean {
+  const toMinuteEpoch = (iso: string): number => {
+    const date = new Date(iso);
+    date.setUTCSeconds(0, 0);
+    return date.getTime();
+  };
+  return toMinuteEpoch(a) === toMinuteEpoch(b);
+}
+
+/**
  * Gets the current date and time in a specific timezone
  * @param timezone IANA timezone identifier
  * @returns Date object representing current time in the specified timezone

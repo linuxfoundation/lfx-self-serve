@@ -13,11 +13,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { MeetingDetailsComponent } from './meeting-details.component';
 
 /**
- * Covers the minDate() allowance for a meeting's own past start date (GH-4944): editing an
- * existing recurring series shows a blank Start date field with every day in the picker greyed
- * out, because minDate was hardcoded to yesterday with no exception for a meeting whose real
- * start date is further in the past than that. The fix lets the meeting's own originalStartDate
- * through, mirroring editModeDateTimeValidator()'s existing allowance at the form level.
+ * Covers minDate()'s past-date allowance (GH-4944). meeting-manage.component.ts now hydrates
+ * Start date from the next upcoming occurrence rather than the series origin when one exists
+ * (see getUpcomingMeetingStartTime()), which is the primary fix for an ongoing series. This
+ * covers the remaining case: once a series has no future occurrence left, its own start_time is
+ * used as-is, and minDate must still keep that value selectable rather than greyed out, mirroring
+ * editModeDateTimeValidator()'s existing past-date allowance at the form level.
  */
 describe('MeetingDetailsComponent — minDate past-date allowance', () => {
   let fixture: ComponentFixture<MeetingDetailsComponent>;
