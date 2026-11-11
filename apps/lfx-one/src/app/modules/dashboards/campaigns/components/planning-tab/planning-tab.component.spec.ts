@@ -381,12 +381,12 @@ describe('PlanningTabComponent brief read-back', () => {
   describe('after generation, a brief stored under the generated slug (#5492)', () => {
     const none: CampaignBriefLoadResult = { status: 'none', briefId: null, brief: null, etag: null, approved: false } as unknown as CampaignBriefLoadResult;
 
-    type Generating = {
+    interface Generating {
       handleSSEEvent(event: { type: string; data: unknown }): void;
       reset(): void;
       openSavedBriefToEdit(): void;
       openSavedBriefRequested: { subscribe(fn: (v: { briefId: string }) => void): void };
-    };
+    }
 
     /** Finish a generation whose scraped event carries `slug`, as the generate stream does. */
     function finishGeneration(slug: string): void {
@@ -401,7 +401,13 @@ describe('PlanningTabComponent brief read-back', () => {
       campaignService.loadBrief.mockImplementation((slug: string) =>
         of(
           slug === generated
-            ? { status: 'loaded', brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: generated } }, briefId: 'brief-gen', etag: 'W/"v1"', approved: true }
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: generated } },
+                briefId: 'brief-gen',
+                etag: 'W/"v1"',
+                approved: true,
+              }
             : none
         )
       );
@@ -455,7 +461,13 @@ describe('PlanningTabComponent brief read-back', () => {
       campaignService.loadBrief.mockImplementation((slug: string) =>
         of(
           slug === 'kubecon-europe'
-            ? { status: 'loaded', brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } }, briefId: 'brief-url', etag: 'W/"v1"', approved: true }
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+                briefId: 'brief-url',
+                etag: 'W/"v1"',
+                approved: true,
+              }
             : none
         )
       );
@@ -475,7 +487,13 @@ describe('PlanningTabComponent brief read-back', () => {
       campaignService.loadBrief.mockImplementation((slug: string) =>
         of(
           slug === generated
-            ? { status: 'loaded', brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } }, briefId: 'brief-gen', etag: 'W/"v1"', approved: true }
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+                briefId: 'brief-gen',
+                etag: 'W/"v1"',
+                approved: true,
+              }
             : none
         )
       );

@@ -2367,7 +2367,12 @@ export class PlanningTabComponent implements OnInit {
    *
    * `null` is a transport failure, as the subscription that applies this expects.
    */
-  private findSavedBrief(slug: string, project: string, delivery: CampaignDeliveryType, stage: CampaignSendStage | ''): Observable<CampaignBriefLoadResult | null> {
+  private findSavedBrief(
+    slug: string,
+    project: string,
+    delivery: CampaignDeliveryType,
+    stage: CampaignSendStage | ''
+  ): Observable<CampaignBriefLoadResult | null> {
     const lookup = (candidate: string): Observable<CampaignBriefLoadResult | null> =>
       this.campaignService.loadBrief(candidate, project, delivery, stage).pipe(catchError(() => of(null)));
     const candidates = this.isSurvey() ? [] : briefSlugYearCandidates(slug, new Date().getFullYear());
