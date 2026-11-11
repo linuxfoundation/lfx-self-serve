@@ -448,6 +448,49 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
       expect(root().querySelector('[data-testid="project-application-form-legal-error"]')).not.toBeNull();
     });
 
+    it('treats a picked contact replaced by only spaces as an edit: clears it and blocks Save', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
+      pickLegalContact('pat.counsel@vendor-corp.example');
+      await fixture.whenStable();
+
+      const input = await typeIntoSearch('   ');
+      await focusOut(input, root().querySelector('#pa-project-name'));
+      access().onSubmit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(access().form.controls.legal_contact_email.value).toBe('');
+      expect(emitted).toHaveLength(0);
+      expect(root().querySelector('[data-testid="project-application-form-legal-error"]')).not.toBeNull();
+    });
+
+    it('submits a valid address still in the search box when no blur has happened (Enter on the field)', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
+      const input = legalSearchInput()!;
+      input.focus();
+      input.value = 'counsel@acme-motors.example';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      access().onSubmit();
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].legal_contact_email).toBe('counsel@acme-motors.example');
+    });
+
+    it('keeps a typed address when focus tabs to "Enter an email address" and the delayed search callback runs before it is activated', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
+      const picker = fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
+      const input = await typeIntoSearch('counsel@acme-motors.example');
+      const manualLink = root().querySelector('[data-testid="project-application-form-legal-manual-link"]') as HTMLElement;
+      await focusOut(input, manualLink);
+      picker.onSearchComplete({ query: 'counsel@acme-motors.example' } as AutoCompleteCompleteEvent);
+      await click('project-application-form-legal-manual-link');
+
+      expect(legalManualInput()?.value).toBe('counsel@acme-motors.example');
+      expect(access().form.controls.legal_contact_email.value).toBe('counsel@acme-motors.example');
+    });
+
     it('keeps a typed address across a blur with no target, even when the delayed search callback then runs', async () => {
       access().form.patchValue({ ...VALID, legal_contact_email: '' });
       const picker = fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;

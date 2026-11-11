@@ -117,6 +117,9 @@ export class ProjectApplicationFormComponent {
   protected readonly legalManualEntryLabel = PROJECT_APPLICATION_LEGAL_MANUAL_ENTRY_LABEL;
   protected readonly legalBackToSearchLabel = PROJECT_APPLICATION_LEGAL_BACK_TO_SEARCH_LABEL;
 
+  /** Text typed into the legal search and carried across a focus move within the field (see onLegalFocusOut). */
+  private heldLegalText: string | null = null;
+
   // === Forms ===
   public readonly form = new FormGroup({
     project_name: new FormControl<string>('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(PROJECT_APPLICATION_TEXT_MAX)] }),
@@ -212,11 +215,13 @@ export class ProjectApplicationFormComponent {
 
   /** A directory pick: the picker has written the address; touch it so a malformed directory address shows its error. */
   protected onLegalPicked(): void {
+    this.heldLegalText = null;
     this.form.controls.legal_contact_email.markAsTouched();
   }
 
   /** The picker's clear button nulls the control it binds; the control is non-nullable, so put the empty string back. */
   protected onLegalCleared(): void {
+    this.heldLegalText = null;
     this.form.controls.legal_contact_email.setValue('');
   }
 
@@ -226,7 +231,7 @@ export class ProjectApplicationFormComponent {
    * carried over when it looks like an address.
    */
   protected switchToManualLegal(): void {
-    const typed = this.legalPicker()?.consumeDiscardedText() ?? null;
+    const typed = this.takeLegalText();
     this.legalMode.set('manual');
     if (typed && this.looksLikeLegalEmail(typed)) {
       this.form.controls.legal_contact_email.setValue(typed);
@@ -242,7 +247,13 @@ export class ProjectApplicationFormComponent {
    */
   protected onLegalFocusOut(event: FocusEvent): void {
     const next = event.relatedTarget as Element | null;
-    if (next && ((event.currentTarget as Element).contains(next) || next.closest('.p-overlay, .p-autocomplete-overlay'))) {
+    if (next && (event.currentTarget as Element).contains(next)) {
+      // Moving within the field (e.g. Tab to "Enter an email address"): keep what was typed, since the
+      // picker's own delayed search callback can run before the next step reads it.
+      this.heldLegalText = this.legalPicker()?.consumeUncommittedText() ?? this.heldLegalText;
+      return;
+    }
+    if (next?.closest('.p-overlay, .p-autocomplete-overlay')) {
       return;
     }
     this.resolveLegalSearchText();
@@ -250,6 +261,7 @@ export class ProjectApplicationFormComponent {
 
   /** Back to the directory. A hand-typed address names nobody the directory vouched for, so it is dropped. */
   protected backToLegalSearch(): void {
+    this.heldLegalText = null;
     this.form.controls.legal_contact_email.setValue('');
     this.form.controls.legal_contact_email.markAsUntouched();
     this.legalMode.set('search');
@@ -323,18 +335,30 @@ export class ProjectApplicationFormComponent {
     if (this.legalMode() !== 'search') {
       return;
     }
-    const typed = this.legalPicker()?.consumeDiscardedText() ?? null;
-    if (!typed) {
+    const typed = this.takeLegalText();
+    if (typed === null) {
       return;
     }
     const control = this.form.controls.legal_contact_email;
     control.markAsTouched();
-    if (this.looksLikeLegalEmail(typed)) {
+    if (typed !== '' && this.looksLikeLegalEmail(typed)) {
       control.setValue(typed);
       this.legalMode.set('manual');
       return;
     }
     control.setValue('');
+  }
+
+  /**
+   * What the user left in the legal search and never picked: the box's live text first (Enter on the
+   * field, or a Save that keeps focus), else text held from a move within the field. `''` means the box
+   * was emptied, which is an edit too. `null` means nothing was edited.
+   */
+  private takeLegalText(): string | null {
+    const fresh = this.legalPicker()?.consumeUncommittedText() ?? null;
+    const typed = fresh ?? this.heldLegalText;
+    this.heldLegalText = null;
+    return typed;
   }
 
   private looksLikeLegalEmail(text: string): boolean {

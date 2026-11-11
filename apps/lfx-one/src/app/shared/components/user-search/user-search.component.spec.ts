@@ -432,6 +432,53 @@ describe('UserSearchComponent', () => {
   });
 
   // #2772: a form's error message can describe this field the way it describes an lfx-input-text.
+  describe('consumeUncommittedText', () => {
+    const setSearchText = (value: string): void => {
+      const input = query()!;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    };
+    const commitLabel = async (label: string): Promise<void> => {
+      await render();
+      fixture.componentRef.setInput('displayValue', label);
+      await fixture.whenStable();
+    };
+
+    it('returns text a blur already snapped back, once, like consumeDiscardedText', async () => {
+      await commitLabel('Jane Doe (jdoe@example.com)');
+      setSearchText('Nirav');
+      fixture.componentInstance.onSearchBlur();
+
+      expect(fixture.componentInstance.consumeUncommittedText()).toBe('Nirav');
+      expect(fixture.componentInstance.consumeUncommittedText()).toBeNull();
+    });
+
+    it('returns an empty string when the box was emptied against a committed label, while consumeDiscardedText still reports nothing', async () => {
+      await commitLabel('Jane Doe (jdoe@example.com)');
+      setSearchText('   ');
+      fixture.componentInstance.onSearchBlur();
+
+      expect(fixture.componentInstance.consumeDiscardedText()).toBeNull();
+      expect(fixture.componentInstance.consumeUncommittedText()).toBe('');
+    });
+
+    it('returns text still in the box when no blur has happened', async () => {
+      await commitLabel('');
+      setSearchText('  counsel@acme-motors.example ');
+
+      expect(fixture.componentInstance.consumeUncommittedText()).toBe('counsel@acme-motors.example');
+    });
+
+    it('returns null when the box just shows the committed label, or without a displayValue', async () => {
+      await commitLabel('Jane Doe (jdoe@example.com)');
+      expect(fixture.componentInstance.consumeUncommittedText()).toBeNull();
+
+      await render();
+      setSearchText('typed');
+      expect(fixture.componentInstance.consumeUncommittedText()).toBeNull();
+    });
+  });
+
   describe('describedBy + invalid', () => {
     it('puts aria-describedby and aria-invalid on the native input, and clears them again', async () => {
       await render();

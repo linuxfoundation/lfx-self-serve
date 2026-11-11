@@ -135,6 +135,8 @@ export class UserSearchComponent {
    * consumers — the snap-back itself is scoped to them.
    */
   private discardedSearchText: string | null = null;
+  /** True when the last blur found the box emptied (or spaces only) against a committed label. Read only by {@link consumeUncommittedText}. */
+  private blankedSearchText = false;
 
   /** Characters typed before the dropdown opens. */
   protected readonly searchMinLength: Signal<number> = computed(() => (this.waitForSearchableQuery() && this.candidates() === null ? 2 : 1));
@@ -268,11 +270,15 @@ export class UserSearchComponent {
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
     // Fresh typing supersedes any earlier discarded text as the user's latest intent (GH-2694).
     this.discardedSearchText = null;
+    if (event.query.trim() !== '') {
+      this.blankedSearchText = false;
+    }
     // The value accessor has already written the text into the search control; this only runs the search.
     this.searchQuery$.next(event.query);
   }
 
   public onUserSelected(event: AutoCompleteSelectEvent): void {
+    this.blankedSearchText = false;
     // A pick — accepted or rejected below — resolves whatever typed text preceded it (GH-2694): a
     // mouse pick's own blur fires first and records that text as discarded, and leaving the record
     // standing would warn "not selected" about a selection that just happened (or double-toast a
@@ -382,6 +388,9 @@ export class UserSearchComponent {
       if (typeof current === 'string' && current.trim() !== '' && current.trim() !== label.trim()) {
         this.discardedSearchText = current.trim();
       }
+      if (typeof current === 'string' && current.trim() === '' && label.trim() !== '') {
+        this.blankedSearchText = true;
+      }
     }
   }
 
@@ -398,10 +407,39 @@ export class UserSearchComponent {
     return text;
   }
 
+  /**
+   * Everything the user left in the box that was never committed, for a consumer that must act on it at
+   * Save: the text a blur already snapped back (as {@link consumeDiscardedText}), a box that was emptied
+   * against a committed label (`''`), or text still sitting in the box because no blur has happened yet
+   * (Enter on the field, or a Save click that keeps focus). `null` means nothing was edited. Additive:
+   * {@link consumeDiscardedText} and the consumers that use it are unchanged. Needs `displayValue`.
+   */
+  public consumeUncommittedText(): string | null {
+    const recorded = this.consumeDiscardedText();
+    const blanked = this.blankedSearchText;
+    this.blankedSearchText = false;
+    if (recorded !== null) {
+      return recorded;
+    }
+    if (blanked) {
+      return '';
+    }
+    const label = this.displayValue();
+    const live = this.host.nativeElement.querySelector('input')?.value;
+    if (label === null || live === undefined || live === label) {
+      return null;
+    }
+    if (live.trim() === '') {
+      return label.trim() === '' ? null : '';
+    }
+    return live.trim();
+  }
+
   public onSearchClear(): void {
     // An explicit clear is the user abandoning whatever they had typed — not a silent discard to
     // warn about later (GH-2694).
     this.discardedSearchText = null;
+    this.blankedSearchText = false;
     this.userSearchForm.get('userSearch')?.setValue('');
     this.searchQuery$.next('');
 
