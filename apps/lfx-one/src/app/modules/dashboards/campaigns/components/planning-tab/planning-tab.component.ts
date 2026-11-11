@@ -64,6 +64,7 @@ import {
 import type {
   CampaignBriefEditRequest,
   CampaignBriefLoadResult,
+  CampaignBriefLookupHit,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
   CampaignDeliveryType,
@@ -204,6 +205,16 @@ export class PlanningTabComponent implements OnInit {
    * read anywhere.
    */
   public readonly savedBriefRefreshToken = input(0);
+
+  /**
+   * The ids of the stored briefs this session owns: the parent's `knownBriefIds` (#5492).
+   *
+   * The parent's save refuses only a brief it does NOT own, so the review step uses this to say the
+   * generated brief can't be saved over an offer exactly when that is true: a brief just saved, or
+   * restored, here is the parent's to update and does not block anything. Empty by default, which
+   * treats every stored brief as someone else's.
+   */
+  public readonly ownedBriefIds = input<ReadonlySet<string>>(new Set<string>());
 
   /**
    * Whether this deployment can create X campaigns — `CampaignListResult.twitterCreateEnabled`, read
@@ -693,31 +704,52 @@ export class PlanningTabComponent implements OnInit {
   });
 
   /**
-   * Set when the brief on offer (or the unreadable one warned about) came from `lookUpGeneratedSlug`,
-   * the lookup keyed on the slug the planner's brief will be saved under (#5492). `readAt` is the
-   * refresh token that lookup was read under.
+   * Set when the current answer came from `lookUpGeneratedSlug`, the lookup keyed on the slug the
+   * planner's brief will be saved under (#5492); `readAt` is the refresh token it was read under.
+   * Cleared by every other answer `applySavedBrief` records.
    *
-   * Cleared by every other answer `applySavedBrief` records, so it marks exactly the answers that are
-   * about the save key and were read before any later parent write. Two things key on it:
-   * `savedBriefBlocksSave`, and the URL lookup, which must not replace such an answer with an older
-   * one of its own still in flight (a year guess, a `none`) read under the same token.
+   * Only the URL lookup reads it: an answer of its own still in flight when Generate was pressed (a
+   * year guess, a `none`) and read under the same token is older than this one, and must not replace
+   * or clear it.
    */
-  protected readonly generatedSlugOffer = signal<{ readAt: number } | null>(null);
+  private readonly generatedSlugOffer = signal<{ readAt: number } | null>(null);
 
   /**
-   * Whether the brief on offer is the one Proceed would be refused over (#5492): found by the lookup
-   * on the save key, and still stored under the slug the planner's brief will be saved under. The
-   * review step says the generated brief can't be saved over it only when this holds.
-   *
-   * Not merely a slug match. An offer the URL lookup found carries no proof the page does not own it:
-   * after a Proceed the parent bumps the refresh token, the URL lookup runs again and can find the
-   * very brief just saved, which the parent may update freely. Saying that one blocks the save would
-   * be false.
+   * The slug the current found or unreadable answer is stored under, whichever lookup found it; null
+   * for a miss or a failed lookup. An unreadable answer carries no brief to read the slug from, so it
+   * is recorded with the answer (see `applySavedBrief`).
    */
-  protected readonly savedBriefBlocksSave = computed(() => {
+  private readonly savedBriefSlug = signal<string | null>(null);
+
+  /** `savedBriefId` as a signal, so the ownership check below re-runs when it changes. */
+  private readonly savedBriefIdSignal = signal<string | null>(null);
+
+  /**
+   * Whether the stored brief is on the slug the planner's brief will be saved under and is not this
+   * session's (#5492): the brief the parent's save would refuse to overwrite. Whichever lookup found
+   * it, the URL lookup's year guess included.
+   *
+   * Ownership matters as much as the slug. After a Proceed the parent bumps the refresh token, the
+   * URL lookup runs again and can find the very brief just saved, which the parent owns and updates
+   * freely; that one blocks nothing.
+   */
+  private readonly storedBriefBlocksSave = computed(() => {
     const slug = this.eventDetails()?.slug ?? '';
-    return this.generatedSlugOffer() !== null && slug !== '' && this.savedBrief()?.eventDetails.slug === slug;
+    const storedSlug = this.savedBriefSlug();
+    if (slug === '' || storedSlug !== slug) {
+      return false;
+    }
+    const briefId = this.savedBriefIdSignal();
+    return briefId === null || !this.ownedBriefIds().has(briefId);
   });
+
+  /** The review step's "can't be saved over it" offer: a found brief that blocks the save. */
+  protected readonly savedBriefBlocksSave = computed(() => this.savedBrief() !== null && this.storedBriefBlocksSave());
+
+  /** The review step's unreadable-brief warning: an unreadable brief that blocks the save. */
+  protected readonly savedBriefWarningBlocksSave = computed(
+    () => this.savedBrief() === null && this.savedBriefWarning() !== null && this.storedBriefBlocksSave()
+  );
 
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
   private savedBriefId: string | null = null;
@@ -999,11 +1031,11 @@ export class PlanningTabComponent implements OnInit {
         // Taken from the REQUEST rather than read at response time, so an answer dispatched
         // before a parent-side write cannot claim to post-date it.
         switchMap(([slug, project, delivery, stage, token]) =>
-          this.findSavedBrief(slug, project, delivery, stage).pipe(map((result) => ({ slug, project, delivery, stage, token, result })))
+          this.findSavedBrief(slug, project, delivery, stage).pipe(map((hit) => ({ slug, project, delivery, stage, token, hit })))
         ),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(({ slug, project, delivery, stage, token, result }) => {
+      .subscribe(({ slug, project, delivery, stage, token, hit }) => {
         // `delivery` joins the staleness check for the same reason `slug` and `project` are in it:
         // `switchMap` cancels the previous REQUEST, but a response already in flight when the user
         // flips Paid <-> Email still arrives, and it answers a question about the other surface.
@@ -1020,7 +1052,7 @@ export class PlanningTabComponent implements OnInit {
         if (generatedOffer !== null && generatedOffer.readAt === token) {
           return;
         }
-        this.applySavedBrief(result, token);
+        this.applySavedBrief(hit.result, token, hit.matchedSlug);
       });
 
     // Clear the offer the MOMENT the foundation changes, not when the re-lookup answers. Between
@@ -1042,6 +1074,8 @@ export class PlanningTabComponent implements OnInit {
       this.reset();
       this.savedBrief.set(null);
       this.generatedSlugOffer.set(null);
+      this.savedBriefSlug.set(null);
+      this.savedBriefIdSignal.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;
       this.savedBriefApproved = false;
@@ -1142,6 +1176,8 @@ export class PlanningTabComponent implements OnInit {
         // cleared here, after the reset that preserves it.
         this.savedBrief.set(null);
         this.generatedSlugOffer.set(null);
+        this.savedBriefSlug.set(null);
+        this.savedBriefIdSignal.set(null);
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
@@ -2284,11 +2320,15 @@ export class PlanningTabComponent implements OnInit {
    * Record what the brief lookup found.
    *
    * `null` is the transport failure `catchError` mapped — distinct from every `status` the
-   * server can report, and the only one that means "we do not know".
+   * server can report, and the only one that means "we do not know". `matchedSlug` is the slug the
+   * answer was looked up under, recorded for a found or unreadable brief (#5492).
    */
-  private applySavedBrief(result: CampaignBriefLoadResult | null, readAt: number): void {
+  private applySavedBrief(result: CampaignBriefLoadResult | null, readAt: number, matchedSlug: string): void {
     // Every answer is from the URL lookup unless `lookUpGeneratedSlug` marks it again after this call.
     this.generatedSlugOffer.set(null);
+    const stored = result !== null && (result.status === 'loaded' || result.status === 'unreadable');
+    this.savedBriefSlug.set(stored ? matchedSlug : null);
+    this.savedBriefIdSignal.set(stored ? (result?.briefId ?? null) : null);
     if (result === null) {
       this.savedBrief.set(null);
       this.savedBriefId = null;
@@ -2375,6 +2415,8 @@ export class PlanningTabComponent implements OnInit {
         this.currentSlug = slug;
         this.savedBrief.set(null);
         this.generatedSlugOffer.set(null);
+        this.savedBriefSlug.set(null);
+        this.savedBriefIdSignal.set(null);
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
@@ -2396,17 +2438,15 @@ export class PlanningTabComponent implements OnInit {
    *
    * `null` is a transport failure, as the subscription that applies this expects.
    */
-  private findSavedBrief(
-    slug: string,
-    project: string,
-    delivery: CampaignDeliveryType,
-    stage: CampaignSendStage | ''
-  ): Observable<CampaignBriefLoadResult | null> {
-    const lookup = (candidate: string): Observable<CampaignBriefLoadResult | null> =>
-      this.campaignService.loadBrief(candidate, project, delivery, stage).pipe(catchError(() => of(null)));
+  private findSavedBrief(slug: string, project: string, delivery: CampaignDeliveryType, stage: CampaignSendStage | ''): Observable<CampaignBriefLookupHit> {
+    const lookup = (candidate: string): Observable<CampaignBriefLookupHit> =>
+      this.campaignService.loadBrief(candidate, project, delivery, stage).pipe(
+        map((result): CampaignBriefLookupHit => ({ result, matchedSlug: candidate })),
+        catchError(() => of({ result: null, matchedSlug: candidate }))
+      );
     const candidates = this.isSurvey() ? [] : briefSlugYearCandidates(slug, new Date().getFullYear());
     return candidates.reduce(
-      (found$, candidate) => found$.pipe(switchMap((result) => (result !== null && result.status === 'none' ? lookup(candidate) : of(result)))),
+      (found$, candidate) => found$.pipe(switchMap((found) => (found.result !== null && found.result.status === 'none' ? lookup(candidate) : of(found)))),
       lookup(slug)
     );
   }
@@ -2456,7 +2496,7 @@ export class PlanningTabComponent implements OnInit {
         if (moved || result === null || result.status === 'none') {
           return;
         }
-        this.applySavedBrief(result, token);
+        this.applySavedBrief(result, token, generatedSlug);
         this.generatedSlugOffer.set({ readAt: token });
       });
   }

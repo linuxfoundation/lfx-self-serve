@@ -546,34 +546,48 @@ describe('PlanningTabComponent brief read-back', () => {
       expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
     });
 
-    it('stops claiming the save is blocked once a parent write re-runs the url lookup', async () => {
-      // After Proceed the parent owns the row and bumps the refresh token; the re-lookup can find that
-      // very brief, which the parent may update freely.
-      const generated = 'kubecon-europe-2031';
-      const stored: CampaignBriefLoadResult = {
+    describe('a brief the year guess found under the generated slug', () => {
+      const year = new Date().getFullYear();
+      const generated = `kubecon-europe-${year + 1}`;
+
+      async function foundBeforeGenerating(result: CampaignBriefLoadResult): Promise<void> {
+        campaignService.loadBrief.mockImplementation((slug: string) => of(slug === generated ? result : none));
+        await typeEventUrl('https://events.example.com/kubecon-europe/');
+        finishGeneration(generated);
+        await fixture.whenStable();
+        fixture.detectChanges();
+      }
+
+      const loadedUnderGenerated: CampaignBriefLoadResult = {
         status: 'loaded',
         brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: generated } },
         briefId: 'brief-gen',
         etag: 'W/"v1"',
         approved: true,
       };
-      campaignService.loadBrief.mockImplementation((slug: string) => of(slug === generated ? stored : none));
-      await typeEventUrl('https://events.example.com/kubecon-europe/');
-      finishGeneration(generated);
-      await fixture.whenStable();
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]')?.textContent).toContain("can't be saved over it");
 
-      // The re-lookup on the url finds the saved brief under its year slug.
-      campaignService.loadBrief.mockImplementation(() => of(stored));
-      fixture.componentRef.setInput('savedBriefRefreshToken', 1);
-      fixture.detectChanges();
-      await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
-      await fixture.whenStable();
-      fixture.detectChanges();
+      it('says the generated brief cannot be saved over it when someone else owns it', async () => {
+        // The usual #5492 path: the year guess finds the stored edition before Generate is pressed.
+        await foundBeforeGenerating(loadedUnderGenerated);
 
-      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
-      expect(banner?.textContent).not.toContain("can't be saved over it");
+        const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+        expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+      });
+
+      it('does not claim it blocks the save when this session owns it, as after a Proceed', async () => {
+        fixture.componentRef.setInput('ownedBriefIds', new Set(['brief-gen']));
+        await foundBeforeGenerating(loadedUnderGenerated);
+
+        const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+        expect(banner?.textContent).toContain('if you want it instead of this one');
+        expect(banner?.textContent).not.toContain("can't be saved over it");
+      });
+
+      it('keeps the unreadable-brief warning on the review step when it is on the save slug', async () => {
+        await foundBeforeGenerating({ status: 'unreadable', brief: null, briefId: 'brief-x', etag: 'W/"v1"', approved: false } as CampaignBriefLoadResult);
+
+        expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')?.textContent).toContain('could not be opened');
+      });
     });
 
     it('still applies the url lookup for a different event typed after the save-key offer', async () => {

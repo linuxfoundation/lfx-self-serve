@@ -651,6 +651,16 @@ export class CampaignsComponent {
   private readonly knownBriefIdsVersion = signal(0);
 
   /**
+   * The ids of the stored briefs this session owns, for the Plan tab (#5492). Its review step says a
+   * generated brief can't be saved over an offered one only when the offer is NOT among these: the
+   * save refuses a brief this session does not own and updates one it does.
+   */
+  protected readonly ownedBriefIds = computed<ReadonlySet<string>>(() => {
+    this.knownBriefIdsVersion();
+    return new Set([...this.knownBriefIds.values()].map((record) => record.id));
+  });
+
+  /**
    * Bumped whenever THIS component has changed a stored brief row, to invalidate Planning's cache.
    *
    * `lfx-planning-tab` looks a brief up once per `(slug, project, delivery, stage)` and caches the

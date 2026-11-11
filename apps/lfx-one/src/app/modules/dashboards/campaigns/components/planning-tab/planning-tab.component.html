@@ -586,8 +586,9 @@
       The saved-brief offer on the review step (#5492). Either the input step's offer, which survives
       generation, or a brief `lookUpGeneratedSlug` found under the generator's slug, which is the one the
       save is keyed on. The input step's banner is gone with that step, so its actions are offered here
-      too. Only when that lookup found the offer under the generated slug (`savedBriefBlocksSave`) does it
-      say the generated brief can't be saved over it; any other offer may not stop the save.
+      too. Only when the offer is stored under the generated slug and is not this session's own
+      (`savedBriefBlocksSave`) does it say the generated brief can't be saved over it; no other offer stops
+      the save.
       The live region stays outside the @if, as on the input step, so a brief found here is announced.
     -->
     <div role="status" aria-live="polite" class="sr-only" data-testid="planning-review-saved-brief-live">
@@ -632,10 +633,10 @@
           </div>
         </div>
       </div>
-    } @else if (!editingExistingBrief() && generatedSlugOffer() !== null && savedBriefWarning(); as warning) {
+    } @else if (!editingExistingBrief() && savedBriefWarningBlocksSave() && savedBriefWarning(); as warning) {
       <!-- An unreadable brief stored under the save key, so nothing to offer and Proceed will be refused.
-           Only that one: an unreadable brief the URL lookup found under another slug (a later edition)
-           does not stop the save, and its warning would say it does. -->
+           Only that one, whichever lookup found it: an unreadable brief under another slug (a later
+           edition) does not stop the save, and its warning would say it does. -->
       <p class="text-xs text-amber-700" data-testid="planning-review-saved-brief-warning">
         <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>{{ warning }}
       </p>
