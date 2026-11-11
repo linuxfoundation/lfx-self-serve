@@ -13,6 +13,9 @@ export const MEMBER_IMPORT_MAX_RECORDS = 500;
 
 export const MEMBER_IMPORT_TEMPLATE_FILENAME = 'member-import-template.csv';
 
+/** File name of the invalid-rows download: original values plus an `errors` column, ready to fix and re-import. */
+export const MEMBER_IMPORT_INVALID_ROWS_FILENAME = 'member-import-invalid-rows.csv';
+
 /** Match the upstream member URL spelling before WHATWG parsing can repair malformed URLs. */
 export const MEMBER_IMPORT_HTTP_URL_PATTERN = /^https?:\/\/[^\s/$.?#][^\s]*$/;
 

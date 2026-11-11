@@ -16,6 +16,7 @@ import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingS
 import type { CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
 import type { MemberImportCells, MemberImportGroupRules, MemberImportRow } from '../interfaces/member-import.interface';
 import {
+  buildMemberImportInvalidRowsCsv,
   buildMemberImportPayload,
   classifyMemberImportBulkResult,
   decodeMemberImportFile,
@@ -93,6 +94,45 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
     for (const forbidden of ['username', 'status', 'permission', 'writer', 'organization_id', 'agency', 'country']) {
       expect(headers).not.toContain(forbidden);
     }
+  });
+});
+
+describe('buildMemberImportInvalidRowsCsv', () => {
+  const rows = (csv: string, rules: MemberImportGroupRules) => prepareMemberImportRows(parseMemberImportCsv(csv, rules).records, rules, new Set());
+
+  it('uses the group template header plus an errors column', () => {
+    expect(buildMemberImportInvalidRowsCsv([], OPEN)[0]).toEqual([...getMemberImportTemplateHeaders(OPEN), 'errors']);
+    expect(buildMemberImportInvalidRowsCsv([], VOTING)[0]).toEqual([...getMemberImportTemplateHeaders(VOTING), 'errors']);
+    expect(buildMemberImportInvalidRowsCsv([], OPEN)[0]).not.toContain('voting_status');
+  });
+
+  it('returns only the header when no row is invalid', () => {
+    expect(buildMemberImportInvalidRowsCsv(rows('email\nada@example.com\nada@example.com', OPEN), OPEN)).toEqual([
+      [...getMemberImportTemplateHeaders(OPEN), 'errors'],
+    ]);
+  });
+
+  it('exports only invalid rows, in template column order, with their values as written', () => {
+    const csv = buildMemberImportInvalidRowsCsv(
+      rows('role,email,first_name\nNone,ada@example.com,Ada\nchair,grace@example.com,Grace\nNone,bad,Linus', OPEN),
+      OPEN
+    );
+    const headers = csv[0];
+    const records = csv.slice(1);
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record[headers.indexOf('email')])).toEqual(['grace@example.com', 'bad']);
+    expect(records[0][headers.indexOf('role')]).toBe('chair');
+    expect(records[0][headers.indexOf('first_name')]).toBe('Grace');
+    expect(records[0][headers.indexOf('last_name')]).toBe('');
+    expect(records[1][headers.indexOf('errors')]).toBe('Email is not a valid address.');
+    expect(records.every((record) => record.length === headers.length)).toBe(true);
+  });
+
+  it('joins every issue of a row into its errors column', () => {
+    const [row] = rows('email,first_name\n,' + 'x'.repeat(101), OPEN);
+    const [, record] = buildMemberImportInvalidRowsCsv([row], OPEN);
+    expect(row.issues.length).toBeGreaterThan(1);
+    expect(record.at(-1)).toBe(row.issues.map((issue) => issue.message).join(' '));
   });
 });
 

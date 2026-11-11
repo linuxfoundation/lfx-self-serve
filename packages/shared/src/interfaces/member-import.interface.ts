@@ -24,6 +24,9 @@ export type MemberImportCells = Partial<Record<MemberImportColumn, string>>;
  */
 export type MemberImportRowStatus = 'ready' | 'invalid' | 'skipped' | 'importing' | 'added' | 'failed' | 'waiting' | 'not_submitted' | 'unknown';
 
+/** Status filter of the import dialog's table: one row status, or `all` rows. */
+export type MemberImportStatusFilter = MemberImportRowStatus | 'all';
+
 /** Which conditional member requirements apply to the selected group. */
 export interface MemberImportGroupRules {
   /** Voting or business email required — each member needs an organization name + https website. */

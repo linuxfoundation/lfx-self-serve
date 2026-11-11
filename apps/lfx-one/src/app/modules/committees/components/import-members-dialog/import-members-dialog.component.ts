@@ -9,12 +9,14 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   COMMITTEE_INVITE_CONCURRENCY,
   MEMBER_IMPORT_BULK_CHUNK_SIZE,
   MEMBER_IMPORT_FATAL_HTTP_STATUSES,
+  MEMBER_IMPORT_INVALID_ROWS_FILENAME,
   MEMBER_IMPORT_MAX_FILE_BYTES,
   MEMBER_IMPORT_MAX_PAUSES,
   MEMBER_IMPORT_MAX_RECORDS,
@@ -25,16 +27,21 @@ import {
 import {
   CommitteeInvite,
   CommitteeMemberBulkCreateResult,
+  FilterPillColor,
+  FilterPillOption,
   MemberImportDialogData,
   MemberImportDialogPhase,
   MemberImportDialogResult,
   MemberImportFieldGuide,
   MemberImportGroupRules,
   MemberImportRow,
+  MemberImportRowStatus,
   MemberImportRowView,
+  MemberImportStatusFilter,
   StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildMemberImportInvalidRowsCsv,
   classifyMemberImportBulkResult,
   committeeRequiresOrganization,
   decodeMemberImportFile,
@@ -49,6 +56,7 @@ import { CommitteeService } from '@services/committee.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { FileSelectEvent } from 'primeng/fileupload';
+import { TablePageEvent } from 'primeng/table';
 import {
   catchError,
   concat,
@@ -87,7 +95,7 @@ import {
  */
 @Component({
   selector: 'lfx-import-members-dialog',
-  imports: [DatePipe, ReactiveFormsModule, ButtonComponent, CheckboxComponent, FileUploadComponent, TableComponent, TagComponent],
+  imports: [DatePipe, ReactiveFormsModule, ButtonComponent, CheckboxComponent, FileUploadComponent, FilterPillsComponent, TableComponent, TagComponent],
   templateUrl: './import-members-dialog.component.html',
   styleUrl: './import-members-dialog.component.scss',
 })
@@ -143,6 +151,10 @@ export class ImportMembersDialogComponent {
   /** Minimum server deadline, retained even if automatic recovery or a pause is stopped. */
   public retryNotBefore = signal(0);
   public readonly maxPauses = MEMBER_IMPORT_MAX_PAUSES;
+  /** Status chosen in the table's filter pills; see activeStatusFilter for the one applied. */
+  public statusFilter = signal<MemberImportStatusFilter>('all');
+  /** Index of the first table row shown, so a filter change can return to page 1. */
+  public tableFirst = signal(0);
   /** Ends the current pause early; in-flight requests are never cancelled. */
   private readonly stopRequested = new Subject<void>();
   private retryDeadlineTimer?: Subscription;
@@ -160,7 +172,7 @@ export class ImportMembersDialogComponent {
   public readonly paused = computed(() => this.resumeAt() !== null);
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
-  public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0 && this.invalidCount() === 0);
+  public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0);
   public readonly canRetry = computed(() => this.phase() === 'results' && this.retryableCount() > 0);
   public readonly retryDeadlineLabel = computed(() => {
     if (!this.canRetry() || this.retryNotBefore() === 0) {
@@ -173,7 +185,12 @@ export class ImportMembersDialogComponent {
   });
   public readonly canChooseFile = computed(() => (this.phase() === 'select' || this.phase() === 'preview') && !this.busy());
   public readonly closeLabel = computed(() => (this.phase() === 'results' ? 'Close' : 'Cancel'));
+  public readonly submitLabel: Signal<string> = this.initSubmitLabel();
   public readonly rowViews: Signal<MemberImportRowView[]> = this.initRowViews();
+  /** The selected status, or `all` once no row has it (e.g. the last invalid row was removed or Ready rows were sent). */
+  public readonly activeStatusFilter: Signal<MemberImportStatusFilter> = this.initActiveStatusFilter();
+  public readonly statusFilterOptions: Signal<FilterPillOption[]> = this.initStatusFilterOptions();
+  public readonly filteredRowViews: Signal<MemberImportRowView[]> = this.initFilteredRowViews();
   public readonly statusMessage: Signal<string> = this.initStatusMessage();
 
   public downloadTemplate(): void {
@@ -181,6 +198,23 @@ export class ImportMembersDialogComponent {
       return;
     }
     downloadCsv(MEMBER_IMPORT_TEMPLATE_FILENAME, [getMemberImportTemplateHeaders(this.rules)]);
+  }
+
+  /** Invalid rows with their original values and problems, to fix and import again. */
+  public downloadInvalidRows(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    downloadCsv(MEMBER_IMPORT_INVALID_ROWS_FILENAME, buildMemberImportInvalidRowsCsv(this.rows(), this.rules));
+  }
+
+  public onStatusFilterChange(filter: string): void {
+    this.statusFilter.set(filter as MemberImportStatusFilter);
+    this.tableFirst.set(0);
+  }
+
+  public onTablePage(event: TablePageEvent): void {
+    this.tableFirst.set(event.first);
   }
 
   public onFileSelect(event: FileSelectEvent): void {
@@ -193,6 +227,8 @@ export class ImportMembersDialogComponent {
     this.rows.set([]);
     this.fileNotices.set([]);
     this.phase.set('select');
+    this.statusFilter.set('all');
+    this.tableFirst.set(0);
 
     if (!file.name.toLowerCase().endsWith('.csv')) {
       this.fileErrors.set(['Choose a .csv file. Save spreadsheets as "CSV UTF-8 (comma delimited)".']);
@@ -314,6 +350,56 @@ export class ImportMembersDialogComponent {
         };
       })
     );
+  }
+
+  private initSubmitLabel(): Signal<string> {
+    return computed(() => {
+      const verb = this.collectOnly ? 'Import' : 'Add';
+      const ready = this.readyCount();
+      const skip = this.invalidCount() > 0 ? ` (skip ${this.invalidCount()} invalid)` : '';
+      return `${verb} ${ready} ${ready === 1 ? 'member' : 'members'}${skip}`;
+    });
+  }
+
+  private initActiveStatusFilter(): Signal<MemberImportStatusFilter> {
+    return computed(() => {
+      const filter = this.statusFilter();
+      return filter === 'all' || this.rows().some((row) => row.status === filter) ? filter : 'all';
+    });
+  }
+
+  /** `All` plus one pill per status present, in lifecycle order, each labelled with its row count. */
+  private initStatusFilterOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const statuses = Object.keys(MEMBER_IMPORT_STATUS_DISPLAY) as MemberImportRowStatus[];
+      const options = statuses.flatMap((status): FilterPillOption[] => {
+        const count = this.countRows(status);
+        if (count === 0) {
+          return [];
+        }
+        const { label, severity } = MEMBER_IMPORT_STATUS_DISPLAY[status];
+        return [{ id: status, label: `${label} (${count})`, color: this.statusFilterColor(severity) }];
+      });
+      return [{ id: 'all', label: `All (${this.rows().length})` }, ...options];
+    });
+  }
+
+  private initFilteredRowViews(): Signal<MemberImportRowView[]> {
+    return computed(() => {
+      const filter = this.activeStatusFilter();
+      return filter === 'all' ? this.rowViews() : this.rowViews().filter((view) => view.row.status === filter);
+    });
+  }
+
+  /** Problem statuses read red and added rows green; the rest keep the default pill style. */
+  private statusFilterColor(severity: MemberImportRowView['statusSeverity']): FilterPillColor | undefined {
+    if (severity === 'danger') {
+      return 'red';
+    }
+    if (severity === 'success') {
+      return 'green';
+    }
+    return undefined;
   }
 
   private initStatusMessage(): Signal<string> {

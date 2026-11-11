@@ -52,6 +52,18 @@ export function getMemberImportTemplateHeaders(rules: MemberImportGroupRules): M
 }
 
 /**
+ * Invalid rows as CSV records, so users can fix them and import them again: the group's template
+ * header plus an `errors` column, then each invalid row's values exactly as written and its issues.
+ */
+export function buildMemberImportInvalidRowsCsv(rows: MemberImportRow[], rules: MemberImportGroupRules): string[][] {
+  const headers = getMemberImportTemplateHeaders(rules);
+  const records = rows
+    .filter((row) => row.status === 'invalid')
+    .map((row) => [...headers.map((column) => row.cells[column] ?? ''), row.issues.map((issue) => issue.message).join(' ')]);
+  return [[...headers, 'errors'], ...records];
+}
+
+/**
  * Strictly parses member import CSV text (comma delimiter, RFC 4180 quoting) and checks its header.
  *
  * Handles a UTF-8 BOM, CRLF/LF line endings, quoted commas/newlines and escaped `""` quotes, and
