@@ -213,17 +213,17 @@ describe('OrgLensNavigationService', () => {
    * returning to the organization the pick was made from.
    */
   describe('navigateToRollUpHome', () => {
-    it.each([['/org'], ['/org/people'], ['/org/easycla/abc-123']])('replaces an address that names no organization (%s)', (url) => {
+    it.each([['/company'], ['/company/people'], ['/company/easycla/abc-123']])('replaces an address that names no organization (%s)', (url) => {
       currentUrl = url;
       service.navigateToRollUpHome('0014100000RootAAAA');
-      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
+      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/overview');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
     });
 
-    it.each([['/org/acme-inc/projects'], ['/org/not-found']])('pushes from an address Back should return to (%s)', (url) => {
+    it.each([['/company/acme-inc/projects'], ['/company/not-found']])('pushes from an address Back should return to (%s)', (url) => {
       currentUrl = url;
       service.navigateToRollUpHome('0014100000RootAAAA');
-      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
+      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/overview');
       expect(navigate.mock.calls[0][1]?.replaceUrl).toBeFalsy();
     });
 
