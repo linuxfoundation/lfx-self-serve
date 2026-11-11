@@ -637,7 +637,7 @@ describe('OrgLensProjectDetailService.getInfluenceBlock commits card', () => {
     const commits = block!.technical.find((card) => card.key === 'commits');
     expect(commits?.label).toBe('Commits');
     expect(commits?.caption).toEqual({ prefix: 'Employees made ', emphasis: '12.3%', suffix: ' of all commits.' });
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v7:/));
   });
 });
 
@@ -890,7 +890,7 @@ describe('OrgLensProjectDetailService maintainer roles (lfx-self-serve#4482)', (
     expect(page.total).toBe(2);
     const storedKeys = (setJson.mock.calls as [string][]).map(([key]) => key);
     expect(storedKeys.some((key) => key.startsWith('project-detail-influence:'))).toBe(false);
-    expect(storedKeys.some((key) => key.startsWith('project-detail-roster:v3:'))).toBe(false);
+    expect(storedKeys.some((key) => key.startsWith('project-detail-roster:v4:'))).toBe(false);
   });
 
   // The roster selects the flag through its alias, so Snowflake names it qualified; the fallback must still match.
@@ -1030,7 +1030,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
 
     await service.getInfluenceBlock(ORG, SLUG, '1y', 'all');
 
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v7:/));
     expect(setJson).toHaveBeenCalledWith('influence-key', expect.objectContaining({ technical: expect.anything() }), expect.anything());
   });
 
@@ -1123,7 +1123,7 @@ describe('OrgLensProjectDetailService maintainer roles sparkline and drawer tota
     const drawer = await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y', 'all');
 
     expect(drawer!.definition.total).toBe('0');
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v3:/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v4:/));
     expect(setJson).toHaveBeenCalledWith('drawer-key', drawer, expect.anything());
   });
 });
@@ -1213,7 +1213,7 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     const [viewing, binds] = callOn('ORG_LENS_PROJECT_DETAIL_LEADERBOARD\n');
     expect(viewing).toContain('AND ORG_ACCOUNT_ID = ? AND ORG_ORGANIZATION_ID = ?');
     expect(binds.slice(2)).toEqual([ORG, INSIGHTS_ORG]);
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:insights$/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v7:.*:insights$/));
   });
 
   it("shows no band chip under insights when only a related organization has the project's leaderboard row", async () => {
@@ -1254,7 +1254,7 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     const [viewing, binds] = callOn('ORG_LENS_PROJECT_DETAIL_LEADERBOARD\n');
     expect(viewing).toContain('AND ORG_ACCOUNT_ID = ?');
     expect(binds[2]).toBe(ORG);
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:all$/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v7:.*:all$/));
   });
 
   it('falls back to all for an account without an Insights organization', async () => {
@@ -1264,7 +1264,7 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     await service.getInfluenceBlock(ORG, SLUG, '1y', 'insights');
 
     expect(sqls().some((sql) => SCOPED_READ.test(sql))).toBe(false);
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v6:.*:all$/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-influence:v7:.*:all$/));
   });
 
   it('flags only the Insights organization row as the viewing organization under insights, every account row under all', async () => {
@@ -1309,12 +1309,12 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     const scoped = sqls();
     expect(scoped).toHaveLength(2);
     for (const sql of scoped) expect(sql).toContain(`AND ${gate}`);
-    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v3:.*:insights$/));
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v4:.*:insights$/));
 
     execute.mockClear();
     await service.getCardRoster(ORG, 'Acme', SLUG, cardKey, '1y', 0, 10, 'all');
     for (const sql of sqls()) expect(sql).not.toMatch(SCOPED_READ);
-    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v3:.*:all$/));
+    expect(buildOrgCacheKey).toHaveBeenLastCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v4:.*:all$/));
   });
 
   it('reads the contributors roster count from the Insights column under insights', async () => {
@@ -1330,8 +1330,8 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     await service.getCardDrawer(ORG, SLUG, 'maintainers', '1y', 'insights');
 
     expect(resolveOrgScope).not.toHaveBeenCalled();
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v3:[^:]*$/));
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v3:[^:]*$/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-roster:v4:[^:]*$/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v4:[^:]*$/));
     expect(sqls().some((sql) => SCOPED_READ.test(sql))).toBe(false);
   });
 
@@ -1339,6 +1339,6 @@ describe('OrgLensProjectDetailService organization scope (lfx-self-serve-ops#121
     await service.getCardDrawer(ORG, SLUG, 'commits', '1y', 'insights');
 
     expect(callOn('ORG_LENS_PROJECT_DETAIL_CARDS')[0]).toContain('INSIGHTS_TECH_COMMITS_TOTAL AS TECH_COMMITS_TOTAL');
-    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v3:.*:insights$/));
+    expect(buildOrgCacheKey).toHaveBeenCalledWith(ORG, expect.stringMatching(/^project-detail-drawer:v4:.*:insights$/));
   });
 });

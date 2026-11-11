@@ -23,7 +23,7 @@ import {
   DEFAULT_ORG_EVENTS_TAB_ID,
   EMPTY_ORG_EVENTS_RESPONSE,
   ORG_EVENTS_ALL_FOUNDATIONS_LABEL,
-  ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
+  ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
@@ -194,11 +194,9 @@ export class OrgEventsDashboardComponent {
       this.scope() !== DEFAULT_ORG_EVENTS_SCOPE
   );
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
-  public readonly upcomingAttendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
-  );
+  public readonly upcomingAttendeesCaption = computed(() => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE}`);
   public readonly pastAttendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE}`
   );
   public readonly drawerParticipation = this.effectiveParticipation;
   public readonly upcomingEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({

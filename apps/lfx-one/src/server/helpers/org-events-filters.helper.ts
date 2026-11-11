@@ -30,7 +30,7 @@ import { getStringQueryParam } from './validation.helper';
 
 /**
  * Validate the Org Lens Events filters (`participation`, `eventScope`, `foundation`, `range`; lfx-self-serve#4598). Events count
- * Employee match only, so there is no attribution filter: a legacy `?attribution=` is ignored and never reaches SQL.
+ * company-email registrations and speaker records only, so there is no attribution filter: a legacy `?attribution=` is ignored and never reaches SQL.
  * A missing param is its default, an unknown value is a 400 before any SQL is built.
  */
 export function parseOrgEventsFilters(req: Request, operation: string): OrgEventsFilters {
@@ -49,27 +49,37 @@ export function parseOrgEventsFilters(req: Request, operation: string): OrgEvent
   };
 }
 
-/** `ALL_COUNT_VERIFIED`, `REGISTERED_COUNT_VERIFIED` or `ATTENDED_COUNT_VERIFIED` of `ORG_EVENTS` — the per-event distinct-people count of a participation. */
+/** `ALL_COUNT_COMPANY_EMAIL`, `REGISTERED_COUNT_COMPANY_EMAIL` or `ATTENDED_COUNT_COMPANY_EMAIL` of `ORG_EVENTS` — the per-event distinct-people count of a participation. */
 export function orgEventsCountColumn(participation: OrgEventsParticipation): string {
   return `${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_COUNT_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX}`;
 }
 
-/** `HAS_FOOTPRINT_VERIFIED` of `ORG_EVENTS` — whether the company has Employee match activity at the event. */
+/** `HAS_FOOTPRINT_COMPANY_EMAIL` of `ORG_EVENTS` — whether the company has company-email activity at the event. */
 export function orgEventsFootprintColumn(): string {
   return `HAS_FOOTPRINT_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX}`;
 }
 
 /**
- * `ORG_EVENT_PARTICIPATION` predicate selecting the Employee match attendees a participation counts (no leading `AND`):
- * the row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_VERIFIED`, `IS_COUNTED_ATTENDED_VERIFIED`, ...).
+ * `ORG_EVENT_PARTICIPATION` predicate selecting the company-email attendees a participation counts (no leading `AND`):
+ * the row-level conjunction flag dbt computes for the pair (`IS_COUNTED_REGISTERED_COMPANY_EMAIL`, `IS_COUNTED_ATTENDED_COMPANY_EMAIL`, ...).
  */
 export function orgEventsAttendeePredicate(participation: OrgEventsParticipation): string {
   return `IS_COUNTED_${ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT[participation]}_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX} = TRUE`;
 }
 
-/** Predicate for the Employee match speakers (no leading `AND`): `IS_COUNTED_SPEAKER_VERIFIED`. */
+/** Predicate for the accepted speakers whose own speaker record carries a company email (no leading `AND`): `IS_COUNTED_SPEAKER_COMPANY_EMAIL`. */
 export function orgEventsSpeakerPredicate(): string {
   return `IS_COUNTED_SPEAKER_${ORG_EVENTS_COUNTED_COLUMN_SUFFIX} = TRUE`;
+}
+
+/**
+ * `ORG_EVENT_PARTICIPATION` predicate for a speaker of any status (accepted or submitted) whose own speaker record carries a company
+ * email (no leading `AND`). The Events page lists accepted and submitted speakers, so it needs this wider twin of
+ * {@link orgEventsSpeakerPredicate}; a personal-email speaker matches neither.
+ */
+export function orgEventsSubmittedSpeakerPredicate(alias = ''): string {
+  const column = (name: string) => (alias ? `${alias}.${name}` : name);
+  return `(${column('IS_COUNTED_SPEAKER_COMPANY_EMAIL')} = TRUE OR (${column('IS_SPEAKER_SUBMITTED')} = TRUE AND ${column('IS_SPK_COMPANY_EMAIL')} = TRUE))`;
 }
 
 /**

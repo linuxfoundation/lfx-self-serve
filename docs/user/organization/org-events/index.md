@@ -4,7 +4,7 @@ description: How the Organization lens Events page and People → Event Attendee
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, events, event-attendees, registered, attended, employee-match, company-email, filters, all-employees, speakers]
-last_updated: 2026-11-06
+last_updated: 2026-11-11
 intercom_collection: Organization
 ---
 
@@ -21,7 +21,7 @@ These steps apply to anyone with access to at least one organization in the Orga
 
 ## Who is listed
 
-Everyone counted on the Events page and People → Event Attendees is listed by name in People → Event Attendees and in an event's attendees drawer, so you can review who is counted. A person is counted when they registered or spoke with a company email address on record, or their LF account matches someone on the company roster. Links that still carry the retired `?attribution=` parameter are ignored.
+Everyone counted on the Events page and People → Event Attendees is listed by name in People → Event Attendees and in an event's attendees drawer, so you can review who is counted. A person is counted only when the email address on their registration, or on their speaker record, is a company address. Someone who has a company address but registered or submitted a talk with a personal address is not counted, listed or shown as a speaker for that registration. If a company has no registrations or speaker records with a company email, the page simply shows no attendees or speakers. Links that still carry the retired `?attribution=` parameter are ignored.
 
 Job titles are shown only for the organization's current employees on the roster, as on People → Trainees; everyone else is shown by name only. A person whose name or title on record is an email address appears without it: as **Registered attendee** when there is no usable name, and with no title. Email addresses are never shown in these lists. With **Count** set to **All**, the attendees drawer shows each person as **Registered or attended**. An event's speakers drawer lists the organization's accepted and submitted speakers for that event, whether or not they registered.
 
@@ -62,8 +62,8 @@ Open **People** and then **Event Attendees**. The filters are **Range**, **Found
 
 ## Org Overview
 
-The Overview cards always use the defaults: **Employee match**, **All** (registered or attended) and the last 2 years. They have no filters. Their headline counts each person once, so it is not the sum of the monthly points in the chart. To see other **Count** or **Range** selections, open the Events page or People → Event Attendees.
+The Overview cards always use the defaults: registrations and speaker records made with a company email, **All** (registered or attended) and the last 2 years. They have no filters. Their headline counts each person once, so it is not the sum of the monthly points in the chart. To see other **Count** or **Range** selections, open the Events page or People → Event Attendees.
 
 ## People → All Employees
 
-The **Event Attendees** tile on **People** → **All Employees** is the same number as **Attendees** on People → Event Attendees at its defaults (**Employee match**, **All**) for the same organization and **Range**: the people who registered or attended a foundation event in that range. It does not change with the project scope, because events are Linux Foundation events; the exception is **Non-LF projects**, which have no events, where the tile counts the listed employees who took part in an event. It does not change with the **Employment** view or the **Team members** filter either. If the figure cannot be read, the tile shows a dash (—) instead of counting something else.
+The **Event Attendees** tile on **People** → **All Employees** is the same number as **Attendees** on People → Event Attendees at its defaults (company-email registrations, **All**) for the same organization and **Range**: the people who registered or attended a foundation event in that range. It does not change with the project scope, because events are Linux Foundation events; the exception is **Non-LF projects**, which have no events, where the tile counts the listed employees who took part in an event. It does not change with the **Employment** view or the **Team members** filter either. If the figure cannot be read, the tile shows a dash (—) instead of counting something else.

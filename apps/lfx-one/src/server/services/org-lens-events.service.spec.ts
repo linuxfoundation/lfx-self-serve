@@ -171,10 +171,10 @@ function addEvent(fixture: EventFixture = {}): string {
     ORG_SPEAKER_ACCEPTED_COUNT: 0,
     ORG_SPEAKER_SUBMITTED_COUNT: 0,
     IS_ORG_SPONSOR: 0,
-    REGISTERED_COUNT_VERIFIED: fixture.registered?.verified ?? 0,
-    ATTENDED_COUNT_VERIFIED: fixture.attended?.verified ?? 0,
-    ALL_COUNT_VERIFIED: fixture.registeredOrAttended?.verified ?? Math.max(fixture.registered?.verified ?? 0, fixture.attended?.verified ?? 0),
-    HAS_FOOTPRINT_VERIFIED: fixture.footprint?.verified === false ? 0 : 1,
+    REGISTERED_COUNT_COMPANY_EMAIL: fixture.registered?.verified ?? 0,
+    ATTENDED_COUNT_COMPANY_EMAIL: fixture.attended?.verified ?? 0,
+    ALL_COUNT_COMPANY_EMAIL: fixture.registeredOrAttended?.verified ?? Math.max(fixture.registered?.verified ?? 0, fixture.attended?.verified ?? 0),
+    HAS_FOOTPRINT_COMPANY_EMAIL: fixture.footprint?.verified === false ? 0 : 1,
   });
   return eventId;
 }
@@ -184,59 +184,51 @@ interface ParticipantFixture {
   eventId?: string;
   name?: string | null;
   title?: string | null;
+  /** The email on this registration (or speaker record) is a company address. A personal address never counts. Default `true`. */
   companyEmail?: boolean;
+  /** An LF account on the roster no longer qualifies a registration; only the registration's own email does. */
   roster?: boolean;
   registered?: boolean;
   attended?: boolean;
+  /** The person also has a speaker record at the event, in this status. */
+  speaker?: 'Accepted' | 'Submitted';
   /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the drawer must ignore it. */
   listable?: boolean;
 }
 
-/** The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended). */
-function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; registered?: boolean; attended?: boolean }): Record<string, number> {
+/** The row-level conjunction flags dbt computes for company-email attribution: (registered | attended | registered or attended). */
+function countsFlags(fixture: { companyEmail?: boolean; registered?: boolean; attended?: boolean }): Record<string, number> {
   const registered = fixture.registered !== false;
   const attended = fixture.attended === true;
-  const verified = fixture.companyEmail !== false || fixture.roster === true;
-  const credited = { VERIFIED: verified };
-  return Object.fromEntries(
-    Object.entries(credited).flatMap(([suffix, flag]) => [
-      [`IS_COUNTED_REGISTERED_${suffix}`, registered && flag ? 1 : 0],
-      [`IS_COUNTED_ATTENDED_${suffix}`, attended && flag ? 1 : 0],
-      [`IS_COUNTED_ALL_${suffix}`, (registered || attended) && flag ? 1 : 0],
-    ])
-  );
+  const companyEmail = fixture.companyEmail !== false;
+  return {
+    IS_COUNTED_REGISTERED_COMPANY_EMAIL: registered && companyEmail ? 1 : 0,
+    IS_COUNTED_ATTENDED_COMPANY_EMAIL: attended && companyEmail ? 1 : 0,
+    IS_COUNTED_ALL_COMPANY_EMAIL: (registered || attended) && companyEmail ? 1 : 0,
+  };
+}
+
+/** The speaker flags dbt computes from the speaker record's own email: accepted and company email counts; submitted and company email lists. */
+function speakerFlags(fixture: { companyEmail?: boolean; speaker?: 'Accepted' | 'Submitted' }): Record<string, number> {
+  const companyEmail = fixture.companyEmail !== false;
+  return {
+    IS_SPK_COMPANY_EMAIL: fixture.speaker && companyEmail ? 1 : 0,
+    IS_SPEAKER_SUBMITTED: fixture.speaker ? 1 : 0,
+    IS_COUNTED_SPEAKER_COMPANY_EMAIL: fixture.speaker === 'Accepted' && companyEmail ? 1 : 0,
+  };
 }
 
 function addParticipant(fixture: ParticipantFixture): void {
   insert('ORG_EVENT_PARTICIPATION', {
     ACCOUNT_ID: ACCOUNT,
     EVENT_ID: fixture.eventId ?? 'event-one',
+    EVENT_NAME: 'Community Summit',
     PARTICIPANT_REF: fixture.ref,
     DISPLAY_NAME: fixture.name === undefined ? `Person ${fixture.ref}` : fixture.name,
     JOB_TITLE: fixture.title === undefined ? 'Engineer' : fixture.title,
-    ...countsFlags(fixture),
+    ...countsFlags(fixture.speaker && fixture.registered === undefined ? { ...fixture, registered: false } : fixture),
+    ...speakerFlags(fixture),
     IS_LISTABLE: fixture.listable === false ? 0 : 1,
-  });
-}
-
-function addSpeaker(
-  speakerId: string,
-  first: string | null,
-  last: string | null,
-  email: string,
-  status: 'Accepted' | 'Submitted',
-  eventId = 'event-one'
-): void {
-  insert('EVENT_SPEAKERS', {
-    ACCOUNT_ID: ACCOUNT,
-    EVENT_ID: eventId,
-    SPEAKER_ID: speakerId,
-    SPEAKER_FIRST_NAME: first,
-    SPEAKER_LAST_NAME: last,
-    SPEAKER_EMAIL: email,
-    JOB_TITLE: 'Staff Engineer',
-    SPEAKER_STATUS: status,
-    EVENT_NAME: 'Community Summit',
   });
 }
 
@@ -254,20 +246,15 @@ beforeEach(() => {
       EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, IS_PAST_EVENT INTEGER,
       EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT, EVENT_REGISTRATION_URL TEXT,
       EVENT_REGISTRATIONS_GOAL INTEGER, ORG_SPEAKER_ACCEPTED_COUNT INTEGER, ORG_SPEAKER_SUBMITTED_COUNT INTEGER, IS_ORG_SPONSOR INTEGER,
-      REGISTERED_COUNT_VERIFIED INTEGER, ATTENDED_COUNT_VERIFIED INTEGER, ALL_COUNT_VERIFIED INTEGER, HAS_FOOTPRINT_VERIFIED INTEGER
+      REGISTERED_COUNT_COMPANY_EMAIL INTEGER, ATTENDED_COUNT_COMPANY_EMAIL INTEGER, ALL_COUNT_COMPANY_EMAIL INTEGER, HAS_FOOTPRINT_COMPANY_EMAIL INTEGER
     )`
   );
   database.exec(
     `CREATE TABLE ORG_EVENT_PARTICIPATION (
-      ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
-      IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
+      ACCOUNT_ID TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
+      IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_COMPANY_EMAIL INTEGER,
+      IS_COUNTED_SPEAKER_COMPANY_EMAIL INTEGER, IS_SPEAKER_SUBMITTED INTEGER, IS_SPK_COMPANY_EMAIL INTEGER,
       IS_LISTABLE INTEGER
-    )`
-  );
-  database.exec(
-    `CREATE TABLE EVENT_SPEAKERS (
-      ACCOUNT_ID TEXT, EVENT_ID TEXT, SPEAKER_ID TEXT, SPEAKER_FIRST_NAME TEXT, SPEAKER_LAST_NAME TEXT,
-      SPEAKER_EMAIL TEXT, JOB_TITLE TEXT, SPEAKER_STATUS TEXT, EVENT_NAME TEXT
     )`
   );
 
@@ -275,7 +262,6 @@ beforeEach(() => {
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const translated = query
       .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
-      .replaceAll('ANALYTICS.SILVER_FACT.', '')
       .replaceAll(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 day')")
       .replaceAll('CURRENT_DATE()', "date('now')")
       .replaceAll('ILIKE', 'LIKE');
@@ -506,18 +492,19 @@ describe('OrgLensEventsService attendees drawer', () => {
     addEvent({ isPast: true, registered: { verified: 4 }, attended: { verified: 2 } });
   });
 
-  it('lists everyone the option credits, whatever the legacy listable flag says, by name; titles only for roster employees (lfx-self-serve#5158)', async () => {
-    // The warehouse leaves JOB_TITLE NULL for everyone not on the roster; the fixtures mirror that.
+  it('lists only registrations made with a company email, whatever the legacy listable flag says, by name (lfx-self-serve#5584)', async () => {
     addParticipant({ ref: 1, name: 'Ada Lovelace', title: null });
     addParticipant({ ref: 2, name: 'Grace Hopper', title: null });
-    addParticipant({ ref: 4, name: 'Roster Employee', companyEmail: false, roster: true, listable: false });
+    addParticipant({ ref: 4, name: 'Company Employee', listable: false });
+    // Registered with a personal address: not a row, even though the person is on the roster.
+    addParticipant({ ref: 5, name: 'Personal Registrant', companyEmail: false, roster: true });
 
     const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
 
     expect(drawer.data.map((attendee) => [attendee.name, attendee.jobTitle])).toEqual([
       ['Ada Lovelace', null],
+      ['Company Employee', 'Engineer'],
       ['Grace Hopper', null],
-      ['Roster Employee', 'Engineer'],
     ]);
     expect(drawer.total).toBe(3);
     expect(drawer).not.toHaveProperty('notListedCount');
@@ -604,9 +591,10 @@ describe('OrgLensEventsService speakers drawer', () => {
   });
 
   it('returns a neutral label rather than an address and never searches by address', async () => {
-    addSpeaker('speaker-1', 'Ada', 'Lovelace', 'ada@company.test', 'Accepted');
-    addSpeaker('speaker-2', null, null, 'nameless@company.test', 'Submitted');
-    addSpeaker('speaker-3', 'grace@company.test', '', 'grace@company.test', 'Submitted');
+    addParticipant({ ref: 1, name: 'Ada Lovelace', speaker: 'Accepted' });
+    addParticipant({ ref: 2, name: null, speaker: 'Submitted' });
+    // The warehouse nulls a name that holds an address.
+    addParticipant({ ref: 3, name: null, speaker: 'Submitted' });
 
     const drawer = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one');
     const byAddress = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one', 'nameless@');
@@ -618,6 +606,65 @@ describe('OrgLensEventsService speakers drawer', () => {
     expect(JSON.stringify(drawer)).not.toContain('@');
     expect(byAddress.data).toEqual([]);
     expect(byName.data.map((speaker) => speaker.name)).toEqual(['Ada Lovelace']);
+  });
+
+  it('leaves out a speaker whose own record carries a personal email, accepted or submitted (lfx-self-serve#5626)', async () => {
+    addParticipant({ ref: 1, name: 'Company Speaker', speaker: 'Accepted' });
+    addParticipant({ ref: 2, name: 'Company Submitter', speaker: 'Submitted' });
+    addParticipant({ ref: 3, name: 'Personal Speaker', speaker: 'Accepted', companyEmail: false });
+    addParticipant({ ref: 4, name: 'Personal Submitter', speaker: 'Submitted', companyEmail: false });
+
+    const drawer = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one');
+
+    expect(drawer.data.map((speaker) => [speaker.name, speaker.status])).toEqual([
+      ['Company Speaker', 'ACCEPTED'],
+      ['Company Submitter', 'SUBMITTED'],
+    ]);
+    expect(drawer.acceptedCount).toBe(1);
+    expect(drawer.submittedCount).toBe(2);
+  });
+
+  it('lists a person who registered with a personal email and spoke with a company email as a speaker only', async () => {
+    addParticipant({ ref: 1, name: 'Both Addresses', speaker: 'Accepted', registered: true, companyEmail: true });
+    const speakers = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one');
+    expect(speakers.data.map((speaker) => speaker.name)).toEqual(['Both Addresses']);
+  });
+
+  it('is empty, with no error, for an account whose speakers all used personal emails', async () => {
+    addParticipant({ ref: 1, name: 'Personal Speaker', speaker: 'Accepted', companyEmail: false });
+
+    const drawer = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one');
+
+    expect(drawer.data).toEqual([]);
+    expect(drawer.acceptedCount).toBe(0);
+  });
+});
+
+describe('OrgLensEventsService Speakers column and filter', () => {
+  const list = (status?: string) => service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, status }));
+
+  beforeEach(() => {
+    addEvent({ eventId: 'company-speaker', isPast: true, name: 'Company Speaker Event' });
+    addEvent({ eventId: 'personal-speaker', isPast: true, name: 'Personal Speaker Event' });
+    addParticipant({ ref: 1, eventId: 'company-speaker', name: 'Ada Lovelace', speaker: 'Accepted' });
+    addParticipant({ ref: 2, eventId: 'personal-speaker', name: 'Grace Hopper', speaker: 'Accepted', companyEmail: false });
+  });
+
+  it('counts only company-email speakers per event, equal to the drawer rows', async () => {
+    const events = await list();
+    const byId = new Map(events.data.map((event) => [event.eventId, event]));
+
+    expect(byId.get('company-speaker')).toMatchObject({ orgSpeakerAcceptedCount: 1, orgSpeakerSubmittedCount: 1 });
+    expect(byId.get('personal-speaker')).toMatchObject({ orgSpeakerAcceptedCount: 0, orgSpeakerSubmittedCount: 0 });
+    const drawer = await service.getEventSpeakers(REQ, ACCOUNT, 'company-speaker');
+    expect(drawer.data).toHaveLength(byId.get('company-speaker')!.orgSpeakerSubmittedCount);
+  });
+
+  it.each(['speaker-accepted', 'speaker-submitted'])('%s keeps events with a company-email speaker and never shows a 0 row', async (status) => {
+    const events = await list(status);
+
+    expect(events.data.map((event) => event.eventId)).toEqual(['company-speaker']);
+    expect(events.data.every((event) => event.orgSpeakerSubmittedCount > 0)).toBe(true);
   });
 });
 

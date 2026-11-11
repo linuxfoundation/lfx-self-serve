@@ -4,7 +4,7 @@ description: How to read the People page for the selected organization — its A
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Organization
 ---
 
@@ -151,7 +151,7 @@ A saved change shows **Board roles reassigned**, **Committee roles reassigned** 
 
 ## What do the Event Attendees and Trainees tabs show?
 
-The **Event Attendees** tab shows the people who registered for, attended or spoke at events in the time range. Its cards count **Speakers**, **Attendees**, **Events** and **Foundations**, and its columns are **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended** and **Most Recent Event**. By default **Count** is **All**, which counts everyone who registered or attended: choose **Attended** to count only people marked as attended. People are counted by **Employee match** only. Everyone counted as an attendee is listed by name; for speakers, see [Who is listed](../org-events/#who-is-listed). The filters and what each option counts are in [Events and Event Attendees](../org-events/).
+The **Event Attendees** tab shows the people who registered for, attended or spoke at events in the time range. Its cards count **Speakers**, **Attendees**, **Events** and **Foundations**, and its columns are **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended** and **Most Recent Event**. By default **Count** is **All**, which counts everyone who registered or attended: choose **Attended** to count only people marked as attended. Only registrations and speaker records made with a company email are counted: a person who registered or spoke with a personal address is not listed, even if they have a company address too. Everyone counted as an attendee is listed by name; for speakers, see [Who is listed](../org-events/#who-is-listed). The filters and what each option counts are in [Events and Event Attendees](../org-events/).
 
 The **Trainees** tab shows the employees who enrolled in a course or earned a certificate in the time range.
 
