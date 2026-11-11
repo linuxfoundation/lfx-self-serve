@@ -141,8 +141,8 @@ export const FORMATION_ACTIVITY_ACTION_LABELS = {
   item_rejected: 'rejected this item',
   item_reopened: 'reopened this item',
   platform_check_resolved: 'resolved this item automatically',
-  template_expanded: 'created the checklist from a template',
-  template_upgraded: 'upgraded the checklist template',
+  template_expanded: 'created the formation items from a template',
+  template_upgraded: 'upgraded the formation items template',
 } as const satisfies Record<FormationActivityAction, string>;
 
 /**
@@ -461,6 +461,12 @@ export const FORMATION_CHECKLIST_PATH = '/project/formation';
  * append (#2573, #2616, #1961).
  */
 export const FORMATION_ITEM_QUERY_PARAM = 'item';
+
+/** The formation section's default heading — `/project/formation` (ED/PM) keeps it; hosts can override via the section's `heading` input (#5635). */
+export const FORMATION_CHECKLIST_HEADING = 'Formation Checklist';
+
+/** The neutral heading `/foundation/formations/:slug` passes (#5635). */
+export const FORMATION_ITEMS_HEADING = 'Formation items';
 
 /**
  * Empty state of the checklist section when the checklist read is not-found. Neutral on purpose: the BFF masks 403 and 404 alike, so the copy

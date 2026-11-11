@@ -10,7 +10,12 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
-import { FORMATION_CHECKLIST_GRID_CLASSES, FORMATION_ITEM_QUERY_PARAM, FORMATION_NO_CHECKLIST_COPY } from '@lfx-one/shared/constants';
+import {
+  FORMATION_CHECKLIST_GRID_CLASSES,
+  FORMATION_CHECKLIST_HEADING,
+  FORMATION_ITEM_QUERY_PARAM,
+  FORMATION_NO_CHECKLIST_COPY,
+} from '@lfx-one/shared/constants';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -71,6 +76,9 @@ export class FormationChecklistSectionComponent {
    * as on `/project/formation`.
    */
   public readonly projectSlug = input<string | null>(null);
+
+  /** Section heading. Defaults to "Formation Checklist" (`/project/formation`); the foundation drill-down passes the neutral "Formation items" (#5635). */
+  public readonly heading = input<string>(FORMATION_CHECKLIST_HEADING);
 
   /** The full-tier grid template (#2774) — the same one `lfx-formation-checklist-row` binds, so the header captions sit over the columns they label. */
   protected readonly gridClasses = FORMATION_CHECKLIST_GRID_CLASSES;

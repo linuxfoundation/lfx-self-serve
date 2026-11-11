@@ -23,6 +23,7 @@ import { FormationDetailComponent } from './formation-detail.component';
 class StubFormationChecklistSectionComponent {
   public reloadCount = 0;
   public readonly projectSlug = input<string | null>(null);
+  public readonly heading = input<string>('Formation Checklist');
   public readonly responseLoaded = output<FormationChecklistResponse | null>();
 
   public reload(): void {
@@ -110,6 +111,42 @@ describe('FormationDetailComponent', () => {
 
     const stub = fixture.debugElement.children[0].query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent);
     expect(stub?.componentInstance.projectSlug()).toBe('child-project');
+  });
+
+  it('passes the neutral "Formation items" heading to the section', async () => {
+    getProjectStrict.mockReturnValue(of(buildProject()));
+
+    await render('child-project');
+
+    const stub = fixture.debugElement.children[0].query((node) => node.componentInstance instanceof StubFormationChecklistSectionComponent);
+    expect(stub?.componentInstance.heading()).toBe('Formation items');
+  });
+
+  // #5635: whichever state the page is in, none of its own copy says "checklist".
+  describe('renders no "checklist" wording (#5635)', () => {
+    const lookups: [string, () => unknown][] = [
+      ['loading', () => new Subject<Project>()],
+      ['not-found', () => throwError(() => ({ status: 404 }))],
+      ['error', () => throwError(() => ({ status: 500 }))],
+      ['post-formation', () => of(buildProject({ stage: 'Active' }))],
+      ['in formation', () => of(buildProject())],
+    ];
+
+    it.each(lookups)('in the %s state', async (_state, lookup) => {
+      getProjectStrict.mockReturnValue(lookup());
+
+      await render('child-project');
+
+      expect(fixture.nativeElement.textContent).not.toMatch(/checklist/i);
+    });
+  });
+
+  it('shows the neutral post-formation subtitle', async () => {
+    getProjectStrict.mockReturnValue(of(buildProject({ stage: 'Active' })));
+
+    await render('child-project');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-detail-not-in-formation"]')?.textContent).toContain('It has completed formation.');
   });
 
   it('shows the loading skeleton while the project lookup is in flight', async () => {

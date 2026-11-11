@@ -128,6 +128,8 @@ describe('FormationChecklistSectionComponent', () => {
     response: FormationChecklistResponse,
     options: {
       projectSlug?: string;
+      /** Sets the `heading` input; omitted keeps the component default. */
+      heading?: string;
       /** Overrides what the checklist read returns — e.g. a `throwError` for the failure branch. */
       fetchResult?: Observable<FormationChecklistResponse>;
       /** `null` leaves the component with no slug at all (neither input nor context). */
@@ -165,6 +167,9 @@ describe('FormationChecklistSectionComponent', () => {
     fixture = TestBed.createComponent(FormationChecklistSectionComponent);
     if (options.projectSlug !== undefined) {
       fixture.componentRef.setInput('projectSlug', options.projectSlug);
+    }
+    if (options.heading !== undefined) {
+      fixture.componentRef.setInput('heading', options.heading);
     }
     if (options.onResponseLoaded) {
       fixture.componentInstance.responseLoaded.subscribe(options.onResponseLoaded);
@@ -580,6 +585,37 @@ describe('FormationChecklistSectionComponent', () => {
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
       expect(replaceStateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // #5635: the heading is an input (default unchanged for /project/formation) and the shared state
+  // copy is neutral, so the foundation drill-down never shows "checklist" wording.
+  describe('heading and neutral copy (#5635)', () => {
+    const headingText = (): string | undefined => fixture.nativeElement.querySelector('h2')?.textContent?.trim();
+
+    it('defaults the heading to "Formation Checklist" (the /project/formation host)', async () => {
+      await render(buildResponse('live', 'live'));
+
+      expect(headingText()).toBe('Formation Checklist');
+    });
+
+    it('renders the heading passed by the host', async () => {
+      await render(buildResponse('live', 'live'), { heading: 'Formation items' });
+
+      expect(headingText()).toBe('Formation items');
+    });
+
+    const states: [string, FormationChecklistResponse | null, Observable<FormationChecklistResponse> | undefined][] = [
+      ['error', null, throwError(() => new HttpErrorResponse({ status: 500, statusText: 'x' }))],
+      ['no-checklist', null, throwError(() => new HttpErrorResponse({ status: 404, statusText: 'x' }))],
+      ['no-template', { ...buildResponse('live', 'live'), template: null }, undefined],
+      ['no-items', { ...buildResponse('live', 'live'), items: [] }, undefined],
+    ];
+
+    it.each(states)('renders no "checklist" wording in the %s state when the host passes a neutral heading', async (_state, response, fetchResult) => {
+      await render(response ?? buildResponse('live', 'live'), { heading: 'Formation items', fetchResult });
+
+      expect(fixture.nativeElement.textContent).not.toMatch(/checklist/i);
     });
   });
 });

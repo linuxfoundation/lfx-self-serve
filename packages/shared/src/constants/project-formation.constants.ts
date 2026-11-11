@@ -84,7 +84,7 @@ export const FORMATION_RECORD_CONFLICT_CODE = 'FORMATION_RECORD_CONFLICT';
 export const FORMATION_RECORD_DISSOLUTION_DATE_REQUIRED_CODE = 'DISSOLUTION_DATE_REQUIRED';
 
 /** Success toast copy, including the propagation note from #5134: the checklist is updated asynchronously by formation-service. */
-export const FORMATION_RECORD_SUCCESS_MESSAGE = 'Updated. The checklist may take a minute to reflect the new stage.';
+export const FORMATION_RECORD_SUCCESS_MESSAGE = 'Updated. The formation items may take a minute to reflect the new stage.';
 
 /** User-facing copy per outcome, exactly as the #5134 error table. */
 export const FORMATION_RECORD_ERROR_MESSAGES = {

@@ -7,6 +7,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectService } from '@services/project.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { FORMATION_ITEMS_HEADING } from '@lfx-one/shared/constants';
 import type { FormationChecklistResponse, FormationDetailPageState } from '@lfx-one/shared/interfaces';
 import { isPostFormationStage } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -40,6 +41,8 @@ export class FormationDetailComponent {
   private readonly projectSlug = toSignal(this.route.paramMap.pipe(map((params) => params.get('projectSlug'))), {
     initialValue: this.route.snapshot.paramMap.get('projectSlug'),
   });
+  /** Neutral heading for the shared section — this page is reached by the formation team, who see "items", not the ED/PM "Checklist" label (#5635). */
+  protected readonly sectionHeading = FORMATION_ITEMS_HEADING;
   private readonly state: Signal<FormationDetailPageState> = this.initState();
   protected readonly projectLoading = computed(() => this.state().loading);
   protected readonly loadFailed = computed(() => this.state().error);
