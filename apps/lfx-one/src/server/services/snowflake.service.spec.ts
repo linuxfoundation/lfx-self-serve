@@ -461,6 +461,64 @@ describe('SnowflakeService circuit breaker', () => {
   });
 });
 
+describe('SnowflakeService query timeout', () => {
+  const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
+  type Complete = (err: Error | undefined, stmt: unknown, rows: unknown[] | undefined) => void;
+
+  /** A pooled connection whose statement completes at once (`finishes`) or only once it is cancelled. */
+  const serviceWithStatement = (finishes: boolean) => {
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    let complete: Complete | undefined;
+    const statement = {
+      // As the SDK does: a cancelled statement completes with an error, which releases the connection.
+      cancel: vi.fn((callback?: (err: Error | undefined) => void) => {
+        complete?.(new Error('SQL execution canceled'), statement, undefined);
+        callback?.(undefined);
+      }),
+      getColumns: () => [],
+      getQueryId: () => 'query-id',
+    };
+    const connection = {
+      execute: vi.fn((options: { complete: Complete }) => {
+        complete = options.complete;
+        if (finishes) options.complete(undefined, statement, [{ ONE: 1 }]);
+        return statement;
+      }),
+    };
+    const service = SnowflakeService.getInstance();
+    const internals = service as unknown as { pool: unknown };
+    internals.pool = { use: (fn: (c: typeof connection) => Promise<unknown>) => fn(connection), borrowed: 1, available: 0, pending: 0, size: 1 };
+    return { service, statement };
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+    SnowflakeService.resetInstance();
+    vi.clearAllMocks();
+  });
+
+  it('cancels a statement still running when the timeout fires, rejecting with the timeout error', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(false);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(statement.cancel).toHaveBeenCalledTimes(1);
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+  });
+
+  it('never cancels a statement that completed in time', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(true);
+
+    await expect(service.execute('SELECT 1', [], { timeout: 1_000 })).resolves.toMatchObject({ rows: [{ ONE: 1 }] });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(statement.cancel).not.toHaveBeenCalled();
+  });
+});
+
 describe('SnowflakeService pool creation failure', () => {
   const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
 
