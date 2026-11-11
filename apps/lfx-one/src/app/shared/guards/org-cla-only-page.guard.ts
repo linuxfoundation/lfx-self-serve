@@ -5,14 +5,12 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, NavigationStart, Router, UrlTree } from '@angular/router';
-import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_EASYCLA_PAGE_SEGMENT, ORG_LENS_URL_ROOT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { filter, firstValueFrom, of, ReplaySubject, take, takeUntil, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
 import { OrgClaOnlyAccessService } from '../services/org-cla-only-access.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
-
-const CLA_PAGE = 'easycla';
 
 /**
  * M3 — on `/company/{segment}/…`, a company the caller reaches only as its CLA Manager opens the
@@ -27,7 +25,7 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   }
 
   const page = pageRouteOf(childRoute);
-  if (!page || page.routeConfig?.path === CLA_PAGE) {
+  if (!page || page.routeConfig?.path === ORG_EASYCLA_PAGE_SEGMENT) {
     return true;
   }
 
@@ -42,7 +40,8 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   // another company is never judged by this navigation's answer.
   const uid = accountContext.selectedAccount().uid;
   const segment = page.parent?.paramMap.get(ORG_SEGMENT_PARAM) ?? null;
-  const claPage = (): UrlTree | null => (segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree(['/company', segment, CLA_PAGE]) : null);
+  const claPage = (): UrlTree | null =>
+    segment && claOnlyAccess.isClaOnly(uid) ? router.createUrlTree([`/${ORG_LENS_URL_ROOT}`, segment, ORG_EASYCLA_PAGE_SEGMENT]) : null;
 
   // Watched from before the first await and replayed, so a navigation that starts during a wait still
   // cancels the late redirect below.

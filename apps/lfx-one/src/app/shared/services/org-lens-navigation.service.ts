@@ -14,6 +14,7 @@ import {
   ORG_SEGMENT_PARAM,
 } from '@lfx-one/shared/constants';
 import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
+import { orgRollUpSegment } from '@lfx-one/shared/utils';
 
 import { AccountContextService } from './account-context.service';
 
@@ -76,6 +77,29 @@ export class OrgLensNavigationService {
   /** `orgLensLink` as a single path string, for string-typed `routerLink`s (sidebar items). */
   public orgLensPath(page: string, ...rest: (string | number)[]): string {
     return this.orgLensLink(page, ...rest).join('/');
+  }
+
+  /**
+   * Land on a family roll-up's home page, `/org/family-{rootUid}/overview` (#4133).
+   *
+   * Not `navigateToSelectedOrg('switch')`, which keeps the current page: the roll-up does not
+   * render every Org Lens page — Org Profile is single-org by definition (#4125) — so a switch from
+   * `/org/acme/profile` would otherwise address `/org/family-…/profile`. Pushed, not replaced, so Back
+   * returns to the organization and page the pick was made from, matching a switch between
+   * organizations (US2 scenario 3).
+   *
+   * With one exception, the same one `navigateToSelectedOrg` makes: an address that names no
+   * organization — bare `/org`, or a legacy `/org/{page}` the org list has not canonicalized yet —
+   * has no pre-switch organization for Back to return to. Pushing would leave a copy of the screen
+   * the viewer just left in history, which on the way back renders under the *new* roll-up
+   * selection. That is the uncopyable form of the same page, so it is replaced (#4415, Copilot).
+   * The dead end still pushes: a pick is the one way to leave it, and Back may return there.
+   */
+  public navigateToRollUpHome(rootUid: string): void {
+    const segments = this.currentPrimarySegments();
+    const namesNoOrganization =
+      segments[0] === 'org' && (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && !this.isNotFoundAddress(segments);
+    void this.router.navigate(['/org', orgRollUpSegment(rootUid), 'overview'], namesNoOrganization ? { replaceUrl: true } : {});
   }
 
   /** `isNotFoundAddress` for the router's current address — the one page a same-organization pick may still leave. */
@@ -170,6 +194,9 @@ export class OrgLensNavigationService {
       // `/org/{organization}/…`: a switch swaps the organization and keeps the page; a default
       // leaves an addressed organization alone.
       const selected = this.accountContext.selectedAccount();
+      // `segment` is already the family's `family-{rootUid}` key when a roll-up is selected
+      // (`orgUrlSegment` emits it), so `/org/family-{rootUid}/people` is caught by the first comparison and
+      // switching in or out of the roll-up swaps the segment like any other organization (#4133).
       if (intent !== 'switch' || segments[1] === segment || segments[1] === selected.uid) {
         return;
       }

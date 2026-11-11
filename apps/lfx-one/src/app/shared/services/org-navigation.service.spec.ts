@@ -53,6 +53,7 @@ describe('OrgNavigationService default selection', () => {
   let grantsError: WritableSignal<string | null>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnAddressedPage: ReturnType<typeof vi.fn>;
+  let isRollUp: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
@@ -73,6 +74,7 @@ describe('OrgNavigationService default selection', () => {
     grantsError = signal<string | null>(null);
     navigateToSelectedOrg = vi.fn();
     isOnAddressedPage = vi.fn(() => false);
+    isRollUp = vi.fn(() => false);
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
       providers: [
@@ -107,6 +109,7 @@ describe('OrgNavigationService default selection', () => {
             clearAccount,
             refreshCanonicalRecord,
             getStoredUid: () => null,
+            isRollUp,
           },
         },
       ],
@@ -451,6 +454,10 @@ describe('OrgNavigationService default selection', () => {
   // not it appears on the first page, it stays selected and the address is not touched.
   it('leaves an addressed selection alone', () => {
     isAdoptedFromAddress.mockReturnValue(true);
+    // The premise of this spec: the URL names B. Left at the mock's default (`false`) when this was
+    // written, because nothing read it then — an address-pinned selection on an *unaddressed* URL
+    // is a different case, and now has its own specs above.
+    isOnAddressedPage.mockReturnValue(true);
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
 
     bootstrapWith([item(UID_A, 'Acme')]);
@@ -634,6 +641,75 @@ describe('OrgNavigationService default selection', () => {
       requests[1].flush(page([]));
 
       expect(clearAccount).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * lfx-self-serve#4125 / PR #4415 review 7. A roll-up restored from the cookie pins as an address
+   * selection even when the URL names no organization (`/org`, or a legacy `/org/{page}`), because
+   * nothing may re-default it. The pin alone left the combined view living only in the cookie: the
+   * address still read `/org/people`, so sharing or reloading that link dropped it.
+   */
+  describe('restored roll-up on an unaddressed URL', () => {
+    const rows = (): OrgItem[] => [item('0014100000MgaAAAAA', 'Alpha'), item('0014100000MgbBBBBB', 'Bravo')];
+
+    it('writes the default address while keeping the selection pinned', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(true);
+      isOnAddressedPage.mockReturnValue(false);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+      // The pin is about the selection, not the address: nothing re-selects.
+      expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    it('leaves an address that already names the roll-up alone', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(true);
+      isOnAddressedPage.mockReturnValue(true);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Copilot on PR #4415. This spec used to assert the opposite, and so locked in the defect: on
+     * `/org/people` with a roll-up cookie, if the grants settle to one organization before org-items
+     * answers, the demotion pins its concrete fallback as an address selection — but
+     * `repointAddressAfterDemotion` only corrects a `/org/family-{rootUid}/…` address, and a legacy one names no
+     * organization to correct. Gating the write on `isRollUp()` then skipped it, leaving the page
+     * rendering one organization under an address that does not identify it.
+     *
+     * `isOnAddressedPage()` is the real condition, and it already excludes a resolver adoption.
+     */
+    it('writes the address for a concrete pin the URL does not name', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(false);
+      isOnAddressedPage.mockReturnValue(false);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+      // Still only the address: the demotion's pin owns the selection.
+      expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    // Unchanged for a resolver adoption: the address already names the organization.
+    it('does not write an address for a concrete organization the URL already names', async () => {
+      isAdoptedFromAddress.mockReturnValue(true);
+      isRollUp.mockReturnValue(false);
+      isOnAddressedPage.mockReturnValue(true);
+
+      bootstrapWith(rows());
+      await settle();
+
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
     });
   });
 });

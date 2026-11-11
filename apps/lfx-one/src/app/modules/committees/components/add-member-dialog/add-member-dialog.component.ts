@@ -39,6 +39,7 @@ import {
   extractRegistrantEmails,
   filterUnlistedEmails,
   hasLfAccount,
+  isInviteExpired,
   normalizeToUrl,
   parseEmailList,
   rankUserSearchResults,
@@ -137,8 +138,12 @@ export class AddMemberDialogComponent {
   private readonly existingMemberEmails = new Set<string>(
     ((this.config.data?.existingMembers as CommitteeMember[]) ?? []).map((m) => (m.email ?? '').trim().toLowerCase()).filter(Boolean)
   );
+  // An expired invite no longer blocks a new one: inviting the same email reinstates it with a fresh expiry.
   private readonly existingInviteEmails = new Set<string>(
-    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? []).map((i) => (i.invitee_email ?? '').trim().toLowerCase()).filter(Boolean)
+    ((this.config.data?.existingInvites as CommitteeInvite[]) ?? [])
+      .filter((i) => !isInviteExpired(i.expires_at))
+      .map((i) => (i.invitee_email ?? '').trim().toLowerCase())
+      .filter(Boolean)
   );
   /** Pending invite UID by email — used to revoke stale invites after admin direct-add. */
   private readonly pendingInviteUidByEmail = new Map<string, string>(

@@ -35,6 +35,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
+import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
@@ -61,6 +62,8 @@ function orgLensPageRoutes(): Routes {
   return [
     {
       path: 'easycla',
+      // A corporate CLA belongs to one company, so the roll-up redirects to its own overview (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
         title: 'EasyCLA',
@@ -94,6 +97,8 @@ function orgLensPageRoutes(): Routes {
       // Componentless parent so both children share its data.
       path: 'initiatives',
       data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your company.', icon: 'fa-light fa-box-dollar' },
+      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       children: [
         {
           path: '',
@@ -110,6 +115,8 @@ function orgLensPageRoutes(): Routes {
       // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
       path: 'donations',
       canMatch: [cfOrgDonationsGuard],
+      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
         title: 'Donations',
@@ -243,6 +250,8 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your company.', icon: 'fa-light fa-file' },
+      // Single-organization by definition, so the roll-up redirects to its own overview (#4415).
+      canActivate: [orgRollUpSingleOrgPageGuard],
       loadComponent: loadOrgProfilePage,
     },
   ];

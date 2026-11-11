@@ -11,6 +11,7 @@ import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiSplitButtonComponent } from '@shared/uikit/split-button/split-button.component';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { catchError, distinctUntilChanged, of, startWith, switchMap, take } from 'rxjs';
 
 import { MeetingsHomeDialogsService } from '../../../services/meetings-home-dialogs.service';
@@ -39,6 +40,7 @@ import { MeetingDetailsRsvpComponent } from './rsvp/meeting-details-rsvp.compone
     UiNoteComponent,
     UiSkeletonComponent,
     UiSplitButtonComponent,
+    UiTooltipDirective,
   ],
   templateUrl: './meeting-details-tools.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

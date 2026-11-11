@@ -206,6 +206,35 @@ describe('OrgLensNavigationService', () => {
     });
   });
 
+  /**
+   * Copilot on PR #4415. The roll-up pick always pushed, so an address naming no organization — a
+   * bare `/org` or a legacy `/org/{page}` the org list had not canonicalized yet — stayed in
+   * history. Back then re-rendered that same screen under the *new* roll-up selection instead of
+   * returning to the organization the pick was made from.
+   */
+  describe('navigateToRollUpHome', () => {
+    it.each([['/org'], ['/org/people'], ['/org/easycla/abc-123']])('replaces an address that names no organization (%s)', (url) => {
+      currentUrl = url;
+      service.navigateToRollUpHome('0014100000RootAAAA');
+      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
+    });
+
+    it.each([['/org/acme-inc/projects'], ['/org/not-found']])('pushes from an address Back should return to (%s)', (url) => {
+      currentUrl = url;
+      service.navigateToRollUpHome('0014100000RootAAAA');
+      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
+      expect(navigate.mock.calls[0][1]?.replaceUrl).toBeFalsy();
+    });
+
+    // Picked from another lens: there is no Org Lens address to canonicalize, so Back returns there.
+    it('pushes from outside Org Lens', () => {
+      currentUrl = '/meetings';
+      service.navigateToRollUpHome('0014100000RootAAAA');
+      expect(navigate.mock.calls[0][1]?.replaceUrl).toBeFalsy();
+    });
+  });
+
   describe('isOnNotFound', () => {
     it.each([
       ['/company/not-found', true],

@@ -49,8 +49,8 @@ export class MeetingDetailsRsvpComponent {
   );
 
   protected invitePeople(): void {
-    // As Edit Meeting: the drawer stays open under the scope question and closes once the editor opens.
-    this.editService.edit(this.context.shownRow(), undefined, this.dialogRef);
+    // As Edit Meeting at its Guests step: the drawer stays open under the scope question and closes once the editor opens.
+    this.editService.edit(this.context.shownRow(), 'guests', this.dialogRef);
   }
 
   private initRoster(): Signal<MeetingRegistrant[] | null | undefined> {

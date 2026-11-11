@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -381,6 +381,61 @@ describe('FormationChecklistSectionComponent', () => {
   });
 
   // GH-2573: ?item=<key> deep-link from assignment emails
+  describe('failed checklist read (#5541)', () => {
+    const failWith = (status: number) => throwError(() => new HttpErrorResponse({ status, statusText: 'x' }));
+    const byTestId = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+    for (const [mode, projectSlug] of [
+      ['context (/project/formation)', undefined],
+      ['explicit slug (/foundation/formations/:slug)', 'other-project'],
+    ] as const) {
+      it(`shows the neutral no-checklist state, with no Retry, for a 404 in ${mode}`, async () => {
+        const emitted: (FormationChecklistResponse | null)[] = [];
+        await render(buildResponse('live', 'live'), { projectSlug, fetchResult: failWith(404), onResponseLoaded: (value) => emitted.push(value) });
+
+        expect(fixture.componentInstance['pageState']()).toBe('no-checklist');
+        const empty = byTestId('formation-checklist-empty-no-checklist');
+        expect(empty?.textContent).toContain('Nothing to track for this project yet');
+        expect(empty?.textContent).toContain('Formation items start when the project moves into a formation stage.');
+        expect(empty?.textContent).not.toMatch(/access|exist/i);
+        expect(byTestId('formation-checklist-retry')).toBeNull();
+        expect(byTestId('formation-checklist-inline-error')).toBeNull();
+        expect(emitted).toEqual([null]);
+      });
+    }
+
+    it('keeps the retryable error state for a 500', async () => {
+      await render(buildResponse('live', 'live'), { fetchResult: failWith(500) });
+
+      expect(fixture.componentInstance['pageState']()).toBe('error');
+      expect(byTestId('formation-checklist-inline-error')).not.toBeNull();
+      expect(byTestId('formation-checklist-retry')).not.toBeNull();
+      expect(byTestId('formation-checklist-empty-no-checklist')).toBeNull();
+    });
+
+    it('keeps the retryable error state for a 403 or a non-HTTP failure', async () => {
+      await render(buildResponse('live', 'live'), { fetchResult: failWith(403) });
+      expect(fixture.componentInstance['pageState']()).toBe('error');
+
+      await render(buildResponse('live', 'live'), { fetchResult: throwError(() => new Error('network error')) });
+      expect(fixture.componentInstance['pageState']()).toBe('error');
+    });
+
+    it('leaves the no-checklist state when a later read succeeds', async () => {
+      const response = buildResponse('live', 'live');
+      await render(response, { fetchResult: failWith(404) });
+      expect(fixture.componentInstance['pageState']()).toBe('no-checklist');
+
+      getProjectFormation.mockReturnValue(of(response));
+      fixture.componentInstance.reload();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance['pageState']()).toBe('ready');
+    });
+  });
+
   describe('?item= deep-link (GH-2573)', () => {
     async function renderWithItem(
       itemKey: string | null,
@@ -471,6 +526,15 @@ describe('FormationChecklistSectionComponent', () => {
     it('clears ?item= on a terminal no-template state without opening a drawer', async () => {
       const noTemplateResponse: FormationChecklistResponse = { ...buildResponse('live', 'live'), template: null };
       const { fixture, replaceStateSpy } = await renderWithItem('test-item', { response: noTemplateResponse });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(replaceStateSpy).toHaveBeenCalledOnce();
+    });
+
+    it('clears ?item= on a terminal no-checklist state without opening a drawer', async () => {
+      const { fixture, replaceStateSpy } = await renderWithItem('test-item', {
+        fetchResult: throwError(() => new HttpErrorResponse({ status: 404, statusText: 'Not Found' })),
+      });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
       expect(replaceStateSpy).toHaveBeenCalledOnce();

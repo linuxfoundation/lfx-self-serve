@@ -12,7 +12,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_TYPE_CONFIGS, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { MEETING_TYPE_CONFIGS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import { Committee, Meeting, MeetingCalendarClickProps, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
 import {
   getCurrentOrNextOccurrence,
@@ -26,6 +26,7 @@ import {
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -97,7 +98,7 @@ export class CommitteeMeetingsComponent {
    * defaulted to `false` so a slow or unreachable provider routes "Schedule meeting" to the pre-v2
    * create page rather than a composer this user isn't targeted for. See `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
 
   // Query params for the create-meeting route. Includes project slug so writerGuard
   // can resolve write access — without it the guard redirects to the lens overview.

@@ -120,6 +120,24 @@ export function formatInviteExpiry(expiresAt: string | null | undefined): string
 }
 
 /**
+ * Whether an invite's link has expired, judged by its `expires_at` (RFC3339) against `now`.
+ *
+ * A missing or unparseable `expires_at` is never expired: committee-service does not stamp an expiry
+ * on invites created before that field existed, and treats those records as never expiring, so the
+ * UI must not offer a resend for them. An expiry exactly equal to `now` is not yet expired.
+ */
+export function isInviteExpired(expiresAt: string | null | undefined, now: Date = new Date()): boolean {
+  if (!expiresAt) {
+    return false;
+  }
+  const expiry = new Date(expiresAt);
+  if (Number.isNaN(expiry.getTime())) {
+    return false;
+  }
+  return expiry.getTime() < now.getTime();
+}
+
+/**
  * Pure mapping from enriched pending committee invitations to dashboard pending-action rows.
  *
  * Extracted from the server aggregator so the row shape — the copy fallback, the accept/decline

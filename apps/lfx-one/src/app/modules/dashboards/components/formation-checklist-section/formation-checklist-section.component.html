@@ -25,6 +25,13 @@
         </button>
       </div>
     }
+    @case ('no-checklist') {
+      <lfx-empty-state
+        icon="fa-light fa-clipboard-list"
+        [title]="noChecklistCopy.title"
+        [subtitle]="noChecklistCopy.subtitle"
+        data-testid="formation-checklist-empty-no-checklist" />
+    }
     @case ('no-template') {
       <lfx-empty-state
         icon="fa-light fa-clipboard-list"

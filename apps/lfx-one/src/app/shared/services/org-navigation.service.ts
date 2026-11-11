@@ -311,6 +311,26 @@ export class OrgNavigationService {
     // pin (below) came from this very list, so a later authoritative page re-runs the selection —
     // that is how a revoked organization is released instead of kept for the session.
     if (this.accountContextService.isAdoptedFromAddress()) {
+      // One exception, and it is about the address rather than the selection. Two selections pin as
+      // an address while the URL names no organization — `/org`, or a legacy `/org/{page}`:
+      //
+      //  - a roll-up restored from the cookie, because nothing may re-default it. The pin alone
+      //    leaves the combined view living only in the cookie: the address still reads
+      //    `/org/people`, so sharing or reloading that link drops it (#4415 review 7).
+      //  - the organization a demotion fell back to, which `applyDemotionFallback` pins for the
+      //    same reason. `repointAddressAfterDemotion` corrects a `/org/family-{rootUid}/…` address but no-ops on
+      //    a legacy one, which names no organization to correct — so without this the page would
+      //    render one organization under `/org/people` and a shared link would not identify it
+      //    (#4415, Copilot).
+      //
+      // `isOnAddressedPage()` is what separates these from a genuine resolver adoption: there the
+      // URL already names the organization, so there is nothing to write. The selection stays
+      // pinned either way; only the address is written, through the same idle-safe writer every
+      // default uses, which takes the legacy-insert path. It is a no-op off `/org/…` entirely
+      // (`navigateToSelectedOrg` → `isRewritableOrgAddress`).
+      if (!this.orgLensNavigation.isOnAddressedPage()) {
+        this.writeDefaultAddress();
+      }
       return;
     }
     if (page.items.length === 0) {

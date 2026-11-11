@@ -17,6 +17,7 @@
 1	apps/lfx-one/src/app/modules/profile/components/profile-edit-drawer/profile-edit-drawer.component.html
 1	apps/lfx-one/src/app/modules/surveys/components/survey-responses-list/survey-responses-list.component.html
 2	apps/lfx-one/src/app/modules/votes/components/vote-voters/vote-voters.component.html
+1	apps/lfx-one/src/app/shared/components/org-selector/org-selector.component.ts
 1	docs/user/committees/manage-committees/index.md
 1	docs/user/surveys/create-survey/index.md
 1	packages/shared/src/utils/__fixtures__/aeo-geo-domain.fixture.ts
