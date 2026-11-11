@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -13,6 +14,8 @@ import { Committee, CommitteeDocument, FilterPillOption, MyDocumentItem, MyDocum
 import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { DocumentService } from '@services/document.service';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 
@@ -33,6 +36,7 @@ export class CommitteeDocumentsComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly documentService = inject(DocumentService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
 
   // === Inputs ===
   public readonly committee = input.required<Committee>();
@@ -156,6 +160,32 @@ export class CommitteeDocumentsComponent {
         }
       },
     });
+  }
+
+  /** Deletes a group document the user already confirmed in the table, then refreshes the list. */
+  public onDocumentDelete(doc: MyDocumentItem): void {
+    const type = doc.manageableType;
+    if (!type) return;
+
+    // Row ids are `committee_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+
+    this.committeeService
+      .deleteCommitteeDocument(this.committee().uid, documentUid, type)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${doc.name}" was deleted.` });
+          this.onDocumentsChanged();
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Delete failed',
+            detail: getHttpErrorDetail(err, `Failed to delete "${doc.name}". Please try again.`),
+          });
+        },
+      });
   }
 
   public openUploadFileDialog(): void {
@@ -402,6 +432,7 @@ export class CommitteeDocumentsComponent {
       isChild,
       downloadUrl: isFile && ownerCommitteeUid ? `/api/committees/${ownerCommitteeUid}/documents/${doc.uid}/download` : undefined,
       uploadedBy: doc.uploaded_by,
+      manageableType: doc.type,
     };
   }
 

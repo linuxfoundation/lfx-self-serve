@@ -4,6 +4,9 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
+  DOCUMENT_DELETE_TYPES,
+  DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+  DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   QUERY_SERVICE_MAX_PAGE_SIZE,
@@ -41,6 +44,7 @@ import {
   PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
+  ProjectDocumentType,
   ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
@@ -2214,11 +2218,24 @@ export class CommitteeService {
   }
 
   /**
-   * Deletes a committee folder or link using ETag for concurrency control.
-   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   * Deletes a committee folder, link or uploaded file using ETag for concurrency control.
+   * A folder is only deleted when it is empty.
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
    */
-  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: string): Promise<void> {
-    const resourcePath = documentType === 'folder' ? `/committees/${committeeId}/folders/${documentId}` : `/committees/${committeeId}/links/${documentId}`;
+  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path on a destructive route.
+    if (!DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_DELETE_TYPES.join(', ')}.`, {
+        operation: 'delete_committee_document',
+        service: 'committee_service',
+      });
+    }
+
+    if (documentType === 'folder') {
+      await this.assertCommitteeFolderEmpty(req, committeeId, documentId);
+    }
+
+    const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
 
     // Step 1: Fetch resource with ETag
     const { etag } = await this.etagService.fetchWithETag<CommitteeDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_committee_document');
@@ -2881,5 +2898,37 @@ export class CommitteeService {
       return [];
     }
     return pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
+  }
+
+  /**
+   * Rejects (409) when a committee folder still holds a link or an uploaded file. The upstream folder delete only
+   * mentions links, so the BFF checks files itself. Unlike the list view, a lookup failure is not swallowed into
+   * "empty": a destructive call must fail closed.
+   */
+  private async assertCommitteeFolderEmpty(req: Request, committeeId: string, folderId: string): Promise<void> {
+    const [links, files] = await Promise.all([
+      this.microserviceProxy.proxyRequest<CommitteeLink[]>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/links`, 'GET'),
+      fetchAllQueryResources<CommitteeDocumentQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'committee_document',
+            tags: `committee_uid:${committeeId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ),
+    ]);
+
+    const hasChildren = (links ?? []).some((link) => link.folder_uid === folderId) || files.some((file) => file.folder_uid === folderId);
+
+    if (hasChildren) {
+      throw new ConflictError(DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, 'FOLDER_NOT_EMPTY', {
+        operation: 'delete_committee_document',
+        service: 'committee_service',
+        details: { committee_uid: committeeId, folder_uid: folderId },
+        clientMessage: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+      });
+    }
   }
 }

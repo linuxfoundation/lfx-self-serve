@@ -4,9 +4,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MyDocumentItem } from '@lfx-one/shared/interfaces';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, RouterLink } from '@angular/router';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DocumentsTableComponent } from './documents-table.component';
 
@@ -35,7 +37,7 @@ describe('DocumentsTableComponent actions', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [DocumentsTableComponent],
-      providers: [provideRouter([]), { provide: DialogService, useValue: { open: () => null } }],
+      providers: [provideRouter([]), { provide: DialogService, useValue: { open: () => null } }, MessageService],
     }).compileComponents();
     fixture = TestBed.createComponent(DocumentsTableComponent);
   });
@@ -116,5 +118,119 @@ describe('DocumentsTableComponent actions', () => {
       await render(doc({ source: 'meeting', groupOrMeetingName: 'Weekly sync', groupOrMeetingUid: 'm-1', meetingId: 'm-1' }));
       expect(fixture.debugElement.query(By.css('[data-testid="documents-source-link-doc-1"]')).injector.get(RouterLink).state).toBeUndefined();
     });
+  });
+});
+
+describe('DocumentsTableComponent row actions menu', () => {
+  let fixture: ComponentFixture<DocumentsTableComponent>;
+  let messageService: { add: ReturnType<typeof vi.fn> };
+  let deleted: MyDocumentItem[];
+
+  const actionsButton = (): HTMLElement | null =>
+    fixture.nativeElement.querySelector('[data-testid="documents-actions-doc-1"] button, button[data-testid="documents-actions-doc-1"]');
+  const body = (): HTMLElement => document.body;
+
+  async function render(item: MyDocumentItem, canManage = true): Promise<void> {
+    fixture.componentRef.setInput('documents', [item]);
+    fixture.componentRef.setInput('showFoundation', false);
+    fixture.componentRef.setInput('canManage', canManage);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  /** Opens the row's menu and clicks Delete. */
+  async function clickDelete(): Promise<void> {
+    actionsButton()?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const item = Array.from(body().querySelectorAll<HTMLElement>('.p-menu-item-link, [role="menuitem"] a')).find((el) => el.textContent?.includes('Delete'));
+    item?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  const confirmButton = (kind: 'accept' | 'reject'): HTMLElement | null =>
+    body().querySelector(
+      kind === 'accept' ? '.p-confirmdialog-accept-button, .p-confirm-dialog-accept' : '.p-confirmdialog-reject-button, .p-confirm-dialog-reject'
+    );
+
+  beforeEach(async () => {
+    messageService = { add: vi.fn() };
+    deleted = [];
+    await TestBed.configureTestingModule({
+      imports: [DocumentsTableComponent],
+      // The row menu is a PrimeNG overlay, which needs animations configured to open.
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: DialogService, useValue: { open: () => null } },
+        { provide: MessageService, useValue: messageService },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(DocumentsTableComponent);
+    fixture.componentInstance.documentDelete.subscribe((item) => deleted.push(item));
+  });
+
+  it('shows the actions button on a manageable row when the viewer can manage', async () => {
+    await render(doc({ manageableType: 'link', url: 'https://example.com' }));
+
+    expect(actionsButton()).toBeTruthy();
+  });
+
+  it('shows no actions button when the viewer cannot manage', async () => {
+    await render(doc({ manageableType: 'link', url: 'https://example.com' }), false);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="documents-actions-doc-1"]')).toBeNull();
+  });
+
+  it('shows no actions button on a row the page cannot manage, such as a meeting document', async () => {
+    await render(doc({ source: 'meeting', documentKind: 'file', url: 'https://example.com/f.pdf' }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="documents-actions-doc-1"]')).toBeNull();
+  });
+
+  it('asks for confirmation, then emits the row once confirmed', async () => {
+    await render(doc({ manageableType: 'link', name: 'Roadmap', url: 'https://example.com' }));
+
+    await clickDelete();
+
+    expect(body().textContent).toContain('Delete "Roadmap"?');
+    expect(deleted).toEqual([]);
+
+    confirmButton('accept')?.click();
+    fixture.detectChanges();
+
+    expect(deleted.map((row) => row.id)).toEqual(['doc-1']);
+  });
+
+  it('emits nothing when the confirmation is cancelled', async () => {
+    await render(doc({ manageableType: 'file', name: 'Minutes.pdf', downloadUrl: '/api/x/download', attachmentUid: 'd' }));
+
+    await clickDelete();
+    confirmButton('reject')?.click();
+    fixture.detectChanges();
+
+    expect(deleted).toEqual([]);
+  });
+
+  it('refuses to delete a folder that still has documents and says what to do instead', async () => {
+    await render(doc({ manageableType: 'folder', isFolder: true, childCount: 2, name: 'Archive' }));
+
+    await clickDelete();
+
+    expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: expect.stringContaining('Delete or move them') }));
+    expect(confirmButton('accept')).toBeNull();
+    expect(deleted).toEqual([]);
+  });
+
+  it('lets an empty folder go through the confirmation', async () => {
+    await render(doc({ manageableType: 'folder', isFolder: true, childCount: 0, name: 'Archive' }));
+
+    await clickDelete();
+    confirmButton('accept')?.click();
+    fixture.detectChanges();
+
+    expect(messageService.add).not.toHaveBeenCalled();
+    expect(deleted.map((row) => row.id)).toEqual(['doc-1']);
   });
 });

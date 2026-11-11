@@ -24,6 +24,7 @@ const {
   checkAccessStrict,
   fetchWithETag,
   updateWithETag,
+  deleteWithETag,
   resolveAuditUserDisplayName,
   isImpersonating,
   enrichWithProjectData,
@@ -43,6 +44,7 @@ const {
   ),
   fetchWithETag: vi.fn(),
   updateWithETag: vi.fn(),
+  deleteWithETag: vi.fn(),
   resolveAuditUserDisplayName: vi.fn(),
   isImpersonating: vi.fn(() => false),
   // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
@@ -66,7 +68,13 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
     '../../../../../packages/shared/src/constants/api.constants'
   );
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
   return {
+    DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
+    DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE: documentConstants.DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
     // Mirrors packages/shared/src/constants/member-import.constants.ts; that module pulls in the mocked enums barrel.
@@ -96,6 +104,7 @@ vi.mock('./etag.service', () => ({
   ETagService: class {
     public fetchWithETag = fetchWithETag;
     public updateWithETag = updateWithETag;
+    public deleteWithETag = deleteWithETag;
   },
 }));
 vi.mock('./project.service', () => ({
@@ -374,6 +383,78 @@ describe('CommitteeService — getCommitteeDocuments', () => {
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Ada Lovelace' }, undefined);
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Bob Builder' }, undefined);
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Carol Danvers' }, 'legacyuser');
+  });
+});
+
+describe('CommitteeService — deleteCommitteeDocument', () => {
+  let service: CommitteeService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    deleteWithETag.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    fetchWithETag.mockResolvedValue({ data: {}, etag: 'etag-1' });
+    deleteWithETag.mockResolvedValue(undefined);
+    service = new CommitteeService();
+  });
+
+  it.each([
+    ['link', '/committees/committee-1/links/doc-1'],
+    ['file', '/committees/committee-1/documents/doc-1'],
+  ] as const)('deletes a %s through its own upstream path with the fetched ETag', async (type, path) => {
+    await service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', type);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'delete_committee_document');
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', 'delete_committee_document');
+    // Only folders are checked for children.
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(fetchAllQueryResources).not.toHaveBeenCalled();
+  });
+
+  it('deletes an empty folder', async () => {
+    proxyRequest.mockResolvedValueOnce([{ uid: 'link-1', name: 'Elsewhere', folder_uid: 'other-folder' }]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([{ uid: 'file-1', name: 'Root file' }]);
+
+    await service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder');
+
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/committees/committee-1/folders/folder-1', 'etag-1', 'delete_committee_document');
+  });
+
+  it('rejects a folder that still holds a link with a 409 and deletes nothing', async () => {
+    proxyRequest.mockResolvedValueOnce([{ uid: 'link-1', name: 'Inside', folder_uid: 'folder-1' }]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([]);
+
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FOLDER_NOT_EMPTY',
+    });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects a folder that only holds a file, which the upstream folder delete does not check', async () => {
+    proxyRequest.mockResolvedValueOnce([]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([{ uid: 'file-1', name: 'Inside', folder_uid: 'folder-1' }]);
+
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FOLDER_NOT_EMPTY',
+    });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the children lookup fails instead of treating the folder as empty', async () => {
+    proxyRequest.mockResolvedValueOnce([]);
+    vi.mocked(fetchAllQueryResources).mockRejectedValueOnce(new Error('query service down'));
+
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toThrow('query service down');
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
   });
 });
 

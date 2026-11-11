@@ -3,10 +3,23 @@
 
 import { TagSeverity } from '../interfaces/components.interface';
 import { MyDocumentSource } from '../interfaces/my-document.interface';
-import { DocumentKind, DocumentKindTag } from '../interfaces/project.interface';
+import { DocumentKind, DocumentKindTag, ProjectDocumentType } from '../interfaces/project.interface';
 
 /** Label constant for the documents feature — follows the existing COMMITTEE_LABEL, MAILING_LIST_LABEL pattern. */
 export const DOCUMENT_LABEL = { singular: 'Document', plural: 'Documents' };
+
+/** Group and project document types a writer can delete from the Documents tab. */
+export const DOCUMENT_DELETE_TYPES: readonly ProjectDocumentType[] = ['file', 'link', 'folder'];
+
+/** Upstream path segment each group/project document type lives under (`/committees/{id}/folders/{uid}`, `/projects/{id}/documents/{uid}`). */
+export const DOCUMENT_UPSTREAM_PATH_SEGMENTS: Record<ProjectDocumentType, string> = {
+  folder: 'folders',
+  link: 'links',
+  file: 'documents',
+};
+
+/** Shown instead of deleting a folder that still holds links or files; shared so the UI and the BFF say the same thing. */
+export const DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE = 'This folder still has documents in it. Delete or move them before deleting the folder.';
 
 /**
  * Source types that are grouped under the "Meeting" filter option.

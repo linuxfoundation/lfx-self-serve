@@ -2,17 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
 import { GroupLinkState, MyDocumentItem, MyDocumentTableRow } from '@lfx-one/shared/interfaces';
 import { getDocumentSourceLink } from '@lfx-one/shared/utils';
 import { DocumentDisplayNamePipe } from '@app/shared/pipes/document-display-name.pipe';
 import { DocumentKindTagPipe } from '@app/shared/pipes/document-kind-tag.pipe';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 
@@ -28,13 +32,18 @@ import { TooltipModule } from 'primeng/tooltip';
     DocumentDisplayNamePipe,
     TooltipModule,
     RouterLink,
+    MenuComponent,
+    ConfirmDialogModule,
   ],
-  providers: [DialogService],
+  // NOTE: MessageService is deliberately not provided here: a single root instance must back the global <p-toast />.
+  providers: [DialogService, ConfirmationService],
   templateUrl: './documents-table.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DocumentsTableComponent {
   private readonly dialogService = inject(DialogService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
 
   public readonly documents = input<MyDocumentItem[]>([]);
   public readonly loading = input<boolean>(false);
@@ -46,12 +55,33 @@ export class DocumentsTableComponent {
   // Navigation state for group links, so the group page returns to the documents page. Meeting and mailing list pages take none.
   public readonly groupLinkState = input<GroupLinkState | null>(null);
 
+  // Whether the viewer may change the documents shown. Rows still need `manageableType` set by the page to get actions.
+  public readonly canManage = input<boolean>(false);
+
   /** Emitted when a row with `isFolder: true` is clicked. Consumers use this to drill into the folder. */
   public readonly folderOpen = output<MyDocumentItem>();
+  /** Emitted after the user confirms deleting a manageable row. The page makes the API call and refreshes. */
+  public readonly documentDelete = output<MyDocumentItem>();
+
+  /** The row whose actions menu is open. */
+  private readonly selectedDocument = signal<MyDocumentItem | null>(null);
 
   protected readonly colSpan = computed(() => (this.showFoundation() ? 7 : 6));
   protected readonly hasDocuments = computed(() => this.documents().length > 0);
   protected readonly rows: Signal<MyDocumentTableRow[]> = this.initRows();
+  protected readonly manageMenuItems: MenuItem[] = this.initManageMenuItems();
+  // Widen the Actions column (and narrow Name by the same amount) only when a row can show the extra menu button.
+  protected readonly nameColumnClass = computed(() => {
+    if (this.showFoundation()) return this.canManage() ? 'w-[24%]' : 'w-[28%]';
+    return this.canManage() ? 'w-[36%]' : 'w-[40%]';
+  });
+  protected readonly actionsColumnClass = computed(() => (this.canManage() ? 'w-[9%]' : 'w-[5%]'));
+
+  protected toggleManageMenu(event: Event, doc: MyDocumentItem, menu: MenuComponent): void {
+    event.stopPropagation();
+    this.selectedDocument.set(doc);
+    menu.toggle(event);
+  }
 
   protected onFolderClick(doc: MyDocumentItem): void {
     this.folderOpen.emit(doc);
@@ -103,5 +133,37 @@ export class DocumentsTableComponent {
 
   private initRows(): Signal<MyDocumentTableRow[]> {
     return computed(() => this.documents().map((doc) => ({ ...doc, sourceLink: getDocumentSourceLink(doc, this.currentGroupUid()) })));
+  }
+
+  private initManageMenuItems(): MenuItem[] {
+    return [
+      {
+        label: 'Delete',
+        icon: 'fa-light fa-trash',
+        styleClass: 'text-red-600',
+        command: () => this.onDeleteClick(this.selectedDocument()),
+      },
+    ];
+  }
+
+  private onDeleteClick(doc: MyDocumentItem | null): void {
+    if (!doc?.manageableType) return;
+
+    // A folder with documents in it is never deleted: say what to do instead. The BFF enforces this too.
+    if (doc.isFolder && (doc.childCount ?? 0) > 0) {
+      this.messageService.add({ severity: 'warn', summary: 'Folder not empty', detail: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE });
+      return;
+    }
+
+    this.confirmationService.confirm({
+      header: `Delete ${doc.manageableType}`,
+      message: `Delete "${doc.name}"? This can't be undone.`,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Delete',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm',
+      accept: () => this.documentDelete.emit(doc),
+    });
   }
 }

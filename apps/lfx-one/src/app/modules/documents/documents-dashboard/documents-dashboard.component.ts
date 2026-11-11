@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -31,9 +32,11 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
+import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -76,6 +79,7 @@ export class DocumentsDashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly dialogService = inject(DialogService);
   private readonly projectService = inject(ProjectService);
+  private readonly messageService = inject(MessageService);
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
@@ -227,6 +231,33 @@ export class DocumentsDashboardComponent {
   /** Reset the breadcrumb to the root view. */
   protected onBreadcrumbHome(): void {
     this.currentFolderUid.set(null);
+  }
+
+  /** Deletes a project document the user already confirmed in the table, then refreshes the list. */
+  protected onDocumentDelete(doc: MyDocumentItem): void {
+    const projectUid = this.project()?.uid;
+    const type = doc.manageableType;
+    if (!projectUid || !type) return;
+
+    // Row ids are `project_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+
+    this.projectService
+      .deleteProjectDocument(projectUid, documentUid, type)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${doc.name}" was deleted.` });
+          this.refreshTrigger.update((v) => v + 1);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Delete failed',
+            detail: getHttpErrorDetail(err, `Failed to delete "${doc.name}". Please try again.`),
+          });
+        },
+      });
   }
 
   protected openUploadFileDialog(): void {
@@ -441,6 +472,8 @@ export class DocumentsDashboardComponent {
       summaryContent: doc.summary_content,
       projectDocumentSource: docSource,
       documentKind: resolveProjectDocumentKind(doc, docSource),
+      // Only the project's own folders, links and files are managed through the project API; committee, meeting and mailing list rows are not.
+      manageableType: docSource === 'project' ? doc.type : undefined,
     };
   }
 
