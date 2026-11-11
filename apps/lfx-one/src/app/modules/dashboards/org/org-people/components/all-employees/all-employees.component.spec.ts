@@ -19,6 +19,7 @@ import {
 import type {
   OrgAllEmployeeCompanyEmailFilter,
   OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeKeyContactFilter,
   OrgAllEmployeeRow,
   OrgAllEmployeesResponse,
   OrgCodeFilterValues,
@@ -1536,6 +1537,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         activity: 'all',
         employment: 'all',
         companyEmail: 'all',
+        keyContact: 'all',
         range: '730d',
         projectScope: FILTERS.projectScope,
         metric: FILTERS.metric,
@@ -1946,6 +1948,81 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       await settle();
 
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-many', 'org-people-all-employees-row-p-one', 'org-people-all-employees-row-p-none']);
+    });
+  });
+  // lfx-self-serve#5628 — the Key Contact filter reads the roles already on each row; nothing is fetched.
+  describe('in the browser, with the key contact filter', () => {
+    const answer = async (): Promise<void> => {
+      snowflake$.next(
+        response(
+          [
+            row('p-none', 'Ada Lovelace'),
+            row('p-bill', 'Alan Turing', { keyContactRoles: ['Billing Contact'] }),
+            row('p-many', 'Grace Hopper', { keyContactRoles: ['Billing Contact', 'Legal Contact'] }),
+            row('p-odd', 'Barbara Liskov', { keyContactRoles: ['Procurement Contact'] }),
+          ],
+          4
+        )
+      );
+      snowflake$.complete();
+      await settle();
+    };
+    const keyContactControl = (): FormControl<OrgAllEmployeeKeyContactFilter> =>
+      (fixture.componentInstance as unknown as { filterForm: FormGroup<{ keyContact: FormControl<OrgAllEmployeeKeyContactFilter> }> }).filterForm.controls
+        .keyContact;
+    const ids = (): string[] =>
+      rowKeys()
+        .map((key) => key.replace('org-people-all-employees-row-', ''))
+        .sort();
+
+    beforeEach(() => getFormerEmployees.mockImplementation(() => of(response([], 0))));
+
+    it('lists everyone by default, and narrows by any, none and each role', async () => {
+      await mount('browser');
+      await answer();
+      expect(ids()).toEqual(['p-bill', 'p-many', 'p-none', 'p-odd']);
+
+      for (const [value, expected] of [
+        ['any', ['p-bill', 'p-many', 'p-odd']],
+        ['none', ['p-none']],
+        ['Billing Contact', ['p-bill', 'p-many']],
+        ['Legal Contact', ['p-many']],
+        ['Technical Contact', []],
+      ] as const) {
+        keyContactControl().setValue(value);
+        await settle();
+        expect(ids()).toEqual([...expected]);
+      }
+    });
+
+    it('writes ?keyContact= on change, drops the default, reads it on load, and clears it with the other filters', async () => {
+      await mount('browser', '/?keyContact=Legal%20Contact');
+      await answer();
+      expect(keyContactControl().value).toBe('Legal Contact');
+      expect(ids()).toEqual(['p-many']);
+      expect(el().querySelector('[data-testid="org-people-all-employees-more-filters-toggle"]')?.textContent).toContain('1');
+
+      keyContactControl().setValue('Billing Contact');
+      await settle();
+      expect(TestBed.inject(Router).url).toContain('keyContact=Billing%20Contact');
+
+      keyContactControl().setValue('all');
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('keyContact');
+
+      keyContactControl().setValue('none');
+      await settle();
+      (fixture.componentInstance as unknown as { clearFilters(): void }).clearFilters();
+      await settle();
+      expect(TestBed.inject(Router).url).not.toContain('keyContact');
+      expect(keyContactControl().value).toBe('all');
+    });
+
+    it('falls back to every row for an unknown ?keyContact= value', async () => {
+      await mount('browser', '/?keyContact=Janitor');
+      await answer();
+      expect(keyContactControl().value).toBe('all');
+      expect(ids()).toHaveLength(4);
     });
   });
   // A rolling deploy serves this bundle against pods that predate the field, and requests are not

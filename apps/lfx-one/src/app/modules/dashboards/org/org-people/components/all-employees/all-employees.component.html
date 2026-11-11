@@ -97,6 +97,16 @@
           ariaLabel="Filter by company email"
           dataTest="org-people-all-employees-company-email-select" />
       </div>
+      <div class="w-full md:w-60" data-testid="org-people-all-employees-key-contact-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="keyContact"
+          size="small"
+          [options]="keyContactOptions"
+          styleClass="w-full"
+          ariaLabel="Filter by key contact role"
+          dataTest="org-people-all-employees-key-contact-select" />
+      </div>
       <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
         <lfx-select
           [form]="filterForm"
