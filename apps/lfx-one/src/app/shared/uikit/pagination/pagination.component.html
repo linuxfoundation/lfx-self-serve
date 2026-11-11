@@ -1,0 +1,44 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (pageCount() > 1) {
+  <div class="flex flex-row flex-wrap items-center justify-between gap-[12px]">
+    <!-- The current page's lift is the library's 0 1px 2px neutral-alpha-100; it yields to the focus halo. -->
+    <nav
+      class="flex flex-row items-center gap-[4px] [&_button[aria-current=page]:not(:focus-visible)]:shadow-[0_1px_2px_var(--ui-neutral-alpha-100)]"
+      aria-label="Pagination"
+      data-testid="ui-pagination-pages">
+      <lfx-ui-button
+        variant="tertiary"
+        size="small"
+        iconOnly
+        icon="fa-light fa-chevron-left"
+        ariaLabel="Previous page"
+        [disabled]="isFirst()"
+        (click)="goTo(current() - 1)"
+        data-testid="ui-pagination-previous" />
+      @for (item of pages(); track item.index) {
+        <lfx-ui-button
+          [variant]="item.variant"
+          size="small"
+          iconOnly
+          [ariaLabel]="item.ariaLabel"
+          [ariaCurrent]="item.ariaCurrent"
+          (click)="goTo(item.index)"
+          data-testid="ui-pagination-page"
+          >{{ item.label }}</lfx-ui-button
+        >
+      }
+      <lfx-ui-button
+        variant="tertiary"
+        size="small"
+        iconOnly
+        icon="fa-light fa-chevron-right"
+        ariaLabel="Next page"
+        [disabled]="isLast()"
+        (click)="goTo(current() + 1)"
+        data-testid="ui-pagination-next" />
+    </nav>
+    <span class="label-12 text-ui-neutral-400" data-testid="ui-pagination-info">{{ info() }}</span>
+  </div>
+}

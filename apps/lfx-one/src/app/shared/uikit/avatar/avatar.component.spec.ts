@@ -49,6 +49,63 @@ describe('UiAvatarComponent', () => {
     expect(initials()).toBe('MS');
   });
 
+  it('sets the initials size and weight for a dense table avatar', async () => {
+    expect(host.style.fontSize).toBe(`${32 * 0.38}px`);
+    expect(host.className).toContain('font-medium');
+
+    fixture.componentRef.setInput('initialsSize', 11);
+    fixture.componentRef.setInput('initialsWeight', 'semibold');
+    await fixture.whenStable();
+
+    expect(host.style.fontSize).toBe('11px');
+    expect(host.className).toContain('font-semibold');
+    expect(host.className).not.toContain('font-medium');
+  });
+
+  describe('logo shape', () => {
+    beforeEach(async () => {
+      fixture.componentRef.setInput('name', 'Acme Motors');
+      fixture.componentRef.setInput('shape', 'logo');
+      fixture.componentRef.setInput('size', 24);
+      await fixture.whenStable();
+    });
+
+    it('is a white 24px box with a neutral-200 border, 6px corners and 4px padding, whatever the tone', async () => {
+      fixture.componentRef.setInput('tone', 'accent');
+      await fixture.whenStable();
+
+      expect(host.style.width).toBe('24px');
+      for (const token of ['rounded-[6px]', 'border', 'border-ui-neutral-200', 'bg-ui-background-100', 'p-[4px]']) {
+        expect(host.className).toContain(token);
+      }
+      expect(host.className).not.toContain('bg-ui-accent-600');
+    });
+
+    it('falls back to the first letter at 10px semibold neutral-600', () => {
+      expect(initials()).toBe('A');
+      expect(host.style.fontSize).toBe('10px');
+      expect(host.className).toContain('text-ui-neutral-600');
+      expect(host.className).toContain('font-semibold');
+    });
+
+    it('contains the logo image instead of covering the box', async () => {
+      fixture.componentRef.setInput('src', 'https://example.com/logo.png');
+      await fixture.whenStable();
+
+      const img = host.querySelector('[data-testid="ui-avatar-image"]') as HTMLElement;
+      expect(img.className).toContain('object-contain');
+      expect(img.className).not.toContain('object-cover');
+      expect(img.getAttribute('alt')).toBe('');
+    });
+
+    it('shows a building glyph for a blank name', async () => {
+      fixture.componentRef.setInput('name', '');
+      await fixture.whenStable();
+
+      expect(host.querySelector('[data-testid="ui-avatar-fallback"]')?.className).toContain('fa-building');
+    });
+  });
+
   it('takes the first two letters of a single word', async () => {
     fixture.componentRef.setInput('name', 'octocat');
     await fixture.whenStable();
