@@ -116,14 +116,17 @@ export function toWireResponse(
  * company-email keys: a stored row is read by its person key only, so it `has` an address when that key is in the
  * keys, else `none` on file; a `cdp:` row is always `unconfirmed`, as the drawer answers it without any lookup; a
  * live-only row is read by its username, so it `has` one when the username's lookup finds one, `none` when the username
- * names one roster person (or, from `lfUsernames`, one LF account) without any, else (or without a username)
- * `unconfirmed`. `lfUsernames` answers the usernames {@link uncoveredLiveUsernames} lists; `null` leaves them
- * `unconfirmed`. `null` keys (the read failed) leave every row unannotated.
+ * names one roster person (or, from `lfUsernames`, one LF account) without any, else `unconfirmed`. A live-only row
+ * without a username is read by the key-contact records at its address, so it `has` one when its address is in
+ * `keyContactAddresses`, else `unconfirmed`. `lfUsernames` answers the usernames {@link uncoveredLiveUsernames} lists and
+ * `keyContactAddresses` the addresses {@link liveKeyContactAddresses} lists; `null` leaves those rows `unconfirmed`.
+ * `null` keys (the read failed) leave every row unannotated.
  */
 export function withCompanyEmailStatus(
   response: OrgAllEmployeesResponse,
   keys: OrgCompanyEmailKeys | null,
-  lfUsernames: OrgLfUsernameCompanyEmailStatuses | null = null
+  lfUsernames: OrgLfUsernameCompanyEmailStatuses | null = null,
+  keyContactAddresses: readonly string[] | null = null
 ): OrgAllEmployeesResponse {
   if (!keys) {
     return response;
@@ -131,15 +134,30 @@ export function withCompanyEmailStatus(
   const personKeys = new Set(keys.personKeys);
   const usernames = new Set([...keys.usernames, ...(lfUsernames?.usernames ?? [])]);
   const noneUsernames = new Set([...keys.noneUsernames, ...(lfUsernames?.noneUsernames ?? [])]);
+  const keyContactHolders = new Set(keyContactAddresses ?? []);
   const statusOf = (row: OrgAllEmployeeRow): OrgAllEmployeeCompanyEmailStatus => {
     if (row.personKey.startsWith('cdp:')) return 'unconfirmed';
     if (!row.personKey.startsWith('live-')) return personKeys.has(row.personKey) ? 'has' : 'none';
     const username = row.lfUsername?.trim().toLowerCase();
     if (username && usernames.has(username)) return 'has';
     if (username && noneUsernames.has(username)) return 'none';
+    if (!username && keyContactHolders.has((row.email ?? '').trim().toLowerCase())) return 'has';
     return 'unconfirmed';
   };
   return { ...response, rows: response.rows.map((row) => ({ ...row, companyEmailStatus: statusOf(row) })) };
+}
+
+/**
+ * The addresses of the live-only rows without an LF username that list key-contact roles: people the directory keyed on
+ * their address, whom the drawer reads by the key-contact records at it. Only these are read for the filter.
+ */
+export function liveKeyContactAddresses(response: OrgAllEmployeesResponse): string[] {
+  const addresses = new Set<string>();
+  for (const row of response.rows) {
+    const address = (row.email ?? '').trim().toLowerCase();
+    if (row.personKey.startsWith('live-') && !row.lfUsername?.trim() && row.keyContactRoles.length > 0 && address) addresses.add(address);
+  }
+  return [...addresses];
 }
 
 /**

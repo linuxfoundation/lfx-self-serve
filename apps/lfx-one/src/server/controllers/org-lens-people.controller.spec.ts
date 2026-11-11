@@ -14,11 +14,12 @@ const {
   getCompanyEmailsByKeyContacts,
   getCompanyEmailKeys,
   getLfUsernameCompanyEmailStatuses,
+  getLiveKeyContactAddressesWithCompanyEmail,
+  getPersonKeyContactsIdentity,
   getEmployeeDetail,
   getEmployeeDetailByUsername,
   getKeyContactsForPerson,
   getOrgKeyContacts,
-  resolveUsernameByPersonKey,
   getTrainees,
   readEventAttendeesSummary,
   assertOrgLensRead,
@@ -33,11 +34,12 @@ const {
   getCompanyEmailsByKeyContacts: vi.fn(),
   getCompanyEmailKeys: vi.fn(),
   getLfUsernameCompanyEmailStatuses: vi.fn(),
+  getLiveKeyContactAddressesWithCompanyEmail: vi.fn(),
+  getPersonKeyContactsIdentity: vi.fn(),
   getEmployeeDetail: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   getKeyContactsForPerson: vi.fn(),
   getOrgKeyContacts: vi.fn(),
-  resolveUsernameByPersonKey: vi.fn(),
   getTrainees: vi.fn(),
   readEventAttendeesSummary: vi.fn(),
   assertOrgLensRead: vi.fn(),
@@ -66,9 +68,10 @@ vi.mock('../services/org-lens-people.service', () => ({
     public getCompanyEmailsByKeyContacts = getCompanyEmailsByKeyContacts;
     public getCompanyEmailKeys = getCompanyEmailKeys;
     public getLfUsernameCompanyEmailStatuses = getLfUsernameCompanyEmailStatuses;
+    public getLiveKeyContactAddressesWithCompanyEmail = getLiveKeyContactAddressesWithCompanyEmail;
+    public getPersonKeyContactsIdentity = getPersonKeyContactsIdentity;
     public getEmployeeDetail = getEmployeeDetail;
     public getEmployeeDetailByUsername = getEmployeeDetailByUsername;
-    public resolveUsernameByPersonKey = resolveUsernameByPersonKey;
   },
 }));
 vi.mock('../services/org-people-board-members.service', () => ({ OrgPeopleBoardMembersService: class {} }));
@@ -553,7 +556,13 @@ describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
 
 describe('OrgLensPeopleController All Employees company email status', () => {
   const controller = new OrgLensPeopleController();
-  const row = (personKey: string, lfUsername: string | null) => ({ personKey, lfUsername });
+  const row = (personKey: string, lfUsername: string | null, extra: { email?: string; keyContactRoles?: string[] } = {}) => ({
+    personKey,
+    lfUsername,
+    email: null,
+    keyContactRoles: [],
+    ...extra,
+  });
   const roster = {
     ...EMPTY_ROSTER,
     rows: [
@@ -641,6 +650,49 @@ describe('OrgLensPeopleController All Employees company email status', () => {
     expect(statuses(res)).toMatchObject({ 'live-has': 'has', 'live-lf-has': 'unconfirmed' });
   });
 
+  it('reads the key-contact records of only the username-less live rows listing roles, tagging them as the drawer answers', async () => {
+    getLive.mockResolvedValue({
+      ...roster,
+      rows: [
+        ...roster.rows,
+        row('live-kc-has', null, { email: ' Has.Contact@Company.example ', keyContactRoles: ['Legal Contact'] }),
+        row('live-kc-unlinked', null, { email: 'unlinked@company.example', keyContactRoles: ['Billing Contact'] }),
+        // A username-less live row holding no key-contact role (a seat without a username) is not read.
+        row('live-seat-only', null, { email: 'seat@company.example' }),
+        // A row with a username is read by LF account instead, even when it lists key-contact roles.
+        row('live-kc-user', 'known', { email: 'user@company.example', keyContactRoles: ['PO Contact'] }),
+      ],
+    });
+    getLiveKeyContactAddressesWithCompanyEmail.mockResolvedValue(['has.contact@company.example']);
+    const res = buildRes();
+
+    await controller.getAllEmployees(buildRosterReq({ live: 'true', range: '90d' }), res, vi.fn());
+
+    expect(getLiveKeyContactAddressesWithCompanyEmail).toHaveBeenCalledWith(expect.anything(), ORG_UID, [
+      'has.contact@company.example',
+      'unlinked@company.example',
+    ]);
+    expect(statuses(res)).toMatchObject({
+      'live-kc-has': 'has',
+      'live-kc-unlinked': 'unconfirmed',
+      'live-seat-only': 'unconfirmed',
+      'live-kc-user': 'has',
+    });
+  });
+
+  it('leaves the username-less key-contact rows unconfirmed when their record read fails', async () => {
+    getLive.mockResolvedValue({
+      ...roster,
+      rows: [...roster.rows, row('live-kc-has', null, { email: 'has@company.example', keyContactRoles: ['Legal Contact'] })],
+    });
+    getLiveKeyContactAddressesWithCompanyEmail.mockResolvedValue(null);
+    const res = buildRes();
+
+    await controller.getAllEmployees(buildRosterReq({ live: 'true', range: '90d' }), res, vi.fn());
+
+    expect(statuses(res)).toMatchObject({ 'live-has': 'has', 'live-kc-has': 'unconfirmed' });
+  });
+
   it('serves the roster without statuses when the keys read failed', async () => {
     getCompanyEmailKeys.mockResolvedValue(null);
     const res = buildRes();
@@ -669,7 +721,7 @@ describe('OrgLensPeopleController per-person key contacts', () => {
       await controller.getPersonKeyContacts(personKeyReq(personKey), buildRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     }
-    expect(getCompanyEmails).not.toHaveBeenCalled();
+    expect(getPersonKeyContactsIdentity).not.toHaveBeenCalled();
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 
@@ -682,63 +734,20 @@ describe('OrgLensPeopleController per-person key contacts', () => {
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 
-  // An identity in the URL is an identity in the request log, so the client sends none.
-  it('ignores a client-supplied username and uses the roster one instead', async () => {
-    getCompanyEmails.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'resolved' });
-    resolveUsernameByPersonKey.mockResolvedValue('roster-name');
-    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: 'resolved' });
-
-    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY, { username: 'client-supplied' }), buildRes(), vi.fn());
-
-    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
-      username: 'roster-name',
-      emails: [],
-      emailsStatus: 'resolved',
-    });
-  });
-
-  it('identifies a person key by its resolved addresses, with no username when the roster carries none', async () => {
-    getCompanyEmails.mockResolvedValue({ companyEmails: ['first.person@vendor-corp.example'], companyEmailsStatus: 'resolved' });
-    resolveUsernameByPersonKey.mockResolvedValue(null);
+  // An identity in the URL is an identity in the request log, so the client sends none: the service assembles it.
+  it('matches on the identity the service assembles, ignoring a client-supplied username', async () => {
+    const identity = { username: 'roster-name', emails: ['first.person@vendor-corp.example'], emailsStatus: 'resolved' };
+    getPersonKeyContactsIdentity.mockResolvedValue(identity);
     getKeyContactsForPerson.mockResolvedValue({ assignments: [{ role: 'Billing Contact' }], status: 'resolved' });
     const res = buildRes();
     const next = vi.fn();
 
-    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY), res, next);
+    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY, { username: 'client-supplied' }), res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
-      username: null,
-      emails: ['first.person@vendor-corp.example'],
-      emailsStatus: 'resolved',
-    });
+    expect(getPersonKeyContactsIdentity).toHaveBeenCalledWith(expect.anything(), ORG_UID, PERSON_KEY);
+    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, identity);
     expect(res.json).toHaveBeenCalledWith({ assignments: [{ role: 'Billing Contact' }], status: 'resolved' });
-  });
-
-  it("passes the roster's username through as the stronger key", async () => {
-    getCompanyEmails.mockResolvedValue({ companyEmails: ['first.person@vendor-corp.example'], companyEmailsStatus: 'resolved' });
-    resolveUsernameByPersonKey.mockResolvedValue('jdoe');
-    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: 'resolved' });
-
-    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY), buildRes(), vi.fn());
-
-    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
-      username: 'jdoe',
-      emails: ['first.person@vendor-corp.example'],
-      emailsStatus: 'resolved',
-    });
-  });
-
-  // The address status decides what an unmatched identity may claim, so it must reach the service intact
-  // rather than being flattened into an empty address list.
-  it.each(['unavailable', 'failed'])('forwards a %s address status instead of passing addresses it does not have', async (companyEmailsStatus) => {
-    getCompanyEmails.mockResolvedValue({ companyEmails: [], companyEmailsStatus });
-    resolveUsernameByPersonKey.mockResolvedValue(null);
-    getKeyContactsForPerson.mockResolvedValue({ assignments: [], status: companyEmailsStatus === 'failed' ? 'failed' : 'unidentified' });
-
-    await controller.getPersonKeyContacts(personKeyReq(PERSON_KEY), buildRes(), vi.fn());
-
-    expect(getKeyContactsForPerson).toHaveBeenCalledWith(expect.anything(), ORG_UID, { username: null, emails: [], emailsStatus: companyEmailsStatus });
   });
 
   it('identifies a by-username read on the username plus any resolved addresses', async () => {
@@ -962,7 +971,7 @@ describe('OrgLensPeopleController Trainees outside-learner keys (lfx-self-serve#
     }
     expect(getEmployeeDetail).not.toHaveBeenCalled();
     expect(getCompanyEmails).not.toHaveBeenCalled();
-    expect(resolveUsernameByPersonKey).not.toHaveBeenCalled();
+    expect(getPersonKeyContactsIdentity).not.toHaveBeenCalled();
     expect(getKeyContactsForPerson).not.toHaveBeenCalled();
   });
 });
