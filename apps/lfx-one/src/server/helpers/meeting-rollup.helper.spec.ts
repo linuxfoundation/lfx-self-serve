@@ -17,6 +17,10 @@ describe('readRollupRootUid', () => {
     expect(readRollupRootUid({ root_project_uid: ROOT }, 'get_meetings')).toBe(ROOT);
   });
 
+  it('rejects a caller filters_or, which the roll-up scope would otherwise replace', () => {
+    expect(() => readRollupRootUid({ root_project_uid: ROOT, filters_or: ['meeting_type:Board'] }, 'get_meetings')).toThrow(ServiceValidationError);
+  });
+
   it.each([[[ROOT, ROOT]], ['a:b'], ['*'], ['']])('rejects %j', (value) => {
     expect(() => readRollupRootUid({ root_project_uid: value }, 'get_meetings')).toThrow(ServiceValidationError);
   });

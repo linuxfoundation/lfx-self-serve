@@ -644,6 +644,22 @@ describe('CommitteeViewComponent', () => {
       expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/surveys']);
     });
 
+    it('restores the foundation a rolled-up meetings list was scoped to', () => {
+      const component = openedWithState({ backLabel: 'Meetings', backPath: '/meetings', fromMeLens: false, backProject: 'finos' });
+
+      component.goBack();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/meetings'], { queryParams: { project: 'finos' } });
+    });
+
+    it('ignores a back project that is not a slug', () => {
+      const component = openedWithState({ backPath: '/meetings', backProject: 'a/b?c' });
+
+      component.goBack();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/meetings']);
+    });
+
     it('falls back to the Groups list for a back path outside the allowed list routes', () => {
       const component = openedWithState({ backPath: '/somewhere-else' });
 

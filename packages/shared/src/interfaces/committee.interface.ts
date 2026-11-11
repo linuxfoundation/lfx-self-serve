@@ -387,6 +387,8 @@ export interface GroupLinkState {
   backLabel: string;
   backPath: string;
   fromMeLens: boolean;
+  /** Slug of the foundation or project the list was scoped to, restored as `?project=` on Back. A rolled-up sub-project's group switches the selected project, so without it Back would land on the sub-project's list. */
+  backProject?: string;
 }
 
 /**

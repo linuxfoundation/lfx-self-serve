@@ -22,6 +22,11 @@ export function readRollupRootUid(query: Record<string, unknown>, operation: str
   if (typeof value !== 'string' || !isFilterSafeIdentifier(value)) {
     throw ServiceValidationError.forField('root_project_uid', 'root_project_uid must be a single project identifier', { operation });
   }
+  // The roll-up owns `filters_or` (the project scope), and query-service has one OR group per request:
+  // merging a caller's clauses in would widen the scope, and replacing them would silently drop a filter.
+  if (query['filters_or'] !== undefined) {
+    throw ServiceValidationError.forField('filters_or', 'filters_or cannot be combined with root_project_uid; use filters', { operation });
+  }
   return value;
 }
 
