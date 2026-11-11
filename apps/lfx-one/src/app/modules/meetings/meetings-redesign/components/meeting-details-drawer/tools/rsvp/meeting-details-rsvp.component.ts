@@ -16,7 +16,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
-import { catchError, distinctUntilChanged, map, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
 import { MeetingsHomeEditService } from '../../../../services/meetings-home-edit.service';
 import { MeetingAttendeeGridComponent } from '../../../meeting-attendee-grid/meeting-attendee-grid.component';
@@ -49,10 +49,8 @@ export class MeetingDetailsRsvpComponent {
   );
 
   protected invitePeople(): void {
-    // Close first and open the editor once focus is handed back to the page, as Edit Meeting does.
-    const row = this.context.shownRow();
-    this.dialogRef.closed.pipe(take(1)).subscribe(() => this.editService.edit(row));
-    this.dialogRef.close();
+    // As Edit Meeting: the drawer stays open under the scope question and closes once the editor opens.
+    this.editService.edit(this.context.shownRow(), undefined, this.dialogRef);
   }
 
   private initRoster(): Signal<MeetingRegistrant[] | null | undefined> {

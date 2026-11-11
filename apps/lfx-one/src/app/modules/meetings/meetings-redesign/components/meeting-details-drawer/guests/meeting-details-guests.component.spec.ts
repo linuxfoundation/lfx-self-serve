@@ -433,7 +433,7 @@ describe('MeetingDetailsGuestsComponent', () => {
     query('meeting-details-guests-add')?.querySelector('button')?.click();
 
     expect(closeDialog).toHaveBeenCalled();
-    expect(closeDialog.mock.invocationCallOrder[0]).toBeLessThan(meetingService['getMeetingDetail'].mock.invocationCallOrder[0]);
+    expect(meetingService['getMeetingDetail'].mock.invocationCallOrder[0]).toBeLessThan(closeDialog.mock.invocationCallOrder[0]);
     expect(meetingService['getMeetingDetail']).toHaveBeenCalledWith('synthetic-meeting', { skipCache: true });
     expect(modalOpen).not.toHaveBeenCalled();
     expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'synthetic-meeting', projectUid: 'p-1', section: 'guests' });
@@ -459,6 +459,7 @@ describe('MeetingDetailsGuestsComponent', () => {
       MeetingEditScopeModalComponent,
       expect.objectContaining({ data: expect.objectContaining({ occurrence: OCCURRENCE }) })
     );
+    expect(modalOpen.mock.invocationCallOrder[0]).toBeLessThan(closeDialog.mock.invocationCallOrder[0]);
     expect(modalOpen.mock.invocationCallOrder[0]).toBeLessThan(composerOpen.mock.invocationCallOrder[0]);
     expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'synthetic-meeting', projectUid: 'p-1', section: 'guests' });
   });
