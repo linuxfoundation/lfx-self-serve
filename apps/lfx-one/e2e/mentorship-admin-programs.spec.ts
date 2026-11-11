@@ -171,6 +171,8 @@ test.describe('Admin programs list — In Progress and Upcoming', () => {
     await expect(page.getByRole('option', { name: 'In Progress', exact: true })).toBeVisible();
     await page.getByRole('option', { name: 'Upcoming', exact: true }).click();
 
+    await expect(page.getByTestId(`mentorship-program-card-${UPCOMING_ID}`)).toBeVisible();
+    await expect(page.getByTestId(`mentorship-program-card-${IN_PROGRESS_ID}`)).toHaveCount(0);
     await expect(page.getByTestId('mentorship-programs-cards')).toHaveCount(1);
     expect(statuses).toContain('upcoming');
   });

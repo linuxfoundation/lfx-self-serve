@@ -4,8 +4,9 @@
 /**
  * Stubs for the admin program page's actions (linuxfoundation/lfx-mentorship#378): Hide/Unhide and View Public Page
  * in the header (#280, #385), the published statuses it covers (#426), Undo graduation and Re-open (#395), Contact
- * Mentee (#376), and Download By Status (#296). Data is synthetic, and every stub records what it answered, so a spec
- * can assert what the page sent as well as what it rendered.
+ * Mentee (#376), and Download By Status (#296). Data is synthetic, and the stubs record what the page sent (each
+ * write's method, path and body, each export's query, how many times the program was read), so a spec can assert
+ * what the page sent as well as what it rendered.
  */
 
 import {
@@ -22,13 +23,14 @@ import {
   ADMIN_OPEN_TERM_ID,
   ADMIN_OPEN_TERM_NAME,
   ADMIN_PAST_APPLICATIONS,
+  ADMIN_MENTEES_ROUTE,
   ADMIN_PROGRAM_ID,
   ADMIN_PROGRAM_PAGE,
+  ADMIN_PROGRAM_ROUTE,
   adminApplicationId,
+  fulfillAdminJson,
 } from './mentorship-admin-program.helper';
 
-const PROGRAM_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}`;
-const MENTEES_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentees*`;
 const EXPORT_ROUTE = `**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/mentees/export*`;
 const STATUS_ROUTE = '**/api/mentorship/admin/applications/*/status';
 
@@ -38,7 +40,7 @@ export const ACTION_ROW_STATUSES: readonly MentorshipMenteeStatus[] = ['pending'
 /** The id of the Current Mentees row with `status`. */
 export const actionRowId = (status: MentorshipMenteeStatus): string => adminApplicationId(200 + ACTION_ROW_STATUSES.indexOf(status));
 
-/** A pending row whose address is not safe to put in a `mailto:` link, so it offers no Contact Mentee. */
+/** A pending row whose address would inject a recipient into a `mailto:` link, so it offers no Contact Mentee. */
 export const ACTION_NO_EMAIL_ID = adminApplicationId(299);
 
 export const ACTION_ROWS: MentorshipProgramApplicant[] = [
@@ -57,7 +59,7 @@ export const ACTION_ROWS: MentorshipProgramApplicant[] = [
   {
     id: ACTION_NO_EMAIL_ID,
     name: 'Test Mentee No Address',
-    email: 'not an address',
+    email: 'test.mentee.no-address@example.com?bcc=test.other@example.com',
     status: 'pending',
     termId: ADMIN_OPEN_TERM_ID,
     termName: ADMIN_OPEN_TERM_NAME,
@@ -84,8 +86,6 @@ export interface ActionState {
 
 export const newActionState = (status: MentorshipProgramStatus): ActionState => ({ status, pageReads: 0, writes: [], exports: [] });
 
-const fulfillJson = (route: Route, status: number, body: unknown) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-
 function recordWrite(state: ActionState, route: Route): void {
   const request = route.request();
   state.writes.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.postDataJSON() });
@@ -93,7 +93,7 @@ function recordWrite(state: ActionState, route: Route): void {
 
 /** Answers the page read with the program in `state.status`, and the mentees reads with `ACTION_ROWS` (Past Mentees: the past rows). */
 export async function stubActionProgram(page: Page, state: ActionState): Promise<void> {
-  await page.route(PROGRAM_ROUTE, (route) => {
+  await page.route(ADMIN_PROGRAM_ROUTE, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     state.pageReads++;
     const body: MentorshipAdminProgramPage = {
@@ -101,12 +101,12 @@ export async function stubActionProgram(page: Page, state: ActionState): Promise
       program: { ...ADMIN_PROGRAM_PAGE.program, status: state.status },
       tabCounts: { currentMentees: ACTION_ROWS.length, pastMentees: ADMIN_PAST_APPLICATIONS.length, mentors: 0, terms: 2 },
     };
-    return fulfillJson(route, 200, body);
+    return fulfillAdminJson(route, body);
   });
-  await page.route(MENTEES_ROUTE, (route) => {
+  await page.route(ADMIN_MENTEES_ROUTE, (route) => {
     const params = new URL(route.request().url()).searchParams;
     const rows = params.get('type') === 'past' ? ADMIN_PAST_APPLICATIONS : ACTION_ROWS;
-    return fulfillJson(route, 200, { data: rows, total: rows.length } satisfies MentorshipAdminMenteesResponse);
+    return fulfillAdminJson(route, { data: rows, total: rows.length } satisfies MentorshipAdminMenteesResponse);
   });
 }
 
@@ -118,7 +118,7 @@ export async function stubVisibilityWrites(page: Page, state: ActionState, statu
   for (const action of ['hide', 'unhide'] satisfies MentorshipProgramVisibilityAction[]) {
     await page.route(`**/api/mentorship/admin/programs/${ADMIN_PROGRAM_ID}/${action}`, (route) => {
       recordWrite(state, route);
-      if (status !== 204) return fulfillJson(route, status, { error: 'stubbed' });
+      if (status !== 204) return fulfillAdminJson(route, { error: 'stubbed' }, status);
       state.status = action === 'hide' ? 'hidden' : 'accepting';
       return route.fulfill({ status });
     });
@@ -129,7 +129,7 @@ export async function stubVisibilityWrites(page: Page, state: ActionState, statu
 export async function stubStatusWrites(page: Page, state: ActionState, status = 204): Promise<void> {
   await page.route(STATUS_ROUTE, (route) => {
     recordWrite(state, route);
-    return status === 204 ? route.fulfill({ status }) : fulfillJson(route, status, { error: 'stubbed' });
+    return status === 204 ? route.fulfill({ status }) : fulfillAdminJson(route, { error: 'stubbed' }, status);
   });
 }
 
@@ -150,7 +150,7 @@ export async function stubMenteesExport(page: Page, state: ActionState, answer: 
     await answer.hold;
     const status = answer.status ?? 200;
     if (status === 204) return route.fulfill({ status });
-    if (status !== 200) return fulfillJson(route, status, { error: 'stubbed' });
+    if (status !== 200) return fulfillAdminJson(route, { error: 'stubbed' }, status);
 
     const fileName = `${params.get('type')}-mentees-${params.get('status') ?? 'all'}.csv`;
     const headers: Record<string, string> = { 'Content-Disposition': `attachment; filename="${fileName}"` };
