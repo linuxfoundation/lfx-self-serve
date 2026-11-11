@@ -9,6 +9,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getAccessAwareOrgs = vi.fn();
+const getRollUpSet = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const getEffectiveUsername = vi.fn();
 
@@ -17,6 +18,7 @@ const getEffectiveUsername = vi.fn();
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+    public getRollUpSet = getRollUpSet;
   },
 }));
 // The per-org authorizer question (`b2b_org:<uid>#auditor`) the gate asks alongside the roster.
@@ -33,6 +35,7 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 const { requireOrgLensAccess } = await import('./require-org-lens-access.middleware');
+const { resolveOrgLensRollUp } = await import('../helpers/org-lens-roll-up.helper');
 
 const LF = '0014100000Te2ovAAB';
 const OTHER_ORG = '0014100000BetaAAAA';
@@ -291,5 +294,155 @@ describe('requireOrgLensAccess', () => {
     expect(statusOf(second)).toBe(403);
     expect(getAccessAwareOrgs).toHaveBeenCalledTimes(1);
     expect(checkSingleAccessStrict).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('requireOrgLensAccess — family roll-up key', () => {
+  const ROOT = '001000000000000AAA';
+  const SUBSIDIARY = '001000000000001AAA';
+  const OTHER_ROOT = '001000000000009AAA';
+  const ROLL_UP = `family-${ROOT}`;
+
+  const org = (uid: string, name: string): { uid: string; accountId: string; name: string; logoUrl: null } => ({ uid, accountId: uid, name, logoUrl: null });
+  const rollUpSet = (orgs = [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')], overrides: Record<string, unknown> = {}): unknown => ({
+    families: [{ rootUid: ROOT, rootName: 'Parent Co', rootLogoUrl: null, orgs }],
+    degraded: false,
+    lookupOutcome: 'ok',
+    ...overrides,
+  });
+
+  function buildRollUpReq(method = 'GET', query: Record<string, unknown> = {}): Request {
+    return { method, path: `/api/orgs/${ROLL_UP}/lens/memberships/active`, params: { orgUid: ROLL_UP }, query } as unknown as Request;
+  }
+
+  async function runRollUp(req: Request): Promise<{ next: ReturnType<typeof vi.fn> }> {
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    await requireOrgLensAccess(req, {} as Response, next);
+    return { next };
+  }
+
+  beforeEach(() => {
+    getRollUpSet.mockResolvedValue(rollUpSet());
+    getAccessAwareOrgs.mockResolvedValue(grants([ROOT, SUBSIDIARY]));
+  });
+
+  it('allows a family the caller holds organizations in, and scopes the read to them from the server-side set', async () => {
+    const req = buildRollUpReq();
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    expect(getRollUpSet).toHaveBeenCalledWith(req, 'lguerra');
+    await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
+      rollUpKey: ROLL_UP,
+      rootUid: ROOT,
+      members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
+    });
+    expect(getRollUpSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('never takes the organizations from the client', async () => {
+    const req = buildRollUpReq('GET', { accountIds: OTHER_ROOT, members: [OTHER_ROOT] });
+    await runRollUp(req);
+
+    const scope = await resolveOrgLensRollUp(req, ROLL_UP, 'handler');
+    expect(scope.members.map((member) => member.accountId)).toEqual([ROOT, SUBSIDIARY]);
+  });
+
+  it('leaves out an organization that fails its own read check, keeping the rest', async () => {
+    getAccessAwareOrgs.mockResolvedValue(grants([ROOT]));
+    checkSingleAccessStrict.mockResolvedValue(false);
+    const req = buildRollUpReq();
+
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co')]);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: SUBSIDIARY, access: 'auditor' });
+  });
+
+  it('refuses a family the caller holds no organization in, rather than widening to that family', async () => {
+    getRollUpSet.mockResolvedValue({
+      families: [{ rootUid: OTHER_ROOT, rootName: 'Other', rootLogoUrl: null, orgs: [org(OTHER_ROOT, 'Other')] }],
+      degraded: false,
+      lookupOutcome: 'ok',
+    });
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(403);
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+  });
+
+  it('refuses when every organization in the family fails its read check', async () => {
+    getAccessAwareOrgs.mockResolvedValue(grants([]));
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(403);
+  });
+
+  it('fails the whole read when one organization cannot be verified, rather than answering a short roll-up', async () => {
+    getAccessAwareOrgs.mockResolvedValue(grants([ROOT]));
+    checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('returns a retriable 503 when the roll-up set could not be loaded', async () => {
+    getRollUpSet.mockResolvedValue({ families: [], degraded: true, lookupOutcome: 'failed' });
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: '/query/resources' });
+  });
+
+  it('returns a retriable 503 when the roll-up set lookup throws', async () => {
+    getRollUpSet.mockRejectedValue(new Error('query-service unreachable'));
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('returns a 503, not a 403, for a family missing from a degraded roll-up set', async () => {
+    getRollUpSet.mockResolvedValue({ families: [], degraded: true, lookupOutcome: 'partial' });
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: undefined });
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('refuses a %s on a roll-up key before asking any upstream', async (method) => {
+    const { next } = await runRollUp(buildRollUpReq(method));
+
+    expect(statusOf(next)).toBe(400);
+    expect(getRollUpSet).not.toHaveBeenCalled();
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+  });
+
+  it('refuses when no caller identity can be resolved', async () => {
+    getEffectiveUsername.mockReturnValue(undefined);
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(403);
+    expect(getRollUpSet).not.toHaveBeenCalled();
+  });
+
+  it('treats a malformed roll-up key as a malformed organization id', async () => {
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    await requireOrgLensAccess(
+      { method: 'GET', path: '/api/orgs/family-123/lens/x', params: { orgUid: 'family-123' } } as unknown as Request,
+      {} as Response,
+      next
+    );
+
+    expect(statusOf(next)).toBe(400);
+    expect(getRollUpSet).not.toHaveBeenCalled();
   });
 });
