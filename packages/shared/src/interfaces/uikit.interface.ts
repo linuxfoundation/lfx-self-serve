@@ -86,6 +86,8 @@ export interface UiPaginationPage {
   label: string;
   /** Accessible name, such as `Page 3`. */
   ariaLabel: string;
+  /** A round button for up to three digits; a pill for longer page numbers. */
+  round: boolean;
   /** Secondary for the current page, tertiary for the others. */
   variant: UiButtonVariant;
   /** `page` on the current page, for `aria-current`. */

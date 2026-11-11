@@ -21,7 +21,7 @@
         <lfx-ui-button
           [variant]="item.variant"
           size="small"
-          iconOnly
+          [iconOnly]="item.round"
           [ariaLabel]="item.ariaLabel"
           [ariaCurrent]="item.ariaCurrent"
           (click)="goTo(item.index)"

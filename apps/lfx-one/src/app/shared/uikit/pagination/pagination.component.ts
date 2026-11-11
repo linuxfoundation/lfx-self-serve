@@ -18,7 +18,9 @@ import { UiButtonComponent } from '../button/button.component';
   templateUrl: './pagination.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
-    class: 'block',
+    // Hidden, not just empty, on one page, so a caller's margin or a parent's gap leaves no blank strip.
+    '[class.block]': 'pageCount() > 1',
+    '[class.hidden]': 'pageCount() <= 1',
     'data-testid': 'ui-pagination',
   },
 })
@@ -75,7 +77,9 @@ export class UiPaginationComponent {
         const index = start + offset;
         const isCurrent = index === current;
         const label = String(index + 1);
-        return { index, label, ariaLabel: `Page ${label}`, variant: isCurrent ? 'secondary' : 'tertiary', ariaCurrent: isCurrent ? 'page' : null };
+        // Up to three digits fit the design's 28px circle; longer numbers get a pill so they stay inside the button.
+        const round = label.length <= 3;
+        return { index, label, ariaLabel: `Page ${label}`, round, variant: isCurrent ? 'secondary' : 'tertiary', ariaCurrent: isCurrent ? 'page' : null };
       });
     });
   }

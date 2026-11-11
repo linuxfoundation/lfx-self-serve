@@ -83,6 +83,15 @@ describe('UiPaginationComponent', () => {
     expect(labels()).toEqual(['16', '17', '18', '19', '20']);
   });
 
+  it('keeps up to three digits in a circle and gives longer page numbers a pill', async () => {
+    await update({ total: 12500, page: 997 });
+
+    const shape = (label: string): string => pageButtons().find((button) => button.textContent?.trim() === label)?.className ?? '';
+    expect(shape('998')).toContain('rounded-ui-full');
+    expect(shape('1000')).not.toContain('rounded-ui-full');
+    expect(shape('1000')).toContain('px-[8px]');
+  });
+
   it('shows fewer than five numbers when there are fewer pages', async () => {
     await update({ total: 25 });
 
@@ -113,9 +122,14 @@ describe('UiPaginationComponent', () => {
     expect(fixture.componentInstance.page()).toBe(3);
   });
 
-  it('renders nothing when every row fits on one page', async () => {
+  it('renders nothing, and hides its own box, when every row fits on one page', async () => {
+    const box = (): HTMLElement => host.querySelector('[data-testid="ui-pagination"]') as HTMLElement;
+    expect(box().classList).toContain('block');
+
     await update({ total: 10 });
     expect(nav()).toBeNull();
+    expect(box().classList).toContain('hidden');
+    expect(box().classList).not.toContain('block');
 
     await update({ total: 0 });
     expect(nav()).toBeNull();
