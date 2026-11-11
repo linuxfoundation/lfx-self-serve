@@ -148,6 +148,10 @@ export class OrganizationSearchComponent {
     // name control holds '' until onSearchComplete's resync lands; the mirror below is guarded
     // (syncingParentFromSelf) so that '' write doesn't echo back and blank the visible input.
     searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null | undefined) => {
+      // The marker covers only the echo of the pick itself: any other value (an edit, a clear, PrimeNG's per-keystroke `undefined`) ends it.
+      if (this.pickedTerm !== null && (value ?? '').trim().toLowerCase() !== this.pickedTerm.toLowerCase()) {
+        this.pickedTerm = null;
+      }
       if (this.manualMode() || this.selectedName === null) return;
       if (value === undefined) {
         this.invalidateStaleSelection('');
@@ -174,10 +178,11 @@ export class OrganizationSearchComponent {
         }
 
         if (this.pickedTerm !== null) {
-          if (trimmedTerm.toLowerCase() === this.pickedTerm.toLowerCase()) {
+          const picked = this.pickedTerm;
+          this.pickedTerm = null;
+          if (trimmedTerm.toLowerCase() === picked.toLowerCase() && this.selectedName !== null && !this.selectionInvalidated) {
             return of([]);
           }
-          this.pickedTerm = null;
         }
 
         return this.organizationService.searchOrganizations(trimmedTerm);
@@ -357,6 +362,7 @@ export class OrganizationSearchComponent {
     this.organizationForm.get('organizationSearch')?.setValue('');
     this.clearResolveState();
     this.selectedName = null;
+    this.pickedTerm = null;
     this.selectionInvalidated = false;
 
     // Clear form controls if they are specified
@@ -379,6 +385,7 @@ export class OrganizationSearchComponent {
     this.manualMode.set(true);
     this.clearResolveState();
     this.selectedName = null;
+    this.pickedTerm = null;
     this.selectionInvalidated = false;
 
     const nameControlName = this.nameControl();
@@ -422,6 +429,7 @@ export class OrganizationSearchComponent {
     this.manualMode.set(false);
     this.clearResolveState();
     this.selectedName = null;
+    this.pickedTerm = null;
     this.selectionInvalidated = false;
 
     const parentForm = this.form();
