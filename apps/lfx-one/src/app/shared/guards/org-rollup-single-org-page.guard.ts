@@ -3,11 +3,9 @@
 
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_PAGE_SEGMENT, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 
 import { AccountContextService } from '../services/account-context.service';
-
-const CLA_PAGE = 'easycla';
 
 /**
  * Keeps a page that is single-organization *by definition* off a family roll-up, sending it to
@@ -66,7 +64,7 @@ function isLegacyEasyclaReturn(route: ActivatedRouteSnapshot): boolean {
   if (!route.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM)?.trim()) {
     return false;
   }
-  if (!route.pathFromRoot.some((node) => node.routeConfig?.path === CLA_PAGE)) {
+  if (!route.pathFromRoot.some((node) => node.routeConfig?.path === ORG_EASYCLA_PAGE_SEGMENT)) {
     return false;
   }
   return !route.pathFromRoot.some((node) => node.routeConfig?.path === `:${ORG_SEGMENT_PARAM}`);

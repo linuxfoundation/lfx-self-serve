@@ -298,6 +298,16 @@ The slug in every Org Lens address and link is the **index's** (the org-items ro
 
 Nothing re-writes an address behind a canonical-record fetch; `orgPathParamGuard` still canonicalizes a deep link from the resolver's own answer.
 
+### Family roll-up addresses
+
+A third segment kind selects a **family roll-up** — "All {family} Organizations", the combined view over the organizations the caller holds in one Salesforce family (lfx-self-serve#4125): `/org/family-{topAccountId}/{page}` (`ORG_ROLLUP_SEGMENT_PREFIX`, matched by `ORG_ROLLUP_SEGMENT_PATTERN`; build it with `orgRollUpSegment`, read it with `orgRollUpRootUid`). It names no organization and carries no grant of its own; the BFF expands it to the caller's organizations in that family on every request. The shape is reserved through `isOrgSlugSegment`, so an organization whose slug has it is addressed by its SFID. Families come from `GET /api/orgs/me/roll-up-set` (`OrgRollUpFamiliesService`), refetched on every grants load.
+
+- **Offered** only while the `org-lens-rollup-enabled` flag is on, and only for a family in which the caller holds at least `ROLLUP_MIN_ORGANIZATIONS` organizations (`AccountContextService.eligibleRollUpFamilies`). One roll-up per family: a caller holding organizations in two families has two.
+- **Selected** through `AccountContextService.selectRollUp`, as an **address** pin, so neither an org-items reload nor a persona re-seed defaults it back to one organization. The org list never pins it: `orgListPinUid` sends the current or stored organization instead, never the roll-up segment.
+- **Restored and deep-linked optimistically.** A cookie or an address naming a roll-up is admitted before the flag and the families have answered (`selectRollUp(…, { admitWhilePending: true })`); the trigger shows `ROLLUP_ACCOUNT_NAME` until the family's name is known.
+- **Demoted once eligibility is settled.** With the flag on, that means the grants and families answered completely (`grantsUnsettled`): a `partial` or `failed` answer is a lower bound, never evidence that a family shrank. With the flag settled off, it waits only for an answer at all, or for a grants request that failed outright, so an outage cannot keep a withdrawn roll-up selected. `orgPathParamGuard` then re-addresses to an organization the caller holds, in the addressed family first (`demoteAddressedRollUp`), and the cookie is overwritten.
+- **Single-organization pages** — Organization Profile, EasyCLA and Crowdfunding Donations — redirect to the roll-up's overview (`orgRollUpSingleOrgPageGuard`); there is nothing for a combined view to render on them.
+
 ## Org Lens edit affordances
 
 Every Org Lens edit control (Organization Profile, Projects/workspaces, Key Contacts, Board and Committee reassign, membership-detail key contacts) reads one signal, `OrgEditAccessService.canEditSelected` (`apps/lfx-one/src/app/shared/services/org-edit-access.service.ts`), and Org Lens Access reads the server's `canManage`. Both follow `writer` on the organization (#3136), the write-side counterpart of the read gate:

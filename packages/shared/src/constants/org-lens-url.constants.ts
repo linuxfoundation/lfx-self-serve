@@ -43,6 +43,9 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
   'not-found': true,
 };
 
+/** Route path of the Org Lens EasyCLA page, `/org/{segment}/easycla`. */
+export const ORG_EASYCLA_PAGE_SEGMENT = 'easycla';
+
 /**
  * Prefix of the reserved `/org/{segment}` value selecting a **family roll-up** — the combined view
  * over the organizations the caller holds in one Salesforce family (lfx-self-serve#4125). The full
