@@ -4,8 +4,8 @@
 /**
  * Pins the meetings v2 flag for a page, so a spec states which branch it is testing.
  *
- * `MEETING_V2_ENABLED_FLAG` decides, at every entry point, whether a create or edit action raises
- * the v2 composer or the pre-v2 wizard. It defaults to `false` and its real value comes from
+ * `MEETING_V2_ENABLED_FLAG` (or `MEETINGS_REDESIGN_FLAG`) decides, at every entry point, whether a
+ * create or edit action raises the v2 composer or the pre-v2 wizard. It defaults to `false` and its real value comes from
  * LaunchDarkly targeting, so a spec that asserts either surface has to pin it rather than inherit
  * whatever the test account happens to be targeted for.
  */
