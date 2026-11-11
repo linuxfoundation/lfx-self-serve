@@ -1931,9 +1931,12 @@ export class ProfileController {
         return;
       }
 
-      // Issue only for this proven conflict and this return. The URL carries an opaque handle, never the address.
+      // Only profile-layout returns consume support context; other allowed pages have no consumer.
+      const isProfileReturn = returnTo === ProfileController.profileDefaultReturnTo || returnTo.startsWith(`${ProfileController.profileDefaultReturnTo}/`);
       const supportHandle =
-        emailStatus === EMAIL_CALLBACK_ALREADY_LINKED_STATUS && pending ? await linkedEmailSupportService.issue(currentUserSub, pending.email) : undefined;
+        emailStatus === EMAIL_CALLBACK_ALREADY_LINKED_STATUS && pending && isProfileReturn
+          ? await linkedEmailSupportService.issue(currentUserSub, pending.email)
+          : undefined;
 
       logger.success(req, 'profile_auth_callback', startTime, {
         user_sub: currentUserSub,

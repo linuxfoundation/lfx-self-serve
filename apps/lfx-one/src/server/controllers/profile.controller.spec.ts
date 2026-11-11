@@ -3340,6 +3340,47 @@ describe('ProfileController — already-connected email (#4253)', () => {
         expectNoWrites();
       });
 
+      it.each(['/profile', '/profile/email', '/profile/identities', '/profile/password', '/profile/linux-email', '/profile/settings'])(
+        'issues support context for the profile-layout return %s',
+        async (returnTo) => {
+          authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo });
+          emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+          const res = buildRes();
+
+          await controller.handleProfileAuthCallback(callbackReq(), res);
+
+          expect(linkedEmailSupportSvc.issue).toHaveBeenCalledExactlyOnceWith('auth0|user-1', ownedEmail);
+          expect(res.redirect).toHaveBeenCalledExactlyOnceWith(
+            `${returnTo}?success=profile_token_obtained&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_ALREADY_LINKED_STATUS}&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${'a'.repeat(64)}`
+          );
+        }
+      );
+
+      it.each(['OTP verification', 'identity linking'])('does not issue support context on a mentor return after a conflict at %s', async (conflictStage) => {
+        authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/mentorship/mentor' });
+        if (conflictStage === 'OTP verification') {
+          emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+        } else {
+          emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+          emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked' });
+        }
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+
+        expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledExactlyOnceWith(req, ownedEmail, '654321', 'synthetic-user-mgmt-token');
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+        expect(linkedEmailSupportSvc.issue).not.toHaveBeenCalled();
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(
+          `/mentorship/mentor?success=profile_token_obtained&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_ALREADY_LINKED_STATUS}`
+        );
+        expect(populateApiGatewayTokenMock).not.toHaveBeenCalled();
+        expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+        expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+      });
+
       it('returns the already-linked marker for a conflict at link time and skips the follow-up writes', async () => {
         emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
         emailVerificationSvc.linkIdentity.mockResolvedValue({
