@@ -160,6 +160,17 @@
                   optionValue="value"
                   styleClass="w-full" />
               </div>
+              @if (isRollUp()) {
+                <div class="w-full sm:w-48" data-testid="memberships-company-filter">
+                  <lfx-select
+                    [form]="companyFilterForm"
+                    control="company"
+                    [options]="companyOptions()"
+                    styleClass="w-full"
+                    ariaLabel="Filter by company"
+                    dataTest="memberships-company-filter-select" />
+                </div>
+              }
             </div>
           </div>
 
@@ -189,11 +200,14 @@
                 [loading]="activeState() === 'loading'"
                 sortField="foundationName"
                 [sortOrder]="1"
-                [skeletonColumns]="6"
+                [skeletonColumns]="isRollUp() ? 7 : 6"
                 data-testid="memberships-active-table">
                 <ng-template #header>
                   <tr>
                     <th>Name</th>
+                    @if (isRollUp()) {
+                      <th data-testid="memberships-active-company-header">Company</th>
+                    }
                     <th>Membership Tier</th>
                     <th>Member Since</th>
                     <th>Board Members</th>
@@ -245,6 +259,13 @@
                         </div>
                       }
                     </td>
+                    @if (isRollUp()) {
+                      <td
+                        class="text-sm text-gray-700"
+                        [attr.data-testid]="'memberships-active-company-' + membership.foundationId + '-' + membership.organization?.accountId">
+                        {{ membership.organization?.name }}
+                      </td>
+                    }
                     <td>
                       <div class="flex flex-col">
                         <span class="text-sm text-gray-900">{{ membership.membershipTier }}</span>
@@ -283,7 +304,7 @@
 
         <lfx-membership-projects-drawer
           [(visible)]="projectsDrawerVisible"
-          [orgUid]="orgUid()"
+          [orgUid]="activeProjectsRow()?.organization?.accountId ?? orgUid()"
           [foundationId]="activeProjectsRow()?.foundationId ?? ''"
           [foundationName]="activeProjectsRow()?.foundationName ?? ''"
           [count]="activeProjectsRow()?.orgProjects ?? 0" />
@@ -313,6 +334,17 @@
                     (ngModelChange)="expiredSearchTerm.set($event)" />
                 </div>
               </div>
+              @if (isRollUp()) {
+                <div class="w-full sm:w-48" data-testid="memberships-expired-company-filter">
+                  <lfx-select
+                    [form]="companyFilterForm"
+                    control="expiredCompany"
+                    [options]="expiredCompanyOptions()"
+                    styleClass="w-full"
+                    ariaLabel="Filter by company"
+                    dataTest="memberships-expired-company-filter-select" />
+                </div>
+              }
             </div>
           </div>
 
@@ -341,11 +373,14 @@
                 [loading]="expiredState() === 'loading'"
                 sortField="foundationName"
                 [sortOrder]="1"
-                [skeletonColumns]="4"
+                [skeletonColumns]="isRollUp() ? 5 : 4"
                 data-testid="memberships-expired-table">
                 <ng-template #header>
                   <tr>
                     <th>Name</th>
+                    @if (isRollUp()) {
+                      <th data-testid="memberships-expired-company-header">Company</th>
+                    }
                     <th>Membership Tier</th>
                     <th>Expiration Date</th>
                     <th>Actions</th>
@@ -370,6 +405,11 @@
                         </div>
                       </div>
                     </td>
+                    @if (isRollUp()) {
+                      <td class="text-sm text-gray-700" [attr.data-testid]="'memberships-expired-company-' + membership.foundationId">
+                        {{ membership.organization?.name }}
+                      </td>
+                    }
                     <td>
                       <div class="flex flex-col">
                         <span class="text-sm text-gray-900">{{ membership.membershipTier }}</span>
