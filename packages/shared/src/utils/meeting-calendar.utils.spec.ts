@@ -45,6 +45,26 @@ describe('meetingToCalendarEvents', () => {
 
     expect(events[0].classNames).toContain('meeting-event-past');
   });
+
+  describe('project prefix for rolled-up meetings', () => {
+    const subProjectMeeting = {
+      id: 'm-1',
+      project_uid: 'child',
+      project_name: 'TraderX',
+      start_time: new Date(Date.now() + 60 * 60_000).toISOString(),
+      duration: 30,
+      title: 'Weekly sync',
+    } as never;
+
+    it('prefixes the project name when the meeting belongs to another project', () => {
+      expect(meetingToCalendarEvents(subProjectMeeting, 'foundation')[0].title).toBe('TraderX · Weekly sync');
+    });
+
+    it('leaves the title alone for the calendar project itself or without a context', () => {
+      expect(meetingToCalendarEvents(subProjectMeeting, 'child')[0].title).toBe('Weekly sync');
+      expect(meetingToCalendarEvents(subProjectMeeting)[0].title).toBe('Weekly sync');
+    });
+  });
 });
 
 describe('publicMeetingToCalendarEvents', () => {

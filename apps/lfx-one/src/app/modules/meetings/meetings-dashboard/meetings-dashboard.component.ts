@@ -130,6 +130,9 @@ export class MeetingsDashboardComponent {
   public isCalendarView = computed(() => this.viewMode() === 'calendar' && this.canShowCalendarView());
   // Group links on the cards return here, and restore the Me lens when that is where the user was.
   public groupLinkState: Signal<GroupLinkState> = computed(() => ({ backLabel: 'Meetings', backPath: '/meetings', fromMeLens: this.activeLens() === 'me' }));
+  // Project the foundation/project list rolls up from; cards from any other project show their project name.
+  // Empty on the Me lens, whose list already spans every project.
+  public readonly rollupContextUid: Signal<string> = computed(() => (this.activeLens() === 'me' ? '' : (this.project()?.uid ?? '')));
   public calendarEvents: Signal<EventInput[]>;
   public calendarLoading: Signal<boolean>;
 
@@ -541,11 +544,13 @@ export class MeetingsDashboardComponent {
 
         this.meetingsLoading.set(true);
         const filters = this.buildMeetingTypeFilters(meetingType);
-        return this.meetingService.getMeetingsByProjectPaginated(project.uid, undefined, undefined, searchQuery || undefined, filters).pipe(
-          map((r): PageResult<Meeting> => ({ ...r, reset: true })),
-          catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true })),
-          finalize(() => this.meetingsLoading.set(false))
-        );
+        return this.meetingService
+          .getMeetingsByProjectPaginated(project.uid, undefined, undefined, searchQuery || undefined, filters, { includeSubProjects: true })
+          .pipe(
+            map((r): PageResult<Meeting> => ({ ...r, reset: true })),
+            catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true })),
+            finalize(() => this.meetingsLoading.set(false))
+          );
       })
     );
 
@@ -559,7 +564,7 @@ export class MeetingsDashboardComponent {
         this.loadingMore.set(true);
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
-        return this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, searchName, filters).pipe(
+        return this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, searchName, filters, { includeSubProjects: true }).pipe(
           map((r): PageResult<Meeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -647,11 +652,13 @@ export class MeetingsDashboardComponent {
 
         this.pastMeetingsLoading.set(true);
         const filters = this.buildMeetingTypeFilters(meetingType);
-        return this.meetingService.getPastMeetingsByProjectPaginated(project.uid, undefined, searchQuery || undefined, filters, true).pipe(
-          map((r): PageResult<PastMeeting> => ({ ...r, reset: true })),
-          catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true })),
-          finalize(() => this.pastMeetingsLoading.set(false))
-        );
+        return this.meetingService
+          .getPastMeetingsByProjectPaginated(project.uid, undefined, searchQuery || undefined, filters, true, { includeSubProjects: true })
+          .pipe(
+            map((r): PageResult<PastMeeting> => ({ ...r, reset: true })),
+            catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true })),
+            finalize(() => this.pastMeetingsLoading.set(false))
+          );
       })
     );
 
@@ -665,7 +672,7 @@ export class MeetingsDashboardComponent {
         this.loadingMore.set(true);
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
-        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, searchName, filters, true).pipe(
+        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, searchName, filters, true, { includeSubProjects: true }).pipe(
           map((r): PageResult<PastMeeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -996,11 +1003,11 @@ export class MeetingsDashboardComponent {
   }
 
   private initFpUpcomingCount(): Signal<number> {
-    return this.initFpCount(this.fpUpcomingCountLoading, (uid) => this.meetingService.getMeetingsCountByProject(uid));
+    return this.initFpCount(this.fpUpcomingCountLoading, (uid) => this.meetingService.getMeetingsCountByProject(uid, { includeSubProjects: true }));
   }
 
   private initFpPastCount(): Signal<number> {
-    return this.initFpCount(this.fpPastCountLoading, (uid) => this.meetingService.getPastMeetingsCountByProject(uid));
+    return this.initFpCount(this.fpPastCountLoading, (uid) => this.meetingService.getPastMeetingsCountByProject(uid, { includeSubProjects: true }));
   }
 
   private initFpCount(loadingSignal: WritableSignal<boolean>, fetchFn: (uid: string) => Observable<number>): Signal<number> {
@@ -1061,7 +1068,8 @@ export class MeetingsDashboardComponent {
           }
           const projectUid = project.uid;
           this.fpUpcomingLoading.set(true);
-          const fetchPage = (pageToken?: string) => this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken);
+          const fetchPage = (pageToken?: string) =>
+            this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, undefined, undefined, { includeSubProjects: true });
           return fetchPage().pipe(
             expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
             take(10),
@@ -1094,7 +1102,8 @@ export class MeetingsDashboardComponent {
           }
           const projectUid = project.uid;
           this.fpPastLoading.set(true);
-          const fetchPage = (pageToken?: string) => this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken);
+          const fetchPage = (pageToken?: string) =>
+            this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, undefined, undefined, false, { includeSubProjects: true });
           return fetchPage().pipe(
             expand((response) => (response.page_token ? fetchPage(response.page_token) : EMPTY)),
             take(10),
@@ -1154,7 +1163,8 @@ export class MeetingsDashboardComponent {
               hideDeclined: this.hideDeclined(),
             })
           : this.filterBySearchAndType([...this.rawFpUpcomingMeetings(), ...this.rawFpPastMeetings()], search, meetingType);
-      return filtered.flatMap((m) => meetingToCalendarEvents(m) as EventInput[]);
+      const contextUid = this.rollupContextUid();
+      return filtered.flatMap((m) => meetingToCalendarEvents(m, contextUid) as EventInput[]);
     });
   }
 }

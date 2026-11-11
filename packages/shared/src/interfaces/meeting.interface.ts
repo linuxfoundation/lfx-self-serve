@@ -2441,3 +2441,13 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/**
+ * How a project-scoped meetings query picks its projects.
+ * @description With `includeSubProjects`, a foundation or parent project's meetings also include
+ * those of every project beneath it (GH-5566); the server resolves the tree under the caller's own
+ * access. Off by default, so callers that need one project's meetings only are unaffected.
+ */
+export interface MeetingProjectScopeOptions {
+  includeSubProjects?: boolean;
+}

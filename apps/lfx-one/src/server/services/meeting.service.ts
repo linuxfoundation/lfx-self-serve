@@ -69,10 +69,12 @@ import {
   UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
 } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
+import { buildRollupScopedQuery, readRollupRootUid } from '../helpers/meeting-rollup.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -113,7 +115,7 @@ export class MeetingService {
     });
 
     const params = {
-      ...query,
+      ...(await this.applyRollupScope(req, query, 'get_meetings')),
       type: meetingType,
     };
 
@@ -193,7 +195,7 @@ export class MeetingService {
     });
 
     const params = {
-      ...query,
+      ...(await this.applyRollupScope(req, query, 'get_meetings_count')),
       type: meetingType,
     };
 
@@ -2538,6 +2540,28 @@ export class MeetingService {
     }
 
     return nameMap;
+  }
+
+  /**
+   * Resolves the optional `root_project_uid` roll-up (GH-5566): a foundation or parent project's
+   * meetings list also shows the meetings of every project beneath it. The descendant tree is
+   * walked with the caller's own token, and the meetings query runs with it too, so query-service
+   * FGA still drops any meeting the caller cannot see. Concurrent list, count and calendar
+   * requests from the same user share one tree walk. A query without the param is returned as is.
+   */
+  private async applyRollupScope(req: Request, query: Record<string, any>, operation: string): Promise<Record<string, any>> {
+    const rootUid = readRollupRootUid(query, operation);
+    if (!rootUid) {
+      return query;
+    }
+
+    const scopeUids = await coalescePerUserOrgFetch('meeting-rollup-scope', getEffectiveUsername(req) ?? '', rootUid, () =>
+      this.projectService.getFoundationProjectUids(req, rootUid)
+    );
+
+    logger.debug(req, operation, 'Scoped meetings query to project roll-up', { root_project_uid: rootUid, project_count: scopeUids.length });
+
+    return buildRollupScopedQuery(query, scopeUids);
   }
 
   // `email` keeps the stored casing and term matching is case-sensitive, so also match the lowercased copy.

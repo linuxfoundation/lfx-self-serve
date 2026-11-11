@@ -33,6 +33,7 @@ import {
   MeetingAttachmentChangeInput,
   MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
+  MeetingProjectScopeOptions,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
@@ -181,12 +182,12 @@ export class MeetingService {
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
-  public getMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/meetings/count', `project_uid:${uid}`);
+  public getMeetingsCountByProject(uid: string, options: MeetingProjectScopeOptions = {}): Observable<number> {
+    return this.getCount('/api/meetings/count', this.projectScopeParams(uid, options));
   }
 
-  public getPastMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/past-meetings/count', `project_uid:${uid}`);
+  public getPastMeetingsCountByProject(uid: string, options: MeetingProjectScopeOptions = {}): Observable<number> {
+    return this.getCount('/api/past-meetings/count', this.projectScopeParams(uid, options));
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -226,9 +227,10 @@ export class MeetingService {
     orderBy?: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    options: MeetingProjectScopeOptions = {}
   ): Observable<PaginatedResponse<Meeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    let params = this.projectScopeParams(uid, options);
     if (orderBy) {
       params = params.set('order', orderBy);
     }
@@ -251,9 +253,10 @@ export class MeetingService {
     pageToken?: string,
     searchName?: string,
     filters?: string[],
-    includeViewerAttendance = false
+    includeViewerAttendance = false,
+    options: MeetingProjectScopeOptions = {}
   ): Observable<PaginatedResponse<PastMeeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    let params = this.projectScopeParams(uid, options).set('sort', PAST_MEETING_SORT.NAME_DESC);
     // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
     if (includeViewerAttendance) {
       params = params.set('include_viewer_attendance', 'true');
@@ -982,7 +985,10 @@ export class MeetingService {
   }
 
   private getCountByTag(endpoint: string, tag: string): Observable<number> {
-    const params = new HttpParams().set('tags', tag);
+    return this.getCount(endpoint, new HttpParams().set('tags', tag));
+  }
+
+  private getCount(endpoint: string, params: HttpParams): Observable<number> {
     return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load count from ${endpoint}:`, error);
@@ -990,6 +996,15 @@ export class MeetingService {
       }),
       map((response) => response.count)
     );
+  }
+
+  /**
+   * Scopes a project meetings query: the project alone (`tags=project_uid:`), or, with
+   * `includeSubProjects`, the project and every project beneath it (`root_project_uid`, resolved
+   * server-side under the caller's own access).
+   */
+  private projectScopeParams(uid: string, options: MeetingProjectScopeOptions): HttpParams {
+    return options.includeSubProjects ? new HttpParams().set('root_project_uid', uid) : new HttpParams().set('tags', `project_uid:${uid}`);
   }
 
   /**
