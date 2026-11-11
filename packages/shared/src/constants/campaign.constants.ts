@@ -749,10 +749,29 @@ export function parseCampaignName(raw: string): ParsedCampaignName {
 
 export const LINKEDIN_API_VERSION = '202602';
 
+/**
+ * LinkedIn single image ad text limits, in characters (code points). campaign-service's
+ * `createDarkPost` (`internal/platform/linkedin/client.go`) cuts the normalized intro text at 600
+ * runes and the headline at 200 without saying so, so the Implement tab refuses longer copy rather
+ * than let campaign-service shorten it (`linkedInVariantTextError`).
+ */
 export const LINKEDIN_CHAR_LIMITS = {
   introText: 600,
   headline: 200,
 } as const;
+
+/**
+ * The fewest ad variants a LinkedIn create takes: campaign-service refuses an empty set before
+ * anything is created (`len(cfg.Variants) == 0`, `internal/dispatch/linkedin.go`).
+ */
+export const LINKEDIN_MIN_VARIANTS = 1;
+
+/**
+ * The most ad variants the Implement tab offers. campaign-service sets no cap of its own, and every
+ * variant becomes one creative, so this is LinkedIn's: at most 15 ACTIVE creatives per campaign
+ * (LinkedIn Marketing API, "Account Structure and Hierarchy").
+ */
+export const LINKEDIN_MAX_VARIANTS = 15;
 
 export const META_CHAR_LIMITS = {
   primaryText: 125,
