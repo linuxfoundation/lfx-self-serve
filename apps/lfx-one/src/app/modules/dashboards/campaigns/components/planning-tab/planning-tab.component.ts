@@ -693,14 +693,30 @@ export class PlanningTabComponent implements OnInit {
   });
 
   /**
-   * Whether the brief on offer is the one Proceed would be refused over: stored under the slug the
-   * planner's brief will be saved under (#5492). The review step says the generated brief cannot be
-   * saved over it only when this holds; an offer the URL lookup found under another slug (an earlier
-   * edition, say) does not block the save, and saying it does would be false.
+   * Set when the brief on offer (or the unreadable one warned about) came from `lookUpGeneratedSlug`,
+   * the lookup keyed on the slug the planner's brief will be saved under (#5492). `readAt` is the
+   * refresh token that lookup was read under.
+   *
+   * Cleared by every other answer `applySavedBrief` records, so it marks exactly the answers that are
+   * about the save key and were read before any later parent write. Two things key on it:
+   * `savedBriefBlocksSave`, and the URL lookup, which must not replace such an answer with an older
+   * one of its own still in flight (a year guess, a `none`) read under the same token.
+   */
+  protected readonly generatedSlugOffer = signal<{ readAt: number } | null>(null);
+
+  /**
+   * Whether the brief on offer is the one Proceed would be refused over (#5492): found by the lookup
+   * on the save key, and still stored under the slug the planner's brief will be saved under. The
+   * review step says the generated brief can't be saved over it only when this holds.
+   *
+   * Not merely a slug match. An offer the URL lookup found carries no proof the page does not own it:
+   * after a Proceed the parent bumps the refresh token, the URL lookup runs again and can find the
+   * very brief just saved, which the parent may update freely. Saying that one blocks the save would
+   * be false.
    */
   protected readonly savedBriefBlocksSave = computed(() => {
     const slug = this.eventDetails()?.slug ?? '';
-    return slug !== '' && this.savedBrief()?.eventDetails.slug === slug;
+    return this.generatedSlugOffer() !== null && slug !== '' && this.savedBrief()?.eventDetails.slug === slug;
   });
 
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
@@ -996,6 +1012,14 @@ export class PlanningTabComponent implements OnInit {
         if (slug !== this.currentSlug || project !== this.activeFoundationSlug() || delivery !== this.deliveryType() || stage !== this.emailStage()) {
           return;
         }
+        // A lookup on the save key has answered under this same refresh token, so this answer (still
+        // in flight when Generate was pressed) is the older guess about the same event and must not
+        // replace or clear it (#5492). A later parent write bumps the token, and the re-lookup then
+        // applies as usual.
+        const generatedOffer = this.generatedSlugOffer();
+        if (generatedOffer !== null && generatedOffer.readAt === token) {
+          return;
+        }
         this.applySavedBrief(result, token);
       });
 
@@ -1017,6 +1041,7 @@ export class PlanningTabComponent implements OnInit {
       // still valid but the portal answering it is not.
       this.reset();
       this.savedBrief.set(null);
+      this.generatedSlugOffer.set(null);
       this.savedBriefId = null;
       this.savedBriefEtag = null;
       this.savedBriefApproved = false;
@@ -1116,6 +1141,7 @@ export class PlanningTabComponent implements OnInit {
         // key that row belongs to the stage that was selected when it was looked up. So it is
         // cleared here, after the reset that preserves it.
         this.savedBrief.set(null);
+        this.generatedSlugOffer.set(null);
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
@@ -2261,6 +2287,8 @@ export class PlanningTabComponent implements OnInit {
    * server can report, and the only one that means "we do not know".
    */
   private applySavedBrief(result: CampaignBriefLoadResult | null, readAt: number): void {
+    // Every answer is from the URL lookup unless `lookUpGeneratedSlug` marks it again after this call.
+    this.generatedSlugOffer.set(null);
     if (result === null) {
       this.savedBrief.set(null);
       this.savedBriefId = null;
@@ -2346,6 +2374,7 @@ export class PlanningTabComponent implements OnInit {
       if (slug !== this.currentSlug) {
         this.currentSlug = slug;
         this.savedBrief.set(null);
+        this.generatedSlugOffer.set(null);
         this.savedBriefId = null;
         this.savedBriefEtag = null;
         this.savedBriefApproved = false;
@@ -2428,6 +2457,7 @@ export class PlanningTabComponent implements OnInit {
           return;
         }
         this.applySavedBrief(result, token);
+        this.generatedSlugOffer.set({ readAt: token });
       });
   }
 

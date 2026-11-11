@@ -508,6 +508,118 @@ describe('PlanningTabComponent brief read-back', () => {
       expect(savedBrief()?.eventDetails.slug).toBe(generated);
     });
 
+    it('keeps the offer found on the save key when an older url lookup answers after it', async () => {
+      const year = new Date().getFullYear();
+      const generated = 'kubecon-europe-2031';
+      const pendingYearGuess = new Subject<CampaignBriefLoadResult>();
+      campaignService.loadBrief.mockImplementation((slug: string) => {
+        if (slug === `kubecon-europe-${year + 2}`) return pendingYearGuess;
+        if (slug === generated) {
+          return of({
+            status: 'loaded',
+            brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+            briefId: 'brief-gen',
+            etag: 'W/"v1"',
+            approved: true,
+          });
+        }
+        return of(none);
+      });
+      // The url lookup is still waiting on its first year guess when the generation finishes.
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      finishGeneration(generated);
+      await fixture.whenStable();
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+
+      pendingYearGuess.next({
+        status: 'loaded',
+        brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: `kubecon-europe-${year + 2}` } },
+        briefId: 'brief-older-guess',
+        etag: 'W/"v1"',
+        approved: true,
+      });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+    });
+
+    it('stops claiming the save is blocked once a parent write re-runs the url lookup', async () => {
+      // After Proceed the parent owns the row and bumps the refresh token; the re-lookup can find that
+      // very brief, which the parent may update freely.
+      const generated = 'kubecon-europe-2031';
+      const stored: CampaignBriefLoadResult = {
+        status: 'loaded',
+        brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug: generated } },
+        briefId: 'brief-gen',
+        etag: 'W/"v1"',
+        approved: true,
+      };
+      campaignService.loadBrief.mockImplementation((slug: string) => of(slug === generated ? stored : none));
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      finishGeneration(generated);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]')?.textContent).toContain("can't be saved over it");
+
+      // The re-lookup on the url finds the saved brief under its year slug.
+      campaignService.loadBrief.mockImplementation(() => of(stored));
+      fixture.componentRef.setInput('savedBriefRefreshToken', 1);
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).not.toContain("can't be saved over it");
+    });
+
+    it('still applies the url lookup for a different event typed after the save-key offer', async () => {
+      const generated = 'kubecon-europe-2031';
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === generated || slug === 'open-source-summit-korea'
+            ? {
+                status: 'loaded',
+                brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+                briefId: `brief-${slug}`,
+                etag: 'W/"v1"',
+                approved: true,
+              }
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      finishGeneration(generated);
+      await fixture.whenStable();
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+
+      await typeEventUrl('https://events.example.com/open-source-summit-korea/');
+
+      expect(savedBrief()?.eventDetails.slug).toBe('open-source-summit-korea');
+    });
+
+    it('does not warn on the review step about an unreadable brief stored under another edition', async () => {
+      const year = new Date().getFullYear();
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === `kubecon-europe-${year + 2}`
+            ? ({ status: 'unreadable', brief: null, briefId: 'brief-x', etag: 'W/"v1"', approved: false } as CampaignBriefLoadResult)
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      expect(savedBriefWarning()).toContain('could not be opened');
+
+      finishGeneration(`kubecon-europe-${year + 1}`);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')).toBeNull();
+    });
+
     it('makes no extra lookup when the generated slug is the one the url lookup already used', async () => {
       campaignService.loadBrief.mockImplementation(() => of(none));
       await typeEventUrl('https://events.example.com/open-source-summit-europe-2027/');
