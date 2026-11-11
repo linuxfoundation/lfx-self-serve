@@ -121,6 +121,7 @@ export const FORMATION_PIPELINE_COPY = {
   errorMessage: "Couldn't load the pipeline. Try again.",
   forbiddenMessage: 'Only the formation team can see the pipeline.',
   retry: 'Retry',
+  loading: 'Loading the pipeline…',
   noPm: 'No PM yet',
   notAssigned: 'Not assigned',
 } as const;

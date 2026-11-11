@@ -186,50 +186,58 @@
           </div>
 
           <!-- Phone card list (below 600px). -->
-          <div class="flex flex-col min-[600px]:hidden" data-testid="formations-pipeline-cards">
-            @for (row of mobileRows(); track row.uid) {
-              <div class="flex flex-col gap-2 py-3.5 border-b border-gray-100" [attr.data-testid]="'formations-pipeline-card-' + row.uid">
-                <div class="flex items-start justify-between gap-3">
-                  <div class="flex flex-col gap-0.5 min-w-0">
-                    @if (row.link.queryParams; as linkParams) {
-                      <a [routerLink]="row.link.commands" [queryParams]="linkParams" class="lfx-table-name-link text-sm">{{ row.name }}</a>
-                    } @else {
-                      <a [routerLink]="row.link.commands" queryParamsHandling="preserve" class="lfx-table-name-link text-sm">{{ row.name }}</a>
-                    }
-                    @if (row.parent?.name) {
-                      <span class="text-xs text-gray-500">{{ row.parent?.name }}</span>
-                    }
+          <div class="flex flex-col min-[600px]:hidden" data-testid="formations-pipeline-cards" [attr.aria-busy]="loading()">
+            @if (loading()) {
+              <!-- While a read is in flight the cards (the previous foundation's, or none yet), the range text and Load more stay hidden. -->
+              <div role="status" class="flex items-center justify-center gap-2 py-8 text-sm text-gray-500" data-testid="formations-pipeline-loading">
+                <i class="fa-light fa-spinner-third fa-spin motion-reduce:animate-none" aria-hidden="true"></i>
+                <span>{{ copy.loading }}</span>
+              </div>
+            } @else {
+              @for (row of mobileRows(); track row.uid) {
+                <div class="flex flex-col gap-2 py-3.5 border-b border-gray-100" [attr.data-testid]="'formations-pipeline-card-' + row.uid">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="flex flex-col gap-0.5 min-w-0">
+                      @if (row.link.queryParams; as linkParams) {
+                        <a [routerLink]="row.link.commands" [queryParams]="linkParams" class="lfx-table-name-link text-sm">{{ row.name }}</a>
+                      } @else {
+                        <a [routerLink]="row.link.commands" queryParamsHandling="preserve" class="lfx-table-name-link text-sm">{{ row.name }}</a>
+                      }
+                      @if (row.parent?.name) {
+                        <span class="text-xs text-gray-500">{{ row.parent?.name }}</span>
+                      }
+                    </div>
+                    <lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" [dot]="true" [rounded]="true" />
                   </div>
-                  <lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" [dot]="true" [rounded]="true" />
+                  <div class="flex justify-between gap-3 text-xs">
+                    <span class="text-gray-500">Expected launch</span>
+                    <span [class]="row.launch.soon || row.launch.overdue ? 'text-amber-600' : 'text-gray-700'">
+                      {{ row.launch.dateLabel }}
+                      @if (row.launch.relativeLabel) {
+                        · {{ row.launch.relativeLabel }}
+                      }
+                    </span>
+                  </div>
+                  <div class="flex justify-between gap-3 text-xs">
+                    <span class="text-gray-500">ED / PM</span>
+                    <span class="text-gray-700 text-right">{{ row.edLine }} / {{ row.pmLine }}</span>
+                  </div>
                 </div>
-                <div class="flex justify-between gap-3 text-xs">
-                  <span class="text-gray-500">Expected launch</span>
-                  <span [class]="row.launch.soon || row.launch.overdue ? 'text-amber-600' : 'text-gray-700'">
-                    {{ row.launch.dateLabel }}
-                    @if (row.launch.relativeLabel) {
-                      · {{ row.launch.relativeLabel }}
-                    }
-                  </span>
-                </div>
-                <div class="flex justify-between gap-3 text-xs">
-                  <span class="text-gray-500">ED / PM</span>
-                  <span class="text-gray-700 text-right">{{ row.edLine }} / {{ row.pmLine }}</span>
-                </div>
+              }
+              <div class="flex items-center justify-between gap-3 pt-3.5 text-xs text-gray-500">
+                <span data-testid="formations-pipeline-showing">Showing 1 to {{ mobileRows().length }} of {{ displayRows().length }}</span>
+                @if (mobileRows().length < displayRows().length) {
+                  <lfx-button
+                    label="Load more"
+                    severity="secondary"
+                    [outlined]="true"
+                    size="small"
+                    styleClass="min-h-11"
+                    (onClick)="loadMore()"
+                    data-testid="formations-pipeline-load-more" />
+                }
               </div>
             }
-            <div class="flex items-center justify-between gap-3 pt-3.5 text-xs text-gray-500">
-              <span data-testid="formations-pipeline-showing">Showing 1 to {{ mobileRows().length }} of {{ displayRows().length }}</span>
-              @if (mobileRows().length < displayRows().length) {
-                <lfx-button
-                  label="Load more"
-                  severity="secondary"
-                  [outlined]="true"
-                  size="small"
-                  styleClass="min-h-11"
-                  (onClick)="loadMore()"
-                  data-testid="formations-pipeline-load-more" />
-              }
-            </div>
           </div>
         }
       </div>

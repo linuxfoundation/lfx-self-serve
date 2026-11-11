@@ -187,6 +187,44 @@ describe('FormationsPipelineComponent (#5475)', () => {
     expect(navigate).toHaveBeenNthCalledWith(2, ['/project/overview'], { queryParams: { project: 'arc-slug' } });
   });
 
+  it('shows a loading status on the phone list, with no cards, range text or Load more, until the read finishes', async () => {
+    const pending = new Subject<FormationPipelineResponse>();
+    await render(pending);
+
+    expect(q('formations-pipeline-loading')?.textContent).toContain('Loading the pipeline');
+    expect(q('formations-pipeline-loading')?.getAttribute('role')).toBe('status');
+    expect(q('formations-pipeline-cards')?.getAttribute('aria-busy')).toBe('true');
+    expect(q('formations-pipeline-showing')).toBeNull();
+    expect(q('formations-pipeline-load-more')).toBeNull();
+    expect(q('formations-pipeline-cards')?.textContent).not.toContain('Showing');
+
+    pending.next(response(ROWS));
+    pending.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(q('formations-pipeline-loading')).toBeNull();
+    expect(q('formations-pipeline-cards')?.getAttribute('aria-busy')).toBe('false');
+    expect(q('formations-pipeline-showing')?.textContent).toContain('Showing 1 to 3 of 3');
+  });
+
+  it("hides the previous foundation's cards while a new foundation's read is in flight", async () => {
+    await render();
+    expect(q('formations-pipeline-card-a')).not.toBeNull();
+    const next = new Subject<FormationPipelineResponse>();
+    getFormationPipeline.mockReturnValueOnce(next);
+
+    fixture.componentInstance['filterForm'].controls.foundation.setValue('f2');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(q('formations-pipeline-card-a')).toBeNull();
+    expect(q('formations-pipeline-loading')).not.toBeNull();
+    expect(q('formations-pipeline-showing')).toBeNull();
+  });
+
   it('shows the amber state only for a launch within 30 days', async () => {
     const soon = new Date(Date.now() + 5 * 86_400_000).toISOString();
     await render(
