@@ -34,7 +34,7 @@ const DIFF: SyncDiff = {
   conflicts: [],
 };
 
-async function setup(options: { diff?: SyncDiff | null; impersonating?: boolean; committeeUid?: string }): Promise<{
+async function setup(options: { diff?: SyncDiff | null; impersonating?: boolean; committeeUid?: string; syncMode?: MailingListSyncMode }): Promise<{
   fixture: ComponentFixture<MailingListSyncPreviewDialogComponent>;
   startSyncApply: ReturnType<typeof vi.fn>;
 }> {
@@ -69,6 +69,7 @@ async function setup(options: { diff?: SyncDiff | null; impersonating?: boolean;
             mailingListUid: 'ml-1',
             mailingListName: 'Main List',
             committeeUid: options.committeeUid ?? 'committee-1',
+            syncMode: options.syncMode,
           } as MailingListSyncPreviewDialogData,
         },
       },
@@ -113,6 +114,7 @@ async function setupForPolling(options: {
   getSyncDiffStatus?: ReturnType<typeof vi.fn>;
   getSyncApplyStatus?: ReturnType<typeof vi.fn>;
   preloadDiff?: boolean;
+  syncMode?: MailingListSyncMode;
 }): Promise<{ fixture: ComponentFixture<MailingListSyncPreviewDialogComponent> }> {
   const getSyncDiffStatus =
     options.getSyncDiffStatus ??
@@ -139,7 +141,12 @@ async function setupForPolling(options: {
       {
         provide: DynamicDialogConfig,
         useValue: {
-          data: { mailingListUid: 'ml-1', mailingListName: 'Main List', committeeUid: 'committee-1' } as MailingListSyncPreviewDialogData,
+          data: {
+            mailingListUid: 'ml-1',
+            mailingListName: 'Main List',
+            committeeUid: 'committee-1',
+            syncMode: options.syncMode,
+          } as MailingListSyncPreviewDialogData,
         },
       },
       { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
@@ -224,6 +231,51 @@ describe('MailingListSyncPreviewDialogComponent committee mismatch', () => {
     expect(fixture.componentInstance.diff()).toBeNull();
     expect(fixture.componentInstance.loadError()).toContain('different committee');
     expect(fixture.nativeElement.querySelector('[data-testid="sync-preview-error"]')).not.toBeNull();
+  });
+});
+
+describe('MailingListSyncPreviewDialogComponent direction selector', () => {
+  it('shows the direction selector when syncMode is undefined (manual/unset list)', async () => {
+    const { fixture } = await setup({ syncMode: undefined });
+
+    expect(fixture.componentInstance.needsDirectionSelector).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="sync-preview-direction-selector"]')).not.toBeNull();
+  });
+
+  it('shows the direction selector when syncMode is MANUAL', async () => {
+    const { fixture } = await setup({ syncMode: MailingListSyncMode.MANUAL });
+
+    expect(fixture.componentInstance.needsDirectionSelector).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="sync-preview-direction-selector"]')).not.toBeNull();
+  });
+
+  it('hides the direction selector when syncMode is an auto direction', async () => {
+    const { fixture } = await setup({ syncMode: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST });
+
+    expect(fixture.componentInstance.needsDirectionSelector).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="sync-preview-direction-selector"]')).toBeNull();
+  });
+
+  // greptile-apps, cursor/Bugbot, copilot (#5578 review): once an apply has been attempted, the
+  // direction control must stay disabled even after applying()/loadingDiff() both go back to
+  // false — switching direction post-attempt would re-run loadDiff(), which clears
+  // applyError/applyResult and silently drops the dismiss-lock and the direction the completed
+  // apply actually ran against.
+  it('locks the direction selector permanently once an apply has been attempted, even after applying finishes', async () => {
+    const { fixture } = await setupForPolling({ syncMode: undefined, preloadDiff: true });
+
+    expect(fixture.componentInstance.directionForm.controls.direction.disabled).toBe(false);
+
+    fixture.componentInstance.apply();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.directionForm.controls.direction.disabled).toBe(true);
+
+    vi.advanceTimersByTime(2000);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.applying()).toBe(false);
+    expect(fixture.componentInstance.directionForm.controls.direction.disabled).toBe(true);
   });
 });
 

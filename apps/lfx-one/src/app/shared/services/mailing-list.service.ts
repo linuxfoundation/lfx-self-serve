@@ -19,6 +19,7 @@ import {
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { MAILING_LIST_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import { MailingListSyncDirection } from '@lfx-one/shared/enums';
 import { map, Observable, shareReplay, take, tap } from 'rxjs';
 
 /**
@@ -96,14 +97,19 @@ export class MailingListService {
     );
   }
 
-  /** Starts an async sync-diff job and returns its ID immediately. Poll with {@link getSyncDiffStatus}. */
-  public startSyncDiff(mailingListId: string): Observable<SyncJobStart> {
-    return this.http.post<SyncJobStart>(`${this.baseUrl}/${mailingListId}/sync-diff/start`, {}).pipe(take(1));
+  /**
+   * Starts an async sync-diff job and returns its ID immediately. Poll with {@link getSyncDiffStatus}.
+   * `direction` is required when the list's `sync_mode` is `manual`/unset, rejected for an auto_* list.
+   */
+  public startSyncDiff(mailingListId: string, direction?: MailingListSyncDirection): Observable<SyncJobStart> {
+    const params = direction ? new HttpParams().set('direction', direction) : undefined;
+    return this.http.post<SyncJobStart>(`${this.baseUrl}/${mailingListId}/sync-diff/start`, {}, { params }).pipe(take(1));
   }
 
-  /** Fetches the current progress/result of a sync-diff job started via {@link startSyncDiff}. */
-  public getSyncDiffStatus(mailingListId: string, jobId: string): Observable<SyncDiffJobStatus> {
-    return this.http.get<SyncDiffJobStatus>(`${this.baseUrl}/${mailingListId}/sync-diff/${jobId}/status`);
+  /** Fetches the current progress/result of a sync-diff job started via {@link startSyncDiff}. `direction` must match the value passed to `startSyncDiff` for this job. */
+  public getSyncDiffStatus(mailingListId: string, jobId: string, direction?: MailingListSyncDirection): Observable<SyncDiffJobStatus> {
+    const params = direction ? new HttpParams().set('direction', direction) : undefined;
+    return this.http.get<SyncDiffJobStatus>(`${this.baseUrl}/${mailingListId}/sync-diff/${jobId}/status`, { params });
   }
 
   /** Starts an async sync-apply job for an admin-approved subset of a sync-diff's adds/removes. Poll with {@link getSyncApplyStatus}. */
