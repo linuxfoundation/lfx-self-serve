@@ -110,9 +110,13 @@
                 Try again
               </button>
             </span>
+          } @else if (companyEmailsUnlinked()) {
+            <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-unlinked">
+              This profile isn't linked to an LF account, so we can't check for a company email
+            </span>
           } @else if (companyEmailsUnconfirmed()) {
             <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-unconfirmed">
-              We couldn't confirm a company email at {{ drawer.companyName() }}
+              We can't tell whether this person has an email at {{ drawer.companyName() }}
             </span>
           } @else if (companyEmailsNoIdentity()) {
             <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-no-identity"> Emails aren't shown on this page </span>

@@ -761,14 +761,32 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('none')?.textContent?.trim()).toBe('No company email on file');
   });
 
-  it.each(['unlinked_identity', 'unconfirmed', undefined])('says the address could not be confirmed for an unavailable %s answer', async (reason) => {
+  it.each(['unconfirmed', undefined])('says it cannot tell, naming the organization, for an unavailable %s answer', async (reason) => {
     selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
     drawer.open({ name: 'First person', personKey: 'first-person' });
     await render();
     reply(`${BY_PERSON_KEY}/company-emails`).next({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: reason });
     await render();
 
-    expect(emailState('unconfirmed')?.textContent?.trim()).toBe("We couldn't confirm a company email at Acme Corp");
+    expect(emailState('unconfirmed')?.textContent?.trim()).toBe("We can't tell whether this person has an email at Acme Corp");
+    expect(emailState('unlinked')).toBeNull();
+    expect(emailState('none')).toBeNull();
+  });
+
+  it('says a profile with no LF account cannot be checked, rather than none on file', async () => {
+    selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
+    drawer.open({ name: 'First person', personKey: 'first-person' });
+    await render();
+    reply(`${BY_PERSON_KEY}/company-emails`).next({
+      companyEmails: [],
+      primaryEmail: null,
+      companyEmailsStatus: 'unavailable',
+      companyEmailsReason: 'unlinked_identity',
+    });
+    await render();
+
+    expect(emailState('unlinked')?.textContent?.trim()).toBe("This profile isn't linked to an LF account, so we can't check for a company email");
+    expect(emailState('unconfirmed')).toBeNull();
     expect(emailState('none')).toBeNull();
   });
 
