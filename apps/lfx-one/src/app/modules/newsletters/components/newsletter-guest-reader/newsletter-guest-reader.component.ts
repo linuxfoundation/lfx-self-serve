@@ -37,6 +37,8 @@ export class NewsletterGuestReaderComponent {
   protected readonly shownFoundation: Signal<NewsletterFoundationSummary | null> = computed(() => this.issue()?.foundation ?? this.foundation());
   protected readonly placeholderLines = [92, 100, 84, 96, 70, 100, 88, 60];
   protected readonly legalLinks = NEWSLETTER_GUEST_LEGAL_LINKS;
+  /** False inside an iframe, where Transcend's consent manager cannot open; the footer hides Cookie settings. */
+  protected readonly cookieSettingsAvailable = this.transcendService.preferencesAvailable;
 
   // === Protected Methods ===
   /** The guest pages hide Transcend's automatic prompt, so the footer keeps cookie preferences reachable. */

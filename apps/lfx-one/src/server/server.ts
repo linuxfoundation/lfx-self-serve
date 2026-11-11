@@ -43,6 +43,7 @@ import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
+import formationPipelineRouter from './routes/formation-pipeline.route';
 import formationsRouter from './routes/formations.route';
 import gatewazeRouter from './routes/gatewaze.route';
 import projectApplicationsRouter from './routes/project-applications.route';
@@ -445,6 +446,8 @@ app.use('/api/events', eventsRouter);
 // resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
 // routers above.
 app.use('/api', formationsRouter);
+// Formation team's project pipeline (#5475) — its own router so the checklist router and its specs stay untouched.
+app.use('/api/formations/pipeline', formationPipelineRouter);
 app.use('/api/project-applications', projectApplicationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);

@@ -4,7 +4,7 @@ description: How to find meetings, filter by your RSVP, and subscribe to a proje
 audience: [all]
 product_area: Meetings
 tags: [meetings, dashboard, filters, rsvp, calendar, subscribe, upcoming, past]
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 intercom_collection: Meetings
 ---
 
@@ -36,7 +36,7 @@ In the Foundation or Project lens, you can switch between **List** and **Calenda
 
 Two buttons also help you share a project's meetings:
 
-- **Public Calendar** opens the project's public meeting calendar. It's read-only and anyone can use it, so it's a good link to share.
+- **Public Calendar** opens the project's public meeting calendar. It's read-only and anyone can use it, so it's a good link to share. If a website shows it inside a frame, the cookie banner doesn't appear inside the frame and LFX collects no analytics there.
 - **Subscribe** adds the meetings to your own calendar. See [Subscribe to a calendar](#subscribe-to-a-calendar).
 
 ## Search and filter

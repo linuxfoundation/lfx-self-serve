@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
@@ -13,6 +13,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
+import { emptyPipelineCounts } from '@lfx-one/shared/utils';
 import type { FormationsQueueResponse, ProjectApplication, ProjectContext } from '@lfx-one/shared/interfaces';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -196,6 +197,7 @@ function buildApplication(overrides: Partial<ProjectApplication> = {}): ProjectA
 
 describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
   let getFormationsQueue: ReturnType<typeof vi.fn>;
+  let getFormationPipeline: ReturnType<typeof vi.fn>;
   let getApplications: ReturnType<typeof vi.spyOn>;
   let applicationService: ProjectApplicationService;
 
@@ -207,11 +209,12 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
   }): Promise<ComponentFixture<FormationsQueueComponent>> => {
     TestBed.resetTestingModule();
     getFormationsQueue = vi.fn(() => of(createEmptyFormationsQueueResponse()));
+    getFormationPipeline = vi.fn(() => of({ rows: [], counts: emptyPipelineCounts() }));
     await TestBed.configureTestingModule({
       imports: [FormationsQueueComponent],
       providers: [
         provideRouter([]),
-        { provide: FormationService, useValue: { getFormationsQueue } },
+        { provide: FormationService, useValue: { getFormationsQueue, getFormationPipeline } },
         {
           provide: ProjectContextService,
           useValue: {
@@ -352,6 +355,86 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
       fixture.detectChanges();
       expect(count(fixture)).toBe('3');
       expect(getApplications).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Pipeline tab (#5475)', () => {
+    it('is the default tab for a formation-team member on The Linux Foundation, first in the bar', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true });
+      expect(query(fixture, 'formations-queue-pipeline')).not.toBeNull();
+      expect(query(fixture, 'formations-queue-page-tabs-pipeline')?.getAttribute('aria-selected')).toBe('true');
+      expect(
+        query(fixture, 'formations-queue-page-tabs-pipeline')?.compareDocumentPosition(query(fixture, 'formations-queue-page-tabs-formations') as Node)
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(getFormationPipeline).toHaveBeenCalled();
+    });
+
+    it('makes no formations read while Pipeline shows, and holds it until access answers on a bare link', async () => {
+      const access = new Subject<boolean>();
+      const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable() });
+      expect(getFormationsQueue).not.toHaveBeenCalled();
+      access.next(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(getFormationsQueue).not.toHaveBeenCalled();
+    });
+
+    it('fires the Formations read and shows no empty state while access is pending, once access answers no', async () => {
+      const access = new Subject<boolean>();
+      const fixture = await render({ slug: 'tlf', isFormationTeam: access.asObservable() });
+      expect(getFormationsQueue).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.textContent).not.toContain('No formations yet');
+
+      access.next(false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+    });
+
+    it('fires the Formations read when the access check errors (it fails closed to no)', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: of(false) });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const real = TestBed.inject(ProjectApplicationService);
+      vi.mocked(real.getAccess).mockRestore();
+      const http = TestBed.inject(HttpTestingController);
+      const failing = TestBed.createComponent(FormationsQueueComponent);
+      getFormationsQueue.mockClear();
+      failing.detectChanges();
+      http.match((request) => request.url.endsWith('/access')).forEach((request) => request.flush('boom', { status: 500, statusText: 'Server Error' }));
+      failing.detectChanges();
+      await failing.whenStable();
+      failing.detectChanges();
+
+      expect(getFormationsQueue).toHaveBeenCalledTimes(1);
+      expect(query(failing, 'formations-queue-pipeline')).toBeNull();
+      expect(fixture).toBeTruthy();
+    });
+
+    it('opens ?tab=pipeline directly', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'pipeline' });
+      expect(query(fixture, 'formations-queue-pipeline')).not.toBeNull();
+    });
+
+    it("shows today's page for ?tab=formations", async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'formations' });
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+      expect(getFormationsQueue).toHaveBeenCalled();
+      expect(getFormationPipeline).not.toHaveBeenCalled();
+    });
+
+    it('leaves the page unchanged for a non-team member, even with ?tab=pipeline', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: false, tab: 'pipeline' });
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+      expect(query(fixture, 'formations-queue-page-tabs-pipeline')).toBeNull();
+      expect(getFormationPipeline).not.toHaveBeenCalled();
+      expect(getFormationsQueue).toHaveBeenCalled();
+    });
+
+    it('leaves the page unchanged on any other foundation', async () => {
+      const fixture = await render({ slug: 'cncf', isFormationTeam: true });
+      expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+      expect(getFormationPipeline).not.toHaveBeenCalled();
     });
   });
 
