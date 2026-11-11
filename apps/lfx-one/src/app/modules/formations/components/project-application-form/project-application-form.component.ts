@@ -196,10 +196,8 @@ export class ProjectApplicationFormComponent {
     if (this.submitting()) {
       return;
     }
-    // A click on Save blurs the search first, so a typed address it dropped is recovered here and shown for confirmation.
-    if (this.adoptDiscardedLegalText()) {
-      return;
-    }
+    // A click on Save blurs the search first, so this has normally run already; it covers a Save with no blur.
+    this.resolveLegalSearchText();
     this.form.markAllAsTouched();
     this.refreshInvalid();
     if (this.form.invalid) {
@@ -230,23 +228,24 @@ export class ProjectApplicationFormComponent {
   protected switchToManualLegal(): void {
     const typed = this.legalPicker()?.consumeDiscardedText() ?? null;
     this.legalMode.set('manual');
-    if (typed && (isEmailShape(typed) || typed.includes('@'))) {
+    if (typed && this.looksLikeLegalEmail(typed)) {
       this.form.controls.legal_contact_email.setValue(typed);
     }
     this.focusLegalInput();
   }
 
   /**
-   * Tabbing or clicking away from the directory search drops typed-but-unpicked text (GH-2694). If that
-   * text is a valid legal email, keep it: swap to the plain input holding it. Moves into the picker's own
-   * suggestion list are ignored, since a pick is about to follow.
+   * Tabbing or clicking away from the directory search drops typed-but-unpicked text (GH-2694); apply the
+   * one rule in {@link resolveLegalSearchText}. Focus moving within the field, or into the suggestion
+   * list where a pick is about to follow, leaves the text alone. A null target is a click on
+   * non-focusable space: nothing follows it, so it resolves like any other blur.
    */
   protected onLegalFocusOut(event: FocusEvent): void {
     const next = event.relatedTarget as Element | null;
-    if (!next || (event.currentTarget as Element).contains(next) || next.closest('.p-overlay, .p-autocomplete-overlay')) {
+    if (next && ((event.currentTarget as Element).contains(next) || next.closest('.p-overlay, .p-autocomplete-overlay'))) {
       return;
     }
-    this.adoptDiscardedLegalText();
+    this.resolveLegalSearchText();
   }
 
   /** Back to the directory. A hand-typed address names nobody the directory vouched for, so it is dropped. */
@@ -312,18 +311,34 @@ export class ProjectApplicationFormComponent {
       });
   }
 
-  /** Returns true when text the search discarded was a valid legal email and the plain input now holds it. */
-  private adoptDiscardedLegalText(): boolean {
+  /**
+   * The one rule for text left in the legal search box, applied on blur and on Save. A picked contact never
+   * survives an edit of that text:
+   * - email-like text (valid or not) moves to the plain input holding it, marked touched, so the control's
+   *   own validator decides whether Save goes ahead;
+   * - anything else (a name) clears the control, so Save is blocked by the required error.
+   * No leftover text means nothing was edited and any picked contact stands.
+   */
+  private resolveLegalSearchText(): void {
     if (this.legalMode() !== 'search') {
-      return false;
+      return;
     }
     const typed = this.legalPicker()?.consumeDiscardedText() ?? null;
-    if (!typed || projectApplicationLegalEmailValidator()(new FormControl(typed)) !== null) {
-      return false;
+    if (!typed) {
+      return;
     }
-    this.form.controls.legal_contact_email.setValue(typed);
-    this.legalMode.set('manual');
-    return true;
+    const control = this.form.controls.legal_contact_email;
+    control.markAsTouched();
+    if (this.looksLikeLegalEmail(typed)) {
+      control.setValue(typed);
+      this.legalMode.set('manual');
+      return;
+    }
+    control.setValue('');
+  }
+
+  private looksLikeLegalEmail(text: string): boolean {
+    return isEmailShape(text) || text.includes('@') || projectApplicationLegalEmailValidator()(new FormControl(text)) === null;
   }
 
   /** Keyboard users activate a link that removes itself; land them on the field that replaced it. */

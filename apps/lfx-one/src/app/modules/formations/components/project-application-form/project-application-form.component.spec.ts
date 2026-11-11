@@ -8,7 +8,7 @@ import { By } from '@angular/platform-browser';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import type { ProjectApplicationAnswers, ProjectApplicationFormMode } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import type { AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import type { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectApplicationFormComponent } from './project-application-form.component';
@@ -374,6 +374,13 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
       input.dispatchEvent(new Event('blur'));
       return input;
     };
+    const pickLegalContact = (email: string): void => {
+      const picker = fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
+      picker.onUserSelected({
+        value: { uid: 'u-1', email, first_name: 'Pat', last_name: 'Counsel', job_title: null, organization: { name: 'Vendor Corp' }, username: 'pat' },
+      } as unknown as AutoCompleteSelectEvent);
+      fixture.detectChanges();
+    };
     const focusOut = async (input: HTMLInputElement, relatedTarget: Element | null): Promise<void> => {
       input.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget }));
       fixture.detectChanges();
@@ -393,12 +400,69 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
       expect(access().form.controls.legal_contact_email.value).toBe('counsel@acme-motors.example');
     });
 
-    it('leaves text that is not a valid address in the search, which snaps back as before', async () => {
+    it('treats name-only text as an edit: clears the control, blocks Save with the required error and stays on the search', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
       const input = await typeIntoSearch('Pat Counsel');
       await focusOut(input, root().querySelector('#pa-project-name'));
+      access().onSubmit();
+      fixture.detectChanges();
+      await fixture.whenStable();
 
       expect(legalSearchInput()).not.toBeNull();
       expect(access().form.controls.legal_contact_email.value).toBe('');
+      expect(emitted).toHaveLength(0);
+      expect(root().querySelector('[data-testid="project-application-form-legal-error"]')).not.toBeNull();
+    });
+
+    it('does not let a picked contact survive a name typed over it', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
+      pickLegalContact('pat.counsel@vendor-corp.example');
+      await fixture.whenStable();
+      expect(access().form.controls.legal_contact_email.value).toBe('pat.counsel@vendor-corp.example');
+
+      const input = await typeIntoSearch('Someone Else');
+      await focusOut(input, root().querySelector('#pa-project-name'));
+      access().onSubmit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(access().form.controls.legal_contact_email.value).toBe('');
+      expect(emitted).toHaveLength(0);
+    });
+
+    it('moves invalid email-like text over a picked contact into the plain input and blocks Save, not submitting the old contact', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
+      pickLegalContact('pat.counsel@vendor-corp.example');
+      await fixture.whenStable();
+
+      const input = await typeIntoSearch('new@vendor');
+      await focusOut(input, root().querySelector('#pa-project-name'));
+      access().onSubmit();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(legalManualInput()?.value).toBe('new@vendor');
+      expect(access().form.controls.legal_contact_email.value).toBe('new@vendor');
+      expect(access().form.controls.legal_contact_email.touched).toBe(true);
+      expect(emitted).toHaveLength(0);
+      expect(root().querySelector('[data-testid="project-application-form-legal-error"]')).not.toBeNull();
+    });
+
+    it('keeps a typed address across a blur with no target, even when the delayed search callback then runs', async () => {
+      access().form.patchValue({ ...VALID, legal_contact_email: '' });
+      const picker = fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
+      const input = await typeIntoSearch('counsel@acme-motors.example');
+      await focusOut(input, null);
+      picker.onSearchComplete({ query: 'counsel@acme-motors.example' } as AutoCompleteCompleteEvent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(legalManualInput()?.value).toBe('counsel@acme-motors.example');
+      expect(access().form.controls.legal_contact_email.value).toBe('counsel@acme-motors.example');
+
+      access().onSubmit();
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].legal_contact_email).toBe('counsel@acme-motors.example');
     });
 
     it('does not swap while focus moves into the suggestion list, where a pick is about to follow', async () => {
@@ -414,14 +478,15 @@ describe('ProjectApplicationFormComponent organization and legal contact pickers
       expect(legalSearchInput()).not.toBeNull();
     });
 
-    it('recovers the typed address when Save is clicked, shows it for confirmation, and does not submit yet', async () => {
+    it('adopts a valid typed address on Save and submits it in the same click', async () => {
       access().form.patchValue({ ...VALID, legal_contact_email: '' });
       await typeIntoSearch('counsel@acme-motors.example');
       access().onSubmit();
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(emitted).toHaveLength(0);
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].legal_contact_email).toBe('counsel@acme-motors.example');
       expect(legalManualInput()?.value).toBe('counsel@acme-motors.example');
     });
   });
