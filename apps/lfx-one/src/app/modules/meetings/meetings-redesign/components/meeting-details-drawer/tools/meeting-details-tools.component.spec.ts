@@ -7,7 +7,8 @@ import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Meeting, MeetingDetailsState, MeetingHomeRow, MeetingRegistrant, MeetingRsvp, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import { hasMeetingFullAccess } from '@lfx-one/shared/utils';
+import { canViewMeetingGuests, hasMeetingFullAccess } from '@lfx-one/shared/utils';
+import { MeetingType } from '@lfx-one/shared/enums';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
@@ -102,6 +103,7 @@ describe('MeetingDetailsToolsComponent', () => {
     removedUids = signal(new Set<string>());
     meetingService = {
       getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+      getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
       getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
       getPastMeetingRecording: vi.fn().mockReturnValue(of({ sessions: [{ total_size: 1, share_url: 'https://zoom.example/rec' }] })),
       getPastMeetingTranscript: vi.fn().mockReturnValue(of({ recording_files: [{ file_type: 'TRANSCRIPT', download_url: 'https://zoom.example/vtt' }] })),
@@ -239,6 +241,16 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-rsvp-grid')?.querySelectorAll('lfx-ui-avatar').length).toBe(2);
     });
 
+    it('keeps the counts and Invite people when the meeting keeps its guests private', async () => {
+      canViewGuests.set(true);
+      meetingService['getMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', 'accepted')]));
+      await render({ organizer: true, show_meeting_attendees: false });
+
+      expect(text('meetings-home-attendance-label')).toBe('1 of 1 attending · 100%');
+      expect(find('meeting-details-invite')).not.toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
     it('offers no Invite people without a project, as Edit Meeting', async () => {
       meetingService['getMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', 'accepted')]));
       await render({ organizer: true, project_slug: undefined });
@@ -253,6 +265,80 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-rsvp')).toBeNull();
       expect(find('meeting-details-invite')).not.toBeNull();
       expect(fixture.nativeElement.textContent).not.toMatch(/\d+ invited/);
+    });
+  });
+
+  describe('guest, upcoming', () => {
+    // The drawer's guest-list rule, as the context computes it.
+    const renderGuest = async (overrides: Partial<Meeting>): Promise<void> => {
+      const shown = { ...MEETING, ...overrides };
+      canViewGuests.set(canViewMeetingGuests(shown, { organizer: false, invited: !!shown.invited }));
+      await render(overrides);
+    };
+
+    it('shows the counts read-only when the meeting shares its guests', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(
+        of([registrant('reg-a', 'accepted'), registrant('reg-b', 'tentative'), registrant('reg-c', null)])
+      );
+      await renderGuest({ show_meeting_attendees: true });
+
+      expect(meetingService['getMyMeetingRegistrants']).toHaveBeenLastCalledWith('synthetic-meeting', true, undefined, false, false);
+      expect(meetingService['getMeetingRegistrants']).not.toHaveBeenCalled();
+      expect(text('meetings-home-attendance-label')).toBe('1 of 3 attending · 33%');
+      expect(find('meeting-details-rsvp-grid')?.querySelectorAll('lfx-ui-avatar').length).toBe(3);
+      expect(find('meeting-details-invite')).toBeNull();
+    });
+
+    it('hides the counts when the meeting keeps its guests private', async () => {
+      await renderGuest({ show_meeting_attendees: false });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(find('meeting-details-rsvp-loading')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('hides the counts on a board meeting, where sharing is locked off', async () => {
+      await renderGuest({ show_meeting_attendees: true, meeting_type: MeetingType.BOARD });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('hides the counts on a restricted meeting, where sharing is locked off', async () => {
+      await renderGuest({ show_meeting_attendees: true, restricted: true });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('hides the counts once the date has ended', async () => {
+      canViewGuests.set(true);
+      await render({ show_meeting_attendees: true }, 'ended');
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('shows no lone divider when the shared roster is empty', async () => {
+      await renderGuest({ show_meeting_attendees: true });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[aria-hidden="true"].h-px')).toBeNull();
+    });
+
+    it('hides the counts from a viewer who is not invited', async () => {
+      await renderGuest({ show_meeting_attendees: true, invited: false });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+    });
+
+    it('hides the counts when the meeting takes no RSVPs', async () => {
+      await renderGuest({ show_meeting_attendees: true, is_invite_responses_enabled: false });
+
+      expect(find('meeting-details-rsvp')).toBeNull();
+      expect(find('meeting-details-invite')).toBeNull();
+      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
     });
   });
 

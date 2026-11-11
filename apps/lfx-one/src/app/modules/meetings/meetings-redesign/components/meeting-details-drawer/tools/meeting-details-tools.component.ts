@@ -4,7 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingHomeAttendance, MeetingReconcileDialogData, PastMeetingParticipant, PastMeetingSummary } from '@lfx-one/shared/interfaces';
-import { getPastMeetingAttendance, isHostKeyVisible, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
+import { getPastMeetingAttendance, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
@@ -25,7 +25,7 @@ import { MeetingDetailsArtifactsService } from './meeting-details-artifacts.serv
 import { MeetingDetailsRsvpComponent } from './rsvp/meeting-details-rsvp.component';
 
 /**
- * Right column of the meeting details drawer under the schedule: host controls, the organizer's RSVP counts, attendance,
+ * Right column of the meeting details drawer under the schedule: host controls, the RSVP counts, attendance,
  * the organizer's Reconcile Attendance, the recording, AI summary and transcript, and the private-meeting notice.
  * @description Follows the legacy meeting page's gates and copy.
  */
@@ -56,6 +56,10 @@ export class MeetingDetailsToolsComponent {
   protected readonly artifactsService = inject(MeetingDetailsArtifactsService);
 
   protected readonly ended: Signal<boolean> = computed(() => this.context.state() === 'ended');
+  /** Organizers always; guests read-only when the meeting shares its guest list and takes RSVPs. */
+  protected readonly showRsvp: Signal<boolean> = computed(
+    () => !this.ended() && (this.context.organizer() || (this.context.canViewGuests() && isMeetingInviteResponsesEnabled(this.context.meeting())))
+  );
   /** The BFF sends the key only to its audience inside its window, so nothing else gates it. */
   protected readonly hostKey: Signal<string | null> = computed(() => {
     const meeting = this.context.meeting();
