@@ -75,7 +75,15 @@ describe('Personal newsletter route isolation', () => {
       expect(children.indexOf(personal)).toBeLessThan(children.indexOf(later));
       expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(later));
     }
-    expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual(['', 'list', 'create', ':projectUid/:id/edit', ':projectUid/:id/analytics']);
+    expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual([
+      '',
+      'list',
+      'create',
+      ':projectUid/publications/create',
+      ':projectUid/publications/:publicationUid/edit',
+      ':projectUid/:id/edit',
+      ':projectUid/:id/analytics',
+    ]);
   });
   it('preserves reader and publisher guards', () => {
     expect(shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);

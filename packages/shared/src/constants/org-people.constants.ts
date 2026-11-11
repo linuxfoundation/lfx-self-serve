@@ -6,6 +6,8 @@ import type {
   OrgAccessRole,
   OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
+  OrgAllEmployeeCompanyEmailFilter,
+  OrgAllEmployeeCompanyEmailOption,
   OrgAllEmployeeEmploymentFilter,
   OrgAllEmployeeEmploymentOption,
   OrgAllEmployeesResponse,
@@ -88,6 +90,23 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
  * (lfx-self-serve#4694). The URL drops `?employment=` when it is active.
  */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'all';
+
+/**
+ * Company email filter options for the All Employees table: what the person drawer's company-email lookup answers for
+ * each row. Rows without a status (the server could not read the company-email keys) are listed only under `all`.
+ */
+export const ORG_ALL_EMPLOYEE_COMPANY_EMAIL_OPTIONS: readonly OrgAllEmployeeCompanyEmailOption[] = [
+  { label: 'All email statuses', value: 'all' },
+  { label: 'Has company email', value: 'has' },
+  { label: 'No company email', value: 'none' },
+  { label: 'Unlinked profile', value: 'unconfirmed' },
+] as const;
+
+/** Default Company email filter on All Employees; the URL drops `?companyEmail=` when it is active. */
+export const DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL: OrgAllEmployeeCompanyEmailFilter = 'all';
+
+/** Most key-contact record ids one drawer company-email lookup takes (`by-key-contact/company-emails?ids=`). */
+export const ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS = 50;
 
 /**
  * Hint on an All Employees row for someone with code credited to the company but no employment record there

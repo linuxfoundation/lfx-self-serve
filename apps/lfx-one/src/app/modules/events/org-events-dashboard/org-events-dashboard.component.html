@@ -180,11 +180,6 @@
               [ariaLabel]="scopeLabel"
               dataTest="org-events-scope-filter" />
           </div>
-          <lfx-more-filters-toggle
-            [(expanded)]="moreFiltersExpanded"
-            [count]="hiddenFilterCount()"
-            controls="org-events-more-filters"
-            dataTest="org-events-more-filters-toggle" />
           @if (canClearFilters()) {
             <button
               type="button"
@@ -194,25 +189,6 @@
               Clear filters
             </button>
           }
-        </div>
-        <!-- Secondary filters, behind "More filters" -->
-        <div
-          id="org-events-more-filters"
-          class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center"
-          [class.hidden]="!moreFiltersExpanded()"
-          data-testid="org-events-more-filters">
-          <div class="w-full sm:w-56">
-            <lfx-select
-              [form]="filterForm"
-              control="attribution"
-              size="small"
-              [options]="attributionOptions"
-              styleClass="w-full"
-              [ariaLabel]="attributionLabel"
-              [tooltip]="attributionTooltip()"
-              tooltipPosition="top"
-              dataTest="org-events-attribution-filter" />
-          </div>
         </div>
       </div>
 
@@ -263,7 +239,6 @@
       [eventId]="activeDrawerEvent()?.eventId ?? ''"
       [eventName]="activeDrawerEvent()?.eventName ?? ''"
       [attendeeCount]="activeDrawerEvent()?.orgAttendeeCount ?? 0"
-      [attribution]="drawerAttribution()"
       [participation]="drawerParticipation()"
       data-testid="org-events-attendees-drawer" />
     <lfx-event-speakers-drawer

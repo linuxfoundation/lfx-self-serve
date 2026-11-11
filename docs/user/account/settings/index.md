@@ -4,7 +4,7 @@ description: Manage your email addresses, password, two-factor authentication, a
 audience: [all]
 product_area: Account
 tags: [account, settings, email, password, developer, api-token, security, meeting-invitations]
-last_updated: 2026-11-04
+last_updated: 2026-11-09
 intercom_collection: Account
 ---
 
@@ -46,12 +46,14 @@ The **Meeting Invites** badge marks the address that receives meeting invitation
 
 **To add an email address:**
 
-1. Type the address in the **Add New Email Address** field and select **Send Code**. If the address can be added, a 6-digit verification code is sent to it. While the request is pending, the button shows **Requesting code…** and is disabled.
+1. Type the address in the **Add New Email Address** field and select **Send Code**. LFX shows the same confirmation whether or not the address is already linked to an LFX account, and the 6-digit verification code is sent to that address. While the request is pending, the button shows **Requesting code…** and is disabled.
 2. Enter the code in **Enter verification code** and select **Verify**.
+
+If the code is wrong or has expired, you see **Verification failed. Please try again or request a new code.** — enter the code again or request a new one. If the code is correct but the address is already linked to an LFX account, you see **This email is already linked to an LFX account. Contact support if you need help.** The address is not added, and requesting a new code won't change the outcome; contact support if you need the address moved to this account.
 
 If the code doesn't arrive, the **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance.
 
-Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. If the address is already connected to your account, you see **This email is already connected to your account.** rather than a new address being added. Verifying may first ask you to authorize changes to your profile; when you return to Settings, LFX tells you if the email is already connected or if verification did not finish — in that case start email verification again and select **Send Code** to request a new code.
+Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. If the address is already connected to your account, you see **This email is already connected to your account.** rather than a new address being added. Verifying may first ask you to authorize changes to your profile. When you return, LFX may show one of these notices: **Already connected** if the email is already part of your account; **Email already linked** if the code was correct but the address is linked to an LFX account (contact support if you need help — a new code won't change this); or **Email not verified** if verification did not finish — in that case start email verification again and select **Send Code** to request a new code. If authorization completes and a new address is linked successfully, you return without a separate email-verification notice.
 
 ### Password
 

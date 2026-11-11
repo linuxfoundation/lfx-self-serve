@@ -18,7 +18,7 @@ export interface OrgEventRow {
   EVENT_COUNTRY: string | null;
   EVENT_URL: string | null;
   EVENT_REGISTRATION_URL: string | null;
-  /** `ALL_COUNT_<ATTRIBUTION>` / `REGISTERED_COUNT_<ATTRIBUTION>` / `ATTENDED_COUNT_<ATTRIBUTION>` of the served option, aliased. */
+  /** `ALL_COUNT_VERIFIED` / `REGISTERED_COUNT_VERIFIED` / `ATTENDED_COUNT_VERIFIED` of the picked participation, aliased. */
   ORG_ATTENDEE_COUNT: number;
   EVENT_REGISTRATIONS_GOAL: number | null;
   ORG_SPEAKER_ACCEPTED_COUNT: number;
@@ -71,11 +71,11 @@ export interface OrgEventParticipationRow {
   EVENT_END_DATE: Date | string | null;
   FOUNDATION_ID: string | null;
   FOUNDATION_NAME: string | null;
-  /** `true` when the person has an accepted talk the picked attribution credits (the speaker predicate); under `self_reported`, `false` for anyone who is an Employee match speaker anywhere in the range. */
+  /** `true` when the person has an accepted talk Employee match credits to the organization (the speaker predicate). */
   IS_SPEAKER: boolean | null;
 }
 
-/** Row from `ORG_EVENT_PARTICIPATION_SUMMARY` for one (account, range, attribution, participation). */
+/** Row from `ORG_EVENT_PARTICIPATION_SUMMARY` for one (account, range, participation), Employee match only. */
 export interface OrgEventParticipationSummaryRow {
   ATTENDEES_COUNT: number | null;
   SPEAKERS_COUNT: number | null;
@@ -103,7 +103,7 @@ export interface EventAttendeesRaw {
   eventRows: EventAttendeeEventOptionRow[];
 }
 
-/** A metric column of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview reads: the default (`VERIFIED`) attribution only. */
+/** A metric column of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview reads: the Employee match (`VERIFIED`) columns only. */
 export type OrgEventAttendanceMetricColumn = 'ATTENDEES_ALL_VERIFIED' | 'SPEAKERS_VERIFIED' | 'TOTAL_ATTENDEES_ALL_VERIFIED' | 'TOTAL_SPEAKERS_VERIFIED';
 
 /** Row of `ORG_EVENT_PARTICIPATION_MONTHLY` (Overview Event Attendees / Event Speakers cards). */

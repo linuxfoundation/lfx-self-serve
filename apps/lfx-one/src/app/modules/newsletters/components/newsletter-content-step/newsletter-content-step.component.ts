@@ -68,6 +68,15 @@ export class NewsletterContentStepComponent implements OnInit {
   // render-preview call is scoped to the newsletter's project (which an edit
   // route can carry distinct from the ambient lens context), not the active lens.
   public readonly projectUid = input<string | null>(null);
+  // The template set of the publication this edition belongs to, when it has one (#4349). The
+  // service then requires a block layout on that set, so Basic and the template picker are hidden.
+  public readonly lockedTemplateKey = input<string | null>(null);
+  // An edition saved as Basic may stay Basic after its publication gains a template set, so the
+  // Basic editor stays available while it has no layout. Blocks still uses the locked set.
+  public readonly basicAllowed = input<boolean>(false);
+  // True while a Basic edition's publication is loading or could not be read. Its template set is
+  // unknown, so switching to Blocks waits rather than seeding a set the service may refuse.
+  public readonly blocksSwitchBlocked = input<boolean>(false);
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();
@@ -92,6 +101,14 @@ export class NewsletterContentStepComponent implements OnInit {
   // notice instead of the composer. Defaults false so SSR renders the desktop
   // shape; the browser reseeds it from matchMedia on init (see ngOnInit).
   protected readonly isMobile = signal<boolean>(false);
+
+  protected readonly templateLocked = computed(() => this.lockedTemplateKey() !== null);
+  protected readonly basicLocked = computed(() => this.templateLocked() && !this.basicAllowed());
+  protected readonly composerTemplateKey = computed(() => this.lockedTemplateKey() ?? NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+  protected readonly blocksToggleTitle = computed(() => {
+    if (this.isMobile()) return 'The Blocks editor is available on desktop only';
+    return this.blocksSwitchBlocked() ? "Blocks is available once this edition's publication has loaded" : null;
+  });
 
   // === Reactive form mirrors ===
   protected readonly subjectValue: Signal<string> = this.initControlValue('subject');
@@ -147,6 +164,12 @@ export class NewsletterContentStepComponent implements OnInit {
     const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
     if (layout !== null) {
       this.editorMode.set('blocks');
+    } else if (this.basicLocked()) {
+      // An edition on a template set has no basic editor, even on mobile, which shows the desktop
+      // notice. The composer only mounts on desktop, so a new draft opened on mobile still gets its
+      // starter blocks once the viewport crosses the breakpoint.
+      this.editorMode.set('blocks');
+      this.seedStarterBlocks.set(this.newDraft());
     } else if (this.newDraft() && !this.isMobile() && stripHtml(this.form().get('bodyHtml')?.value ?? '').length === 0) {
       this.seedStarterBlocks.set(true);
       this.editorMode.set('blocks');
@@ -168,7 +191,9 @@ export class NewsletterContentStepComponent implements OnInit {
   protected setMode(mode: NewsletterEditorMode): void {
     // Blocks is unavailable when the composer is gated off for this project, and
     // on mobile where the desktop drag-and-drop composer cannot be used.
-    if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile())) return;
+    if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile() || this.blocksSwitchBlocked())) return;
+    // An edition on a template set has to stay in blocks.
+    if (this.basicLocked()) return;
     if (mode === this.editorMode()) return;
     const leavingBlocks = this.editorMode() === 'blocks';
     // Read the LIVE control, not the memoized signal, so in-session blocks count.
@@ -242,9 +267,10 @@ export class NewsletterContentStepComponent implements OnInit {
       // wrapper_key as soon as a block is added (mirrors its own 'default'
       // fallback in toLayout()).
       if (this.form().get('bodyLayout')?.value == null) {
-        // It carries the new-draft default key, because the composer treats a
-        // keyless layout as one saved before keys existed.
-        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', template_key: NEWSLETTER_DEFAULT_TEMPLATE_KEY, blocks: [] };
+        // It carries a template key, because the composer treats a keyless layout
+        // as one saved before keys existed. A publication's locked template wins
+        // over the new-draft default, or the next save is rejected.
+        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', template_key: this.composerTemplateKey(), blocks: [] };
         this.form().get('bodyLayout')?.setValue(emptyLayout);
       }
     }

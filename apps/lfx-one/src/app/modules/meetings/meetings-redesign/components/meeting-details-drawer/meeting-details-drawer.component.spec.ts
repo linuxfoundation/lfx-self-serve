@@ -201,6 +201,7 @@ describe('MeetingDetailsDrawerComponent', () => {
       expect(find('meeting-details-organizer-name')?.textContent?.trim()).toBe('Synthetic Owner');
       expect(find('meeting-details-organizer-name')?.getAttribute('href')).toMatch(/^mailto:owner@acme\.example\?subject=Synthetic%20sync/);
       expect(find('meeting-details-scheduled-zone')?.textContent).toContain('Scheduled in Pacific/Chatham');
+      expect(find('meeting-details-meta')?.textContent).toContain('・');
     });
 
     it('re-reads an upcoming meeting and shows the fresh detail, bypassing the cache for organizers', async () => {

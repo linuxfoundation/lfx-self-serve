@@ -4,7 +4,7 @@ description: Frequently asked questions about account settings, affiliations, id
 audience: [all]
 product_area: Account
 tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid]
-last_updated: 2026-11-06
+last_updated: 2026-11-09
 intercom_collection: Account
 ---
 
@@ -18,7 +18,7 @@ No. The **Identities** tab lists the accounts and email addresses linked to your
 
 ## How do I change my email address?
 
-Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. If the address can be added to your account, a 6-digit verification code is sent to it; enter it to confirm the address. The **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. While the request is pending, the button shows **Requesting code…** and is disabled. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
+Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. A 6-digit verification code is sent to the address; enter it to confirm the address. A wrong or expired code shows **Verification failed. Please try again or request a new code.** If the code is correct but the address is already linked to an LFX account, you see **This email is already linked to an LFX account. Contact support if you need help.** — the address is not added, and support can help if it should belong to this account. The **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. While the request is pending, the button shows **Requesting code…** and is disabled. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
 
 ## How do I change my password?
 

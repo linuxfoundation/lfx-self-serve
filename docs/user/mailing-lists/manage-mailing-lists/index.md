@@ -4,7 +4,7 @@ description: How to find mailing lists, join or leave one, open a list's page, a
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, join, leave, subscribe, filters, edit, linked groups]
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 intercom_collection: Mailing Lists
 ---
 
@@ -44,7 +44,7 @@ If you are signed in with the board member persona, list names on a project or f
 
 - **Search mailing lists…** matches the list's name and description.
 - **Select Committee** is the group filter. Choose a group to see only the lists linked to it. Its options start with **All Groups**.
-- **Select Status** filters to **Public** or **Private** lists. Its options start with **All Status** and show how many lists are in each.
+- The **Public** and **Private** pills filter to public or private lists and show how many lists are in each. Select the active pill again to show all lists.
 - In your own view, **foundation** and **project** filters can also appear. They depend on your roles and on which foundations and projects your subscribed lists belong to.
 
 If nothing matches, you see "No results found". Select **Reset filters** to clear them.

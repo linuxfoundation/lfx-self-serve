@@ -26,10 +26,11 @@ import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputOtp } from 'primeng/inputotp';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-add-account-dialog',
-  imports: [ButtonComponent, InputTextComponent, FormsModule, ReactiveFormsModule, InputOtp, OpenIntercomDirective],
+  imports: [ButtonComponent, InputTextComponent, FormsModule, ReactiveFormsModule, InputOtp, OpenIntercomDirective, TooltipModule],
   templateUrl: './add-account-dialog.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

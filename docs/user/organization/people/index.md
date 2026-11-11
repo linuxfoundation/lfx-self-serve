@@ -4,7 +4,7 @@ description: How to read the People page for the selected organization — its A
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-06
+last_updated: 2026-11-10
 intercom_collection: Organization
 ---
 
@@ -28,6 +28,18 @@ The page heading is **People —** followed by the organization's name. The line
 | **Org Lens Access** | Who can open the organization, covered in [Manage Org Lens Access](../manage-org-lens-access/)                      |
 
 Select a person's name on any tab to open their details. On **Event Attendees**, only people with a roster profile have a selectable name; for anyone else, select the row to see their events.
+
+### Which emails do a person's details show?
+
+Under the person's name, their details list the email addresses they have on one of the organization's own domains, the primary one first. Personal addresses and addresses at other employers are never shown. Former employees keep the addresses they had, and the **Former employee** badge still marks them. A key contact with no LF account shows the email on their key contact record, marked **from key contact record**. When no address is shown, the line says why:
+
+| Message                                                                               | What it means                                                                                                                                      |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No** _organization_ **email on file**                                               | The person was looked up and has no address on the organization's domains                                                                          |
+| **This profile isn't linked to an LF account, so we can't check for a company email** | The row is a contributor profile with no LF account behind it, so there are no addresses to check; it does not mean the person has none            |
+| **We can't tell whether this person has an email at** _organization_                  | The lookup finished but cannot tell a person with no address on the organization's domains from one we don't know; it does not mean they have none |
+| **Emails aren't shown on this page**                                                  | The page you opened them from carries nothing to look their addresses up with                                                                      |
+| **Couldn't load emails.**                                                             | The lookup failed. Select **Try again**                                                                                                            |
 
 ## How do I open People?
 
@@ -124,7 +136,7 @@ A saved change shows **Board roles reassigned**, **Committee roles reassigned** 
 
 ## What do the Event Attendees and Trainees tabs show?
 
-The **Event Attendees** tab shows the people who registered for, attended or spoke at events in the time range. Its cards count **Speakers**, **Attendees**, **Events** and **Foundations**, and its columns are **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended** and **Most Recent Event**. By default **Count** is **All**, which counts everyone who registered or attended: choose **Attended** to count only people marked as attended. **Counted by**, under **More filters**, decides whom an event is credited to, and defaults to **Employee match**; the other options are **Self-reported only** and **All**. Everyone counted as an attendee is listed by name; for speakers, see [Who is listed](../org-events/#who-is-listed). The filters and what each option counts are in [Events and Event Attendees](../org-events/).
+The **Event Attendees** tab shows the people who registered for, attended or spoke at events in the time range. Its cards count **Speakers**, **Attendees**, **Events** and **Foundations**, and its columns are **Name**, **Role** (**Speaker** or **Attendee**), **Events**, **Last Attended** and **Most Recent Event**. By default **Count** is **All**, which counts everyone who registered or attended: choose **Attended** to count only people marked as attended. People are counted by **Employee match** only. Everyone counted as an attendee is listed by name; for speakers, see [Who is listed](../org-events/#who-is-listed). The filters and what each option counts are in [Events and Event Attendees](../org-events/).
 
 The **Trainees** tab shows the employees who enrolled in a course or earned a certificate in the time range.
 
@@ -145,10 +157,12 @@ You filter a People tab with the search box and menus above its table. Which men
 3. On **All Employees**, pick an activity: **All Activity**, **Board & Committee**, **Code contributions** (or **Commits**, when you count commits), **Events** or **Training**.
 4. Select a time range: **Past 30 days**, **Past 90 days**, **Past 365 days**, **Past 2 years** or **All time**. **Past 2 years** is the default.
 5. Select a project type: **LF and non-LF projects** (the default), **LF projects** or **Non-LF projects**. LF projects are Linux Foundation (LF) projects.
-6. Select **More filters** to show the code count, **Employment**, **Team members** and **Organization scope**. The link counts how many of them are set to something other than their default, such as **More filters (1)**.
+6. Select **More filters** to show the code count, **Employment**, **Company email** (All Employees only), **Team members** and **Organization scope**. The link counts how many of them are set to something other than their default, such as **More filters (1)**.
 7. On **All Employees** and **Contributors**, select **Clear filters** to put every filter back to its default, the time range included. It shows once a filter is changed.
 
 **Employment** offers **Current employees**, **Former employees** and **All employees** (the default). On **All Employees** under **Current employees**, the **Code Contributors** card leaves out people who have since left. With **All employees** it shows the same number as the **Contributors** tab's **Contributors** card for the same time range, project type, organization scope and team members choice.
+
+**Company email**, on **All Employees**, offers **All email statuses** (the default), **Has company email**, **No company email** and **Unlinked profile**. **No company email** means the person was looked up and has no address on the organization's domains. **Unlinked profile** means their emails could not be checked: mostly contributor profiles with no LF account behind them, plus people just added who are not in the organization data yet. These match the answer a person's details give (see [Which emails do a person's details show?](#which-emails-do-a-persons-details-show)). The filter is kept in the page address (`?companyEmail=`). The statuses are refreshed with the organization data, so a just-added address can take up to a day to count. When they cannot be read, everyone is listed under **All email statuses** only.
 
 The code count offers **All code contributions** (the default), **All commits** and **Only main branch commits**. It changes the code numbers, not who is listed, with one exception: when the **All Employees** activity filter is on **Code contributions** (or **Commits**), only people whose count under the chosen option is above zero are shown. Someone with reviews or comments but no commits drops out when you switch to **All commits**. What each option counts is in [What do All code contributions, All commits and Only main branch commits count?](../code-contributions/#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count).
 

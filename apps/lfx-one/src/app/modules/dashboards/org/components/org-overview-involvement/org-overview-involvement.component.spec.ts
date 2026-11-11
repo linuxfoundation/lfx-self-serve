@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import {
   ORG_DEFAULT_PROJECT_SCOPE_LABEL,
-  ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
+  ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_SPEAKERS_CAPTION_PHRASE,
   ORG_LENS_DEFAULT_VIEW_PHRASE,
@@ -397,14 +397,13 @@ describe('OrgOverviewInvolvementComponent events', () => {
     expect(attendees?.subtitle).toBe(ORG_OVERVIEW_EVENT_ATTENDEES_SUBTITLE);
     expect(attendees?.subtitle).toBe('Employees who registered or attended foundation events');
     expect(attendees?.tooltipText).toContain(ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.all);
-    expect(attendees?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.verified);
+    expect(attendees?.tooltipText).toContain(ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE);
     expect(attendees?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
-    expect(attendees?.tooltipText).not.toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.self_reported);
     expect(attendees?.chartCaption).toContain('Distinct people per month');
     expect(speakers?.value).toBe('40');
     expect(speakers?.subtitle).toBe('Employee speakers accepted at foundation events');
     expect(speakers?.tooltipText).toContain(ORG_EVENTS_SPEAKERS_CAPTION_PHRASE);
-    expect(speakers?.tooltipText).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.verified);
+    expect(speakers?.tooltipText).toContain(ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE);
     expect(speakers?.tooltipText).toContain(ORG_OVERVIEW_EVENTS_DISTINCT_PEOPLE_NOTE);
   });
 });

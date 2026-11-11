@@ -214,7 +214,10 @@ export class MeetingDetailsAgendaComponent {
         .filter((attachment) => attachment.type === 'link')
         .map((attachment) => {
           const url = attachment.link && isValidUrl(attachment.link) ? attachment.link : null;
-          return { uid: attachment.uid, name: attachment.name, url, host: url ? new URL(url).hostname.replace(/^www\./, '') : '' };
+          const name = attachment.name?.trim();
+          // A link saved without a title shows its URL as the title, and no host under it.
+          if (!name || name === attachment.link) return { uid: attachment.uid, name: attachment.link ?? '', url, host: '' };
+          return { uid: attachment.uid, name, url, host: url ? new URL(url).hostname.replace(/^www\./, '') : '' };
         })
     );
   }

@@ -747,7 +747,7 @@ export class CommitteeMembersComponent implements OnInit {
       if (result.added > 0) {
         this.refreshMembers();
         this.pollUntilMemberAdded(countBeforeImport, result.added);
-      } else if (result.conflicts > 0) {
+      } else if (result.conflicts > 0 || result.uncertain) {
         this.refreshMembers();
       }
     });

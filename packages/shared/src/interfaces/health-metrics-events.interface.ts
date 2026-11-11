@@ -51,7 +51,7 @@ export interface HealthMetricsEventsForecastEvent {
   priorYearSamePoint: number | null;
   /** `null` when no goal is set. */
   goal: number | null;
-  /** Whole days from today to the event, `0` on the event day. */
+  /** Whole days from today to the event, `0` on the event day, `null` once a running event is past its start day. */
   daysLeft: number | null;
   /** True only when every format is a first edition. */
   isNewEvent: boolean;

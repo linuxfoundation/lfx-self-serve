@@ -79,7 +79,6 @@ export class OrgLensEventsController {
         offset,
         sortField,
         sortOrder,
-        attribution: filters.attribution,
         participation: filters.participation,
         eventScope: filters.scope,
         foundation: filters.foundation,
@@ -114,8 +113,8 @@ export class OrgLensEventsController {
         throw new AuthenticationError('User authentication required', { operation: 'get_org_lens_event_foundations' });
       }
 
-      const { attribution, scope } = parseOrgEventsFilters(req, 'get_org_lens_event_foundations');
-      const response = await this.service.getOrgEventFoundations(req, accountId, { attribution, scope });
+      const { scope } = parseOrgEventsFilters(req, 'get_org_lens_event_foundations');
+      const response = await this.service.getOrgEventFoundations(req, accountId, { scope });
 
       logger.success(req, 'get_org_lens_event_foundations', startTime, { account_id: accountId, result_count: response.data.length });
 
@@ -144,9 +143,9 @@ export class OrgLensEventsController {
         throw ServiceValidationError.forField('eventId', 'eventId path parameter is required', { operation: 'get_event_attendees' });
       }
 
-      const { attribution, participation } = parseOrgEventsFilters(req, 'get_event_attendees');
+      const { participation } = parseOrgEventsFilters(req, 'get_event_attendees');
       const searchQuery = getStringQueryParam(req, 'searchQuery');
-      const response = await this.service.getEventAttendees(req, accountId, eventId, { attribution, participation, searchQuery });
+      const response = await this.service.getEventAttendees(req, accountId, eventId, { participation, searchQuery });
 
       logger.success(req, 'get_event_attendees', startTime, { account_id: accountId, event_id: eventId, count: response.total });
 
