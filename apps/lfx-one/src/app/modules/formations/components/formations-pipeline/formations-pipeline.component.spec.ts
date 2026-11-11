@@ -225,6 +225,13 @@ describe('FormationsPipelineComponent (#5475)', () => {
     expect(q('formations-pipeline-showing')).toBeNull();
   });
 
+  it('gives the foundation select and the search box accessible names', async () => {
+    await render();
+
+    expect(q('formations-pipeline-foundation')?.querySelector('[aria-label="Foundation"]')).not.toBeNull();
+    expect(q('formations-pipeline-search')?.querySelector('input')?.getAttribute('aria-label')).toBe('Search projects');
+  });
+
   it('shows the amber state only for a launch within 30 days', async () => {
     const soon = new Date(Date.now() + 5 * 86_400_000).toISOString();
     await render(
