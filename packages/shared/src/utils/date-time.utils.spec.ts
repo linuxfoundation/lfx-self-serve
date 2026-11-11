@@ -475,6 +475,25 @@ describe('isSameMinute', () => {
   it('treats identical instants as the same minute', () => {
     expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:00.000Z')).toBe(true);
   });
+
+  // Pins the DST fall-back collision review feedback caught: truncating with the local-time
+  // `setSeconds` (rather than `setUTCSeconds`) reads and reconstructs through the host's
+  // wall-clock fields, and the repeated local hour during a fall-back can make two UTC instants
+  // a full hour apart reconstruct to the same result. 2027-11-07 05:30Z and 06:30Z are both
+  // 1:30 AM America/New_York (once EDT, once EST, an hour apart in UTC) -- a real one-hour Start
+  // time edit, not sub-minute noise, and must not be treated as unchanged.
+  describe('across a DST fall-back transition', () => {
+    const originalTz = process.env.TZ;
+
+    afterEach(() => {
+      process.env.TZ = originalTz;
+    });
+
+    it('does not collapse two UTC instants an hour apart that share a local wall-clock reading', () => {
+      process.env.TZ = 'America/New_York';
+      expect(isSameMinute('2027-11-07T05:30:00.000Z', '2027-11-07T06:30:00.000Z')).toBe(false);
+    });
+  });
 });
 
 // Dates use the local constructor: the function reads host-local wall fields, so an ISO-string
