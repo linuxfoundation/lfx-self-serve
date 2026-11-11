@@ -190,7 +190,7 @@ describe('NewsletterBlockComposerComponent — starter blocks and template picke
         ConfirmationService,
         { provide: NewsletterService, useValue: {} },
         { provide: ProjectContextService, useValue: { activeContextUid: () => 'p1' } },
-        { provide: NewsletterRendererService, useValue: { collectEditableFields: () => new Set() } },
+        { provide: NewsletterRendererService, useValue: { collectEditableFields: () => new Set(), renderWrapperChrome: () => '' } },
         { provide: DomSanitizer, useValue: { bypassSecurityTrustHtml: (v: string) => v, sanitize: (_: unknown, v: string) => v } },
       ],
     });
@@ -218,6 +218,17 @@ describe('NewsletterBlockComposerComponent — starter blocks and template picke
 
     expect(types()).toEqual([]);
     expect(emitted).toHaveLength(0);
+  });
+
+  it('hides the template picker when the publication locks the template set', () => {
+    const picker = (locked: boolean): Element | null => {
+      const f = TestBed.createComponent(NewsletterBlockComposerComponent);
+      f.componentRef.setInput('templateLocked', locked);
+      f.detectChanges();
+      return (f.nativeElement as HTMLElement).querySelector('[data-testid="newsletter-composer-template"]');
+    };
+    expect(picker(false)).not.toBeNull();
+    expect(picker(true)).toBeNull();
   });
 
   it('resolves the active template: a saved key wins, a saved keyless layout uses the fallback, a new draft the default', () => {

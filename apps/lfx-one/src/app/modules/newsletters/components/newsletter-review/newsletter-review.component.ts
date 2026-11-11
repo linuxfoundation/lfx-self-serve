@@ -58,6 +58,8 @@ export class NewsletterReviewComponent implements OnInit {
   public readonly displayName = input<string>('');
   public readonly edName = input<string>('');
   public readonly edEmail = input<string>('');
+  // The address shown as Reply-To. A publication can set its own, which differs from the test recipient.
+  public readonly replyToEmail = input<string>('');
   public readonly canSend = input<boolean>(false);
   public readonly liveSendLocked = input<boolean>(false);
   public readonly canSendTest = input<boolean>(false);

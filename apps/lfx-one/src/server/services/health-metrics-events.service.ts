@@ -93,6 +93,18 @@ const SPONSORSHIP_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPO
 const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY';
 const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK_OVER_WEEK';
 const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
+const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
+
+/**
+ * The forecast view `f` holds closed events and has no end date or past flag of its own; until it does, its reads keep an
+ * event until it ends through the registrations view's past flag, the one the Overview events list reads.
+ */
+const FORECAST_EVENT_NOT_ENDED = `EXISTS (
+          SELECT 1
+          FROM ${EVENT_REGISTRATIONS_VIEW} r
+          WHERE r.event_id = f.event_id
+            AND r.event_is_past = FALSE
+        )`;
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -302,11 +314,10 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * Every upcoming event's event-wide headline. The headline columns repeat on every curve row, so
+   * Every event's event-wide headline until the event ends. The headline columns repeat on every curve row, so
    * one modeled row per event is read; the model is a snapshot of now, so no period applies.
    */
   public async getRegistrationForecast(req: Request, query: HealthMetricsEventsForecastQuery): Promise<HealthMetricsEventsForecast> {
-    // The start-date filter keeps an event whose day has passed out even before the model drops it.
     // First edition is flagged per format, so an event is new only when all of its formats are.
     const sql = `
       SELECT
@@ -321,10 +332,10 @@ export class HealthMetricsEventsService {
         event_registrations_goal AS goal,
         days_left,
         BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id) AS is_new_event
-      FROM ${REGISTRATION_FORECAST_VIEW}
+      FROM ${REGISTRATION_FORECAST_VIEW} f
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
-        AND event_start_date >= CURRENT_DATE()
+        AND ${FORECAST_EVENT_NOT_ENDED}
       QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_registration_type ASC NULLS LAST, pred_type ASC, days_to_event ASC) = 1
       ORDER BY event_start_date ASC, event_name ASC NULLS LAST, event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}
@@ -338,7 +349,7 @@ export class HealthMetricsEventsService {
 
     // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
     if (result.rows.length > HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP) {
-      logger.warning(req, 'get_events_registration_forecast', 'Upcoming event rows hit the read cap', {
+      logger.warning(req, 'get_events_registration_forecast', 'Forecast event rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
       });
@@ -367,11 +378,11 @@ export class HealthMetricsEventsService {
         cumulative_low_predicted_registrations AS forecast_low,
         cumulative_high_predicted_registrations AS forecast_high,
         prior_event_cumulative_registrations AS prior_year
-      FROM ${REGISTRATION_FORECAST_VIEW}
+      FROM ${REGISTRATION_FORECAST_VIEW} f
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND event_id = ?
-        AND event_start_date >= CURRENT_DATE()
+        AND ${FORECAST_EVENT_NOT_ENDED}
       ORDER BY event_registration_type ASC NULLS LAST, days_to_event ASC
     `;
 
@@ -400,7 +411,6 @@ export class HealthMetricsEventsService {
         MAX(h.prior_event_cumulative_registrations) AS prior_year
       FROM ${REGISTRATION_HISTORY_VIEW} h
       WHERE h.event_id = ?
-        AND h.event_start_date < CURRENT_DATE()
         AND h.days_to_event BETWEEN ? AND 0
         AND EXISTS (
           SELECT 1
@@ -1086,7 +1096,7 @@ export class HealthMetricsEventsService {
     });
   }
 
-  /** Whether the foundation has ever held an event, has one still to come in any year, or has event revenue recorded. */
+  /** Whether the foundation has ever held an event, has one that has not ended in any year, or has event revenue recorded. */
   private async hasAnyEvent(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<boolean> {
     // The past view keeps every closed event whatever its age; the rollup only covers four periods.
     const pastSql = `
@@ -1098,15 +1108,15 @@ export class HealthMetricsEventsService {
     `;
     if (await this.hasRow(req, PAST_EVENTS_VIEW, pastSql, [query.foundationSlug])) return true;
 
-    const upcomingSql = `
+    const notEndedSql = `
       SELECT 1 AS has_event
-      FROM ${REGISTRATION_FORECAST_VIEW}
+      FROM ${REGISTRATION_FORECAST_VIEW} f
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
-        AND event_start_date >= CURRENT_DATE()
+        AND ${FORECAST_EVENT_NOT_ENDED}
       LIMIT 1
     `;
-    if (await this.hasRow(req, REGISTRATION_FORECAST_VIEW, upcomingSql, [query.foundationSlug])) return true;
+    if (await this.hasRow(req, REGISTRATION_FORECAST_VIEW, notEndedSql, [query.foundationSlug])) return true;
 
     // Revenue can outlive the events views' rows; hiding the tab would hide the revenue section with it.
     const revenueSql = `
@@ -1494,10 +1504,11 @@ function joinForecastToToday(series: HealthMetricsEventsForecastCurveSeries): vo
   today.forecastHigh = today.actual;
 }
 
-/** The model counts days left from yesterday, negative before the event; the UI shows the count from today. */
+/** The model counts days left from yesterday, negative before the event; the UI counts from today and, once a running event is past its start day, shows none. */
 function toDaysLeft(value: unknown): number | null {
   const daysLeft = toNullableNumber(value);
-  return daysLeft === null ? null : Math.max(0, Math.abs(daysLeft) - 1);
+  if (daysLeft === null || daysLeft >= 0) return null;
+  return -daysLeft - 1;
 }
 
 /** A row without a year cannot be placed on the chart, so it is dropped rather than guessed. */
