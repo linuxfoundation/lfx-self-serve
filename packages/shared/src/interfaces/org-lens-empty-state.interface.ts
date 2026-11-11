@@ -41,7 +41,7 @@ export type OrgLensSectionOutcome = 'records' | 'empty' | 'denied' | 'unverifiab
 export type OrgLensSectionErrorOutcome = Exclude<OrgLensSectionOutcome, 'empty'>;
 
 /** What the primary / secondary control does when it is not a plain link. */
-export type OrgLensEmptyStateActionKind = 'retry' | 'org-list' | 'reset-filters' | 'contact-support';
+export type OrgLensEmptyStateActionKind = 'retry' | 'org-list' | 'reset-filters';
 
 export interface OrgLensEmptyStateAction {
   label: string;
@@ -49,7 +49,7 @@ export interface OrgLensEmptyStateAction {
   href?: string;
   /** In-app route — rendered as a router link. */
   route?: string[];
-  /** `retry` / `reset-filters` emit the component's outputs; `contact-support` opens the support messenger; `org-list` renders the caller's own organizations (`values.orgList`) as the control, each row emitting `orgSelected`. */
+  /** `retry` / `reset-filters` emit the component's outputs; `org-list` renders the caller's own organizations (`values.orgList`) as the control, each row emitting `orgSelected`. */
   action?: OrgLensEmptyStateActionKind;
 }
 

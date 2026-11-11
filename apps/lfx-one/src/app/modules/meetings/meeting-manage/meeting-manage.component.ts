@@ -142,6 +142,10 @@ export class MeetingManageComponent {
   public meetingId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
   public originalStartTime = signal<string | null>(null);
+  // The same start date populateFormWithMeetingData() computes via toZonedTime(), kept alongside
+  // the form value so the wizard can pass it down as minDate()'s past-date allowance (originalStartDate
+  // input on lfx-meeting-details, GH-4944) without re-deriving it from the raw timestamp.
+  public originalStartDate = signal<Date | null>(null);
   // Owner hydrated from the loaded meeting (edit mode). prepareOwnerData() compares against this
   // to omit the owner key when the picker is untouched — upstream replaces owner as a whole
   // object, so re-sending an unchanged owner would silently drop its stored profile_picture.
@@ -1093,6 +1097,7 @@ export class MeetingManageComponent {
       // in the meeting's timezone, not the user's local timezone
       const zonedDate = toZonedTime(utcDate, meetingTimezone);
       startDate = zonedDate;
+      this.originalStartDate.set(zonedDate);
 
       // Convert to 12-hour format in the meeting's timezone for display
       startTime = formatTo12HourInTimezone(utcDate, meetingTimezone);

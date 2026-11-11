@@ -3,20 +3,21 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 @if (visible()) {
-  <span class="inline-flex flex-none items-center gap-[6px]" [attr.aria-busy]="!!saving() || null" data-testid="meetings-home-rsvp">
+  <span [class]="layoutClass()" [attr.aria-busy]="!!saving() || null" data-testid="meetings-home-rsvp">
     @if (current(); as answer) {
       <!-- lfx-ui-badge has no trigger mode, so a plain button opens the menu through the CDK trigger, as lfx-ui-button does. -->
       <button
         #statusTrigger
         type="button"
         class="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:cursor-wait"
+        [class.w-full]="fullWidth()"
         [cdkMenuTriggerFor]="busy() ? null : rsvpMenu"
-        [cdkMenuPosition]="menuPositions"
+        [cdkMenuPosition]="menuPositions()"
         [disabled]="busy()"
         [attr.aria-label]="'Your RSVP: ' + answer.label + '. Change'"
         data-testid="meetings-home-rsvp-status">
-        <!-- 112×28 per the design, matching the small RSVP buttons across answers; chevron at the right edge. -->
-        <lfx-ui-badge class="w-[112px] !h-ui-xsmall" [tone]="answer.tone">
+        <!-- Chevron at the right edge. -->
+        <lfx-ui-badge [class]="badgeClass()" [tone]="answer.tone">
           @if (saving()) {
             <lfx-ui-spinner tone="current" [size]="12" label="Saving RSVP" />
           } @else {
@@ -31,6 +32,7 @@
         <lfx-ui-button
           variant="secondary"
           [size]="size()"
+          [fullWidth]="fullWidth()"
           [icon]="choice.buttonIcon + ' ' + iconColor[choice.response]"
           [ariaLabel]="'RSVP ' + choice.action + ' to ' + row().title"
           [loading]="saving() === choice.response"

@@ -11,6 +11,8 @@ import { BaseApiError } from './base.error';
 export class MicroserviceError extends BaseApiError {
   public readonly errorBody?: any;
   public readonly originalMessage?: string;
+  /** Allowlisted upstream cooldown; no other response headers are retained. */
+  public readonly retryAfter?: string;
 
   public constructor(
     message: string,
@@ -27,6 +29,7 @@ export class MicroserviceError extends BaseApiError {
       clientMessage?: string;
       /** Response-only fields excluded from generic error logging. */
       details?: Record<string, unknown>;
+      retryAfter?: string | null;
     } = {}
   ) {
     super(message, statusCode, code, {
@@ -41,6 +44,10 @@ export class MicroserviceError extends BaseApiError {
 
     this.errorBody = options.errorBody;
     this.originalMessage = options.originalMessage;
+    const retryAfter = options.retryAfter?.trim();
+    if (statusCode === 429 && retryAfter && (/^\d+$/.test(retryAfter) || (/^[A-Za-z0-9,: -]+$/.test(retryAfter) && Number.isFinite(Date.parse(retryAfter))))) {
+      this.retryAfter = retryAfter;
+    }
   }
 
   public override toResponse(): Record<string, any> {

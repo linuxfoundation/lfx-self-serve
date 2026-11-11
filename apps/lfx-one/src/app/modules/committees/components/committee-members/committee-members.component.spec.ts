@@ -209,6 +209,16 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
     });
 
+    it('refreshes without inventing an addition count when an import outcome is unknown', () => {
+      vi.useFakeTimers();
+      component.openImportMembersDialog();
+      dialogClose.next({ added: 0, conflicts: 0, uncertain: true } satisfies MemberImportDialogResult);
+      vi.advanceTimersByTime(3000);
+
+      expect(refreshes).toBe(1);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+    });
+
     it('does nothing after a cancelled preview', () => {
       component.openImportMembersDialog();
       dialogClose.next({ added: 0, conflicts: 0 } satisfies MemberImportDialogResult);

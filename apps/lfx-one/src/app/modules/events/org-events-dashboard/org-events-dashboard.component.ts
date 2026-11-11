@@ -14,22 +14,16 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
-import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
   DEFAULT_EVENTS_PAGE_SIZE,
-  DEFAULT_ORG_EVENTS_ATTRIBUTION,
   DEFAULT_ORG_EVENTS_PARTICIPATION,
   DEFAULT_ORG_EVENTS_SCOPE,
   DEFAULT_ORG_EVENTS_TAB_ID,
   EMPTY_ORG_EVENTS_RESPONSE,
   ORG_EVENTS_ALL_FOUNDATIONS_LABEL,
-  ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE,
-  ORG_EVENTS_ATTRIBUTION_LABEL,
-  ORG_EVENTS_ATTRIBUTION_OPTIONS,
-  ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
-  ORG_EVENTS_ATTRIBUTION_TOOLTIP,
+  ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
@@ -52,7 +46,6 @@ import type {
   OrgDropdownOption,
   OrgEvent,
   OrgEventFoundationsResponse,
-  OrgEventsAttribution,
   OrgEventsParticipation,
   OrgEventsResponse,
   OrgEventsScope,
@@ -69,11 +62,9 @@ import { EventsService } from '@services/events.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import {
-  readOrgEventsAttribution,
   readOrgEventsFoundation,
   readOrgEventsParticipation,
   readOrgEventsScope,
-  syncOrgEventsAttributionWithUrl,
   syncOrgEventsFoundationWithUrl,
   syncOrgEventsParticipationWithUrl,
   syncOrgEventsScopeWithUrl,
@@ -96,7 +87,6 @@ import { OrgEventsTableComponent } from './components/org-events-table/org-event
     OrgLensEmptyStateComponent,
     SelectModule,
     SelectComponent,
-    MoreFiltersToggleComponent,
     InputTextModule,
     SkeletonModule,
     DiscoverEventsButtonComponent,
@@ -122,21 +112,18 @@ export class OrgEventsDashboardComponent {
   public readonly statusOptions = ORG_EVENTS_STATUS_OPTIONS;
   public readonly timeRangeOptions = [...ORG_LENS_TIME_RANGE_OPTIONS];
   public readonly participationOptions = [...ORG_EVENTS_PARTICIPATION_OPTIONS];
-  public readonly attributionOptions = [...ORG_EVENTS_ATTRIBUTION_OPTIONS];
   public readonly scopeOptions = [...ORG_EVENTS_SCOPE_OPTIONS];
   public readonly participationLabel = ORG_EVENTS_PARTICIPATION_LABEL;
-  public readonly attributionLabel = ORG_EVENTS_ATTRIBUTION_LABEL;
   public readonly scopeLabel = ORG_EVENTS_SCOPE_LABEL;
 
   // === Filter form ===
-  // Range, foundation, count, show and counted by follow `?range=`, `?foundation=`, `?participation=`, `?eventScope=` and
-  // `?attribution=` (lfx-self-serve#4598): written back on change, dropped at the default, carried across tabs.
+  // Range, foundation, count and show follow `?range=`, `?foundation=`, `?participation=` and `?eventScope=` (lfx-self-serve#4598):
+  // written back on change, dropped at the default, carried across tabs.
   public readonly filterForm = new FormGroup({
     timeRange: new FormControl<OrgLensTimeRange>(readOrgLensTimeRange(this.route), { nonNullable: true }),
     foundation: new FormControl<string>(readOrgEventsFoundation(this.route), { nonNullable: true }),
     participation: new FormControl<OrgEventsParticipation>(readOrgEventsParticipation(this.route), { nonNullable: true }),
     scope: new FormControl<OrgEventsScope>(readOrgEventsScope(this.route), { nonNullable: true }),
-    attribution: new FormControl<OrgEventsAttribution>(readOrgEventsAttribution(this.route), { nonNullable: true }),
   });
 
   // === WritableSignals ===
@@ -153,8 +140,6 @@ export class OrgEventsDashboardComponent {
   public readonly pastEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
   public readonly pastSortField = signal('EVENT_START_DATE');
   public readonly pastSortOrder = signal<'ASC' | 'DESC'>('DESC');
-  // The secondary filter ("Counted by") behind "More filters": shown for this visit only.
-  public readonly moreFiltersExpanded = signal(false);
 
   // === Computed / toSignal ===
   // Debounced search feeds the server-side query so typing doesn't fire a request per keystroke.
@@ -181,14 +166,10 @@ export class OrgEventsDashboardComponent {
   private readonly scope: Signal<OrgEventsScope> = toSignal(this.filterForm.controls.scope.valueChanges, {
     initialValue: this.filterForm.controls.scope.value,
   });
-  private readonly attribution: Signal<OrgEventsAttribution> = toSignal(this.filterForm.controls.attribution.valueChanges, {
-    initialValue: this.filterForm.controls.attribution.value,
-  });
   // Count reads registrations on the Upcoming tab, where no one has attended yet.
   private readonly effectiveParticipation = computed(() => effectiveOrgEventsParticipation(this.participation(), this.activeTab() === 'past'));
   // What the tiles and the foundation options read: not the tab, search or status.
   private readonly tileFilters = computed(() => ({
-    attribution: this.attribution(),
     eventScope: this.scope(),
     foundation: this.foundation(),
     range: this.timeRange(),
@@ -203,8 +184,6 @@ export class OrgEventsDashboardComponent {
   public readonly countTooltip = computed(() =>
     this.isPastTab() ? ORG_EVENTS_PARTICIPATION_TOOLTIP[this.participation()] : ORG_EVENTS_PARTICIPATION_UPCOMING_NOTE
   );
-  public readonly attributionTooltip = computed(() => ORG_EVENTS_ATTRIBUTION_TOOLTIP[this.attribution()]);
-  public readonly hiddenFilterCount = computed(() => (this.attribution() === DEFAULT_ORG_EVENTS_ATTRIBUTION ? 0 : 1));
   public readonly canClearFilters = computed(
     () =>
       this.searchTerm() !== '' ||
@@ -212,18 +191,16 @@ export class OrgEventsDashboardComponent {
       this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE ||
       this.foundation() !== '' ||
       this.participation() !== DEFAULT_ORG_EVENTS_PARTICIPATION ||
-      this.scope() !== DEFAULT_ORG_EVENTS_SCOPE ||
-      this.attribution() !== DEFAULT_ORG_EVENTS_ATTRIBUTION
+      this.scope() !== DEFAULT_ORG_EVENTS_SCOPE
   );
   public readonly eventsSummary: Signal<OrgEventsSummary | null> = this.initEventsSummary();
   public readonly upcomingAttendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.attribution()]}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
   );
   public readonly pastAttendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE[this.attribution()]}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
   );
   public readonly drawerParticipation = this.effectiveParticipation;
-  public readonly drawerAttribution = this.attribution;
   public readonly upcomingEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({
     tab: 'upcoming',
     page: this.upcomingEventsPage,
@@ -265,7 +242,6 @@ export class OrgEventsDashboardComponent {
     syncOrgEventsFoundationWithUrl(this.filterForm.controls.foundation, this.route, this.router);
     syncOrgEventsParticipationWithUrl(this.filterForm.controls.participation, this.route, this.router);
     syncOrgEventsScopeWithUrl(this.filterForm.controls.scope, this.route, this.router);
-    syncOrgEventsAttributionWithUrl(this.filterForm.controls.attribution, this.route, this.router);
 
     // Count is disabled on the Upcoming tab (it always counts registrations); the picked value is kept for the Past tab.
     toObservable(this.isPastTab)
@@ -276,7 +252,7 @@ export class OrgEventsDashboardComponent {
         else control.disable({ emitEvent: false });
       });
 
-    // A foundation the options no longer offer (another "Show" or "Counted by") is cleared once the options have loaded. An empty
+    // A foundation the options no longer offer (another "Show") is cleared once the options have loaded. An empty
     // list proves nothing: the BFF answers an upstream failure with no options, so the pick is left alone.
     toObservable(this.foundationsResponse)
       .pipe(
@@ -307,7 +283,6 @@ export class OrgEventsDashboardComponent {
         [ORG_EVENTS_FOUNDATION_QUERY_PARAM]: null,
         [ORG_EVENTS_PARTICIPATION_QUERY_PARAM]: null,
         [ORG_EVENTS_SCOPE_QUERY_PARAM]: null,
-        [ORG_EVENTS_ATTRIBUTION_QUERY_PARAM]: null,
       },
       queryParamsHandling: 'merge',
       replaceUrl: true,
@@ -398,14 +373,14 @@ export class OrgEventsDashboardComponent {
     );
   }
 
-  // Foundations with events under the picked "Show" and "Counted by"; `null` until loaded or when the read fails.
+  // Foundations with events under the picked "Show"; `null` until loaded or when the read fails.
   private initFoundationsResponse(): Signal<OrgEventFoundationsResponse | null> {
     const query$ = toObservable(
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
-        return accountId ? { accountId, attribution: this.attribution(), eventScope: this.scope() } : null;
+        return accountId ? { accountId, eventScope: this.scope() } : null;
       })
-    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.attribution === b?.attribution && a?.eventScope === b?.eventScope));
+    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope));
     return toSignal(
       query$.pipe(
         filter((query): query is NonNullable<typeof query> => query !== null),
@@ -435,7 +410,6 @@ export class OrgEventsDashboardComponent {
           return {
             accountId,
             ...page(),
-            attribution: this.attribution(),
             eventScope: this.scope(),
             foundation: this.foundation(),
             participation: this.effectiveParticipation(),

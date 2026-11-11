@@ -101,6 +101,52 @@
                 </td>
               }
             </tr>
+            <!-- Criterion 3 (#4026): committee-filter controls, shown only for a selected list whose
+                 direction is Committee → Mailing List — a plain, unfiltered sync otherwise. -->
+            @if (syncEnabled() && selectedMailingListUids().has(ml.uid) && syncDirections()[ml.uid] === autoCToMlMode) {
+              <tr
+                class="border-t border-gray-100 bg-gray-50/60"
+                (click)="$event.stopPropagation()"
+                (keydown)="$event.stopPropagation()"
+                [attr.data-testid]="'settings-ml-picker-filters-row-' + ml.uid">
+                <td></td>
+                <td colspan="5" class="py-2.5 px-4">
+                  <div class="flex flex-col gap-2 sm:flex-row sm:gap-4">
+                    <div class="flex-1">
+                      <label class="block text-[11px] font-medium text-gray-500 mb-1">Voting statuses (optional)</label>
+                      <lfx-multi-select
+                        [form]="mlCommitteeFilterForm"
+                        [control]="ml.uid"
+                        [options]="committeeFilterOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        size="small"
+                        display="chip"
+                        placeholder="All voting statuses"
+                        styleClass="w-full !text-[12px]"
+                        [ariaLabel]="'Committee voting-status filter for ' + ml.group_name"
+                        [attr.data-testid]="'settings-ml-picker-committee-filter-' + ml.uid"></lfx-multi-select>
+                    </div>
+                    <div class="flex-1">
+                      <label class="block text-[11px] font-medium text-gray-500 mb-1">{{ committeeLabel.singular }} roles (optional)</label>
+                      <lfx-multi-select
+                        [form]="mlCommitteeRoleFilterForm"
+                        [control]="ml.uid"
+                        [options]="committeeRoleFilterOptions"
+                        optionLabel="label"
+                        optionValue="value"
+                        size="small"
+                        display="chip"
+                        placeholder="All roles"
+                        styleClass="w-full !text-[12px]"
+                        [ariaLabel]="'Committee role filter for ' + ml.group_name"
+                        [attr.data-testid]="'settings-ml-picker-role-filter-' + ml.uid"></lfx-multi-select>
+                    </div>
+                  </div>
+                  <p class="text-[11px] text-gray-400 mt-1.5">Leave blank to sync every {{ committeeLabel.singular.toLowerCase() }} member.</p>
+                </td>
+              </tr>
+            }
           }
         </tbody>
       </table>

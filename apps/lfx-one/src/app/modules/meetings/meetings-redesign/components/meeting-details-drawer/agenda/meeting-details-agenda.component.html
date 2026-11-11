@@ -78,17 +78,18 @@
         }
       </div>
     } @else if (hasMaterials()) {
-      <div class="flex flex-col gap-[8px]" data-testid="meeting-details-materials-primary">
-        <h4 class="inline-flex items-center gap-[6px] text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-500">
-          Primary Materials
-          <i
-            class="fa-light fa-circle-question text-[13px] text-gray-400"
-            tabindex="0"
-            role="img"
-            aria-label="Materials intended for review before the meeting."
-            lfxUiTooltip="Materials intended for review before the meeting."></i>
-        </h4>
-        @if (files().length) {
+      <!-- An empty sub-section is hidden whole; both empty falls through to the empty state. -->
+      @if (files().length) {
+        <div class="flex flex-col gap-[8px]" data-testid="meeting-details-materials-primary">
+          <h4 class="inline-flex items-center gap-[6px] text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-500">
+            Primary Materials
+            <i
+              class="fa-light fa-circle-question text-[13px] text-gray-400"
+              tabindex="0"
+              role="img"
+              aria-label="Materials intended for review before the meeting."
+              lfxUiTooltip="Materials intended for review before the meeting."></i>
+          </h4>
           <!-- shortcut: list rows styled inline, no uikit list. revisit: when a third screen needs lfx-list-plain. -->
           <ul id="meeting-details-materials-files" class="flex flex-col divide-y divide-gray-200">
             @for (file of visibleFiles(); track file.uid) {
@@ -97,10 +98,12 @@
                 <div class="flex min-w-0 flex-1 items-center gap-[12px]">
                   <lfx-ui-avatar class="flex-none !text-[15px]" [size]="32" [icon]="type.icon" decorative />
                   <div class="flex min-w-0 flex-col">
-                    <span class="truncate text-[14px] font-medium leading-[20px] text-gray-900" tabindex="0" [lfxUiTooltip]="file.name">{{ file.name }}</span>
-                    @if (showScopes()) {
-                      <ng-container *ngTemplateOutlet="scopeBadge; context: { $implicit: file.uid }" />
-                    }
+                    <div class="flex min-w-0 items-center gap-[8px]">
+                      <span class="truncate text-[14px] font-medium leading-[20px] text-gray-900" tabindex="0" [lfxUiTooltip]="file.name">{{ file.name }}</span>
+                      @if (showScopes()) {
+                        <ng-container *ngTemplateOutlet="scopeBadge; context: { $implicit: file.uid }" />
+                      }
+                    </div>
                     <span class="text-[12px] leading-[16px] text-gray-500"
                       >{{ type.label }} · {{ file.updated_at || file.created_at | date: 'MMM d, yyyy' }}</span
                     >
@@ -125,32 +128,34 @@
               [(expanded)]="filesExpanded"
               data-testid="meeting-details-materials-more" />
           }
-        } @else {
-          <p class="text-[12px] leading-[16px] text-gray-500">No primary materials available.</p>
-        }
-      </div>
-      <div class="flex flex-col gap-[8px]" data-testid="meeting-details-materials-supporting">
-        <h4 class="inline-flex items-center gap-[6px] text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-500">
-          Supporting Materials
-          <i
-            class="fa-light fa-circle-question text-[13px] text-gray-400"
-            tabindex="0"
-            role="img"
-            aria-label="Related links and references for the meeting."
-            lfxUiTooltip="Related links and references for the meeting."></i>
-        </h4>
-        @if (links().length) {
+        </div>
+      }
+      @if (links().length) {
+        <div class="flex flex-col gap-[8px]" data-testid="meeting-details-materials-supporting">
+          <h4 class="inline-flex items-center gap-[6px] text-[11px] font-semibold uppercase leading-[16px] tracking-[.08em] text-gray-500">
+            Supporting Materials
+            <i
+              class="fa-light fa-circle-question text-[13px] text-gray-400"
+              tabindex="0"
+              role="img"
+              aria-label="Related links and references for the meeting."
+              lfxUiTooltip="Related links and references for the meeting."></i>
+          </h4>
           <ul class="flex flex-col divide-y divide-gray-200">
             @for (link of links(); track link.uid) {
               <li class="flex min-h-[56px] items-center justify-between gap-[16px] py-[12px]" data-testid="meeting-details-materials-link">
                 <div class="flex min-w-0 flex-1 items-center gap-[12px]">
                   <lfx-ui-avatar class="flex-none !text-[15px]" [size]="32" icon="fa-light fa-link" decorative />
                   <div class="flex min-w-0 flex-col">
-                    <span class="truncate text-[14px] font-medium leading-[20px] text-gray-900" tabindex="0" [lfxUiTooltip]="link.name">{{ link.name }}</span>
-                    @if (showScopes()) {
-                      <ng-container *ngTemplateOutlet="scopeBadge; context: { $implicit: link.uid }" />
+                    <div class="flex min-w-0 items-center gap-[8px]">
+                      <span class="truncate text-[14px] font-medium leading-[20px] text-gray-900" tabindex="0" [lfxUiTooltip]="link.name">{{ link.name }}</span>
+                      @if (showScopes()) {
+                        <ng-container *ngTemplateOutlet="scopeBadge; context: { $implicit: link.uid }" />
+                      }
+                    </div>
+                    @if (link.host) {
+                      <span class="truncate text-[12px] leading-[16px] text-gray-500" data-testid="meeting-details-materials-host">{{ link.host }}</span>
                     }
-                    <span class="truncate text-[12px] leading-[16px] text-gray-500">{{ link.host }}</span>
                   </div>
                 </div>
                 @if (link.url; as url) {
@@ -167,10 +172,8 @@
               </li>
             }
           </ul>
-        } @else {
-          <p class="text-[12px] leading-[16px] text-gray-500">No supporting materials available.</p>
-        }
-      </div>
+        </div>
+      }
     } @else {
       <lfx-ui-empty-state
         size="small"
@@ -197,12 +200,12 @@
 
 <ng-template #scopeBadge let-uid>
   @if (scopes().get(uid) === 'occurrence') {
-    <lfx-ui-badge class="self-start" size="sm" tone="accent" data-testid="meeting-details-materials-scope"
+    <lfx-ui-badge class="flex-none" size="sm" tone="accent" data-testid="meeting-details-materials-scope"
       ><i slot="icon" class="fa-light fa-calendar-day" aria-hidden="true"></i>This occurrence</lfx-ui-badge
     >
   } @else {
-    <lfx-ui-badge class="self-start" size="sm" data-testid="meeting-details-materials-scope"
-      ><i slot="icon" class="fa-light fa-repeat" aria-hidden="true"></i>All occurrences</lfx-ui-badge
+    <lfx-ui-badge class="flex-none" variant="outline" size="sm" data-testid="meeting-details-materials-scope"
+      ><i slot="icon" class="fa-light fa-arrows-repeat" aria-hidden="true"></i>All occurrences</lfx-ui-badge
     >
   }
 </ng-template>

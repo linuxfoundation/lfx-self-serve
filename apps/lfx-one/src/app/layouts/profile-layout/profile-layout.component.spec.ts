@@ -7,6 +7,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_ALREADY_LINKED_MESSAGE,
   EMAIL_CALLBACK_RETRY_MESSAGE,
   IDENTITY_ALREADY_CONNECTED_STATUS,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
@@ -562,9 +563,9 @@ describe('ProfileLayoutComponent — primary email and identity notifications (#
 });
 
 /**
- * Guards #4253: the Flow C callback reports a replayed pending email verification as
- * `email_status=already_connected|retry_required` next to `success=profile_token_obtained`. The
- * layout owns that notice so it shows once on whichever /profile/* tab the return lands.
+ * Guards #4253 and #5459: the Flow C callback reports a replayed pending email verification as
+ * `email_status=already_connected|already_linked|retry_required` next to `success=profile_token_obtained`.
+ * The layout owns that notice so it shows once on whichever /profile/* tab the return lands.
  */
 describe('ProfileLayoutComponent — pending email outcome on Flow C return (#4253)', () => {
   async function setup(
@@ -633,6 +634,21 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/settings', { replaceUrl: true });
   });
 
+  it.each([
+    ['/profile/settings?success=profile_token_obtained&email_status=already_linked#email-settings', '/profile/settings#email-settings'],
+    ['/profile/identities?success=profile_token_obtained&email_status=already_linked', '/profile/identities'],
+  ])('shows one fixed already-linked notice on %s without claiming success or touching identity state', async (url, cleanUrl) => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(url, {
+      success: 'profile_token_obtained',
+      email_status: 'already_linked',
+    });
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'warn', summary: 'Email already linked', detail: EMAIL_ALREADY_LINKED_MESSAGE });
+    expect(EMAIL_ALREADY_LINKED_MESSAGE).not.toMatch(/new (verification )?code/i);
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith(cleanUrl, { replaceUrl: true });
+  });
+
   it('infers no email outcome from an ordinary authorization return', async () => {
     const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained', {
       success: 'profile_token_obtained',
@@ -654,9 +670,9 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     expect(navigateByUrl).toHaveBeenCalledExactlyOnceWith('/profile/identities', { replaceUrl: true });
   });
 
-  it('ignores an email_status that arrives without the authorization-success flag', async () => {
-    const { add, navigateByUrl, refreshUserIdentities } = await setup('/profile/settings?email_status=already_connected', {
-      email_status: 'already_connected',
+  it.each(['already_connected', 'already_linked'])('ignores email_status=%s when it arrives without the authorization-success flag', async (status) => {
+    const { add, navigateByUrl, refreshUserIdentities } = await setup(`/profile/settings?email_status=${status}`, {
+      email_status: status,
     });
 
     expect(add).not.toHaveBeenCalled();
@@ -678,7 +694,22 @@ describe('ProfileLayoutComponent — pending email outcome on Flow C return (#42
     expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
   });
 
-  it.each(['already_connected', 'retry_required'])('preserves callback markers and pending saves during SSR for %s', async (status) => {
+  it('still replays a pending profile save alongside the already-linked notice', async () => {
+    sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, JSON.stringify({ savedAt: Date.now(), avatarPending: true }));
+
+    const { add, refreshUserIdentities } = await setup('/profile/settings?success=profile_token_obtained&email_status=already_linked', {
+      success: 'profile_token_obtained',
+      email_status: 'already_linked',
+    });
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Authorization complete' }));
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Email already linked' }));
+    expect(add).toHaveBeenCalledTimes(2);
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(PENDING_PROFILE_SAVE_KEY)).toBeNull();
+  });
+
+  it.each(['already_connected', 'already_linked', 'retry_required'])('preserves callback markers and pending saves during SSR for %s', async (status) => {
     const pendingSave = JSON.stringify({ savedAt: Date.now(), avatarPending: true });
     sessionStorage.setItem(PENDING_PROFILE_SAVE_KEY, pendingSave);
 

@@ -10,8 +10,8 @@ import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
 
-import { DEFAULT_ORG_EVENTS_ATTRIBUTION, DEFAULT_ORG_EVENTS_PARTICIPATION, ORG_EVENTS_PARTICIPATION_BADGE_LABEL } from '@lfx-one/shared/constants';
-import type { OrgEventAttendeeVm, OrgEventsAttribution, OrgEventsParticipation } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_EVENTS_PARTICIPATION, ORG_EVENTS_PARTICIPATION_BADGE_LABEL } from '@lfx-one/shared/constants';
+import type { OrgEventAttendeeVm, OrgEventsParticipation } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
@@ -30,7 +30,6 @@ export class EventAttendeesDrawerComponent {
   public readonly eventId = input<string>('');
   public readonly eventName = input<string>('');
   public readonly attendeeCount = input<number>(0);
-  public readonly attribution = input<OrgEventsAttribution>(DEFAULT_ORG_EVENTS_ATTRIBUTION);
   public readonly participation = input<OrgEventsParticipation>(DEFAULT_ORG_EVENTS_PARTICIPATION);
 
   protected readonly searchTerm = signal('');
@@ -56,16 +55,16 @@ export class EventAttendeesDrawerComponent {
 
   private initAttendeesData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.attribution), toObservable(this.participation)]).pipe(
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.participation)]).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId, attribution, participation]) => {
+        switchMap(([isVisible, currentEventId, participation]) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
           this.loadFailed.set(false);
           this.loading.set(true);
-          return this.eventsService.getEventAttendees(accountId, currentEventId, { attribution, participation }).pipe(
+          return this.eventsService.getEventAttendees(accountId, currentEventId, { participation }).pipe(
             catchError(() => {
               this.loadFailed.set(true);
               return of(null);

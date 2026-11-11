@@ -5,7 +5,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideRouter, Router } from '@angular/router';
-import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE } from '@lfx-one/shared/constants';
 import type { OrgDropdownOption, OrgEventAttendeeDetailRow, OrgEventAttendeesResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -87,44 +87,23 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
   it('reads with the defaults and drops them from the URL', async () => {
     await mount('/?tab=events');
 
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'all' });
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', participation: 'all' });
     expect(TestBed.inject(Router).url).not.toContain('participation');
-    expect(TestBed.inject(Router).url).not.toContain('attribution');
   });
 
-  it('offers All as the first Count option and Employee match, Self-reported only, All as the Counted by options', async () => {
+  it('offers All as the first Count option', async () => {
     await mount('/?tab=events');
-    const component = fixture.componentInstance as unknown as {
-      participationOptions: { label: string; value: string }[];
-      attributionOptions: { label: string; value: string }[];
-    };
+    const component = fixture.componentInstance as unknown as { participationOptions: { label: string; value: string }[] };
 
     expect(component.participationOptions.map((option) => option.label)).toEqual(['All', 'Registered', 'Attended']);
-    expect(component.attributionOptions).toEqual([
-      { label: 'Employee match', value: 'verified' },
-      { label: 'Self-reported only', value: 'self_reported' },
-      { label: 'All', value: 'all' },
-    ]);
     expect(form().controls['participation'].value).toBe('all');
-    expect(form().controls['attribution'].value).toBe('verified');
   });
 
-  it('restores Count and Counted by from the URL and reads with them', async () => {
-    await mount('/?tab=events&range=90d&participation=attended&attribution=self_reported');
+  it('restores Count from the URL and reads with it', async () => {
+    await mount('/?tab=events&range=90d&participation=attended');
 
     expect(form().controls['participation'].value).toBe('attended');
-    expect(form().controls['attribution'].value).toBe('self_reported');
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', attribution: 'self_reported', participation: 'attended' });
-    expect(testId('org-people-event-attendees-attendees-caption')?.textContent).toContain(ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE.self_reported);
-  });
-
-  // lfx-self-serve#5315 retired Company email and Account on registration: an old link reads with the default instead.
-  it.each(['company_email', 'account'])('falls back to Employee match for the retired ?attribution=%s', async (retired) => {
-    await mount(`/?tab=events&attribution=${retired}`);
-
-    expect(form().controls['attribution'].value).toBe('verified');
-    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'all' });
-    expect(getEventAttendees).not.toHaveBeenCalledWith(ORG, expect.objectContaining({ attribution: retired }));
+    expect(getEventAttendees).toHaveBeenCalledWith(ORG, { range: '90d', participation: 'attended' });
   });
 
   it('writes a non-default pick to the URL and refetches, then drops it again at the default', async () => {
@@ -133,38 +112,17 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     form().controls['participation'].setValue('attended');
     await settle();
     expect(TestBed.inject(Router).url).toContain('participation=attended');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'attended' });
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', participation: 'attended' });
 
     form().controls['participation'].setValue('registered');
     await settle();
     expect(TestBed.inject(Router).url).toContain('participation=registered');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'registered' });
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', participation: 'registered' });
 
     form().controls['participation'].setValue('all');
     await settle();
     expect(TestBed.inject(Router).url).not.toContain('participation');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'verified', participation: 'all' });
-
-    form().controls['attribution'].setValue('all');
-    await settle();
-    expect(TestBed.inject(Router).url).toContain('attribution=all');
-    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', attribution: 'all', participation: 'all' });
-
-    form().controls['attribution'].setValue('verified');
-    await settle();
-    expect(TestBed.inject(Router).url).not.toContain('attribution');
-  });
-
-  it('keeps Counted by behind "More filters", counting a non-default pick on the link', async () => {
-    await mount('/?tab=events&attribution=all');
-
-    const row = testId('org-people-event-attendees-more-filters');
-    expect(row?.classList.contains('hidden')).toBe(true);
-    expect(testId('org-people-event-attendees-more-filters-toggle')?.textContent).toContain('More filters (1)');
-
-    (testId('org-people-event-attendees-more-filters-toggle') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    expect(row?.classList.contains('hidden')).toBe(false);
+    expect(getEventAttendees).toHaveBeenLastCalledWith(ORG, { range: '730d', participation: 'all' });
   });
 
   it('offers every event the server returned, applying no range filter of its own', async () => {

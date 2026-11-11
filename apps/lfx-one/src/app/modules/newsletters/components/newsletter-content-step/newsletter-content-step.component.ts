@@ -1,28 +1,53 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, model, output, Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
-import { GenerateNewsletterResponse } from '@lfx-one/shared/interfaces';
+import { GenerateNewsletterResponse, NewsletterEditorMode, NewsletterLayout } from '@lfx-one/shared/interfaces';
+import { NEWSLETTER_DEFAULT_TEMPLATE_KEY } from '@lfx-one/shared/constants';
 import { stripHtml } from '@lfx-one/shared/utils';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { EMPTY, startWith, switchMap } from 'rxjs';
 
+import { NewsletterBlockComposerComponent } from '../newsletter-block-composer/newsletter-block-composer.component';
 import { NewsletterGenerateDrawerComponent } from '../newsletter-generate-drawer/newsletter-generate-drawer.component';
 
+/**
+ * The wizard's Content step. Hosts two mutually-exclusive body editors the
+ * author toggles between:
+ *   - simple ("Basic" in the UI): a rich-text editor over `body_html` plus AI
+ *     generation (the original pre-composer editor), and the default for a new
+ *     draft.
+ *   - blocks: the structured block composer (authors `body_layout`); the server
+ *     renders it to `body_html` on save.
+ *
+ * Switching modes clears the other representation so only one body source is
+ * ever authoritative (a confirm guards the discard when the outgoing editor
+ * holds content). The mode is inferred on init from whichever representation the
+ * loaded draft already carries, defaulting to the basic editor for a new draft.
+ */
 @Component({
   selector: 'lfx-newsletter-content-step',
-  imports: [ReactiveFormsModule, RichEditorComponent, InputTextComponent, NewsletterGenerateDrawerComponent, ConfirmDialogModule],
+  imports: [
+    ReactiveFormsModule,
+    InputTextComponent,
+    RichEditorComponent,
+    NewsletterBlockComposerComponent,
+    NewsletterGenerateDrawerComponent,
+    ConfirmDialogModule,
+  ],
   templateUrl: './newsletter-content-step.component.html',
 })
-export class NewsletterContentStepComponent {
+export class NewsletterContentStepComponent implements OnInit {
   // === Services ===
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly form = input.required<FormGroup>();
@@ -30,20 +55,169 @@ export class NewsletterContentStepComponent {
   // tonal cues; the newsletter feature itself is project-only at the API
   // boundary.
   public readonly contextType = input<'foundation' | 'project'>('project');
-  public readonly contextName = input.required<string>();
+  public readonly contextName = input<string>('');
   public readonly hasContext = input<boolean>(false);
   public readonly savedLabel = input<string | null>(null);
+  // Gates the block composer to the pilot projects. When false, only the simple
+  // rich-text editor is available and the Blocks/Simple toggle is hidden.
+  public readonly blocksEnabled = input<boolean>(false);
+  // True until the draft is first saved. Only a new draft opens in blocks with
+  // starter blocks; an empty saved draft (e.g. the author chose Basic) does not.
+  public readonly newDraft = input<boolean>(false);
+  // The newsletter's owning project UID, threaded to the block composer so its
+  // render-preview call is scoped to the newsletter's project (which an edit
+  // route can carry distinct from the ambient lens context), not the active lens.
+  public readonly projectUid = input<string | null>(null);
+  // The template set of the publication this edition belongs to, when it has one (#4349). The
+  // service then requires a block layout on that set, so Basic and the template picker are hidden.
+  public readonly lockedTemplateKey = input<string | null>(null);
+  // An edition saved as Basic may stay Basic after its publication gains a template set, so the
+  // Basic editor stays available while it has no layout. Blocks still uses the locked set.
+  public readonly basicAllowed = input<boolean>(false);
+  // True while a Basic edition's publication is loading or could not be read. Its template set is
+  // unknown, so switching to Blocks waits rather than seeding a set the service may refuse.
+  public readonly blocksSwitchBlocked = input<boolean>(false);
 
   // === Outputs ===
   public readonly generated = output<GenerateNewsletterResponse>();
 
-  // === Model signals ===
-  public readonly generateDrawerVisible = model<boolean>(false);
+  // === Writable signals ===
+  // Internal-only drawer visibility (the parent never binds it), so a plain
+  // signal, not model(). Two-way [(visible)] to the drawer still works.
+  protected readonly generateDrawerVisible = signal<boolean>(false);
+
+  // === Writable signals ===
+  // Which body editor is showing. Defaults to the basic (simple) editor.
+  // ngOnInit switches to blocks for a draft with a layout, or for a new unsaved
+  // draft on desktop (with starter blocks).
+  protected readonly editorMode = signal<NewsletterEditorMode>('simple');
+  // True when a new draft opened straight into blocks, so the composer starts
+  // from the template set's starter blocks.
+  protected readonly seedStarterBlocks = signal<boolean>(false);
+
+  // True on small viewports (below Tailwind's `md`, 768px). The block composer is
+  // a desktop drag-and-drop surface that does not work on a phone, so on mobile
+  // the Blocks toggle is disabled and a blocks draft shows a "use a desktop"
+  // notice instead of the composer. Defaults false so SSR renders the desktop
+  // shape; the browser reseeds it from matchMedia on init (see ngOnInit).
+  protected readonly isMobile = signal<boolean>(false);
+
+  protected readonly templateLocked = computed(() => this.lockedTemplateKey() !== null);
+  protected readonly basicLocked = computed(() => this.templateLocked() && !this.basicAllowed());
+  protected readonly composerTemplateKey = computed(() => this.lockedTemplateKey() ?? NEWSLETTER_DEFAULT_TEMPLATE_KEY);
+  protected readonly blocksToggleTitle = computed(() => {
+    if (this.isMobile()) return 'The Blocks editor is available on desktop only';
+    return this.blocksSwitchBlocked() ? "Blocks is available once this edition's publication has loaded" : null;
+  });
 
   // === Reactive form mirrors ===
   protected readonly subjectValue: Signal<string> = this.initControlValue('subject');
   protected readonly bodyValue: Signal<string> = this.initControlValue('bodyHtml');
   protected readonly bodyFilled = computed(() => stripHtml(this.bodyValue()).length > 0);
+  // Bumped on a mode switch to force `initialLayout` to re-read the live control
+  // (a plain `form()`-only computed would freeze at the draft's initial layout —
+  // the FormGroup identity never changes and in-session edits arrive via
+  // setValue). The composer only reads `initialLayout` at mount, so re-reading on
+  // toggle is exactly when it matters; per-keystroke edits need no re-read.
+  private readonly layoutSeedVersion = signal<number>(0);
+  // Seed the composer from the CURRENT body_layout so drafts, step revisits, and
+  // a toggle back to Blocks rehydrate the canvas correctly. Read synchronously
+  // (not via toObservable, which would emit a microtask late and seed empty).
+  protected readonly initialLayout: Signal<NewsletterLayout | null> = computed(() => {
+    this.layoutSeedVersion();
+    return (this.form().get('bodyLayout')?.value as NewsletterLayout | null) ?? null;
+  });
+
+  public ngOnInit(): void {
+    // Track the viewport size browser-side so the composer is steered off mobile.
+    // Guarded on isPlatformBrowser: matchMedia does not exist during SSR. The
+    // handler and query stay local to this closure; DestroyRef removes the
+    // listener on teardown.
+    if (isPlatformBrowser(this.platformId)) {
+      const mq = window.matchMedia('(max-width: 767px)');
+      const onChange = (e: MediaQueryListEvent): void => {
+        this.isMobile.set(e.matches);
+        // Crossing the breakpoint mounts or unmounts the composer. On the return
+        // to desktop it re-mounts and re-reads initialLayout, which is memoized
+        // on layoutSeedVersion — so bump the seed here too. Without it the
+        // re-mounted composer would seed the layout captured before the mobile
+        // round-trip, and its next edit would overwrite the live form layout
+        // with that stale tree.
+        this.layoutSeedVersion.update((v) => v + 1);
+      };
+      this.isMobile.set(mq.matches);
+      mq.addEventListener('change', onChange);
+      this.destroyRef.onDestroy(() => mq.removeEventListener('change', onChange));
+    }
+
+    // Blocks disabled for this project: only the simple editor is available,
+    // regardless of what the draft carries.
+    if (!this.blocksEnabled()) {
+      this.editorMode.set('simple');
+      return;
+    }
+    // Infer the editor from the draft. A PRESENT layout means the composer, even
+    // after its last block is removed (an empty-but-present layout is still
+    // authoritative upstream). Any other saved draft stays on the basic editor.
+    // A new, unsaved draft with no body opens in blocks with the template set's
+    // starter blocks (desktop only).
+    const layout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
+    if (layout !== null) {
+      this.editorMode.set('blocks');
+    } else if (this.basicLocked()) {
+      // An edition on a template set has no basic editor, even on mobile, which shows the desktop
+      // notice. The composer only mounts on desktop, so a new draft opened on mobile still gets its
+      // starter blocks once the viewport crosses the breakpoint.
+      this.editorMode.set('blocks');
+      this.seedStarterBlocks.set(this.newDraft());
+    } else if (this.newDraft() && !this.isMobile() && stripHtml(this.form().get('bodyHtml')?.value ?? '').length === 0) {
+      this.seedStarterBlocks.set(true);
+      this.editorMode.set('blocks');
+    }
+  }
+
+  protected onLayoutChange(layout: NewsletterLayout): void {
+    // The draft now has a layout, so a remounted composer must not seed again.
+    this.seedStarterBlocks.set(false);
+    this.form().get('bodyLayout')?.setValue(layout);
+  }
+
+  /**
+   * Switch editors. When the outgoing editor holds content, confirm first — the
+   * switch clears the other representation so only one body source stays
+   * authoritative (the server would otherwise render body_layout over an
+   * authored body_html).
+   */
+  protected setMode(mode: NewsletterEditorMode): void {
+    // Blocks is unavailable when the composer is gated off for this project, and
+    // on mobile where the desktop drag-and-drop composer cannot be used.
+    if (mode === 'blocks' && (!this.blocksEnabled() || this.isMobile() || this.blocksSwitchBlocked())) return;
+    // An edition on a template set has to stay in blocks.
+    if (this.basicLocked()) return;
+    if (mode === this.editorMode()) return;
+    const leavingBlocks = this.editorMode() === 'blocks';
+    // Read the LIVE control, not the memoized signal, so in-session blocks count.
+    const currentLayout = this.form().get('bodyLayout')?.value as NewsletterLayout | null;
+    const outgoingHasContent = leavingBlocks ? (currentLayout?.blocks?.length ?? 0) > 0 : this.bodyFilled();
+
+    if (outgoingHasContent) {
+      this.confirmationService.confirm({
+        key: 'newsletter-content-step',
+        header: 'Switch editor?',
+        message: leavingBlocks
+          ? 'Switching to the basic editor discards the blocks you have added. Continue?'
+          : 'Switching to the block editor discards the body you have written. Continue?',
+        icon: 'pi pi-exclamation-triangle',
+        acceptLabel: 'Switch',
+        rejectLabel: 'Keep current',
+        acceptButtonStyleClass: 'p-button-sm',
+        rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+        accept: () => this.applyMode(mode),
+      });
+      return;
+    }
+    this.applyMode(mode);
+  }
 
   protected openGenerateDrawer(): void {
     if (!this.hasContext()) return;
@@ -68,6 +242,42 @@ export class NewsletterContentStepComponent {
       return;
     }
     this.generated.emit(result);
+  }
+
+  /** Clear the outgoing editor's representation, then switch. */
+  private applyMode(mode: NewsletterEditorMode): void {
+    if (mode === 'simple') {
+      // Drop the layout so the server uses the authored html rather than
+      // rendering blocks over it.
+      this.form().get('bodyLayout')?.setValue(null);
+      // Also clear the derived body_html: it holds the layout's COMPLETE
+      // server-rendered emitter email, which — kept as "simple" content with a
+      // null layout — the send path would double-wrap in the legacy chrome. The
+      // discard was already confirmed, so the simple editor starts empty.
+      this.form().get('bodyHtml')?.setValue('');
+    } else {
+      // Drop the authored html; blocks become the source and the server
+      // re-derives body_html on save.
+      this.form().get('bodyHtml')?.setValue('');
+      // Seed a non-null empty layout when entering Blocks from a null layout.
+      // Without it, a switch from a populated simple draft leaves bodyLayout null
+      // AND body_html empty, so bodyPersistable is false and neither autosave nor
+      // manual save can persist the confirmed discard — the old simple body then
+      // reverts on reload. The composer re-emits with its real manifest
+      // wrapper_key as soon as a block is added (mirrors its own 'default'
+      // fallback in toLayout()).
+      if (this.form().get('bodyLayout')?.value == null) {
+        // It carries a template key, because the composer treats a keyless layout
+        // as one saved before keys existed. A publication's locked template wins
+        // over the new-draft default, or the next save is rejected.
+        const emptyLayout: NewsletterLayout = { wrapper_key: 'default', template_key: this.composerTemplateKey(), blocks: [] };
+        this.form().get('bodyLayout')?.setValue(emptyLayout);
+      }
+    }
+    // Force initialLayout to re-read the live control so the composer re-seeds
+    // from the cleared/current layout rather than the frozen initial value.
+    this.layoutSeedVersion.update((v) => v + 1);
+    this.editorMode.set(mode);
   }
 
   private initControlValue(controlName: string): Signal<string> {

@@ -6211,6 +6211,17 @@ describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/audiences', 'GET', { type: 'audience' });
   });
 
+  it('GETs another type with q when given (#5262)', async () => {
+    proxyRequest.mockResolvedValueOnce({ account_id: '1', type: 'user_interest', audiences: [], audience_count: 0, truncated: false });
+
+    await new CampaignServiceClient().listGoogleAdsAudiences(req, 'cncf', 'user_interest', 'cloud');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/audiences', 'GET', {
+      type: 'user_interest',
+      q: 'cloud',
+    });
+  });
+
   it('refuses an empty project without calling the proxy', async () => {
     const caught = await new CampaignServiceClient().listGoogleAdsAudiences(req, '').catch((e: unknown) => e);
 

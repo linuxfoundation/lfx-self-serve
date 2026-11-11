@@ -5,7 +5,13 @@ import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingHomeAttendance, MeetingRegistrant } from '@lfx-one/shared/interfaces';
-import { countMeetingRsvpSummary, getMeetingRsvpAttendance, isMeetingInviteResponsesEnabled, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import {
+  countMeetingRsvpSummary,
+  getMeetingRsvpAttendance,
+  isMeetingGuestViewer,
+  isMeetingInviteResponsesEnabled,
+  selectApplicableRsvp,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -35,7 +41,7 @@ export class MeetingDetailsRsvpComponent {
   protected readonly responsesOn: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.context.meeting()));
   /** The shown date's registrants; undefined while loading, null when the lookup failed. */
   protected readonly roster: Signal<MeetingRegistrant[] | null | undefined> = this.initRoster();
-  /** The roster with this session's own answers applied. */
+  /** The roster with this session's own answers and removals applied. */
   protected readonly rows: Signal<MeetingRegistrant[]> = this.initRows();
   /** "X of Y attending" for the shown date. */
   protected readonly rsvpAttendance: Signal<MeetingHomeAttendance | null> = computed(() =>
@@ -54,10 +60,8 @@ export class MeetingDetailsRsvpComponent {
       const meeting = this.context.meeting();
       const occurrenceId = this.context.shownRow().occurrenceId ?? undefined;
       const responsesOn = this.responsesOn();
-      // Reloads after Remove Myself, so the viewer leaves the counts.
-      const removed = this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
       // A series row without a date counts only answers for all dates, as the meeting page does.
-      return { id: meeting.id, occurrenceId, responsesOn, allDatesOnly: responsesOn && !!meeting.recurrence && !occurrenceId, removed };
+      return { id: meeting.id, occurrenceId, responsesOn, allDatesOnly: responsesOn && !!meeting.recurrence && !occurrenceId };
     });
     const roster$ = toObservable(key).pipe(
       distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -77,7 +81,7 @@ export class MeetingDetailsRsvpComponent {
 
   private initRows(): Signal<MeetingRegistrant[]> {
     return computed(() => {
-      const roster = this.roster() ?? [];
+      const roster = this.withoutRemoved(this.roster() ?? []);
       const meeting = this.context.meeting();
       const occurrenceId = this.context.shownRow().occurrenceId;
       const allDatesOnly = !!meeting.recurrence && !occurrenceId;
@@ -90,5 +94,14 @@ export class MeetingDetailsRsvpComponent {
         return { ...registrant, rsvp: selectApplicableRsvp(occurrenceId, registrant.rsvp ? [...own, registrant.rsvp] : own) };
       });
     });
+  }
+
+  /** Drops guests removed here and, after Remove Myself, the viewer, as the roster can lag. */
+  private withoutRemoved(roster: MeetingRegistrant[]): MeetingRegistrant[] {
+    const removed = this.context.removedRegistrantUids();
+    const removedSelf = this.meetingService.removedRegistrationMeetingIds().has(this.context.meeting().id);
+    if (!removed.size && !removedSelf) return roster;
+    const viewer = { username: this.userService.viewerUsername(), email: this.userService.user()?.email ?? null };
+    return roster.filter((registrant) => !removed.has(registrant.uid) && !(removedSelf && isMeetingGuestViewer(registrant, viewer)));
   }
 }

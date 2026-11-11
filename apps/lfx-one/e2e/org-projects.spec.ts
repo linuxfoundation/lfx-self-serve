@@ -271,7 +271,7 @@ test.describe('Org Projects', () => {
     await gotoOrgProjectsPage(page, { hasAccess: false });
     await expect(page.getByTestId('org-projects-no-access-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-projects-no-access-title')).toHaveText('No organization linked to your account');
-    await expect(page.getByTestId('org-projects-no-access-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-projects-no-access-secondary')).toContainText('How affiliations and access work');
 
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await gotoOrgProjectsPage(page, { workspacesStatus: 500 });

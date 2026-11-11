@@ -2,52 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgEventAttendanceMetricColumn } from '../interfaces/org-events-internal.interface';
-import type {
-  OrgEventsAttribution,
-  OrgEventsAttributionColumnSuffix,
-  OrgEventsAttributionOption,
-  OrgEventsParticipation,
-  OrgEventsParticipationOption,
-  OrgEventsScope,
-  OrgEventsScopeOption,
-} from '../interfaces/org-events-filters.interface';
+import type { OrgEventsParticipation, OrgEventsParticipationOption, OrgEventsScope, OrgEventsScopeOption } from '../interfaces/org-events-filters.interface';
 
 // One set of Events filters for the Overview, People → Event Attendees and the Events page (lfx-self-serve#4598): the same
 // options, defaults and URL parameters everywhere, so the same selection gives the same count on every page.
 
-/** "Counted by" options, default first. */
-export const ORG_EVENTS_ATTRIBUTION_OPTIONS: readonly OrgEventsAttributionOption[] = [
-  { label: 'Employee match', value: 'verified' },
-  { label: 'Self-reported only', value: 'self_reported' },
-  { label: 'All', value: 'all' },
-] as const;
-
-/**
- * Default "Counted by" — the URL drops `?attribution=` when it is active. The Overview is pinned to it. People linked
- * only through the organization they named on their registration or talk submission are a weak relationship and are not
- * counted by default (lfx-self-serve#5158); Self-reported only lists them alone and All adds them (lfx-self-serve#5315).
- */
-export const DEFAULT_ORG_EVENTS_ATTRIBUTION: OrgEventsAttribution = 'verified';
-
-/** URL query parameter of the "Counted by" filter. */
-export const ORG_EVENTS_ATTRIBUTION_QUERY_PARAM = 'attribution';
-
-/** Accessible label of the "Counted by" filter. */
-export const ORG_EVENTS_ATTRIBUTION_LABEL = 'Counted by';
-
-/** Tooltip on the "Counted by" filter, per option. */
-export const ORG_EVENTS_ATTRIBUTION_TOOLTIP: Readonly<Record<OrgEventsAttribution, string>> = {
-  verified: 'Registered or spoke with a company email address on record, or their LF account matches someone on the company roster.',
-  self_reported: 'Linked only because they named the organization on their registration or talk submission.',
-  all: 'Everyone linked to the organization, including people who only named it on their registration or talk submission.',
-};
-
-/** Phrase a caption or tooltip adds for the attribution it counts. */
-export const ORG_EVENTS_ATTRIBUTION_CAPTION_PHRASE: Readonly<Record<OrgEventsAttribution, string>> = {
-  verified: 'Company email on record or LF account on the company roster.',
-  self_reported: 'Linked only because they named the organization on their registration or talk submission.',
-  all: 'Everyone linked to the organization, including people who only named it on their registration or talk submission.',
-};
+/** Caption phrase for the Employee match count every Events surface shows (the only attribution there is). */
+export const ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE = 'Company email on record or LF account on the company roster.';
 
 /** "Count" options, default first. */
 export const ORG_EVENTS_PARTICIPATION_OPTIONS: readonly OrgEventsParticipationOption[] = [
@@ -116,14 +77,13 @@ export const ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL = 'Registered attendee';
 /** Label shown for a speaker who has no usable name; never an email address. */
 export const ORG_EVENTS_NEUTRAL_SPEAKER_LABEL = 'Speaker';
 
-/** The one mapping from an attribution to its warehouse column suffix; every Events read derives its column identifiers from it, never from user input. */
-export const ORG_EVENTS_ATTRIBUTION_COLUMN_SUFFIX: Readonly<Record<OrgEventsAttribution, OrgEventsAttributionColumnSuffix>> = {
-  verified: 'VERIFIED',
-  self_reported: 'SELF_REPORTED',
-  all: 'ALL',
-};
+/** Every Events read counts Employee match only: its warehouse columns carry this suffix (`REGISTERED_COUNT_VERIFIED`, `IS_COUNTED_ALL_VERIFIED`, ...). Never built from user input. */
+export const ORG_EVENTS_COUNTED_COLUMN_SUFFIX = 'VERIFIED';
 
-/** The one mapping from a participation to its segment of a warehouse column (`<SEGMENT>_COUNT_<ATTRIBUTION>`, `IS_COUNTED_<SEGMENT>_<ATTRIBUTION>`); never built from user input. */
+/** The `ATTRIBUTION` value of the Employee match rows in the warehouse summary tables (`ORG_EVENT_PARTICIPATION_SUMMARY`); bound, never built from user input. */
+export const ORG_EVENTS_COUNTED_ATTRIBUTION = 'verified';
+
+/** The one mapping from a participation to its segment of a warehouse column (`<SEGMENT>_COUNT_VERIFIED`, `IS_COUNTED_<SEGMENT>_VERIFIED`); never built from user input. */
 export const ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT: Readonly<Record<OrgEventsParticipation, string>> = {
   all: 'ALL',
   registered: 'REGISTERED',
@@ -131,8 +91,8 @@ export const ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT: Readonly<Record<OrgEventsP
 };
 
 /**
- * The metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects: only those of the default attribution, which
- * the Overview is pinned to (the monthly table has no Self-reported only columns).
+ * The metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects: the Employee match (`VERIFIED`) columns, the
+ * only ones Events count.
  */
 export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMetricColumn[] = [
   'ATTENDEES_ALL_VERIFIED',

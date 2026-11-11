@@ -58,11 +58,6 @@
     }
   </lfx-ui-empty-state>
 } @else {
-  <!-- The 12px bottom keeps the toolbar gap fill clear of the heading. -->
-  <div class="flex items-baseline gap-[8px] pb-[12px] pt-[4px]" data-testid="meeting-details-guests-summary">
-    <h3 class="m-0 text-[14px] font-semibold text-gray-900">{{ summary().title }}</h3>
-    <span class="text-[12px] text-gray-500">{{ summary().subtitle }}</span>
-  </div>
   <!-- Leaves the view once the toolbar sticks, which turns the fade on. -->
   <div #stickSentinel class="h-px" aria-hidden="true"></div>
   <!-- Sticks 8px under the drawer header and its 42px tabs bar; the shadow fills that gap and the fade shows while stuck. -->
@@ -83,6 +78,7 @@
       icon="fa-light fa-bars-filter"
       popoverLabel="Filters"
       popoverPadding="none"
+      popoverAlign="end"
       [popover]="filtersPanel"
       [popoverWidth]="300"
       [ariaLabel]="filtersLabel()"

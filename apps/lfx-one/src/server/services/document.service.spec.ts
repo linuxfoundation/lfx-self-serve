@@ -194,3 +194,51 @@ describe('DocumentService.getMyDocuments — meeting summaries', () => {
     expect(summary.summaryContent).toBe('# Edited notes');
   });
 });
+
+describe('DocumentService.getMyDocuments — mailing list documents', () => {
+  const req = { bearerToken: 'user-token' } as unknown as Request;
+
+  const artifact = (id: string, groupId: number) => ({
+    artifact_id: id,
+    group_id: groupId,
+    project_uid: 'project-1',
+    committee_uid: COMMITTEE_UID,
+    type: 'link',
+    link_url: `https://example.com/${id}`,
+    created_at: '2026-10-01T00:00:00Z',
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMyCommitteesMock.mockResolvedValue([]);
+    getPastMeetingOccurrenceIdsMock.mockResolvedValue([]);
+
+    // The fetchers run in parallel, so each page response echoes the type it was asked for.
+    proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => ({
+      resources: [],
+      type: params['type'],
+    }));
+    // Each fetcher runs its page callback, then gets the rows for the type it queried.
+    fetchAllQueryResourcesMock.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<{ type?: string }>) => {
+      const { type } = await fetchPage();
+      if (type === 'groupsio_artifact') return [artifact('a1', 154980), artifact('a2', 999)];
+      if (type === 'groupsio_mailing_list') return [{ uid: 'list-uuid-1', group_id: 154980, title: 'Maintainers' }];
+      return [];
+    });
+  });
+
+  it('carries the mailing list uid, which the details page opens by, beside the numeric groups.io id', async () => {
+    const documents = await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    const resolved = documents.find((doc) => doc.id === 'groupsio_artifact:a1');
+    expect(resolved).toMatchObject({ groupOrMeetingName: 'Maintainers', mailingListId: '154980', mailingListUid: 'list-uuid-1' });
+  });
+
+  it('leaves the name and uid empty when the list cannot be resolved, so nothing links to a guess', async () => {
+    const documents = await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    const unresolved = documents.find((doc) => doc.id === 'groupsio_artifact:a2');
+    expect(unresolved?.groupOrMeetingName).toBe('');
+    expect(unresolved?.mailingListUid).toBeUndefined();
+  });
+});

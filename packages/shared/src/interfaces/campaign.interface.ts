@@ -12,6 +12,7 @@ import type {
   CAMPAIGN_METRICS_WINDOWS,
   CREATIVE_ASSET_MIME_TYPES,
   GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_AUDIENCE_READ_TYPES,
   GOOGLE_ADS_DEMAND_GEN_DEVICES,
   GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_INCOME_RANGES,
@@ -1476,6 +1477,17 @@ export interface CampaignImplementationDraft {
   /** The named Display ad groups as typed, kept whether or not the split is on. Absent leaves the form's groups alone. */
   displayAdGroups?: GoogleDisplayAdGroupDraft[];
   /**
+   * The single Display ad group's picked audiences and the campaign's excluded user lists (#5262), kept
+   * whether or not the split is on, so turning it off restores them. Absent leaves the form's alone.
+   */
+  displayAudiences?: GoogleDisplayCampaignAudiences;
+  /**
+   * The name each Display audience was picked under, by resource name (#5262), so a restored pick is shown by
+   * name though the picker's current list (an interest search, or the first 500 by name) no longer holds it.
+   * Display only, never sent. Absent leaves the names the tab holds alone.
+   */
+  displayAudienceNames?: Record<string, string>;
+  /**
    * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
    * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
    * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
@@ -1638,6 +1650,12 @@ export interface CampaignImplementationDraft {
    */
   googleAudienceSegments?: string[];
   /**
+   * The name each audience segment was added under, by resource name (#5493), so a restored segment is shown
+   * by name though the user list read is loading, unavailable or no longer lists it. Never sent. Absent
+   * leaves the names the tab holds alone.
+   */
+  googleAudienceSegmentNames?: Record<string, string>;
+  /**
    * Google's call, promotion and price extensions, as the operator added them.
    *
    * Held, restored and cleared on exactly the rule {@link googleStructuredSnippets} is: absent and
@@ -1677,6 +1695,12 @@ export interface CampaignImplementationDraft {
    * held rather than sent. Optional and restored only when present.
    */
   googlePerformanceMaxSearchThemes?: string;
+  /**
+   * The Performance Max audience signal's picked Audience resource name (#5262), raw. Restored whatever
+   * channel the draft was saved under: the picker and the payload both gate on Performance Max, so a
+   * value restored under another channel is held rather than sent. Absent leaves it alone.
+   */
+  googlePerformanceMaxAudienceSignal?: string;
 }
 
 /**
@@ -2602,10 +2626,12 @@ export interface GoogleUserListPickerState {
 }
 
 /**
- * One Google Ads Audience on the account a create uses, as the Implement tab's Demand Gen audience picker
- * offers it (campaign-service `list-google-ads-audiences` with `type=audience`, camel-cased).
- * `resourceName` is the `customers/{customerId}/audiences/{id}` form `demandGenAudience` accepts and the
- * one the picker sets; `name` and `description` are labels only.
+ * One entry of campaign-service `list-google-ads-audiences`, camel-cased, as the Implement tab's pickers offer
+ * it: an Audience (`type=audience`, the Demand Gen audience and Performance Max audience signal pickers) or,
+ * for the Display audience pickers (#5262), a custom audience, custom affinity segment or user interest.
+ * `resourceName` is the `customers/{customerId}/<collection>/{id}` form the create input of that kind accepts
+ * (`demandGenAudience` and `performanceMaxAudienceSignal` take the `audiences` form) and the one the picker
+ * sets; `name` and `description` are labels only.
  */
 export interface GoogleAdsAudienceOption {
   resourceName: string;
@@ -2614,7 +2640,10 @@ export interface GoogleAdsAudienceOption {
   description: string | null;
 }
 
-/** The Audience read: the account it came from, its Audiences sorted by name, and whether more exist than were returned. */
+/** The read type of `GET /api/campaigns/google/audiences`: one of `GOOGLE_ADS_AUDIENCE_READ_TYPES` (#5262). */
+export type GoogleAdsAudienceReadType = (typeof GOOGLE_ADS_AUDIENCE_READ_TYPES)[number];
+
+/** The audience read: the account it came from, its entries sorted by name, and whether more exist than were returned. */
 export interface GoogleAdsAudiencesResult {
   accountId: string;
   audiences: GoogleAdsAudienceOption[];
@@ -2622,10 +2651,11 @@ export interface GoogleAdsAudiencesResult {
 }
 
 /**
- * Where the Implement tab's Demand Gen audience picker stands. `unavailable` is a list that could not
- * load (the route is off or refused, or Google failed) and `reason` says which in one sentence.
- * `accountId` is the customer the Audiences were read from, which a picked or restored Audience must
- * name; `''` until the list has loaded.
+ * Where one of the Implement tab's audience pickers stands: the Audience list the Demand Gen audience picker
+ * and the Performance Max audience signal picker both offer, or one Display audience kind's (#5262).
+ * `unavailable` is a list that could not load (the route is off or refused, or Google failed) and `reason`
+ * says which in one sentence. `accountId` is the customer the entries were read from, which a picked or
+ * restored one must name; `''` until the list has loaded.
  */
 export interface GoogleAudiencePickerState {
   status: 'idle' | 'loading' | 'loaded' | 'unavailable';
@@ -2787,7 +2817,7 @@ export interface HubSpotCampaignCreateRequest {
 /**
  * One collectable field of one Google channel's creative.
  *
- * The three creative interfaces below say what MAY be sent; this says what a form should ask for,
+ * The creative interfaces below say what MAY be sent; this says what a form should ask for,
  * in what order, under what name, and inside what bounds — the same facts a server-side normalizer
  * needs to decide which keys to copy off an unvalidated body and whether a value is a list or a
  * scalar. Both sides read {@link GOOGLE_CREATIVE_FIELD_SPECS}, so a field added to a channel reaches
@@ -2797,7 +2827,12 @@ export interface HubSpotCampaignCreateRequest {
  * channel's group; they are deliberately the same string so neither side needs a mapping table.
  */
 export interface GoogleCreativeFieldSpec {
-  control: keyof GoogleDemandGenCreative | keyof GoogleDemandGenVideoCreative | keyof GooglePerformanceMaxCreative | keyof GoogleDisplayCreative;
+  control:
+    | keyof GoogleDemandGenCreative
+    | keyof GoogleDemandGenVideoCreative
+    | keyof GooglePerformanceMaxCreative
+    | keyof GoogleDisplayCreative
+    | keyof GoogleSearchAssets;
   /** Field label as shown to an operator. */
   label: string;
   /**
@@ -3003,12 +3038,12 @@ export interface GoogleCreativeSharedCap {
 }
 
 /**
- * The Google channels that carry a creative object — the three `GOOGLE_CHANNELS_WITH_CREATIVE` names.
+ * The Google channels that carry a creative object — the four `GOOGLE_CHANNELS_WITH_CREATIVE` names.
  *
- * Derived from the constant rather than spelled out, so the three creative catalogues keyed by it
- * and anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel`
- * on purpose: Search composes its ad from the top-level copy arrays and Video cannot be created at
- * all, so neither has an entry in `GOOGLE_CREATIVE_FIELD_SPECS` to index.
+ * Derived from the constant rather than spelled out, so the creative catalogues keyed by it and
+ * anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel` on
+ * purpose: Video cannot be created at all, so it has no entry in `GOOGLE_CREATIVE_FIELD_SPECS` to
+ * index. Search's object is its campaign assets ({@link GoogleSearchAssets}), not its ad copy.
  */
 export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
 
@@ -3249,30 +3284,75 @@ export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControl
 }
 
 /**
+ * The audience lists one Display ad group targets (campaign-service v1.0.35, #472 and #480), keyed by
+ * their `googleAdsConfig` field: existing resources on the campaign's own Google Ads account, each a
+ * `customers/<id>/<collection>/<id>` resource name, attached as targeting criteria (`validateDisplayTargeting`
+ * and `validateDisplayAudienceList` in `display_targeting.go`). At most `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS`
+ * entries each. Every list but `userInterests` names an account-owned resource, so campaign-service requires
+ * `global_marketing_ops` on the project for it (`GoogleAdsMarketingOpsInputs`, #505).
+ */
+export interface GoogleDisplayAudienceLists {
+  /** User lists, `customers/<id>/userLists/<id>`. */
+  audienceSegments?: string[];
+  /** Custom audiences, `customers/<id>/customAudiences/<id>`. */
+  customAudiences?: string[];
+  /** Custom affinity segments, `customers/<id>/customInterests/<id>`. */
+  customAffinities?: string[];
+  /** Google's affinity and in-market categories, `customers/<id>/userInterests/<id>`. */
+  userInterests?: string[];
+}
+
+/** The `googleAdsConfig` field of one Display audience list: a key of {@link GoogleDisplayAudienceLists}. */
+export type GoogleDisplayAudienceKind = keyof GoogleDisplayAudienceLists;
+
+/**
+ * The Display audiences a create carries beside the ad groups (#5262), as `CampaignCreateRequest.displayAudiences`:
+ * the single ad group's four lists, and the user lists the whole campaign excludes. The BFF sends each as the
+ * top-level `googleAdsConfig` field of the same name, on Display alone.
+ */
+export interface GoogleDisplayCampaignAudiences extends GoogleDisplayAudienceLists {
+  /**
+   * User lists excluded from the whole campaign, as campaign-level negative criteria (#475), so they cover
+   * every ad group, split or not. User lists only (`validateDisplayExcludedUserLists`).
+   */
+  excludedAudienceSegments?: string[];
+}
+
+/**
  * One named Display ad group (#475), typed to an entry of `googleAdsConfig.displayAdGroups`
  * (`internal/dispatch/googleads.go`'s `googleAdsDisplayAdGroupConfig`). campaign-service names the group
  * `<event name> - Display Network | <name>` and requires its responsive display ad.
  *
- * Upstream also takes the group's audience lists and user-list exclusions, all but `userInterests`
- * behind `GOOGLE_ADS_DISPLAY_AUDIENCES_ENABLED` (`googleAdsDisplayAudienceFieldsSet`). None is sent:
- * this application offers no audience input on a Display ad group.
+ * Its audience lists (#5262) are the group's own, under the upstream names. Upstream also takes a group's
+ * own `excludedAudienceSegments`; it is not sent: this application excludes user lists at the campaign
+ * level only ({@link GoogleDisplayCampaignAudiences.excludedAudienceSegments}), which covers every group.
  */
-export interface GoogleDisplayAdGroup {
+export interface GoogleDisplayAdGroup extends GoogleDisplayAudienceLists {
   name: string;
   /** The group's responsive display ad, the same shape as {@link CampaignCreateRequest.displayCreative}. */
   creative?: GoogleDisplayCreative;
 }
 
-/** One Display ad group as the Implement tab's draft keeps it: the name and the ad's raw text. */
+/** One Display ad group as the Implement tab's draft keeps it: the name, the ad's raw text and its audiences (#5262). */
 export interface GoogleDisplayAdGroupDraft {
   name: string;
   creative: Record<string, string>;
+  audiences?: GoogleDisplayAudienceLists;
+}
+
+/** The form controls of one Display audience target on the Implement tab: one list of resource names per kind (#5262). */
+export interface GoogleDisplayAudienceControls {
+  audienceSegments: import('@angular/forms').FormControl<string[]>;
+  customAudiences: import('@angular/forms').FormControl<string[]>;
+  customAffinities: import('@angular/forms').FormControl<string[]>;
+  userInterests: import('@angular/forms').FormControl<string[]>;
 }
 
 /** The form controls of one Display ad group on the Implement tab: {@link GoogleDisplayAdGroupDraft}, live. */
 export interface GoogleDisplayAdGroupControls {
   name: import('@angular/forms').FormControl<string>;
   creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+  audiences: import('@angular/forms').FormGroup<GoogleDisplayAudienceControls>;
 }
 
 /**
@@ -3341,6 +3421,28 @@ export interface GoogleDisplayCreative {
   /** REQUIRED by Google when a creative is supplied. */
   businessName?: string;
   callToActionText?: string;
+}
+
+/**
+ * The Search campaign's image, business-logo and business-name assets (#5262), typed to
+ * `googleAdsConfig.searchAssets` (`internal/dispatch/googleads.go`'s `googleAdsSearchAssetsConfig`,
+ * lfx-v2-campaign-service#477, #538). campaign-service links each one to the CAMPAIGN, after the
+ * campaign exists, in one atomic `googleAds:mutate` (`createSearchCampaignAssets`).
+ *
+ * Every field is optional and each stands alone: a Search campaign serves on its ads without any of
+ * them, so leaving all four empty sends no key. SEARCH ONLY: campaign-service refuses the object on
+ * every other channel, and the BFF sends it only on a Search create. Each image entry is a URL or a
+ * stored asset of the brief's, as on the other creatives. See `GOOGLE_CREATIVE_FIELD_SPECS.search`.
+ */
+export interface GoogleSearchAssets {
+  /** Square (1:1) ad images, at least 300x300. At most 20 together with {@link landscapeAdImages}. */
+  adImages?: GoogleCreativeImageRef[];
+  /** Landscape (1.91:1) ad images, at least 600x314, linked as the same AD_IMAGE field type. */
+  landscapeAdImages?: GoogleCreativeImageRef[];
+  /** The business logo: at most one square (1:1) image, at least 128x128. A list on the wire. */
+  businessLogoImages?: GoogleCreativeImageRef[];
+  /** The business name, at most 25 display-width units. */
+  businessName?: string;
 }
 
 /**
@@ -3970,12 +4072,36 @@ export interface CampaignCreateRequest {
    * any other channel and the BFF refuses every breach by name.
    */
   performanceMaxSearchThemes?: string[];
+  /**
+   * The Performance Max asset group's ONE audience signal (#5262; linuxfoundation/lfx-v2-campaign-service#461):
+   * an existing Google Ads Audience Google treats as likely converters, as a bare audience id or a
+   * `customers/{customerId}/audiences/{id}` resource name on the campaign's own account. A signal, not
+   * targeting, so Google may serve beyond it.
+   *
+   * Omitted when blank. PERFORMANCE MAX ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL`), and only beside a
+   * {@link performanceMaxCreative}, whose asset group it attaches to. campaign-service requires
+   * `global_marketing_ops` on the project to send one (#501) and refuses it unless its deployment opts in
+   * (`GOOGLE_ADS_PMAX_AUDIENCE_SIGNAL_ENABLED`).
+   */
+  performanceMaxAudienceSignal?: string;
   displayCreative?: GoogleDisplayCreative;
   /**
    * The Display campaign split into named ad groups (#475), sent INSTEAD of {@link displayCreative}:
    * campaign-service refuses the list beside it. At most `GOOGLE_DISPLAY_MAX_AD_GROUPS`.
    */
   displayAdGroups?: GoogleDisplayAdGroup[];
+  /**
+   * The Search campaign's ad images, business logo and business name (#5262), sent only on a Search
+   * create and omitted when every field is empty. See {@link GoogleSearchAssets}.
+   */
+  searchAssets?: GoogleSearchAssets;
+  /**
+   * The Display campaign's audiences outside the named groups (#5262): the single ad group's four lists,
+   * never beside {@link displayAdGroups} (campaign-service refuses them there), and the user lists excluded
+   * from the whole campaign, which cover every group. DISPLAY ONLY: the BFF refuses it on any other channel.
+   * Optional and OMITTED when every list is empty.
+   */
+  displayAudiences?: GoogleDisplayCampaignAudiences;
   /**
    * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
    * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by
@@ -6699,6 +6825,25 @@ export interface CampaignListResult {
    */
   googleDemandGenAudienceEnabled?: boolean | null;
   /**
+   * Whether THIS caller may pick Display audiences on the Implement tab (#5262), through
+   * `GET /api/campaigns/google/user-lists` and `GET /api/campaigns/google/audiences`, and send them. On the
+   * same two checks as {@link googleDemandGenAudienceEnabled}: the campaign-service create path serves the
+   * create, and the caller holds `global_marketing_ops` on the listed project, which campaign-service checks
+   * before it answers either read and before it creates with an account-owned Display list (#505). `null`
+   * when that check cannot be made. Optional, so a BFF that predates it reads as unanswered.
+   */
+  googleDisplayAudiencesEnabled?: boolean | null;
+  /**
+   * Whether THIS caller may pick a Performance Max audience signal on the Implement tab (#5262), through
+   * the same `GET /api/campaigns/google/audiences` read, and send it. Answered on the same two checks as
+   * {@link googleDemandGenAudienceEnabled}: the campaign-service create path serves the create, and the
+   * caller holds `global_marketing_ops` on the listed project, the relation campaign-service checks before
+   * it creates with a signal (#501). `null` when that check cannot be made: unverified, not denied.
+   * Optional, so a BFF that predates it reads as unanswered (`null` on the client) and the tab offers no
+   * picker.
+   */
+  googlePerformanceMaxAudienceSignalEnabled?: boolean | null;
+  /**
    * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
    * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
    *
@@ -6969,6 +7114,27 @@ export interface CampaignGoogleDemandGenAudienceBlock {
  */
 export interface CampaignGoogleDemandGenDemographicsBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Display audiences (#5262) the draft still holds but the request cannot carry.
+ * The kinds mean what they do on {@link CampaignGoogleDemandGenAudienceBlock}, with `restricted` an explicit
+ * no from `CampaignListResult.googleDisplayAudiencesEnabled`.
+ */
+export interface CampaignGoogleDisplayAudiencesBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for a Performance Max audience signal (#5262) the draft still holds but the
+ * request cannot carry, on {@link CampaignGoogleDemandGenAudienceBlock}'s kinds: `restricted` is an
+ * explicit no from `CampaignListResult.googlePerformanceMaxAudienceSignalEnabled`, and `unsupported` the
+ * campaign-service create path not serving this deployment.
+ */
+export interface CampaignGooglePerformanceMaxAudienceSignalBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
   message: string;
 }
 

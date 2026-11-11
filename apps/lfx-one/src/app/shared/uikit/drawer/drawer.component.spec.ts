@@ -65,6 +65,18 @@ class TestBareContentComponent {
   public readonly context = inject(UiDrawerContext);
 }
 
+// Inert at both ends, like the meeting details drawer's hidden compact header and inactive tab panel.
+const INERT_TEMPLATE = `
+  <lfx-ui-drawer heading="Details">
+    <div inert><a id="hidden-first" href="#first">Compact header</a></div>
+    <button id="live" type="button">Live</button>
+    <div inert><button id="hidden-last" type="button">Inactive tab</button></div>
+  </lfx-ui-drawer>
+`;
+
+@Component({ selector: 'lfx-ui-test-inert-content', template: '' })
+class TestInertContentComponent {}
+
 // True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
 const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
 
@@ -97,6 +109,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     TestBed.configureTestingModule({ imports: [TestHostComponent] });
     // Set here because an inline template this long trips component-max-inline-declarations.
     TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiDrawerComponent, UiButtonComponent], template: HOST_TEMPLATE } });
+    TestBed.overrideComponent(TestInertContentComponent, { set: { imports: [UiDrawerComponent], template: INERT_TEMPLATE } });
     fixture = TestBed.createComponent(TestHostComponent);
     document.body.appendChild(fixture.nativeElement);
     container = TestBed.inject(OverlayContainer).getContainerElement();
@@ -201,6 +214,38 @@ describe('UiDrawerComponent and UiDrawerService', () => {
 
     expect(document.activeElement).toBe(byId('name'));
     expect(container.querySelectorAll('.cdk-focus-trap-anchor').length).toBe(2);
+  });
+
+  describe('with inert content at either end', () => {
+    const anchors = () => [...container.querySelectorAll<HTMLElement>('.cdk-focus-trap-anchor')];
+    const openInert = async (config: UiDrawerConfig) => {
+      // jsdom lays nothing out, and the CDK skips elements without a size.
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1);
+      opener.focus();
+      TestBed.inject(UiDrawerService).open(TestInertContentComponent, config);
+      await settle();
+    };
+
+    it('bare: moves focus past the inert header and wraps Tab within the live content', async () => {
+      await openInert({ bare: true });
+      expect(document.activeElement).toBe(byId('live'));
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(byId('live'));
+    });
+
+    it('with a header: moves focus to the first live control and wraps Tab past the inert panel', async () => {
+      await openInert({});
+      const close = testId('ui-drawer-close').querySelector('button');
+      expect(document.activeElement).toBe(close);
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(close);
+    });
   });
 
   it('closes on Escape and gives focus back to the opener', async () => {

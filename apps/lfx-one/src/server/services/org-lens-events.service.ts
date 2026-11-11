@@ -15,7 +15,6 @@ import type {
   OrgEventSpeaker,
   OrgEventSpeakersDrawerRow,
   OrgEventSpeakersResponse,
-  OrgEventsAttribution,
   OrgEventsFilters,
   OrgEventsParticipation,
   OrgEventsResponse,
@@ -43,8 +42,8 @@ import { withOrgCache } from './valkey.service';
 const VALID_SORT_COLUMNS: ReadonlySet<string> = new Set(['EVENT_NAME', 'EVENT_START_DATE', 'EVENT_CITY']);
 
 /**
- * Service for the Org Lens Events page. dbt computes every count (per-event distinct people per attribution in ORG_EVENTS,
- * person × event participation in ORG_EVENT_PARTICIPATION); this service selects the columns of the picked option and applies
+ * Service for the Org Lens Events page. dbt computes every count (per-event distinct people in ORG_EVENTS, person × event
+ * participation in ORG_EVENT_PARTICIPATION); this service selects the Employee match (`_VERIFIED`) columns of the picked participation and applies
  * parameterized WHERE / ORDER BY / LIMIT.
  */
 export class OrgLensEventsService {
@@ -58,7 +57,7 @@ export class OrgLensEventsService {
 
   /** GET /api/orgs/:accountId/lens/events — paginated list of events for the org. */
   public async getOrgEvents(req: Request, accountId: string, options: GetOrgEventsOptions): Promise<OrgEventsResponse> {
-    const { isPast, searchQuery, status, pageSize, offset, sortField, sortOrder, attribution, participation, eventScope, foundation, range } = options;
+    const { isPast, searchQuery, status, pageSize, offset, sortField, sortOrder, participation, eventScope, foundation, range } = options;
     const sortColumn = VALID_SORT_COLUMNS.has(sortField) ? sortField : 'EVENT_START_DATE';
 
     logger.debug(req, 'get_org_lens_events', 'Building org events query', {
@@ -81,10 +80,10 @@ export class OrgLensEventsService {
     try {
       // The Upcoming tab always counts registrations: nobody has attended an event that has not started.
       const servedParticipation = effectiveOrgEventsParticipation(participation, isPast);
-      const countColumn = orgEventsCountColumn(attribution, servedParticipation);
-      const footprintColumn = orgEventsFootprintColumn(attribution);
+      const countColumn = orgEventsCountColumn(servedParticipation);
+      const footprintColumn = orgEventsFootprintColumn();
       // The "Registered" status means the organization registered someone, whatever Count is showing.
-      const registeredColumn = orgEventsCountColumn(attribution, 'registered');
+      const registeredColumn = orgEventsCountColumn('registered');
 
       const { sql, binds } = this.buildListQuery({
         accountId,
@@ -105,7 +104,7 @@ export class OrgLensEventsService {
 
       rows = await withOrgCache(
         accountId,
-        `events:v5:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, attribution, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
+        `events:v6:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventRow>(sql, binds)).rows,
         isEventRowArray
@@ -127,14 +126,14 @@ export class OrgLensEventsService {
 
   /**
    * GET /api/orgs/:accountId/lens/events/summary — Upcoming / Past / Total tiles. They follow range (Past only),
-   * foundation, scope and attribution; never search, status or tab.
+   * foundation, and scope; never search, status or tab.
    */
   public async getOrgEventsSummary(req: Request, accountId: string, filters: OrgEventsFilters): Promise<OrgEventsSummary> {
     logger.debug(req, 'get_org_lens_events_summary', 'Building org events summary query', { account_id: accountId });
 
     let row: OrgEventsSummaryRow | undefined;
     try {
-      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(filters.attribution)} = TRUE` : '';
+      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn()} = TRUE` : '';
       const foundationFilter = filters.foundation ? 'AND oe.FOUNDATION_ID = ?' : '';
       const sql = `
         SELECT
@@ -149,7 +148,7 @@ export class OrgLensEventsService {
 
       const rows = await withOrgCache(
         accountId,
-        `events-summary:v2:${paramSignature([filters.attribution, filters.scope, filters.foundation, filters.range])}`,
+        `events-summary:v3:${paramSignature([filters.scope, filters.foundation, filters.range])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, binds)).rows,
         isObjectRowArray
@@ -172,14 +171,10 @@ export class OrgLensEventsService {
     return summary;
   }
 
-  /** GET /api/orgs/:accountId/lens/events/foundations — foundations that have events under the picked scope and attribution. */
-  public async getOrgEventFoundations(
-    req: Request,
-    accountId: string,
-    filters: Pick<OrgEventsFilters, 'attribution' | 'scope'>
-  ): Promise<OrgEventFoundationsResponse> {
+  /** GET /api/orgs/:accountId/lens/events/foundations — foundations that have events under the picked scope. */
+  public async getOrgEventFoundations(req: Request, accountId: string, filters: Pick<OrgEventsFilters, 'scope'>): Promise<OrgEventFoundationsResponse> {
     try {
-      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn(filters.attribution)} = TRUE` : '';
+      const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn()} = TRUE` : '';
       const sql = `
         SELECT DISTINCT oe.FOUNDATION_ID, oe.FOUNDATION_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
@@ -191,7 +186,7 @@ export class OrgLensEventsService {
       `;
       const rows = await withOrgCache(
         accountId,
-        `events-foundations:v2:${paramSignature([filters.attribution, filters.scope])}`,
+        `events-foundations:v3:${paramSignature([filters.scope])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(sql, [accountId])).rows,
         isObjectRowArray
@@ -211,7 +206,7 @@ export class OrgLensEventsService {
     req: Request,
     accountId: string,
     eventId: string,
-    options: { attribution: OrgEventsAttribution; participation: OrgEventsParticipation; searchQuery?: string }
+    options: { participation: OrgEventsParticipation; searchQuery?: string }
   ): Promise<OrgEventAttendeesDrawerResponse> {
     const { searchQuery } = options;
     logger.debug(req, 'get_event_attendees', 'Fetching event attendees', { account_id: accountId, event_id: eventId });
@@ -226,14 +221,14 @@ export class OrgLensEventsService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
         WHERE ACCOUNT_ID = ?
           AND EVENT_ID = ?
-          AND ${orgEventsAttendeePredicate(options.attribution, servedParticipation)}
+          AND ${orgEventsAttendeePredicate(servedParticipation)}
         ORDER BY DISPLAY_NAME ASC NULLS LAST, PARTICIPANT_REF ASC
       `;
 
-      // `v6` (lfx-self-serve#5158): everyone the option credits, not only the listable; a `v5` entry is the narrower row set.
+      // `v7`: Employee match only; a `v6` entry may hold the retired Self-reported only or All rows.
       const attendeeRows = await withOrgCache(
         accountId,
-        `event-attendees:v6:${paramSignature([eventId, options.attribution, servedParticipation])}`,
+        `event-attendees:v7:${paramSignature([eventId, servedParticipation])}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, [accountId, eventId])).rows,
         isObjectRowArray

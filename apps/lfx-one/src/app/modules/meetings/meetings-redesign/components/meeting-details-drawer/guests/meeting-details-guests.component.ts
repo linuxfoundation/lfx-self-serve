@@ -16,7 +16,6 @@ import {
   MeetingGuestRoleKey,
   MeetingGuestRow,
   MeetingGuestRowActions,
-  MeetingGuestSummary,
   MeetingGuestsLoad,
   MeetingHostCandidate,
   MeetingRegistrant,
@@ -29,7 +28,6 @@ import {
   filterMeetingGuestRows,
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
-  getMeetingGuestSummary,
   getMeetingGuestRowActions,
   getOfferedMeetingGuestFilters,
   isMeetingInviteResponsesEnabled,
@@ -113,8 +111,7 @@ export class MeetingDetailsGuestsComponent {
   protected readonly resending = signal<ReadonlySet<string>>(new Set());
   protected readonly hostUpdating = signal<ReadonlySet<string>>(new Set());
   protected readonly deleting = signal(false);
-  /** Kept until the drawer closes, like the legacy guest list, so a change shows without refetching. */
-  private readonly removedUids = signal<ReadonlySet<string>>(new Set());
+  /** Host changes made here, applied without a refetch until the drawer closes. */
   private readonly hostOverrides = signal<ReadonlyMap<string, boolean>>(new Map());
   private confirmRef: DialogRef<boolean> | null = null;
 
@@ -139,9 +136,6 @@ export class MeetingDetailsGuestsComponent {
   protected readonly rows: Signal<MeetingGuestRow[]> = computed(() => this.applyChanges(this.load().rows));
   protected readonly rowActions: Signal<ReadonlyMap<string, MeetingGuestRowActions>> = this.initRowActions();
   protected readonly shown: Signal<MeetingGuestRow[]> = computed(() => filterMeetingGuestRows(this.rows(), this.searchTerm(), this.applied()));
-  protected readonly summary: Signal<MeetingGuestSummary> = computed(() =>
-    getMeetingGuestSummary(this.rows(), this.ended(), (this.context.meeting().committees?.length ?? 0) > 0)
-  );
   protected readonly filtersLabel: Signal<string> = computed(() => (this.chips().length ? `Filters, ${this.chips().length} applied` : ''));
   protected readonly draftChanged: Signal<boolean> = computed(() => !this.sameFilters(this.draft(), this.applied()));
   protected readonly showReset: Signal<boolean> = computed(() => this.chips().length > 0 || !this.sameFilters(this.draft(), MEETING_GUEST_EMPTY_FILTERS));
@@ -287,17 +281,23 @@ export class MeetingDetailsGuestsComponent {
           parts.occurrenceId,
           this.reload(),
         ].join('|');
-        return { ...parts, key };
+        return { ...parts, key, version: this.context.participantsVersion() };
       },
-      { equal: (a, b) => a.key === b.key }
+      { equal: (a, b) => a.key === b.key && a.version === b.version }
     );
+    // A participants change reloads the same list in place, keeping the rows, count and hosts until it lands.
+    let shownKey: string | null = null;
 
     return toSignal(
       toObservable(request).pipe(
-        switchMap(({ meeting, canView, ended, pastId, occurrenceId: shownOccurrenceId }) => {
-          // The previous date's count and hosts must not linger while this load runs, after it fails, or once hidden.
-          this.context.guestCount.set(null);
-          this.context.hosts.set([]);
+        switchMap(({ meeting, canView, ended, pastId, occurrenceId: shownOccurrenceId, key }) => {
+          const inPlace = key === shownKey;
+          shownKey = key;
+          if (!inPlace) {
+            // The previous date's count and hosts must not linger while this load runs, after it fails, or once hidden.
+            this.context.guestCount.set(null);
+            this.context.hosts.set([]);
+          }
           if (!canView) return of<MeetingGuestsLoad>({ status: 'ready', rows: [] });
           const viewer = { username: this.userService.viewerUsername(), email: this.userService.user()?.email ?? null };
           let rows$: Observable<MeetingGuestRow[]>;
@@ -334,7 +334,7 @@ export class MeetingDetailsGuestsComponent {
               console.error(`Failed to load guests of meeting ${meeting.id}:`, error);
               return of<MeetingGuestsLoad>({ status: 'error', rows: [] });
             }),
-            startWith(loading)
+            inPlace ? (source: Observable<MeetingGuestsLoad>) => source : startWith(loading)
           );
         })
       ),
@@ -451,7 +451,7 @@ export class MeetingDetailsGuestsComponent {
         next: (response) => {
           this.deleting.set(false);
           if (response.summary.successful > 0) {
-            this.removedUids.update((uids) => this.withUid(uids, uid, true));
+            this.context.removedRegistrantUids.update((uids) => this.withUid(uids, uid, true));
             this.shareChanges();
             this.showSuccess(`${this.registrantLabel(registrant, 'The guest')} removed from the meeting`);
             this.context.refreshList();
@@ -473,7 +473,7 @@ export class MeetingDetailsGuestsComponent {
 
   /** Removed rows drop out and host changes re-label and re-sort the rows, all without a refetch. */
   private applyChanges(rows: MeetingGuestRow[]): MeetingGuestRow[] {
-    const removed = this.removedUids();
+    const removed = this.context.removedRegistrantUids();
     const overrides = this.hostOverrides();
     if (!removed.size && !overrides.size) return rows;
     let relabeled = false;

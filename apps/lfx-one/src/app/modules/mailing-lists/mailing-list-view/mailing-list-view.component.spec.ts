@@ -78,6 +78,38 @@ describe('MailingListViewComponent indexed address', () => {
     expect(navigate).toHaveBeenCalledWith(['/', 'mailing-lists']);
   });
 
+  it("links each linked group to its group details page from the list's own tier", () => {
+    const component = createComponent({
+      uid: 'ml-1',
+      group_name: 'main',
+      is_foundation: false,
+      committees: [
+        { uid: 'group-1', name: 'Technical Steering Committee' },
+        { uid: 'group-2', name: 'Security Working Group' },
+      ],
+    } as GroupsIOMailingList);
+
+    const links = component.groupLinks();
+    expect(links.map((link) => link.name)).toEqual(['Technical Steering Committee', 'Security Working Group']);
+    expect(links[0].commands?.at(-1)).toBe('group-1');
+    expect(links[1].commands?.at(-1)).toBe('group-2');
+  });
+
+  it('keeps a linked group with no uid as plain text instead of dropping it', () => {
+    const component = createComponent({ uid: 'ml-1', group_name: 'main', committees: [{ uid: '', name: 'Orphan Group' }] } as GroupsIOMailingList);
+
+    expect(component.groupLinks()).toEqual([{ uid: '', name: 'Orphan Group', commands: null }]);
+  });
+
+  it('sends back state so the group page returns to Mailing Lists, restoring Me only when opened from there', () => {
+    const fromMe = createComponent({ uid: 'ml-1', group_name: 'main' } as GroupsIOMailingList, { fromMeLens: true });
+    expect(fromMe['groupLinkState']).toEqual({ backLabel: 'Mailing Lists', backPath: '/mailing-lists', fromMeLens: true });
+
+    TestBed.resetTestingModule();
+    const other = createComponent({ uid: 'ml-1', group_name: 'main' } as GroupsIOMailingList);
+    expect(other['groupLinkState']).toEqual({ backLabel: 'Mailing Lists', backPath: '/mailing-lists', fromMeLens: false });
+  });
+
   it('leaves the lens alone when not opened from My Mailing Lists', () => {
     const component = createComponent({ uid: 'ml-1', group_name: 'main' } as GroupsIOMailingList);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);

@@ -39,7 +39,7 @@ const POPULATED: MentorshipProgramsResponse = {
       slug: 'program-a',
       name: 'Program A',
       projectName: 'Project A',
-      status: 'open',
+      status: 'accepting',
       stats: { mentors: 1, mentees: 1, graduated: 0 },
       createdOn: '2026-06-01',
       updatedOn: '2026-07-20',

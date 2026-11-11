@@ -1,11 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Event, NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationStart, RoutesRecognized } from '@angular/router';
+import { ApplicationInitStatus, REQUEST_CONTEXT } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { Event, NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationStart, provideRouter, RoutesRecognized } from '@angular/router';
+import { datadogRum } from '@datadog/browser-rum';
+import { TranscendService } from '@services/transcend.service';
 import { Subject } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { gateReplayRecording, redactRumEvent, shouldRecordReplay } from './datadog-rum.provider';
+import { gateReplayRecording, provideDataDogRum, redactRumEvent, shouldRecordReplay } from './datadog-rum.provider';
+import { DEFAULT_RUNTIME_CONFIG, provideRuntimeConfig } from './runtime-config.provider';
 
 const ORIGIN = 'https://app.example.org';
 const SECRET = 'SUPER_SECRET';
@@ -241,5 +246,42 @@ describe('redactRumEvent', () => {
     redactRumEvent(action, ORIGIN);
 
     expect(JSON.stringify([view, action])).toBe(before);
+  });
+});
+
+// Inside a frame Transcend shows no notice or Cookie settings, so RUM never starts (lfx-self-serve-ops#1438).
+describe('provideDataDogRum', () => {
+  const start = async (preferencesAvailable: boolean): Promise<void> => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        {
+          provide: REQUEST_CONTEXT,
+          useValue: { runtimeConfig: { ...DEFAULT_RUNTIME_CONFIG, dataDogRumApplicationId: 'app-id', dataDogRumClientId: 'client-token' } },
+        },
+        provideRuntimeConfig(),
+        { provide: TranscendService, useValue: { preferencesAvailable } },
+        provideDataDogRum(),
+      ],
+    });
+    await TestBed.inject(ApplicationInitStatus).donePromise;
+  };
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('does not start RUM inside a frame where the consent UI is suppressed', async () => {
+    const init = vi.spyOn(datadogRum, 'init').mockImplementation(() => undefined);
+
+    await start(false);
+
+    expect(init).not.toHaveBeenCalled();
+  });
+
+  it('starts RUM on a top-level page', async () => {
+    const init = vi.spyOn(datadogRum, 'init').mockImplementation(() => undefined);
+
+    await start(true);
+
+    expect(init).toHaveBeenCalledTimes(1);
   });
 });

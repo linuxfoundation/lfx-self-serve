@@ -51,6 +51,7 @@ import type {
   GoogleCreativeGroup,
   GoogleCreativeSharedCap,
   GoogleDeviceBidMode,
+  GoogleDisplayAudienceLists,
   GoogleDisplayDemographics,
   KeywordActionOutcome,
   KeywordActionPlatform,
@@ -1542,6 +1543,39 @@ export const GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_DEMAND
 /** The user-facing message of that refusal. Nothing was created. */
 export const GOOGLE_DEMAND_GEN_AUDIENCE_ACCESS_UNAVAILABLE_MESSAGE =
   'Your access to Demand Gen audiences could not be verified, so nothing was created. Try again in a few minutes, or remove the audience.';
+
+/**
+ * The error `code` (HTTP 403) of a Google create refused because it names an account-owned Display audience
+ * (#5262): a user list, custom audience or custom affinity segment targeted by the single ad group or a named
+ * one, or a user list the campaign excludes, while the caller does not hold `global_marketing_ops` on the
+ * project. campaign-service refuses the same create on the same relation (`GoogleAdsMarketingOpsInputs`,
+ * linuxfoundation/lfx-v2-campaign-service#505). User interests are Google's own categories and are not gated.
+ */
+export const GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_CODE = 'GOOGLE_DISPLAY_AUDIENCES_RESTRICTED';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_DISPLAY_AUDIENCES_RESTRICTED_MESSAGE =
+  'Only the LF marketing team can target or exclude user lists, custom audiences or custom affinity segments on Display, because every foundation shares one Google Ads account. Remove them and create again.';
+/** The error `code` (HTTP 503) of that create refused because the caller's access could not be verified. */
+export const GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_DISPLAY_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to Display audiences could not be verified, so nothing was created. Try again in a few minutes, or remove the audiences.';
+
+/**
+ * The error `code` (HTTP 403) of a Google create refused because it names a Performance Max audience
+ * signal (`performanceMaxAudienceSignal`) and the caller does not hold `global_marketing_ops` on the
+ * project. campaign-service refuses the same create on the same relation (`GoogleAdsMarketingOpsInputs`,
+ * linuxfoundation/lfx-v2-campaign-service#501).
+ */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_CODE = 'GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_RESTRICTED_MESSAGE =
+  'Only the LF marketing team can add a Google Ads Audience as a Performance Max audience signal, because every foundation shares one Google Ads account. Remove the audience signal and create again.';
+/** The error `code` (HTTP 503) of that create refused because the caller's access could not be verified. */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_CODE = 'GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE';
+/** The user-facing message of that refusal. Nothing was created. */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_ACCESS_UNAVAILABLE_MESSAGE =
+  'Your access to Performance Max audience signals could not be verified, so nothing was created. Try again in a few minutes, or remove the audience signal.';
 
 /** HubSpot's brand orange, for the Monitor tab's email button (HubSpot is not a `CampaignPlatform`). */
 export const HUBSPOT_BRAND_COLOR = '#FF7A59';
@@ -3666,6 +3700,14 @@ export const CREATIVE_ASSET_QUEUE_RETRIES = 3;
 export const CREATIVE_ASSET_QUEUE_RETRY_BASE_MS = 1000;
 
 /**
+ * How many more times the creative-asset library and plan reads are sent after a transient failure
+ * (a 503, a dropped connection) before the read is reported as failed (#5385). Both are re-read after
+ * every stored file, so an upload run is exactly when one meets a busy service. Safe to re-send: both
+ * are reads. Each wait is {@link CREATIVE_ASSET_QUEUE_RETRY_BASE_MS} doubled per retry (1 s, then 2 s).
+ */
+export const CREATIVE_ASSET_READ_RETRIES = 2;
+
+/**
  * Each library upload outcome as it reads, and its badge classes. One table, so the label and the
  * colour cannot disagree.
  */
@@ -4846,6 +4888,8 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'prices', label: 'price extensions' },
   // The Performance Max asset group's search themes (linuxfoundation/lfx-v2-campaign-service#461), judged after the extensions upstream.
   { field: 'performanceMaxSearchThemes', label: 'Performance Max search themes' },
+  // The asset group's audience signal (#5262), judged after the themes by the same validator upstream.
+  { field: 'performanceMaxAudienceSignal', label: 'Performance Max audience signal' },
   // The Search ad group's further ads, every ad's display paths, the create-time negatives and the
   // Search partners opt-in (#4991): the legacy creator builds one ad from `headlines`/`descriptions`
   // on Google Search alone, and nothing else.
@@ -4861,7 +4905,9 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   // normalizers would SEND rather than by presence: `googleBidding` drops a blank strategy, a zero
   // or non-numeric bid and blank conversion actions, and `googleCreative` drops a creative whose
   // every field trims to nothing. A value campaign-service would never receive is not a request
-  // the legacy creator fails, so refusing it would be over-refusal.
+  // the legacy creator fails, so refusing it would be over-refusal. The exception is a raw value the
+  // cutover's own refusals name though the normalizers drop it (a malformed `demandGenDemographics`, or
+  // an ad group or ad list that is not a list): that one counts (`unservedGoogleCriteriaField`).
   { field: 'biddingStrategy', label: 'bidding strategy', normalized: true },
   { field: 'cpcBid', label: 'max CPC bid', normalized: true },
   { field: 'targetCpa', label: 'target CPA', normalized: true },
@@ -4878,6 +4924,11 @@ export const GOOGLE_CUTOVER_ONLY_CREATE_FIELDS = [
   { field: 'performanceMaxCreative', label: 'Performance Max creative', normalized: true },
   { field: 'displayCreative', label: 'Display creative', normalized: true },
   { field: 'displayAdGroups', label: 'Display ad groups', normalized: true },
+  // The Search campaign's assets (#5262), which campaign-service judges after the creatives
+  // (`validateSearchAssets`).
+  { field: 'searchAssets', label: 'Search images, logo and business name', normalized: true },
+  // The Display audiences outside the named groups (#5262), counted when `googleDisplayAudiences` would send a list.
+  { field: 'displayAudiences', label: 'Display audiences', normalized: true },
 ] as const satisfies readonly { field: keyof CampaignCreateRequest; label: string; normalized?: true }[];
 
 /**
@@ -4941,9 +4992,12 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
 /**
  * The Google channels whose creative this application can COLLECT and send.
  *
- * `search` is absent because its creative is not a creative object at all — it is the
- * `headlines`/`descriptions`/`keywords` the Implementation tab has always collected, which the BFF
- * sends as top-level `googleAdsConfig` fields rather than under a creative key.
+ * `search` is here for its campaign assets alone (#5262): the ad images, business logo and business
+ * name campaign-service links to a Search campaign under `searchAssets` (lfx-v2-campaign-service#477).
+ * Its ad copy is not a creative object — it is the `headlines`/`descriptions`/`keywords` the
+ * Implementation tab has always collected, which the BFF sends as top-level `googleAdsConfig` fields.
+ * Unlike the other three, every Search asset is optional and a Search campaign serves without any
+ * of them, so the empty-shell warning does not apply to it ({@link GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE}).
  *
  * `video` is absent for the harder reason: {@link GOOGLE_VIDEO_CREATE_SUPPORTED} is `false`, so no
  * Video campaign is ever created here and there is nothing for a `videoCreative` to attach to.
@@ -4951,7 +5005,7 @@ export const GOOGLE_CAMPAIGN_NAME_TOKENS = {
  * field is reachable — it is not, from this application, and collecting it would build a form whose
  * only possible outcome is `ErrVideoCreateUnsupported`.
  */
-export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display'] as const;
+export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', 'display', 'search'] as const;
 
 /**
  * campaign-service's asset-plan `slot` for each Google image field, per channel, mapped to the
@@ -4960,7 +5014,8 @@ export const GOOGLE_CHANNELS_WITH_CREATIVE = ['demand-gen', 'performance-max', '
  * (`MARKETING_IMAGE`, `LOGO`, …; `internal/platform/googleads/pmax_creative.go`), and Demand Gen
  * names its portrait shapes `portraitMarketingImages` / `tallPortraitMarketingImages`
  * (`demandgen_creative.go`) where the request carries `portraitImages` / `tallPortraitImages`.
- * Display's names already match. A slot absent here is not applied.
+ * Display's and Search's names already match (Search's from `searchImageSlots`, `search_assets.go`).
+ * A slot absent here is not applied.
  */
 export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], Readonly<Record<string, string>>>> = {
   'performance-max': {
@@ -4982,6 +5037,11 @@ export const GOOGLE_ASSET_PLAN_SLOT_CONTROLS: Readonly<Record<(typeof GOOGLE_CHA
     squareMarketingImages: 'squareMarketingImages',
     logoImages: 'logoImages',
     squareLogoImages: 'squareLogoImages',
+  },
+  search: {
+    adImages: 'adImages',
+    landscapeAdImages: 'landscapeAdImages',
+    businessLogoImages: 'businessLogoImages',
   },
 };
 
@@ -5011,8 +5071,6 @@ export const GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS: Readonly<Record<string, readonl
  * lead forms are supported on Search campaigns only"), because no probe has confirmed their campaign
  * link there. Every refusal happens at preflight, before the budget mutate, so sending a call extension
  * on a Performance Max create does not produce a campaign without it — it produces no campaign.
- *
- * This is the opposite shape from {@link GOOGLE_CHANNELS_WITH_CREATIVE}, which excludes `search`.
  */
 export const GOOGLE_CHANNELS_WITH_AD_EXTENSIONS = ['search'] as const;
 
@@ -5163,8 +5221,8 @@ export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFie
  * collects a creative and by the BFF normalizer that puts one on the wire.
  *
  * Every field and every number has a named counterpart in `internal/platform/googleads/` —
- * `demandgen_creative.go`, `pmax_creative.go` and `display_creative.go` — and the whole point of
- * three separate channel entries is that they DO NOT travel together. The traps the upstream
+ * `demandgen_creative.go`, `pmax_creative.go`, `display_creative.go` and `search_assets.go` — and the
+ * whole point of separate channel entries is that they DO NOT travel together. The traps the upstream
  * comments call out, repeated here because this is what a form reads:
  *
  * - Headline COUNTS differ sharply. Demand Gen and Display need one; Performance Max needs
@@ -5181,7 +5239,7 @@ export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFie
  *   arrays share a cap of their own. Stating the combined cap on each field is the permissive
  *   direction; {@link GOOGLE_CREATIVE_SHARED_CAPS} checks the real sum, as upstream's preflight does.
  * - `image` is each image slot's SHAPE, copied from the channel's slot table upstream
- *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`). Same-named slots do
+ *   (`demandGenImageSlots`, `performanceMaxImageSlots`, `displayImageSlots`, `searchImageSlots`). Same-named slots do
  *   NOT share it: Display's `logoImages` is 4:1 at 512x128 where the other two channels' are 1:1 at
  *   128x128. The Implement tab offers a stored image for a slot only when it fits that shape, and
  *   the BFF forwards an asset ref only in a field that has one.
@@ -5379,6 +5437,37 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
     },
   ],
+  // The Search campaign's assets (#5262): `searchImageSlots` and the caps beside it in
+  // `search_assets.go` (campaign-service v1.0.35). Every field is optional and none is required once
+  // another is set — `validateSearchAssets` accepts any of the four alone — so no entry has a `min`
+  // or `requiredOnce`. The business name is 25 wide, as on the other channels.
+  search: [
+    { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Optional.' },
+    {
+      control: 'adImages',
+      label: 'Square ad images (1:1)',
+      kind: 'list',
+      max: 20,
+      hint: 'One image URL per line. Optional. The cap of 20 is shared with the landscape ad images.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 },
+    },
+    {
+      control: 'landscapeAdImages',
+      label: 'Landscape ad images (1.91:1)',
+      kind: 'list',
+      max: 20,
+      hint: 'Optional. The cap of 20 is shared with the square ad images.',
+      image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 },
+    },
+    {
+      control: 'businessLogoImages',
+      label: 'Business logo (1:1)',
+      kind: 'list',
+      max: 1,
+      hint: 'Optional. At most one.',
+      image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 },
+    },
+  ],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeFieldSpec[]>;
 
 /**
@@ -5534,6 +5623,69 @@ export const GOOGLE_DEMAND_GEN_AD_GROUP_NAME_SUFFIX = ' - Display';
 export const GOOGLE_DISPLAY_AD_GROUPS_REQUEST_KEY = 'displayAdGroups' satisfies keyof CampaignCreateRequest;
 
 /**
+ * The `CampaignCreateRequest` key the Display audiences outside the named groups ride under (#5262): the
+ * single ad group's four lists and the campaign's excluded user lists. The BFF sends each list as the
+ * top-level `googleAdsConfig` field of the same name, on Display alone.
+ */
+export const GOOGLE_DISPLAY_AUDIENCES_REQUEST_KEY = 'displayAudiences' satisfies keyof CampaignCreateRequest;
+
+/**
+ * The four Display audience kinds an ad group targets (#5262), in the order campaign-service judges them
+ * (`validateDisplayTargeting`): the `googleAdsConfig` field, the resource collection its entries must name
+ * (`displayAudienceCollections` in `display_targeting.go`), the audience read that lists them (`null` for
+ * user lists, which `GET /api/campaigns/google/user-lists` lists), and the words the tab and refusals use
+ * (`addLabel` is the picker's label).
+ * `gated` is whether the kind names an account-owned resource, which campaign-service creates with only for
+ * `global_marketing_ops` (`GoogleAdsMarketingOpsInputs`); user interests are Google's own categories.
+ */
+export const GOOGLE_DISPLAY_AUDIENCE_KINDS = [
+  { kind: 'audienceSegments', collection: 'userLists', readType: null, addLabel: 'Add to user lists', label: 'User lists', noun: 'user list', gated: true },
+  {
+    kind: 'customAudiences',
+    collection: 'customAudiences',
+    readType: 'custom_audience',
+    addLabel: 'Add to custom audiences',
+    label: 'Custom audiences',
+    noun: 'custom audience',
+    gated: true,
+  },
+  {
+    kind: 'customAffinities',
+    collection: 'customInterests',
+    readType: 'custom_interest',
+    label: 'Custom affinity segments',
+    addLabel: 'Add to custom affinity segments',
+    noun: 'custom affinity segment',
+    gated: true,
+  },
+  {
+    kind: 'userInterests',
+    collection: 'userInterests',
+    readType: 'user_interest',
+    addLabel: 'Add to interests',
+    label: 'Interests',
+    noun: 'interest',
+    gated: false,
+  },
+] as const satisfies readonly {
+  kind: keyof GoogleDisplayAudienceLists;
+  collection: string;
+  readType: (typeof GOOGLE_ADS_AUDIENCE_READ_TYPES)[number] | null;
+  label: string;
+  addLabel: string;
+  noun: string;
+  gated: boolean;
+}[];
+
+/** The note under the split when the single ad group's Display audiences are kept but not sent because the campaign is split (#5262). */
+export const GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_SPLIT =
+  'The audiences you picked for the single ad group are kept but not sent while the campaign is split into ad groups. Pick audiences on each ad group, or turn the split off to send them.';
+
+/** The note when the named ad groups' Display audiences are kept but not sent because the campaign is not split (#5262). */
+export const GOOGLE_DISPLAY_AUDIENCES_HELD_WHILE_NOT_SPLIT =
+  'The audiences you picked for named ad groups are kept but not sent while the campaign is not split. Turn the split on to send them.';
+
+/**
  * The most named ad groups one Display campaign takes: campaign-service's `maxDisplayAdGroups`
  * (`internal/platform/googleads/display_adgroups.go`), a service bound for the reasons the Demand Gen one has.
  */
@@ -5595,6 +5747,8 @@ export const GOOGLE_CREATIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
  * campaign-service mirrors it in `display_creative.go` from the release carrying
  * lfx-v2-campaign-service#437, and `pmax_creative.go` already does for Performance Max. An empty
  * list is the honest statement of that, and it keeps every creative-bearing channel indexable here.
+ * Search is empty for another reason: each of its assets is optional and stands alone
+ * (`validateSearchAssets`, `search_assets.go`).
  *
  * The messages are clauses, completed by the channel's section title at the point of use, so one
  * sentence names both the channel and what it is missing.
@@ -5608,13 +5762,15 @@ export const GOOGLE_CREATIVE_EITHER_OR_RULES = {
   ],
   'performance-max': [],
   display: [],
+  search: [],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeEitherOrRule[]>;
 
 /**
  * The ceilings Google states across several of a channel's image fields (#4848), which no
  * per-field `max` can state: every field can sit under its own cap while the group is over this
  * one. Google states each, and campaign-service refuses each before the budget mutate
- * (`maxDemandGenMarketingImages`, `maxPerformanceMaxMarketingImages`, `maxDisplayMarketingImages`;
+ * (`maxDemandGenMarketingImages`, `maxPerformanceMaxMarketingImages`, `maxDisplayMarketingImages`,
+ * `maxSearchAdImages` over Search's square and landscape ad images together, #538;
  * Display's shared `maxDisplayLogos` from the release carrying lfx-v2-campaign-service#437, before
  * which Google refuses the ad itself), so the operator would otherwise learn of it only as a
  * failed create.
@@ -5629,21 +5785,22 @@ export const GOOGLE_CREATIVE_SHARED_CAPS = {
     { controls: ['marketingImages', 'squareMarketingImages'], max: 15, label: 'marketing images' },
     { controls: ['logoImages', 'squareLogoImages'], max: 5, label: 'logo images' },
   ],
+  search: [{ controls: ['adImages', 'landscapeAdImages'], max: 20, label: 'ad images' }],
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], readonly GoogleCreativeSharedCap[]>;
 
 /**
  * The `CampaignCreateRequest` key each channel's creative is sent under.
  *
  * Separate from {@link GOOGLE_CREATIVE_FIELD_SPECS} because it is about the envelope, not the
- * fields: campaign-service names the three creative objects `demandGenCreative`,
- * `performanceMaxCreative` and `displayCreative`, and that spelling has nothing to do with the
- * channel's wire value. A missing entry is a compile error, so a fourth channel with a creative
- * cannot be half-wired.
+ * fields: campaign-service names the creative objects `demandGenCreative`, `performanceMaxCreative`,
+ * `displayCreative` and `searchAssets`, and that spelling has nothing to do with the channel's wire
+ * value. A missing entry is a compile error, so a channel with a creative cannot be half-wired.
  */
 export const GOOGLE_CREATIVE_REQUEST_KEYS = {
   'demand-gen': 'demandGenCreative',
   'performance-max': 'performanceMaxCreative',
   display: 'displayCreative',
+  search: 'searchAssets',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], keyof CampaignCreateRequest>;
 
 /**
@@ -5658,6 +5815,7 @@ export const GOOGLE_CREATIVE_SECTION_TITLES = {
   'demand-gen': 'Demand Gen',
   'performance-max': 'Performance Max',
   display: 'Display',
+  search: 'Search',
 } as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
 
 /**
@@ -5692,6 +5850,42 @@ export const GOOGLE_CREATIVE_GROUPS: readonly GoogleCreativeGroup[] = [
  * {@link GOOGLE_CREATIVE_FIELD_SPECS}). The prefill picks one that fits when the brief has one (#4784).
  */
 export const GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH = 60;
+
+/**
+ * The widths the brief generator writes Google copy to (the BFF's copy prompt and `truncateAdCopy`),
+ * read from the catalogues the Implement tab validates against so the generator cannot ask for copy
+ * the seed then drops. Demand Gen headlines are the IMAGE ad's 30 (#5384, campaign-service
+ * `maxHeadlineWeight`): it is the only Demand Gen ad the brief seeds, and the video ad's 40 would hand
+ * it headlines it cannot use. `shortDescription` is the one description every brief writes for
+ * Performance Max's short slot (#5494).
+ */
+export const GENERATED_GOOGLE_COPY_WIDTHS = {
+  searchHeadline: CAMPAIGN_CHAR_LIMITS.searchHeadline,
+  searchDescription: CAMPAIGN_CHAR_LIMITS.searchDescription,
+  demandGenHeadline: demandGenFieldWidth('headlines'),
+  demandGenDescription: demandGenFieldWidth('descriptions'),
+  businessName: demandGenFieldWidth('businessName'),
+  shortDescription: GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH,
+} as const;
+
+/** The Demand Gen image ad's catalogue width for one field, failing loudly if the catalogue loses it. */
+function demandGenFieldWidth(control: string): number {
+  const width = (GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] as readonly GoogleCreativeFieldSpec[]).find((field) => field.control === control)?.width;
+  if (width === undefined) throw new Error(`GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] has no width for ${control}`);
+  return width;
+}
+
+/**
+ * The comparison shapes that mark a generated EVENT keyword as competitor intent (#5383): "KubeCon
+ * alternative", "alternatives to KubeCon", "ArgoCon vs KubeCon", "competitor", "instead of". Someone
+ * searching them is shopping away from an event, and for a Linux Foundation event the event named is
+ * usually the foundation's own. Shapes rather than bare words, so a topic keyword that merely holds
+ * one is kept: "alternative energy summit" (an adjective before its noun) and "vs code conference".
+ * "X alternative" also skips an alternative-topic noun after it ("energy", "fuels", "medicine"), so
+ * "open source alternative energy summit" stays a topic keyword wherever the phrase falls in the term.
+ */
+export const COMPETITOR_KEYWORD_PATTERN =
+  /\S\s+alternatives?\b(?!\s+(?:energy|fuels?|medicine|investments?|assets?|proteins?|data|music|rock|credit|dispute)\b)|\balternatives?\s+(?:to|for)\b|\S\s+(?:vs\.?|versus)\s+(?!code\b)\S|\bcompetitors?\b|\binstead of\b/iu;
 
 /**
  * The Google creative text fields campaign-service bounds by RUNE count rather than by display width:
@@ -5747,6 +5941,30 @@ export const GOOGLE_PERFORMANCE_MAX_SEARCH_THEMES_NEED_CREATIVE_REFUSAL =
   'Performance Max search themes attach to the asset group, and Google creates the asset group only from the Performance Max creative. Fill in the creative or remove the search themes, then create again.';
 
 /**
+ * The channels that take an audience signal (#5262): Performance Max alone. Like a search theme, the
+ * signal is an asset group signal, and `validatePerformanceMaxSignals` (`pmax_signals.go`) refuses it on
+ * every other channel before the budget mutate. Unlike the themes it names an existing Audience on the
+ * shared account, so campaign-service also needs `global_marketing_ops` on the project and its own
+ * deployment opt-in (`GOOGLE_ADS_PMAX_AUDIENCE_SIGNAL_ENABLED`).
+ */
+export const GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL = ['performance-max'] as const;
+
+/**
+ * The `googleAdsConfig` key the Performance Max audience signal rides under (#5262): ONE Google Ads
+ * Audience for the asset group, as a bare audience id or a `customers/{customerId}/audiences/{id}`
+ * resource name (`resolvePerformanceMaxAudience` in `pmax_signals.go`).
+ */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_REQUEST_KEY = 'performanceMaxAudienceSignal' satisfies keyof CampaignCreateRequest;
+
+/**
+ * Why an audience signal on a Performance Max create with no creative is held, worded once for the tab
+ * and the BFF: the signal attaches to the asset group, which campaign-service creates only from
+ * `performanceMaxCreative`, so `validatePerformanceMaxSignals` refuses it without one before the budget.
+ */
+export const GOOGLE_PERFORMANCE_MAX_AUDIENCE_SIGNAL_NEED_CREATIVE_REFUSAL =
+  'A Performance Max audience signal attaches to the asset group, and Google creates the asset group only from the Performance Max creative. Fill in the creative or remove the audience signal, then create again.';
+
+/**
  * Shown on the Performance Max creative while some of its copy is still what the brief prefilled
  * (#4784). That copy makes the creative a started one, which Google refuses without its required
  * images, so the note says both ways forward.
@@ -5760,6 +5978,9 @@ export const GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE =
  * seeded copy makes the Demand Gen image ad and the responsive display ad started creatives, which
  * campaign-service refuses without their required images, and each channel still creates with no
  * creative at all ({@link GOOGLE_CREATIVE_REQUIRED_NOTICE}), so each note gives both ways forward.
+ * Search has no entry: its assets are never seeded (#5262), because campaign-service links them before
+ * the ad groups and a refusal there leaves the campaign without its ads, so they are sent only when
+ * the operator adds them.
  */
 export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
   'demand-gen':
@@ -5767,7 +5988,7 @@ export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
   'performance-max': GOOGLE_PERFORMANCE_MAX_PREFILL_NOTICE,
   display:
     'Headlines, the long headline, descriptions, the business name and a call to action Google accepts are filled in from the brief where it has them. Add the required images below to create this ad, or clear the copy to create the campaign without one.',
-} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
+} as const satisfies Partial<Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>>;
 
 /**
  * Why a Google channel's creative is worth filling in, stated per channel.
@@ -5797,6 +6018,34 @@ export const GOOGLE_CREATIVE_PREFILL_NOTICES = {
  */
 export const GOOGLE_CREATIVE_REQUIRED_NOTICE =
   'Without creative this campaign is created as an empty shell: it has no ad and it cannot serve. Activating it from LFX is then refused permanently — adding the ad in Google Ads afterwards does not lift the refusal — so it has to be finished and launched in Google Ads, or recreated here with creative.';
+
+/**
+ * The Google channels whose campaign serves with its creative section left empty: Search (#5262).
+ * Its ad is the headlines and descriptions above the section, and its campaign assets are each
+ * optional (`validateSearchAssets` accepts none of them), so the Implementation tab neither shows
+ * {@link GOOGLE_CREATIVE_REQUIRED_NOTICE} on it nor names it in the empty-creative warning.
+ */
+export const GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE = ['search'] as const;
+
+/**
+ * The standing line on the Search creative section (#5262), in place of
+ * {@link GOOGLE_CREATIVE_REQUIRED_NOTICE}. campaign-service links these assets to the campaign after
+ * it exists (`createSearchCampaignAssets`, `search_assets.go`), in one request that either links them
+ * all or none of them, and BEFORE the ad groups: `CreateCampaign` returns on a refusal there before
+ * `createAdGroupsAndAds` runs (`campaign.go`, v1.0.35), so a refused asset leaves the campaign with
+ * no ad group, ad or keyword. The line says so, because nothing else at create time does, and it is
+ * why the Implementation tab never seeds them: they are sent only when the operator adds them.
+ */
+export const GOOGLE_SEARCH_ASSETS_NOTICE =
+  'Optional. Ad images, a business logo and a business name are linked to the Search campaign after it is created and before its ads are added. If Google Ads refuses them, the campaign is left without its ads and keywords, and has to be finished in Google Ads or recreated, so none is filled in from the brief: they are sent only when you add them. Leave them empty and the campaign serves on its ads alone.';
+
+/** The standing line on each Google creative section: the empty-shell warning, except on Search ({@link GOOGLE_SEARCH_ASSETS_NOTICE}). */
+export const GOOGLE_CREATIVE_SECTION_NOTICES = {
+  'demand-gen': GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  'performance-max': GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  display: GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  search: GOOGLE_SEARCH_ASSETS_NOTICE,
+} as const satisfies Record<(typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number], string>;
 
 /**
  * The bidding strategies campaign-service accepts, in the caller vocabulary it accepts them in.
@@ -6027,7 +6276,8 @@ export const GOOGLE_USER_LIST_PICKER_EMPTY = 'This Google Ads account has no use
 export const GOOGLE_USER_LIST_PICKER_TRUNCATED = "This account has more user lists than the picker shows. If one isn't listed, enter its resource name below.";
 
 /**
- * Why the Implement tab's Demand Gen audience picker has no list, one sentence each. The picker shows
+ * Why the Implement tab's Audience pickers (the Demand Gen audience and the Performance Max audience
+ * signal, #5262) have no list, one sentence each. The picker shows
  * only for a caller the route admits, so a 403 or 404 after that is the deployment or the gateway, not
  * the caller.
  */
@@ -6036,14 +6286,36 @@ export const GOOGLE_AUDIENCE_PICKER_REASONS = {
   failed: "The Audiences couldn't be read for this project's Google Ads account, so no Audience can be picked.",
 } as const;
 
-/** What the Demand Gen audience picker says while its list is being read. */
+/** What an Audience picker says while its list is being read. */
 export const GOOGLE_AUDIENCE_PICKER_LOADING = "Loading this account's Audiences…";
 
-/** What the Demand Gen audience picker says when the account has no Audience to offer. */
+/** What an Audience picker says when the account has no Audience to offer. */
 export const GOOGLE_AUDIENCE_PICKER_EMPTY = 'This Google Ads account has no Audiences to pick from. Build one in Google Ads first.';
 
-/** What the Demand Gen audience picker says when upstream returned only part of the account's Audiences. */
+/** What an Audience picker says when upstream returned only part of the account's Audiences. */
 export const GOOGLE_AUDIENCE_PICKER_TRUNCATED = 'This account has more Audiences than the picker shows: only the first 500 by name are listed.';
+
+/**
+ * The kinds `GET /api/campaigns/google/audiences` reads (#5262), each one `type` of campaign-service
+ * `list-google-ads-audiences` (#504, #517): `audience` for the Demand Gen audience picker, the default, and
+ * the three Display audience kinds that are not user lists. `combined_audience` is left out: no create
+ * input takes one.
+ */
+export const GOOGLE_ADS_AUDIENCE_READ_TYPES = ['audience', 'custom_audience', 'custom_interest', 'user_interest'] as const;
+
+/**
+ * The resource collection each read type's entries name, `customers/<id>/<collection>/<id>`: the only rows
+ * the BFF passes on for that type, as campaign-service's create refuses any other in the field it fills.
+ */
+export const GOOGLE_ADS_AUDIENCE_READ_COLLECTIONS = {
+  audience: 'audiences',
+  custom_audience: 'customAudiences',
+  custom_interest: 'customInterests',
+  user_interest: 'userInterests',
+} as const satisfies Record<(typeof GOOGLE_ADS_AUDIENCE_READ_TYPES)[number], string>;
+
+/** The longest `q` campaign-service's audience read accepts (`list-google-ads-audiences`, `MaxLength(100)`). */
+export const GOOGLE_ADS_AUDIENCE_QUERY_MAX_LENGTH = 100;
 
 /** Google's UserListType values in the words the Google Ads UI uses for them; the picker shows any other value in sentence case. */
 export const GOOGLE_USER_LIST_TYPE_LABELS: Readonly<Record<string, string>> = {

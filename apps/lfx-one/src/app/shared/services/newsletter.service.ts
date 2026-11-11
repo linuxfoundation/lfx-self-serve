@@ -24,11 +24,16 @@ import {
   NewsletterListParams,
   NewsletterListResponse,
   NewsletterOptOutListResponse,
+  NewsletterPublication,
+  NewsletterPublicationListResponse,
+  NewsletterPublicationRequest,
   NewsletterReaderAccess,
   NewsletterRecipientCount,
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterStatusCounts,
@@ -36,8 +41,9 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
+import { NEWSLETTER_PUBLICATION_MAX_PAGES } from '@lfx-one/shared/constants';
 import { PlausibleService } from '@services/plausible.service';
-import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
+import { catchError, EMPTY, expand, map, Observable, of, reduce, take, tap, throwError } from 'rxjs';
 
 /**
  * Angular HTTP client for the newsletter feature.
@@ -67,6 +73,11 @@ export class NewsletterService {
 
   public testSend(projectUid: string, payload: NewsletterTestSendPayload): Observable<{ ok: boolean }> {
     return this.http.post<{ ok: boolean }>(`/api/projects/${this.enc(projectUid)}/newsletters/test-send`, payload).pipe(take(1));
+  }
+
+  /** Render a layout to its final email HTML server-side (the same output the send path dispatches). */
+  public renderPreview(projectUid: string, payload: NewsletterRenderPreviewPayload): Observable<NewsletterRenderPreviewResponse> {
+    return this.http.post<NewsletterRenderPreviewResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/render-preview`, payload).pipe(take(1));
   }
 
   public generate(projectUid: string, payload: GenerateNewsletterRequest): Observable<GenerateNewsletterResponse> {
@@ -297,6 +308,59 @@ export class NewsletterService {
     return this.http
       .post<NewsletterCancelScheduleResult>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/cancel-schedule`, {}, { headers })
       .pipe(take(1));
+  }
+
+  public createPublication(projectUid: string, payload: NewsletterPublicationRequest): Observable<NewsletterPublication> {
+    return this.http.post<NewsletterPublication>(this.publicationsUrl(projectUid), payload).pipe(take(1));
+  }
+
+  public listPublications(projectUid: string, pageToken?: string): Observable<NewsletterPublicationListResponse> {
+    const params = pageToken ? new HttpParams().set('page_token', pageToken) : undefined;
+    return this.http.get<NewsletterPublicationListResponse>(this.publicationsUrl(projectUid), { params }).pipe(take(1));
+  }
+
+  /** Every named publication in the project, following the service's pages. */
+  public listAllPublications(projectUid: string): Observable<NewsletterPublication[]> {
+    return this.listPublications(projectUid).pipe(
+      expand((page) => (page.next_page_token ? this.listPublications(projectUid, page.next_page_token) : EMPTY)),
+      take(NEWSLETTER_PUBLICATION_MAX_PAGES),
+      reduce((all: NewsletterPublication[], page) => [...all, ...(page.publications ?? [])], [])
+    );
+  }
+
+  public getPublication(projectUid: string, publicationUid: string): Observable<NewsletterPublication> {
+    return this.http.get<NewsletterPublication>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}`).pipe(take(1));
+  }
+
+  public updatePublication(
+    projectUid: string,
+    publicationUid: string,
+    version: number,
+    payload: NewsletterPublicationRequest
+  ): Observable<NewsletterPublication> {
+    const headers = new HttpHeaders({ 'If-Match': `"${version}"` });
+    return this.http.put<NewsletterPublication>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}`, payload, { headers }).pipe(take(1));
+  }
+
+  public listEditions(projectUid: string, publicationUid: string, params: NewsletterListParams = {}): Observable<NewsletterListResponse> {
+    let httpParams = new HttpParams();
+    if (params.status) {
+      httpParams = httpParams.set('status', params.status);
+    }
+    if (params.page_token) {
+      httpParams = httpParams.set('page_token', params.page_token);
+    }
+    return this.http
+      .get<NewsletterListResponse>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}/editions`, { params: httpParams })
+      .pipe(take(1));
+  }
+
+  public createEdition(projectUid: string, publicationUid: string, payload: Partial<CreateNewsletterRequest>): Observable<Newsletter> {
+    return this.http.post<Newsletter>(`${this.publicationsUrl(projectUid)}/${this.enc(publicationUid)}/editions`, payload).pipe(take(1));
+  }
+
+  private publicationsUrl(projectUid: string): string {
+    return `/api/projects/${this.enc(projectUid)}/newsletter-publications`;
   }
 
   private enc(value: string): string {

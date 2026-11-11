@@ -34,10 +34,14 @@
         [recipientCountLoading]="recipientCountLoading()"
         [savedLabel]="savedLabel()"
         [displayName]="displayName()"
-        [edName]="edName()"
+        [edName]="senderName()"
         [edEmail]="edEmail()"
+        [replyToEmail]="replyToEmail()"
         [canSend]="canSend()"
+        [liveSendLocked]="liveSendLocked()"
         [canSendTest]="canSendTest()"
+        [canPreview]="canPreview()"
+        [projectUid]="projectUid()"
         [sending]="submitting()"
         [testSending]="testSending()"
         [deleting]="deletingDraft()"
@@ -145,6 +149,7 @@
                   [outlined]="true"
                   [text]="true"
                   size="small"
+                  [disabled]="!canPreview()"
                   (onClick)="openPreviewDrawer()"
                   data-testid="newsletter-manage-preview-btn">
                 </lfx-button>
@@ -153,7 +158,6 @@
                   label="Save as Draft"
                   severity="secondary"
                   [outlined]="true"
-                  [disabled]="!canSaveDraft()"
                   [loading]="manualSaving()"
                   (onClick)="onSaveAsDraft()"
                   data-testid="newsletter-manage-draft-btn">
@@ -175,6 +179,20 @@
             <div class="p-6 md:p-8">
               <p-step-panel [value]="1" data-testid="newsletter-manage-panel-1">
                 <ng-template #content>
+                  @if (showPublicationPicker()) {
+                    <lfx-newsletter-publication-picker
+                      class="mb-6 block"
+                      [projectUid]="projectUid()"
+                      [selected]="activePublication()"
+                      [preselectUid]="preselectPublicationUid()"
+                      [readOnly]="publicationLocked()"
+                      [hasContent]="bodyFilled()"
+                      [layoutTemplateKey]="form.controls.bodyLayout.value?.template_key ?? null"
+                      [returnToNewsletterUid]="newsletterId()"
+                      [unsavedChanges]="publicationFormLosesWork()"
+                      (publicationChange)="onPublicationChange($event)">
+                    </lfx-newsletter-publication-picker>
+                  }
                   <lfx-newsletter-audience-step
                     [form]="form"
                     [projectUid]="projectUid()"
@@ -198,6 +216,12 @@
                     [contextName]="displayName()"
                     [hasContext]="hasContext()"
                     [savedLabel]="savedLabel()"
+                    [blocksEnabled]="blocksEnabled()"
+                    [newDraft]="!isEditMode()"
+                    [lockedTemplateKey]="lockedTemplateKey()"
+                    [basicAllowed]="basicAllowed()"
+                    [blocksSwitchBlocked]="blocksSwitchBlocked()"
+                    [projectUid]="projectUid()"
                     (generated)="onGenerated($event)">
                   </lfx-newsletter-content-step>
                 </ng-template>
@@ -210,11 +234,12 @@
                     [subject]="form.controls.subject.value"
                     [recipientCount]="recipientCount()"
                     [committeeCount]="form.controls.committeeUids.value.length"
-                    [edName]="edName()"
+                    [edName]="senderName()"
                     [displayName]="displayName()"
-                    [edReplyEmail]="edEmail()"
+                    [edReplyEmail]="replyToEmail()"
                     [edEmail]="edEmail()"
                     [canSend]="canSend()"
+                    [liveSendLocked]="liveSendLocked()"
                     [sending]="submitting()"
                     [canSendTest]="canSendTest()"
                     [testSending]="testSending()"
@@ -248,7 +273,8 @@
   [subject]="form.controls.subject.value"
   [bodyHtml]="form.controls.bodyHtml.value"
   [logoUrl]="logoUrl()"
-  [displayName]="displayName()">
+  [displayName]="displayName()"
+  [fullDocument]="previewIsFullDocument()">
 </lfx-newsletter-preview-drawer>
 
 <p-confirmDialog key="newsletter-manage"></p-confirmDialog>

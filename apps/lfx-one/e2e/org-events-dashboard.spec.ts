@@ -368,7 +368,7 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('event-speaker-0')).toBeVisible();
   });
 
-  test('filter bar defaults: Range only on the Past tab, Count disabled on Upcoming, Counted by behind More filters', async ({ page }) => {
+  test('filter bar defaults: Range only on the Past tab, Count disabled on Upcoming, no Counted by', async ({ page }) => {
     await gotoOrgEventsPage(page);
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
@@ -377,9 +377,9 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.locator('[data-test="org-events-scope-filter"]')).toBeVisible();
     await expect(page.getByTestId('org-events-participation-filter')).toHaveAttribute('title', /Upcoming events have no attendance yet/);
 
-    await expect(page.getByTestId('org-events-more-filters')).toBeHidden();
-    await page.getByTestId('org-events-more-filters-toggle').click();
-    await expect(page.locator('[data-test="org-events-attribution-filter"]')).toBeVisible();
+    // Events count Employee match only (lfx-self-serve-ops#1441): no Counted by control and nothing behind More filters.
+    await expect(page.locator('[data-test="org-events-attribution-filter"]')).toHaveCount(0);
+    await expect(page.getByTestId('org-events-more-filters-toggle')).toHaveCount(0);
 
     await page.getByTestId('org-events-stat-past').click();
     await expect(page.locator('[data-test="org-events-time-range-filter"]')).toBeVisible();
@@ -399,28 +399,26 @@ test.describe('Org Events Dashboard', () => {
         url.searchParams.get('isPast') === 'true' &&
         url.searchParams.get('range') === '90d' &&
         url.searchParams.get('participation') === 'attended' &&
-        url.searchParams.get('attribution') === 'self_reported' &&
+        !url.searchParams.has('attribution') &&
         url.searchParams.get('eventScope') === 'all' &&
         url.searchParams.get('foundation') === 'foundation-cncf'
       );
     });
-    await page.goto(`${ORG_EVENTS_URL}?tab=past&range=90d&participation=attended&attribution=self_reported&eventScope=all&foundation=foundation-cncf`, {
+    await page.goto(`${ORG_EVENTS_URL}?tab=past&range=90d&participation=attended&eventScope=all&foundation=foundation-cncf`, {
       waitUntil: 'domcontentloaded',
     });
     skipWhenAuthMissing(page);
     await pastRequest;
 
-    // A non-default Counted by is visible on the collapsed link.
-    await expect(page.getByTestId('org-events-more-filters-toggle')).toContainText('More filters (1)');
-
     await page.getByTestId('org-events-clear-filters').click();
-    await expect(page).not.toHaveURL(/range=|participation=|attribution=|eventScope=|foundation=/);
+    await expect(page).not.toHaveURL(/range=|participation=|eventScope=|foundation=/);
     await expect(page).toHaveURL(/tab=past/);
   });
 
-  // lfx-self-serve#5315 retired Company email and Account on registration: an old link reads with Employee match, the default.
-  for (const retired of ['company_email', 'account']) {
-    test(`falls back to Employee match for the retired ?attribution=${retired}`, async ({ page }) => {
+  // Events count Employee match only: an old link with any ?attribution= (Self-reported only, All, or the values
+  // lfx-self-serve#5315 retired) reads the default and never forwards the param.
+  for (const legacy of ['self_reported', 'all', 'company_email', 'account']) {
+    test(`ignores the legacy ?attribution=${legacy}`, async ({ page }) => {
       await seedSelectedOrgCookie(page);
       await stubOrgEventsRoutes(page);
       await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -430,12 +428,11 @@ test.describe('Org Events Dashboard', () => {
         const url = new URL(request.url());
         return url.pathname.endsWith(`/api/orgs/${MOCK_ACCOUNT_ID}/lens/events`) && url.searchParams.get('isPast') === 'true';
       });
-      await page.goto(`${ORG_EVENTS_URL}?tab=past&attribution=${retired}`, { waitUntil: 'domcontentloaded' });
+      await page.goto(`${ORG_EVENTS_URL}?tab=past&attribution=${legacy}`, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
       const request = await pastRequest;
 
-      expect(new URL(request.url()).searchParams.get('attribution')).toBe('verified');
-      await expect(page.getByTestId('org-events-more-filters-toggle')).not.toContainText('(1)');
+      expect(new URL(request.url()).searchParams.has('attribution')).toBe(false);
     });
   }
 });

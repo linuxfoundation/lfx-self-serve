@@ -4,11 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { lfxColors } from '../constants/colors.constants';
-import {
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR,
-  HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS,
-  HEALTH_METRICS_MEMBERS_SECTIONS,
-} from '../constants/health-metrics-members.constants';
+import { HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import {
   buildHealthMetricsMembersAtRiskAging,
   buildHealthMetricsMembersAtRiskCountLabel,
@@ -207,202 +203,79 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     vi.useRealTimers();
   });
 
-  it('groups every other tier into one grey Others segment when Platinum, Gold and Silver all exist', () => {
+  it('tables every tier in rank order under its plain name, then the totals', () => {
     const view = build([
-      ...PGS,
       ...tier('Associate Membership', 4, [82, 113, 168, 204, 236, 298, 362, 440]),
-      ...tier('End User Supporter', 5, [42, 58, 87, 106, 122, 155, 187, 228]),
-      ...tier('Academic & Nonprofit', 6, [22, 30, 45, 54, 64, 80, 97, 117]),
+      ...PGS,
+      ...tier('Diamond Membership', 0, [60, 61, 62, 63, 64, 65, 66, 67]),
     ]);
 
-    expect(view.legend).toEqual([
-      { label: 'Platinum', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, divided: false },
-      { label: 'Gold', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, divided: false },
-      { label: 'Silver', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, divided: false },
-      { label: 'Others', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, divided: true },
+    expect(view.columns.map((column) => column.label)).toEqual(['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026 YTD']);
+    expect(view.rows.map((row) => [row.label, row.kind, row.icon, row.striped])).toEqual([
+      ['Diamond', 'tier', 'diamond', false],
+      ['Platinum', 'tier', 'platinum', true],
+      ['Gold', 'tier', 'gold', false],
+      ['Silver', 'tier', 'silver', true],
+      ['Associate', 'tier', null, false],
+      ['Total members', 'total', null, false],
+      ['Total revenue', 'total', null, false],
     ]);
-    const last = view.columns[view.columns.length - 1];
-    expect([last.label, last.membersLabel]).toEqual(['2026 YTD', '2,630 members']);
-    expect(last.segments.map((segment) => segment.key)).toEqual(['Platinum', 'Gold', 'Silver', 'Others']);
-    // The tiers inside Others follow, uncoloured, then the year's revenue under a rule.
-    expect(last.tip).toEqual({
-      title: '2026 · 2,630 members',
-      rows: [
-        { label: 'Platinum', value: '158 · 6%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, separated: false },
-        { label: 'Gold', value: '322 · 12%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, separated: false },
-        { label: 'Silver', value: '1,365 · 52%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, separated: false },
-        { label: 'Others', value: '785 · 30%', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, separated: false },
-        { label: 'Associate', value: '440', color: 'transparent', separated: false },
-        { label: 'End User Supporter', value: '228', color: 'transparent', separated: false },
-        { label: 'Academic & Nonprofit', value: '117', color: 'transparent', separated: false },
-        { label: 'Revenue', value: '$2.6M', color: null, separated: true },
-      ],
-    });
-    // The table lists the real tiers, never Others.
-    expect(view.rows.map((row) => [row.label, row.icon])).toEqual([
-      ['Platinum', 'platinum'],
-      ['Gold', 'gold'],
-      ['Silver', 'silver'],
-      ['Associate', null],
-      ['End User Supporter', null],
-      ['Academic & Nonprofit', null],
-      ['Total members', null],
-      ['Change vs. previous year', null],
-      ['Total revenue', null],
-      ['Change vs. previous year', null],
-    ]);
+    expect(view.rows[1].cells).toEqual(['110', '118', '124', '131', '138', '142', '150', '158']);
+    expect(view.rows[5].cells[7]).toBe('2,352');
+    expect(view.rows[6].cells[7]).toBe('$2.4M');
   });
 
-  it('greys a single other tier under its own name, and draws only the three without one', () => {
-    const one = build([...PGS, ...tier('Associate Membership', 4, [146, 201, 300, 364, 422, 533, 646, 785])]);
-    expect(one.legend.map((item) => [item.label, item.divided])).toEqual([
-      ['Platinum', false],
-      ['Gold', false],
-      ['Silver', false],
-      ['Associate', true],
-    ]);
-    expect(one.legend[3].color).toBe(HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR);
-    expect(one.columns[0].tip.rows.map((row) => row.label)).toEqual(['Platinum', 'Gold', 'Silver', 'Associate', 'Revenue']);
-
-    expect(build(PGS).legend.map((item) => item.label)).toEqual(['Platinum', 'Gold', 'Silver']);
-  });
-
-  it('colours every tier on its own without all three, skipping a colour that looks like a reserved tier present', () => {
-    const others = [
-      ...tier('Associate Membership', 3, [1, 1, 1, 1, 1, 1, 1, 1]),
-      ...tier('End User Supporter', 4, [1, 1, 1, 1, 1, 1, 1, 1]),
-      ...tier('Academic & Nonprofit', 5, [1, 1, 1, 1, 1, 1, 1, 1]),
-    ];
-    const noPlatinum = build([...tier('Gold Membership', 1, [2, 2, 2, 2, 2, 2, 2, 2]), ...tier('Silver Membership', 2, [3, 3, 3, 3, 3, 3, 3, 3]), ...others]);
-    expect(noPlatinum.legend).toEqual([
-      { label: 'Gold', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, divided: false },
-      { label: 'Silver', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, divided: false },
-      { label: 'Associate', color: lfxColors.violet[500], divided: false },
-      { label: 'End User Supporter', color: lfxColors.emerald[500], divided: false },
-      { label: 'Academic & Nonprofit', color: lfxColors.red[500], divided: false },
-    ]);
-
-    const custom = build([...tier('Premier Membership', 1, [2, 2, 2, 2, 2, 2, 2, 2]), ...tier('General Membership', 2, [3, 3, 3, 3, 3, 3, 3, 3]), ...others]);
-    expect(custom.legend.map((item) => item.color)).toEqual([
-      lfxColors.blue[500],
-      lfxColors.violet[500],
-      lfxColors.emerald[500],
-      lfxColors.amber[500],
-      lfxColors.red[500],
-    ]);
-    expect(custom.rows[0].icon).toBeNull();
-
-    const platinum = build([...tier('Platinum Membership', 1, [2, 2, 2, 2, 2, 2, 2, 2]), ...tier('Associate Membership', 2, [3, 3, 3, 3, 3, 3, 3, 3])]);
-    expect(platinum.legend.map((item) => item.color)).toEqual([HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, lfxColors.blue[500]]);
-  });
-
-  it('keeps a tier that only starts with a reserved name as a tier of its own, and leaves out one that never had a member', () => {
-    const view = build([...PGS, ...tier('Gold Legacy Membership', 4, [5, 5, 5, 5, 5, 5, 5, 5]), ...tier('Associate Membership', 5, [0, 0, 0, 0, 0, 0, 0, 0])]);
-
-    expect(view.legend.map((item) => item.label)).toEqual(['Platinum', 'Gold', 'Silver', 'Gold Legacy']);
-    expect(view.legend[3].color).toBe(HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR);
-    expect(view.rows.some((row) => row.label === 'Associate')).toBe(false);
-  });
-
-  it('fits four even, readable steps to the tallest year and stacks each year from the bottom', () => {
-    const view = build([...PGS, ...tier('Associate Membership', 4, [146, 201, 300, 364, 422, 533, 646, 785])]);
-
-    expect(view.yTicks).toEqual(['3,000', '2,250', '1,500', '750', '0']);
-    const [platinum, gold] = view.columns[view.columns.length - 1].segments;
-    expect(platinum).toMatchObject({ bottomPct: 0, heightPct: (158 / 3000) * 100 });
-    expect(gold.bottomPct).toBeCloseTo((158 / 3000) * 100);
-    expect(build(tier('Platinum Membership', 1, [1, 1, 1, 1, 1, 1, 1, 3])).yTicks).toEqual(['4', '3', '2', '1', '0']);
-  });
-
-  it('fills the metrics row for the selected year, and the change rows for every year after the first', () => {
-    const ytd = build(PGS);
-    expect(ytd.kpis.map((kpi) => [kpi.label, kpi.value, kpi.delta?.label ?? null])).toEqual([
-      ['Members in 2026 so far', '1,845', null],
-      ['vs 2025', '+318', '+20.8%'],
-      ['Since 2019', '+94%', null],
-      ['2026 revenue', '$1.8M', '+20.8%'],
-    ]);
-    expect(ytd.count).toBe(1845);
-
-    const past = build(PGS, 'COMPLETED_YEAR_2');
-    expect(past.kpis.map((kpi) => kpi.label)).toEqual(['Members in 2024', 'vs 2023', 'Since 2019', '2024 revenue']);
-    expect(past.count).toBe(1415);
-
-    const change = ytd.rows.find((row) => row.key === 'members-change');
-    expect(change?.cells[0]).toEqual({ label: '—', tone: null });
-    expect(change?.cells[4]).toEqual({ label: '−1.1%', tone: 'down' });
-    expect(change?.cells[7]).toEqual({ label: '+20.8%', tone: 'up' });
-  });
-
-  it('stacks Diamond first in its own colour beside Platinum, Gold and Silver, and leads the table with the reserved tiers', () => {
+  it('keeps a foundation’s own tiers, without grouping any as Others', () => {
     const view = build([
-      ...tier('Diamond Membership', 1, [9, 9, 9, 9, 9, 9, 9, 9]),
-      ...tier('Premier Membership', 2, [4, 4, 4, 4, 4, 4, 4, 4]),
-      ...PGS.map((row) => ({ ...row, sortRank: row.sortRank + 2 })),
-      ...tier('Associate Membership', 6, [1, 1, 1, 1, 1, 1, 1, 1]),
+      ...tier('Premier', 1, [10, 11, 12, 13, 14, 15, 16, 17]),
+      ...tier('General', 2, [40, 41, 42, 43, 44, 45, 46, 47]),
+      ...tier('Associate', 3, [5, 5, 5, 5, 5, 5, 5, 5]),
+      ...tier('Academic', 4, [2, 2, 2, 2, 2, 2, 2, 2]),
     ]);
 
-    expect(view.columns[0].segments.map((segment) => segment.key)).toEqual(['Diamond', 'Platinum', 'Gold', 'Silver', 'Others']);
-    expect(view.legend).toEqual([
-      { label: 'Diamond', color: lfxColors.violet[500], divided: false },
-      { label: 'Platinum', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.platinum, divided: false },
-      { label: 'Gold', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold, divided: false },
-      { label: 'Silver', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.silver, divided: false },
-      { label: 'Others', color: HEALTH_METRICS_MEMBERS_BREAKDOWN_OTHERS_COLOR, divided: true },
-    ]);
-    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => [row.label, row.icon])).toEqual([
-      ['Diamond', 'diamond'],
-      ['Platinum', 'platinum'],
-      ['Gold', 'gold'],
-      ['Silver', 'silver'],
-      ['Premier', null],
-      ['Associate', null],
-    ]);
+    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => row.label)).toEqual(['Premier', 'General', 'Associate', 'Academic']);
+    expect(view.rows.some((row) => row.label === 'Others')).toBe(false);
   });
 
-  it('leads with the reserved tiers present without all three, keeping purple for Diamond only while it is present', () => {
-    const others = [...tier('Associate Membership', 1, [3, 3, 3, 3, 3, 3, 3, 3]), ...tier('Diamond Startup', 2, [2, 2, 2, 2, 2, 2, 2, 2])];
-    const diamond = build([...others, ...tier('Diamond Membership', 3, [1, 1, 1, 1, 1, 1, 1, 1]), ...tier('Gold Membership', 4, [1, 1, 1, 1, 1, 1, 1, 1])]);
+  it('counts the selected year’s members for the sub-nav, and drops tiers with no member in any year shown', () => {
+    const rows = [...PGS, ...tier('Former', 9, [0, 0, 0, 0, 0, 0, 0, 0])];
 
-    expect(diamond.legend.map((item) => [item.label, item.color])).toEqual([
-      ['Diamond', lfxColors.violet[500]],
-      ['Gold', HEALTH_METRICS_MEMBERS_BREAKDOWN_RESERVED_COLORS.gold],
-      ['Associate', lfxColors.blue[500]],
-      ['Diamond Startup', lfxColors.emerald[500]],
-    ]);
-    expect(diamond.rows.filter((row) => row.kind === 'tier').map((row) => row.label)).toEqual(['Diamond', 'Gold', 'Associate', 'Diamond Startup']);
-    expect(build(tier('Diamond Membership', 1, [1, 1, 1, 1, 1, 1, 1, 1])).legend.map((item) => item.color)).toEqual([lfxColors.violet[500]]);
-    expect(build(others).legend.map((item) => item.color)).toEqual([lfxColors.blue[500], lfxColors.violet[500]]);
+    expect(build(rows).count).toBe(1845);
+    expect(build(rows, 'COMPLETED_YEAR').count).toBe(1527);
+    expect(build(rows).rows.map((row) => row.label)).not.toContain('Former');
   });
 
-  it('keeps a measured zero as zero, not unmeasured', () => {
+  it('keeps a measured zero as measured, with zero totals', () => {
     const view = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 0, 0]));
 
     expect(view.measured).toBe(true);
     expect(view.count).toBe(0);
-    expect(view.rows.find((row) => row.key === 'members')?.cells[7].label).toBe('0');
+    expect(view.rows.find((row) => row.key === 'members')?.cells[7]).toBe('0');
   });
 
-  it('reads an unchanged year as no change, with no arrow and no sign', () => {
-    const flat = build(tier('Platinum Membership', 1, [4, 4, 4, 4, 4, 4, 4, 4]));
+  it('gives a tier the reserved icon only for the reserved name itself', () => {
+    const view = build([...tier('Gold Legacy Membership', 1, [1, 1, 1, 1, 1, 1, 1, 1]), ...tier('Silver Member', 2, [2, 2, 2, 2, 2, 2, 2, 2])]);
 
-    expect(flat.kpis[1]).toMatchObject({ value: '0', delta: null });
-    expect(flat.kpis[3].delta).toBeNull();
-    expect(flat.rows.find((row) => row.key === 'members-change')?.cells[7]).toEqual({ label: '0.0%', tone: null });
+    expect(view.rows.filter((row) => row.kind === 'tier').map((row) => [row.label, row.icon])).toEqual([
+      ['Gold Legacy', null],
+      ['Silver', 'silver'],
+    ]);
   });
 
-  it('starts at the first year with members after 2019, and reads as unmeasured with no year to show', () => {
-    const late = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 4, 6]).filter((row) => row.year >= 2025));
-    expect(late.columns.map((column) => column.label)).toEqual(['2025', '2026 YTD']);
-    expect(late.kpis[2]).toMatchObject({ label: 'Since 2025', value: '+50%' });
+  it('ignores rows before the first year shown', () => {
+    expect(build([{ year: 2018, tier: 'Gold', sortRank: 1, memberCount: 5, revenueUsd: 5000 }]).measured).toBe(false);
+  });
 
-    expect(build([]).measured).toBe(false);
-    expect(build([{ year: 2018, tier: 'Gold', sortRank: 1, memberCount: 4, revenueUsd: 0 }]).measured).toBe(false);
+  it('starts at a later first year, and is unmeasured with no rows', () => {
+    const view = build(tier('Gold', 1, [0, 0, 0, 0, 0, 5, 6, 7]).slice(5));
+
+    expect(view.columns.map((column) => column.year)).toEqual([2024, 2025, 2026]);
+    expect(build([])).toEqual({ measured: false, columns: [], rows: [], count: null });
   });
 });
 
 describe('buildHealthMetricsMembersGrowthView', () => {
-  // Nov 6, 2026: this year runs through November, so the projection is the pace of 11 months over 12.
+  // Nov 6, 2026: this year runs through November.
   const TODAY = new Date(2026, 10, 6);
   const YEARS: Record<number, number[]> = {
     2017: [3, 12, 21, 38, 89, 105, 124, 132, 153, 175, 209, 232],
@@ -410,138 +283,120 @@ describe('buildHealthMetricsMembersGrowthView', () => {
     2019: [30, 60, 100, 130, 160, 192, 217, 249, 275, 305, 335, 359],
     2024: [45, 85, 120, 160, 190, 225, 262, 300, 350, 385, 420, 453],
     2025: [38, 70, 105, 150, 175, 215, 287, 306, 340, 375, 410, 480],
-    2026: [74, 123, 184, 244, 293, 350, 408, 458, 523, 725, 801],
+    2026: [74, 123, 184, 244, 293, 350, 408, 458, 523, 725, 801, 0],
   };
 
   function months(years: Record<number, (number | null)[]> = YEARS): HealthMetricsMembersGrowthMonth[] {
     return Object.entries(years).flatMap(([year, values]) => values.map((cumulative, index) => ({ year: Number(year), month: index + 1, cumulative })));
   }
 
-  const build = (mode: 'highlights' | 'all' = 'highlights', years?: Record<number, (number | null)[]>, today = TODAY) =>
-    buildHealthMetricsMembersGrowthView({ months: months(years) }, mode, today);
+  const build = (range: HealthMetricsRange = 'YTD', years?: Record<number, (number | null)[]>, today = TODAY) =>
+    buildHealthMetricsMembersGrowthView({ months: months(years) }, range, today);
 
-  it('leads with this year so far, the change on last year and 2019 at the same month, and the run-rate projection', () => {
-    const kpis = build().kpis;
+  it('draws one line per measured year, oldest first, in the newest-first palette', () => {
+    const lines = build().lines;
 
-    expect(kpis.map((kpi) => [kpi.label, kpi.value])).toEqual([
-      ['New members in 2026 so far', '801'],
-      ['vs 2025', '+391'],
-      ['Since 2019', '+139%'],
-      ['Projected year-end', '~874'],
+    expect(lines.map((line) => line.year)).toEqual([2017, 2018, 2019, 2024, 2025, 2026]);
+    expect(lines.map((line) => line.color)).toEqual([
+      lfxColors.red[300],
+      lfxColors.amber[300],
+      lfxColors.emerald[300],
+      lfxColors.emerald[400],
+      lfxColors.violet[400],
+      lfxColors.blue[500],
     ]);
-    expect(kpis[1].delta).toEqual({ label: '+95%', direction: 'up', good: true });
-    expect(kpis[3].tip).toBe(
-      'An estimate based on this year’s pace. 801 new members joined in the first 11 months, about 73 a month. If December follows the same pace, the year ends at about 874.'
-    );
   });
 
-  it('draws this year, its projection and last year over the earlier years as one range in Highlights', () => {
+  it('draws only the period’s year solid', () => {
+    expect(
+      build()
+        .lines.filter((line) => !line.dashed)
+        .map((line) => line.year)
+    ).toEqual([2026]);
+    expect(
+      build('COMPLETED_YEAR')
+        .lines.filter((line) => !line.dashed)
+        .map((line) => line.year)
+    ).toEqual([2025]);
+    // A period with no line of its own leaves every line dashed.
+    expect(build('COMPLETED_YEAR_3').lines.every((line) => line.dashed)).toBe(true);
+  });
+
+  it('stops this year at today’s month and labels every point', () => {
+    const lines = build().lines;
+    const current = lines[lines.length - 1];
+
+    expect(current.points).toHaveLength(11);
+    expect(current.points[10].label).toBe('801');
+    expect(lines[0].points.map((point) => point.label)).toEqual(YEARS[2017].map(String));
+  });
+
+  it('scales to a round top over the highest total and places January and December inside the plot', () => {
     const view = build();
+    const current = view.lines[view.lines.length - 1];
 
-    expect(view.paths.map((line) => line.key)).toEqual(['projected', '2025', '2026']);
-    expect(view.paths.find((line) => line.key === 'projected')).toMatchObject({ dashed: true, d: 'M545.5 55.7 L600 35.3' });
-    expect(view.bandPath).toMatch(/^M0 267\.4 .* Z$/);
-    expect(view.yTicks).toEqual(['1,000', '750', '500', '250', '0']);
-    expect(view.labels.map((label) => label.text)).toEqual(['2026: 801', '~874 projected', '2025: 480']);
-    expect(view.legend.map((item) => item.label)).toEqual(['2026', '2026 projected', '2025', '2018–2024 range']);
-    expect(view.ariaLabel).toBe('Cumulative new members by month, 2026 versus 2025 and the 2018 to 2024 range');
-    expect(view.todayPct).toBeCloseTo(90.91, 2);
+    expect(view.yMax).toBe('1,000');
+    expect(current.points[0].leftPct).toBe(4);
+    expect(current.points[10].leftPct).toBeCloseTo(4 + (92 / 11) * 10, 5);
+    // 801 of 1,000 sits 19.9% from the top.
+    expect(current.points[10].topPct).toBeCloseTo(19.9, 5);
+    expect(current.d.startsWith('M40 ')).toBe(true);
+    expect(current.d.match(/C/g)).toHaveLength(10);
   });
 
-  it('draws each earlier year as a light line in All years, on the same scale', () => {
-    const view = build('all');
-
-    expect(view.paths.map((line) => line.key)).toEqual(['2017', '2018', '2019', '2024', 'projected', '2025', '2026']);
-    expect(view.paths[0]).toMatchObject({ width: 1.5, dashed: false });
-    expect(view.bandPath).toBe('');
-    expect(view.yTicks).toEqual(build().yTicks);
-    expect(view.legend.at(-1)?.label).toBe('2017–2024');
+  it('keeps every curve segment between its two totals, even a flat month before a jump', () => {
+    const view = build('YTD', { 2025: [0, 0, 100, 100, 100, 500, 500, 500, 500, 500, 500, 500], 2026: [1] }, new Date(2026, 0, 1));
+    const numbers = view.lines[0].d.replace(/[MC]/g, ' ').trim().split(/\s+/).map(Number);
+    // After the move, each cubic is two handles and an end point: its handles' y must sit within its two ends' y.
+    let start = numbers[1];
+    for (let index = 2; index < numbers.length; index += 6) {
+      const [, y1, , y2, , end] = numbers.slice(index, index + 6);
+      const [low, high] = [Math.min(start, end), Math.max(start, end)];
+      expect(y1).toBeGreaterThanOrEqual(low);
+      expect(y1).toBeLessThanOrEqual(high);
+      expect(y2).toBeGreaterThanOrEqual(low);
+      expect(y2).toBeLessThanOrEqual(high);
+      start = end;
+    }
   });
 
-  it('lists this year, last year and then each earlier year, newest first, in a month’s popup', () => {
-    const rows = (month: number): string[] => build().columns[month].tip.rows.map((row) => `${row.label} ${row.value}${row.separated ? ' |' : ''}`);
+  it('lists each month’s years newest first, leaving out this year past today', () => {
+    const columns = build().columns;
 
-    expect(build().columns[10].tip.title).toBe('Nov · cumulative new members');
-    expect(rows(10)).toEqual(['2026 801', '2025 410', '2024 420 |', '2019 335', '2018 404', '2017 209']);
-    expect(rows(11)).toEqual(['2026 projected ~874', '2025 480', '2024 453 |', '2019 359', '2018 433', '2017 232']);
+    expect(columns).toHaveLength(12);
+    expect(columns[10].tip.title).toBe('November');
+    expect(columns[10].tip.rows.map((row) => [row.label, row.value])).toEqual([
+      ['2026', '801'],
+      ['2025', '410'],
+      ['2024', '420'],
+      ['2019', '335'],
+      ['2018', '404'],
+      ['2017', '209'],
+    ]);
+    expect(columns[11].tip.rows[0].label).toBe('2025');
+    expect(columns[10].ariaLabel).toBe('November. 2026: 801, 2025: 410, 2024: 420, 2019: 335, 2018: 404, 2017: 209');
+    expect(columns[0].widthPct).toBeCloseTo(92 / 11, 5);
   });
 
-  it('carries a missing month forward, and keeps this year to the months so far', () => {
-    const view = build('highlights', { ...YEARS, 2026: [74, null, 184, 244, 293, 350, 408, 458, 523, 725, 801, 900] });
+  it('treats a year with no measured month as missing and carries gaps forward', () => {
+    const view = build('YTD', { 2024: Array(12).fill(null), 2025: [5, null, 9, ...Array(9).fill(9)], 2026: [1, 2] }, new Date(2026, 1, 1));
 
-    expect(view.columns[1].tip.rows[0]).toMatchObject({ label: '2026', value: '74' });
-    expect(view.columns[11].tip.rows[0]).toMatchObject({ label: '2026 projected', value: '~874' });
+    expect(view.lines.map((line) => line.year)).toEqual([2025, 2026]);
+    expect(view.lines[0].points.slice(0, 3).map((point) => point.label)).toEqual(['5', '5', '9']);
+    expect(view.ariaLabel).toBe('Cumulative new members by month, one line per year, 2025 to 2026');
   });
 
-  it('shows no comparison, range or projection it has no year for', () => {
-    const newFoundation = build('highlights', { 2026: YEARS[2026] });
-    const december = build('highlights', YEARS, new Date(2026, 11, 2));
+  it('draws at most one line per colour, dropping the oldest years', () => {
+    const years = Object.fromEntries(Array.from({ length: 12 }, (_, index) => [2015 + index, Array(12).fill(index + 1)]));
+    const view = build('YTD', years);
 
-    expect(newFoundation.kpis.map((kpi) => kpi.value)).toEqual(['801', '—', '—', '~874']);
-    expect(newFoundation.kpis[1].delta).toBeNull();
-    expect(newFoundation.legend.map((item) => item.label)).toEqual(['2026', '2026 projected']);
-    expect(newFoundation.ariaLabel).toBe('Cumulative new members by month, 2026');
-    expect(december.paths.map((line) => line.key)).toEqual(['2025', '2026']);
-    expect(december.labels.map((label) => label.key)).toEqual(['current', 'prior']);
+    expect(view.lines.map((line) => line.year)).toEqual([2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]);
+    expect(view.lines[0].color).toBe(lfxColors.red[300]);
   });
 
-  it('is unmeasured with no month rows, only rows before the first year drawn, or no measured total this year', () => {
-    expect(build('highlights', {}).measured).toBe(false);
-    expect(build('highlights', { 2015: [1, 2, 3] }).measured).toBe(false);
-    expect(build('highlights', { ...YEARS, 2026: Array(11).fill(null) }).measured).toBe(false);
-  });
-
-  it('treats an earlier year with no measured total as missing, never as zeros', () => {
-    const view = build('highlights', { ...YEARS, 2025: Array(12).fill(null), 2024: Array(12).fill(null) });
-
-    expect(view.kpis[1].value).toBe('—');
-    expect(view.paths.map((line) => line.key)).toEqual(['projected', '2026']);
-    expect(view.legend.at(-1)?.label).toBe('2018–2019 range');
-    expect(view.columns[10].tip.rows.map((row) => row.label)).toEqual(['2026', '2019', '2018', '2017']);
-  });
-
-  it('keeps December labels apart when their totals meet, without moving the points', () => {
-    const view = build('highlights', { ...YEARS, 2025: [...YEARS[2025].slice(0, 11), 874] });
-    const [projected, prior] = ['projected', 'prior'].map((key) => view.labels.find((label) => label.key === key)!);
-    const boxTop = (topPct: number, offset: number): number => (topPct / 100) * 280 + offset;
-
-    expect(Math.abs(boxTop(prior.topPct, -8) - boxTop(projected.topPct, -2))).toBeGreaterThanOrEqual(18);
-    expect(view.paths.find((line) => line.key === '2025')?.d.endsWith('L600 35.3')).toBe(true);
-  });
-
-  it('stacks this year’s November label with the projection, which narrow plots would otherwise overlap', () => {
-    const view = build('highlights', { ...YEARS, 2026: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10] });
-    const [current, projected] = ['current', 'projected'].map((key) => view.labels.find((label) => label.key === key)!);
-    const boxTop = (topPct: number, offset: number): number => (topPct / 100) * 280 + offset;
-
-    expect(Math.abs(boxTop(current.topPct, 4) - boxTop(projected.topPct, -2))).toBeGreaterThanOrEqual(18);
-    expect(view.todayDot.topPct).toBeCloseTo((1 - 10 / 600) * 100, 5);
-  });
-
-  it.each([
-    ['near zero', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10]],
-    ['zero', Array(11).fill(0)],
-  ])('keeps every label inside the plot and apart with a total %s', (_, current) => {
-    const view = build('highlights', { ...YEARS, 2026: current });
-    const offsets: Record<string, number> = { current: 4, projected: -2, prior: -8 };
-    const tops = view.labels.map((label) => (label.topPct / 100) * 280 + offsets[label.key]).sort((a, b) => a - b);
-
-    tops.forEach((top, index) => {
-      expect(top).toBeGreaterThanOrEqual(0);
-      expect(top + 16).toBeLessThanOrEqual(280);
-      if (index) expect(top - tops[index - 1]).toBeGreaterThanOrEqual(18);
-    });
-    // This year's total is never above the projection, so its label stays below the projection's.
-    const topOf = (key: string): number => view.labels.find((label) => label.key === key)!.topPct;
-    expect(topOf('current')).toBeGreaterThan(topOf('projected'));
-  });
-
-  it('says in December that the year ends at its total so far, with nothing left to project', () => {
-    const tip = build('highlights', YEARS, new Date(2026, 11, 2)).kpis[3].tip;
-
-    expect(tip).toContain('joined so far this year');
-    expect(tip).toContain('December is the last month, so the year ends at about');
-    expect(tip).not.toContain('follows the same pace');
+  it('is unmeasured when no year has a measured month', () => {
+    expect(build('YTD', { 2026: [null, null] }).measured).toBe(false);
+    expect(build('YTD', {}).lines).toEqual([]);
   });
 });
 
@@ -549,7 +404,7 @@ describe('buildHealthMetricsMembersSections', () => {
   it('names the running year in the breakdown description', () => {
     const breakdown = buildHealthMetricsMembersSections(2026).find((section) => section.key === 'breakdown')!;
 
-    expect(breakdown.description).toBe('Members per tier at the end of each year, with totals and annual revenue. 2026 is year to date.');
+    expect(breakdown.description).toBe('Members per tier at each year end. 2026 is year to date.');
   });
 });
 

@@ -87,6 +87,16 @@
           ariaLabel="Filter by employment"
           dataTest="org-people-all-employees-employment-select" />
       </div>
+      <div class="w-full md:w-56" data-testid="org-people-all-employees-company-email-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="companyEmail"
+          size="small"
+          [options]="companyEmailOptions"
+          styleClass="w-full"
+          ariaLabel="Filter by company email"
+          dataTest="org-people-all-employees-company-email-select" />
+      </div>
       <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
         <lfx-select
           [form]="filterForm"

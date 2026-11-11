@@ -25,28 +25,20 @@ import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingDateTileComponent } from '../../meeting-date-tile/meeting-date-tile.component';
 import { MeetingRsvpControlsComponent } from '../../meeting-rsvp-controls/meeting-rsvp-controls.component';
 import { MeetingDetailsContext } from '../meeting-details.context';
-import { MeetingDetailsOccurrenceNavComponent } from '../occurrence-nav/meeting-details-occurrence-nav.component';
 import { MeetingDetailsRegisterModalComponent } from '../register/meeting-details-register-modal.component';
 
 /**
- * Schedule card of the meeting details drawer: the occurrence navigator, the shown date, the viewer's RSVP, Join and Register.
+ * Top of the meeting details drawer's card: the shown date, the viewer's RSVP, Join and Register.
  * @description Join opens the meeting's early-join time (default `DEFAULT_EARLY_JOIN_TIME`) before the start and stays open until 40 minutes after the end.
  * RSVP and Register show before that window only, as on the meeting page.
  */
 @Component({
   selector: 'lfx-meeting-details-schedule',
-  imports: [
-    MeetingDateTileComponent,
-    MeetingDetailsOccurrenceNavComponent,
-    MeetingRsvpControlsComponent,
-    UiButtonComponent,
-    UiNoteComponent,
-    UiTooltipDirective,
-  ],
+  imports: [MeetingDateTileComponent, MeetingRsvpControlsComponent, UiButtonComponent, UiNoteComponent, UiTooltipDirective],
   templateUrl: './meeting-details-schedule.component.html',
   styleUrl: './meeting-details-schedule.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'flex flex-col gap-[12px]', 'data-testid': 'meeting-details-schedule-section' },
+  host: { class: 'flex flex-col gap-[16px]', 'data-testid': 'meeting-details-schedule-section' },
 })
 export class MeetingDetailsScheduleComponent {
   private readonly userService = inject(UserService);

@@ -439,7 +439,7 @@ describe('MentorshipMentorService.getMentorPrograms', () => {
     id,
     slug: name.toLowerCase(),
     name,
-    status: 'open',
+    status: 'in_progress',
     stats: { mentees: 0, applicants: 0, tasks_to_review: 0 },
     ...overrides,
   });
@@ -473,7 +473,7 @@ describe('MentorshipMentorService.getMentorPrograms', () => {
           slug: 'gridflow',
           name: 'GridFlow',
           projectName: 'LF Energy',
-          status: 'open',
+          status: 'in-progress',
           stats: { mentees: 2, tasksToReview: 1, applicants: 5 },
           logoUrl: 'https://cdn.example.org/gridflow.png',
         },
@@ -500,12 +500,12 @@ describe('MentorshipMentorService.getMentorPrograms', () => {
     expect(proxyRequest).toHaveBeenLastCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTOR_PROGRAMS_PATH, 'GET', { limit: 100, offset: 100 }, undefined);
   });
 
-  it('shows a status it does not know as open and logs it at warning', async () => {
+  it('shows a status it does not know as in progress and logs it at warning', async () => {
     proxyRequest.mockResolvedValueOnce(listOf([mentored(GRIDFLOW_ID, 'GridFlow', { status: 'archived' })]));
 
     const [card] = (await service.getMentorPrograms(buildReq())).data;
 
-    expect(card.status).toBe('open');
+    expect(card.status).toBe('in-progress');
     expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_get_mentor_programs', expect.any(String), {
       program_id: GRIDFLOW_ID,
       status: 'archived',
@@ -754,7 +754,7 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     slug: 'gridflow',
     name: 'GridFlow',
     project_name: 'LF Energy',
-    status: 'open',
+    status: 'in_progress',
     stats: { mentees: 2, applicants: 3, tasks_to_review: 1 },
     ...overrides,
   });
@@ -835,7 +835,7 @@ describe('MentorshipMentorService.getMentorProgram', () => {
       slug: 'gridflow',
       name: 'GridFlow',
       projectName: 'LF Energy',
-      status: 'open',
+      status: 'in-progress',
       stats: { mentees: 2, tasksToReview: 1, applicants: 3 },
     });
     // A graduated mentee's leftover submission and a mentor-role application's task are not waiting on the mentor.
@@ -1050,7 +1050,7 @@ describe('MentorshipMentorService.getMentorProgram', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('shows a status it does not know as open in the header and logs it at warning', async () => {
+  it('shows a status it does not know as in progress in the header and logs it at warning', async () => {
     answer({
       ...caller([mentored({ status: 'archived' })]),
       [`${PROGRAM_PATH}/applications`]: () => listOf([]),
@@ -1058,7 +1058,7 @@ describe('MentorshipMentorService.getMentorProgram', () => {
 
     const detail = await service.getMentorProgram(buildReq(), PROGRAM_ID);
 
-    expect(detail.program.status).toBe('open');
+    expect(detail.program.status).toBe('in-progress');
     expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_get_mentor_program', expect.any(String), {
       program_id: PROGRAM_ID,
       status: 'archived',

@@ -8,12 +8,19 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { COMMITTEE_LABEL, MAILING_LIST_ACCESS_DENIED_MESSAGE, MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { MailingListSyncMode } from '@lfx-one/shared/enums';
+import {
+  COMMITTEE_LABEL,
+  MAILING_LIST_ACCESS_DENIED_MESSAGE,
+  MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG,
+  MEMBER_FORM_VOTING_STATUSES,
+  MEMBER_ROLES,
+} from '@lfx-one/shared/constants';
+import { CommitteeMemberRole, CommitteeMemberVotingStatus, MailingListSyncMode } from '@lfx-one/shared/enums';
 import { GroupsIOMailingList, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
-import { getMailingListEmail } from '@lfx-one/shared/utils';
+import { getMailingListCommitteeSync, getMailingListEmail } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -33,6 +40,7 @@ import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-lis
     ButtonComponent,
     CheckboxComponent,
     InputTextComponent,
+    MultiSelectComponent,
     SelectComponent,
     ReactiveFormsModule,
     TagComponent,
@@ -77,12 +85,25 @@ export class MailingListPickerDialogComponent {
     { label: `${COMMITTEE_LABEL.singular} → Mailing List`, value: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
     { label: `Mailing List → ${COMMITTEE_LABEL.singular}`, value: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE },
   ];
+  protected readonly autoCToMlMode = MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
+  // Criterion 3 (#4026) filter options, sourced from the committee domain's existing taxonomies
+  // rather than a guessed/hardcoded list — same constants the member form's voting-status and role
+  // pickers use. "None" is excluded from both: it's not a meaningful sync filter. For voting
+  // statuses this is already baked into MEMBER_FORM_VOTING_STATUSES itself (no .filter needed
+  // here); roles need the explicit .filter below since MEMBER_ROLES still includes its own NONE value.
+  protected readonly committeeFilterOptions = MEMBER_FORM_VOTING_STATUSES;
+  protected readonly committeeRoleFilterOptions = MEMBER_ROLES.filter((role) => role.value !== CommitteeMemberRole.NONE);
 
   // One direction control per candidate list (not just currently-linked ones), so a direction
   // picked before a list is linked (or re-picked after unlinking and relinking within the same
   // dialog session) survives the round trip. Built once in the constructor since `mailingLists`
   // itself never changes for the lifetime of the dialog.
   public mlDirectionForm = new FormGroup<Record<string, FormControl<MailingListSyncMode>>>({});
+  // Criterion 3 (#4026): per-list committee-filter controls, only meaningful (and only rendered)
+  // while that list's direction control holds auto_c_to_ml — built alongside mlDirectionForm for
+  // the same reason (one control per candidate list, not just currently-linked ones).
+  public mlCommitteeFilterForm = new FormGroup<Record<string, FormControl<CommitteeMemberVotingStatus[]>>>({});
+  public mlCommitteeRoleFilterForm = new FormGroup<Record<string, FormControl<string[]>>>({});
   // Mirrors mlDirectionForm's value, including disabled controls (`getRawValue()`), so
   // activeAutoSyncUid can see a direction set on a list the user can't currently write (#4026).
   public syncDirections = signal<Record<string, MailingListSyncMode>>({});
@@ -125,31 +146,62 @@ export class MailingListPickerDialogComponent {
     // for lists already linked to THIS committee. A list linked elsewhere (or never linked) seeds
     // Manual, otherwise its inherited direction would be sent as an explicit choice the admin never
     // made, bypassing the reset-to-Manual that applies when moving a list between committees.
+    //
+    // The query-service read model stores `sync_mode` (and, for criterion 3, `committee_filters`/
+    // `committee_role_filters`) per-entry inside `committees[]`, not as top-level fields on the
+    // mailing list resource — `getMailingListCommitteeSync` resolves the entry matching THIS
+    // committee instead of reading the (always-empty-on-reads) top-level fields directly, which
+    // would otherwise silently seed every picker control empty (GitHub review on #5420).
     const directionControls: Record<string, FormControl<MailingListSyncMode>> = {};
+    const committeeFilterControls: Record<string, FormControl<CommitteeMemberVotingStatus[]>> = {};
+    const committeeRoleFilterControls: Record<string, FormControl<string[]>> = {};
     for (const ml of this.mailingLists) {
-      const initial = associatedUids.has(ml.uid) && ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL ? ml.sync_mode : MailingListSyncMode.MANUAL;
+      const { syncMode, committeeFilters, committeeRoleFilters } = getMailingListCommitteeSync(ml, this.committeeUid);
+      const isLinkedToThisCommittee = associatedUids.has(ml.uid);
+      const initial = isLinkedToThisCommittee && syncMode && syncMode !== MailingListSyncMode.MANUAL ? syncMode : MailingListSyncMode.MANUAL;
       directionControls[ml.uid] = new FormControl(initial, { nonNullable: true });
+
+      const seedsFilters = isLinkedToThisCommittee && syncMode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
+      committeeFilterControls[ml.uid] = new FormControl(seedsFilters ? committeeFilters : [], { nonNullable: true });
+      committeeRoleFilterControls[ml.uid] = new FormControl(seedsFilters ? committeeRoleFilters : [], { nonNullable: true });
     }
     this.mlDirectionForm = new FormGroup(directionControls);
     this.syncDirections.set(this.mlDirectionForm.getRawValue());
     this.mlDirectionForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.syncDirections.set(this.mlDirectionForm.getRawValue());
     });
+    this.mlCommitteeFilterForm = new FormGroup(committeeFilterControls);
+    this.mlCommitteeRoleFilterForm = new FormGroup(committeeRoleFilterControls);
 
     // Keep each direction control's enabled state in sync with write access, link state, and the
     // "only one auto direction per committee" rule. Uses emitEvent: false so this never feeds back
-    // into the valueChanges subscription above.
+    // into the valueChanges subscription above. The paired committee-filter controls (#4026
+    // criterion 3) follow the same enabled state, further gated on the row actually being in
+    // auto_c_to_ml mode — they're invisible otherwise, but disabling keeps getRawValue() consistent.
     effect(() => {
       const activeUid = this.activeAutoSyncUid();
       const selected = this.selectedMailingListUids();
+      const directions = this.syncDirections();
       for (const ml of this.mailingLists) {
         const control = this.mlDirectionForm.get(ml.uid);
+        const filterControl = this.mlCommitteeFilterForm.get(ml.uid);
+        const roleFilterControl = this.mlCommitteeRoleFilterForm.get(ml.uid);
         if (!control) continue;
         const shouldDisable = !this.canModify(ml) || !selected.has(ml.uid) || (activeUid !== null && activeUid !== ml.uid);
         if (shouldDisable && control.enabled) {
           control.disable({ emitEvent: false });
         } else if (!shouldDisable && control.disabled) {
           control.enable({ emitEvent: false });
+        }
+
+        const shouldDisableFilters = shouldDisable || directions[ml.uid] !== MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST;
+        for (const fc of [filterControl, roleFilterControl]) {
+          if (!fc) continue;
+          if (shouldDisableFilters && fc.enabled) {
+            fc.disable({ emitEvent: false });
+          } else if (!shouldDisableFilters && fc.disabled) {
+            fc.enable({ emitEvent: false });
+          }
         }
       }
     });
@@ -176,8 +228,11 @@ export class MailingListPickerDialogComponent {
       current.delete(uid);
       // Unlinking clears any direction chosen in this dialog session — it no longer applies once
       // the list is detached from the committee, and leaving it set would wrongly occupy the
-      // "only one auto direction" slot if the list were re-linked later in the same session.
+      // "only one auto direction" slot if the list were re-linked later in the same session. Any
+      // committee filters chosen alongside that direction (#4026 criterion 3) are cleared with it.
       this.mlDirectionForm.get(uid)?.setValue(MailingListSyncMode.MANUAL);
+      this.mlCommitteeFilterForm.get(uid)?.setValue([]);
+      this.mlCommitteeRoleFilterForm.get(uid)?.setValue([]);
     } else {
       current.add(uid);
     }
@@ -215,9 +270,26 @@ export class MailingListPickerDialogComponent {
 
   public save(): void {
     // Dark-launched behind syncEnabled() (#4026) — an empty map tells the caller to fall back to
-    // preserving each list's existing sync_mode rather than resetting everything to manual.
+    // preserving each list's existing sync_mode (and, for criterion 3, its existing filters) rather
+    // than resetting everything to manual/unfiltered.
     const syncModes = this.syncEnabled() ? new Map(Object.entries(this.mlDirectionForm.getRawValue())) : new Map<string, MailingListSyncMode>();
-    this.dialogRef.close({ selectedUids: this.selectedMailingListUids(), syncModes } as MailingListPickerDialogResult);
+    // lfx-multi-select's clear icon can write `null` onto an otherwise-`nonNullable` FormControl —
+    // nonNullable only governs reset(), not every write a ControlValueAccessor can make. Normalize
+    // here so a cleared picker always means "no restriction" (`[]`) rather than `null` reaching
+    // `arraysEqualAsSets` (which throws on `.length`) or `buildMlUpdatePayload`'s `?? …` fallback
+    // (which would treat `null` as "no override" and keep the previous filters) (GitHub review on #5420).
+    const committeeFilters = this.syncEnabled()
+      ? new Map(Object.entries(this.mlCommitteeFilterForm.getRawValue()).map(([uid, value]) => [uid, value ?? []] as [string, CommitteeMemberVotingStatus[]]))
+      : new Map<string, CommitteeMemberVotingStatus[]>();
+    const committeeRoleFilters = this.syncEnabled()
+      ? new Map(Object.entries(this.mlCommitteeRoleFilterForm.getRawValue()).map(([uid, value]) => [uid, value ?? []] as [string, string[]]))
+      : new Map<string, string[]>();
+    this.dialogRef.close({
+      selectedUids: this.selectedMailingListUids(),
+      syncModes,
+      committeeFilters,
+      committeeRoleFilters,
+    } as MailingListPickerDialogResult);
   }
 
   public cancel(): void {

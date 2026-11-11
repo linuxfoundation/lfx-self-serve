@@ -18,6 +18,20 @@ export class TranscendService {
   private readonly document = inject(DOCUMENT);
   private readonly renderer: Renderer2 = inject(RendererFactory2).createRenderer(null, null);
 
+  /**
+   * False only in a frame whose airgap.js tag has `data-ui-allow-in-embeds="off"` (set in index.html,
+   * lfx-self-serve-ops#1438): Transcend then skips its UI, and `transcend.showConsentManager()` is
+   * airgap.js's queueing stub that never runs, so "Cookie settings" entry points hide themselves. A
+   * blocked airgap.js keeps this true; `showPreferences()` warns instead. Always true on the server,
+   * which cannot know whether the page will be framed: bind it to a class, not `@if`, so the
+   * server-rendered and hydrated DOM stay the same.
+   *
+   * Analytics follow the same flag: Segment, Plausible and Datadog RUM never start while it is false, so
+   * a framed visitor in an opt-out regime is never tracked without a notice or an opt-out (privacy
+   * decision on lfx-self-serve-ops#1438).
+   */
+  public readonly preferencesAvailable: boolean = this.initPreferencesAvailable();
+
   // Opens the cookie-preferences consent manager. Warns when airgap.js did not load (blocked or
   // failed), so a "Cookie settings" click that cannot open anything is visible in the console.
   public showPreferences(): void {
@@ -84,5 +98,13 @@ export class TranscendService {
       return false;
     }
     return Object.values(consent.purposes ?? {}).some((value) => value === true || value === 'Auto');
+  }
+
+  /** Mirrors Transcend's own check: the UI is suppressed only in a frame (`self !== top`) with the attribute off. */
+  private initPreferencesAvailable(): boolean {
+    if (!isPlatformBrowser(this.platformId) || window.self === window.top) {
+      return true;
+    }
+    return this.document.querySelector('script[src*="/airgap.js"]')?.getAttribute('data-ui-allow-in-embeds') !== 'off';
   }
 }

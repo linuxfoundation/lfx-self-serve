@@ -98,7 +98,7 @@ describe('CampaignController.getGoogleAdsAudiences', () => {
     await new CampaignController().getGoogleAdsAudiences(buildReq({ project: ' tlf ' }), res, vi.fn());
 
     expect(checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
-    expect(svcList).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(svcList).toHaveBeenCalledWith(expect.anything(), 'tlf', 'audience', undefined);
     expect(res.json).toHaveBeenCalledWith({
       accountId: ACCOUNT,
       audiences: [
@@ -130,6 +130,56 @@ describe('CampaignController.getGoogleAdsAudiences', () => {
 
     const rows = (vi.mocked(res.json).mock.calls[0][0] as { audiences: { resourceName: string; name: string }[] }).audiences;
     expect(rows).toEqual([expect.objectContaining({ resourceName: `customers/${ACCOUNT}/audiences/111`, name: 'Example Summit - High Intent' })]);
+  });
+
+  it.each([
+    ['custom_audience', 'customAudiences'],
+    ['custom_interest', 'customInterests'],
+    ['user_interest', 'userInterests'],
+  ])('reads type=%s for the Display pickers, keeping only rows of %s on the account read (#5262)', async (type, collection) => {
+    const row = AUDIENCES.audiences[0];
+    svcList.mockResolvedValueOnce({
+      ...AUDIENCES,
+      type,
+      audiences: [
+        { ...row, resource_name: `customers/${ACCOUNT}/${collection}/80001` },
+        { ...row, resource_name: `customers/${ACCOUNT}/audiences/111` },
+        { ...row, resource_name: `customers/999/${collection}/80002` },
+        { ...row, resource_name: `customers/${ACCOUNT}/${collection}/080003` },
+      ],
+    });
+    const res = buildRes();
+
+    await new CampaignController().getGoogleAdsAudiences(buildReq({ project: 'tlf', type, q: '  cloud ' }), res, vi.fn());
+
+    expect(svcList).toHaveBeenCalledWith(expect.anything(), 'tlf', type, 'cloud');
+    const rows = (vi.mocked(res.json).mock.calls[0][0] as { audiences: { resourceName: string }[] }).audiences;
+    expect(rows.map((r) => r.resourceName)).toEqual([`customers/${ACCOUNT}/${collection}/80001`]);
+  });
+
+  it('leaves a blank q out', async () => {
+    svcList.mockResolvedValueOnce(AUDIENCES);
+
+    await new CampaignController().getGoogleAdsAudiences(buildReq({ project: 'tlf', type: 'audience', q: '   ' }), buildRes(), vi.fn());
+
+    expect(svcList).toHaveBeenCalledWith(expect.anything(), 'tlf', 'audience', undefined);
+  });
+
+  it.each([
+    ['an unknown type', { type: 'combined_audience' }, 'type'],
+    ['a repeated type', { type: ['audience', 'user_interest'] }, 'type'],
+    ['a q over 100 characters', { q: 'x'.repeat(101) }, 'q'],
+    ['a repeated q', { q: ['a', 'b'] }, 'q'],
+  ])('refuses %s with a 400 after the access check and before any upstream call', async (_label, query, field) => {
+    const next = vi.fn();
+
+    await new CampaignController().getGoogleAdsAudiences(buildReq({ project: 'tlf', ...query }), buildRes(), next);
+
+    const error = nextError(next) as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.validationErrors?.[0]?.field).toBe(field);
+    expect(checkProjectGlobalMarketingOpsStrict).toHaveBeenCalled();
+    expect(svcList).not.toHaveBeenCalled();
   });
 
   it('reads truncated as false unless upstream says true', async () => {

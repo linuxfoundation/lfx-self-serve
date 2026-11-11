@@ -22,7 +22,6 @@ import {
   MKTG_OS_AGENTS_LABEL,
   ORG_EASYCLA_PATH,
   CF_ORG_DONATIONS_FLAG,
-  ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_SCOPE_QUERY_PARAM,
@@ -985,16 +984,10 @@ export class SidebarNavService {
             label: 'People',
             icon: 'fa-light fa-people-group',
             routerLink: org('people'),
-            // The time range carries between People and Code Contributions (lfx-self-serve#4159). Counted by and Count
-            // (lfx-self-serve#4598) also carry between People and Events, the only two pages that read them, so a pick is
-            // not reset by sidebar navigation; each page opts in on both ends.
-            carryQueryParams: [
-              ORG_LENS_TIME_RANGE_QUERY_PARAM,
-              ORG_EVENTS_ATTRIBUTION_QUERY_PARAM,
-              ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
-              ORG_SCOPE_QUERY_PARAM,
-              ORG_TEAM_MEMBERS_QUERY_PARAM,
-            ],
+            // The time range carries between People and Code Contributions (lfx-self-serve#4159). Count (lfx-self-serve#4598) also
+            // carries between People and Events, the only two pages that read it, so a pick is not reset by sidebar navigation;
+            // each page opts in on both ends.
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM, ORG_SCOPE_QUERY_PARAM, ORG_TEAM_MEMBERS_QUERY_PARAM],
           },
           {
             label: 'Code Contributions',
@@ -1006,7 +999,7 @@ export class SidebarNavService {
             label: 'Events',
             icon: 'fa-light fa-ticket',
             routerLink: org('events'),
-            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_ATTRIBUTION_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM],
+            carryQueryParams: [ORG_LENS_TIME_RANGE_QUERY_PARAM, ORG_EVENTS_PARTICIPATION_QUERY_PARAM],
           },
           {
             label: 'Training & Certification',

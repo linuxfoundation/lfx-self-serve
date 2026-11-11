@@ -149,17 +149,11 @@ export class EventsService {
     return this.http.get<OrgSearchResponse>('/api/events/search-organizations', { params });
   }
 
-  public getOrgEventsSummary(
-    accountId: string,
-    params: Pick<GetOrgEventsParams, 'attribution' | 'eventScope' | 'foundation' | 'range'> = {}
-  ): Observable<OrgEventsSummary> {
+  public getOrgEventsSummary(accountId: string, params: Pick<GetOrgEventsParams, 'eventScope' | 'foundation' | 'range'> = {}): Observable<OrgEventsSummary> {
     return this.http.get<OrgEventsSummary>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/summary`, { params: this.orgEventsFilterParams(params) });
   }
 
-  public getOrgEventFoundations(
-    accountId: string,
-    params: Pick<GetOrgEventsParams, 'attribution' | 'eventScope'> = {}
-  ): Observable<OrgEventFoundationsResponse> {
+  public getOrgEventFoundations(accountId: string, params: Pick<GetOrgEventsParams, 'eventScope'> = {}): Observable<OrgEventFoundationsResponse> {
     return this.http.get<OrgEventFoundationsResponse>(`/api/orgs/${encodeURIComponent(accountId)}/lens/events/foundations`, {
       params: this.orgEventsFilterParams(params),
     });
@@ -168,7 +162,7 @@ export class EventsService {
   public getEventAttendees(
     accountId: string,
     eventId: string,
-    params: Pick<GetOrgEventsParams, 'attribution' | 'participation' | 'range' | 'searchQuery'> = {}
+    params: Pick<GetOrgEventsParams, 'participation' | 'range' | 'searchQuery'> = {}
   ): Observable<OrgEventAttendeesDrawerResponse> {
     let httpParams = this.orgEventsFilterParams(params);
     if (params.searchQuery) httpParams = httpParams.set('searchQuery', params.searchQuery);
@@ -217,11 +211,10 @@ export class EventsService {
 
   /** The Events filters (lfx-self-serve#4598) a request carries; a missing or empty one is left to the server's default. */
   private orgEventsFilterParams(
-    params: Pick<GetOrgEventsParams, 'attribution' | 'participation' | 'eventScope' | 'foundation' | 'range'>,
+    params: Pick<GetOrgEventsParams, 'participation' | 'eventScope' | 'foundation' | 'range'>,
     base: HttpParams = new HttpParams()
   ): HttpParams {
     let httpParams = base;
-    if (params.attribution) httpParams = httpParams.set('attribution', params.attribution);
     if (params.participation) httpParams = httpParams.set('participation', params.participation);
     if (params.eventScope) httpParams = httpParams.set('eventScope', params.eventScope);
     if (params.foundation) httpParams = httpParams.set('foundation', params.foundation);

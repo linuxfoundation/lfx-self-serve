@@ -45,6 +45,7 @@ import {
   Vote,
 } from '@lfx-one/shared/interfaces';
 import {
+  COMMITTEE_BACK_PATHS,
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
   COMMITTEE_VALID_TABS,
   VOTE_INVITATION_COUNT_REFRESH_MS,
@@ -216,12 +217,17 @@ export class CommitteeViewComponent {
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
   /**
-   * True when the user arrived from the Me Lens My Groups page — used to show a context-transition notice.
-   * Reads an explicit `fromMeLens` boolean from navigation state (set by both the table anchor and
-   * the card grid link) rather than inferring it from the display label, so renaming the label
+   * True when the user arrived from a Me Lens list — My Groups (table anchor and card grid link) or the
+   * Surveys and Votes group links — used to show a context-transition notice.
+   * Reads an explicit `fromMeLens` boolean from navigation state rather inferring it from the display label, so renaming the label
    * can never silently suppress the notice (addresses GH review on coupling to a label literal).
    */
   protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;
+  /**
+   * List route the back button and browser back return to. Set by the page that linked here (e.g. `/surveys`)
+   * through navigation state; anything outside `COMMITTEE_BACK_PATHS` falls back to the Groups list.
+   */
+  protected readonly backPath: string = this.resolveBackPath(this.router.getCurrentNavigation()?.extras?.state?.['backPath']);
 
   // Set when a server-side read is denied and the terminal decision is left to the client. Only
   // one read is ever in flight (switchMap), so a plain field is enough.
@@ -251,6 +257,11 @@ export class CommitteeViewComponent {
   // window is exhausted, so the view shows "finalizing access" rather than the error state.
   public accessFinalizing = signal<boolean>(false);
   public refresh = signal(0);
+  // Consumed once by readCommitteeToleratingPropagation's next read, then reset — set via
+  // refreshCommittee({ skipCache: true })/refreshMembers({ skipCache: true }) when a caller needs a
+  // guaranteed-fresh committee payload (role/voting fields) rather than a 10s-cached hit, e.g. after
+  // a reverse mailing-list sync changes committee membership (copilot, #4911 review).
+  private skipCacheOnNextRefresh = signal(false);
   private readonly projectWriterRetry = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
@@ -715,7 +726,7 @@ export class CommitteeViewComponent {
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
-    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, '/groups');
+    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, this.backPath);
 
     bindLfxDocumentTitle(computed(() => this.committee()?.name));
 
@@ -792,7 +803,7 @@ export class CommitteeViewComponent {
     if (this.fromMeLens) {
       this.lensService.setLens('me');
     }
-    this.router.navigate(['/', 'groups']);
+    this.router.navigate([this.backPath]);
   }
 
   /**
@@ -803,6 +814,11 @@ export class CommitteeViewComponent {
   public onSettingsSaved(): void {
     const committee = this.committee();
     if (committee?.uid && this.committeeId() !== committee.uid) {
+      // Set unconditionally, not just on the refreshMembers() path below — a reverse sync can
+      // add/remove committee members within the 10s detail-cache TTL, and the route param change
+      // below drives its own refetch (readCommitteeToleratingPropagation) that would otherwise
+      // replay that stale cache instead of seeing post-sync state (dealako/cursor, #4911 review).
+      this.skipCacheOnNextRefresh.set(true);
       // The route id change resets activeTab to Overview; `?tab=` is what the auto-select restores it from, and an explicit value also overrides a stale deep-linked tab.
       void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
         queryParams: { tab: this.activeTab() },
@@ -811,7 +827,13 @@ export class CommitteeViewComponent {
       });
       return;
     }
-    this.refreshCommittee();
+    // committeeUpdated fires from both a Settings save and a reverse sync (mailing list →
+    // committee) via openSyncPreviewDialog's committeeChanged gate — a save already evicts the
+    // detail cache server-side (updateCommittee), but a reverse sync can add/remove committee
+    // members within the 10s detail-cache TTL, so skipCache guarantees role-gated UI and the
+    // Settings form see the post-sync state instead of a stale cached read (copilot, dealako,
+    // #4911 review).
+    this.refreshMembers({ skipCache: true });
   }
 
   public retryShareAccessCheck(): void {
@@ -820,7 +842,10 @@ export class CommitteeViewComponent {
     }
   }
 
-  public refreshCommittee(): void {
+  public refreshCommittee(options?: { skipCache?: boolean }): void {
+    if (options?.skipCache) {
+      this.skipCacheOnNextRefresh.set(true);
+    }
     // Set synchronously here, not only inside initializeCommittee's async switchMap below (which
     // still sets it too, on the actual refetch) -- closes a race where refreshMembers() bumps
     // membersRefresh() (read by initEngagement's engagementKey) in the same synchronous call, but
@@ -834,7 +859,7 @@ export class CommitteeViewComponent {
     this.refresh.update((v) => v + 1);
   }
 
-  public refreshMembers(): void {
+  public refreshMembers(options?: { skipCache?: boolean }): void {
     this.membersLoading.set(true);
     this.membersLoadedFor.set(null);
     this.membersRefresh.update((v) => v + 1);
@@ -842,7 +867,7 @@ export class CommitteeViewComponent {
     // member-mutation that triggers a members refresh must also refetch the committee
     // — otherwise role-gated UI (CTAs, banners, tabs) keeps a stale `my_role` until the
     // user navigates away and back. Cheap: the committee GET is a single round-trip.
-    this.refreshCommittee();
+    this.refreshCommittee(options);
   }
 
   public retryMembers(): void {
@@ -1496,8 +1521,12 @@ export class CommitteeViewComponent {
    * Accept/Decline right away instead of behind a misleading "Finalizing" flash (Cursor Bugbot).
    */
   private readCommitteeToleratingPropagation(committeeId: string, isInitialLoad: boolean): Observable<Committee | null> {
+    // Consumed once per read, not per retry attempt — every retry inside attemptRead below shares
+    // this same captured value, so a skipCache request still skips cache across its retry window.
+    const skipCache = this.skipCacheOnNextRefresh();
+    this.skipCacheOnNextRefresh.set(false);
     const attemptRead = (retriesLeft: number, deniedBefore: boolean): Observable<Committee | null> =>
-      this.committeeService.getCommittee(committeeId, { auditor: true }).pipe(
+      this.committeeService.getCommittee(committeeId, { skipCache, auditor: true }).pipe(
         tap((committee) => {
           this.accessFinalizing.set(false);
           // Authorization cleared but the membership index hasn't caught up. Hand that second,
@@ -1996,5 +2025,10 @@ export class CommitteeViewComponent {
     const username = this.userService.viewerUsername()?.toLowerCase();
     if (!email && !username) return false;
     return auditors?.some((u) => (email && u.email?.toLowerCase() === email) || (username && u.username?.toLowerCase() === username)) ?? false;
+  }
+
+  /** Accepts a `backPath` navigation-state value only when it is an allowed list route. */
+  private resolveBackPath(requested: unknown): string {
+    return typeof requested === 'string' && COMMITTEE_BACK_PATHS.includes(requested) ? requested : '/groups';
   }
 }

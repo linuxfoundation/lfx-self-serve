@@ -1,6 +1,6 @@
 ---
 title: Google campaign settings
-description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics and Performance Max search themes, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab.
+description: Set an ad schedule, device bid adjustments, Demand Gen bidding and languages, sitelinks, demographic exclusions, observation and targeting, excluded locations, Display placement exclusions, conversion actions, audience segments, Search partners, display paths, more ads, negative keywords, a Demand Gen video ad, several Demand Gen ads, named Demand Gen and Display ad groups, Demand Gen audiences and demographics, Display audiences, Performance Max search themes and audience signals, Search ad images, business logo and business name, ad extensions and device exclusions for a Google Ads campaign on the Campaigns page's Implement tab, and set the brief's registration URL.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -31,13 +31,17 @@ tags:
     audiences,
     performance max,
     search themes,
+    images,
+    business name,
+    audience signals,
     implement,
+    registration url,
   ]
-last_updated: 2026-11-09
+last_updated: 2026-11-10
 intercom_collection: Dashboards
 ---
 
-When you create a Google Ads campaign from the **Campaigns** page in the Foundation lens, the **Implement** tab lets you limit when the campaign runs, change how much it bids on each device, and keep it from serving to some age ranges, genders or places. It also lets you pick the conversion actions the campaign counts. On a Search campaign it also lets you add Google's search partners, set the ad's display path, add up to two more ads, and add negative keywords. Every setting is optional. If you leave them alone, the campaign serves all day, every day, at the same bid on every device, to every age and gender, everywhere it targets, which is Google's default, on Google Search only, with one ad and no negative keywords beyond any filled in from the brief.
+When you create a Google Ads campaign from the **Campaigns** page in the Foundation lens, the **Implement** tab lets you limit when the campaign runs, change how much it bids on each device, and keep it from serving to some age ranges, genders or places. It also lets you pick the conversion actions the campaign counts. On a Search campaign it also lets you add Google's search partners, set the ad's display path, add up to two more ads, add negative keywords, and add ad images, a business logo and a business name. Every setting is optional. If you leave them alone, the campaign serves all day, every day, at the same bid on every device, to every age and gender, everywhere it targets, which is Google's default, on Google Search only, with one ad and no negative keywords beyond any filled in from the brief.
 
 ## Where to find them
 
@@ -198,6 +202,31 @@ The lists apply to the whole campaign, including any ad group added later, for e
 - **Match type** (Exact, Phrase or Broad) applies to every keyword in the box. Exact is the default.
 - You can add more negative keywords from **Optimize** once the campaign is live.
 
+## Images, logo and business name (Search only)
+
+A Search campaign can show images, a business logo and a business name beside its ads. The **Search Creative** section appears below **Negative keywords** when Search is the campaign type. Every field in it is optional: leave them empty and the campaign serves on its ads alone.
+
+- **Business name**: up to 25 characters. Chinese, Japanese, Korean and other full-width characters count as two.
+- **Square ad images (1:1)**: square images of at least 300 x 300 pixels.
+- **Landscape ad images (1.91:1)**: landscape images of at least 600 x 314 pixels. Google Ads takes up to 20 ad images, square and landscape together.
+- **Business logo (1:1)**: one square image of at least 128 x 128 pixels.
+
+Paste one `https://` image link per line, or pick or upload images from the brief's image library where it is offered. Each image can be up to 5 MB. If you add more ad images or logos than Google Ads takes, a message says so and **Create Campaign** stays unavailable until you remove some.
+
+Each image's size and shape are checked before anything is created. The images, logo and business name are then added to the campaign after it is created, all together or not at all. They are added before the campaign's ads, so if Google Ads refuses them, the campaign has already been created without them and without its ads and keywords. Finish it in Google Ads, or create it again here with images, a logo and a business name Google Ads accepts. That is why nothing in this section is filled in from the brief, not even the business name the other campaign types start with: they are sent only when you add them.
+
+## Registration URL
+
+Every campaign sends people to the brief's **Registration URL**, and a campaign can't be created while the saved brief has none. When the event page has no registration link yet, the brief is generated without one, and the **Plan** tab says so under the event name.
+
+To set or correct it:
+
+1. On the **Implement** tab, select **Edit brief**. The brief opens on the **Plan** tab. If its editor is not open, select **Edit Brief**.
+2. Under **Registration URL**, enter the full address, starting with `https://`.
+3. Select **Save & Proceed to Implement**. The brief is saved with the new address and approved again.
+
+Typing an address into **Registration URL** on the **Implement** tab does not change the saved brief, so it does not fix a brief that has none.
+
 ## Copy, dates and budget filled in from the brief
 
 When you open the **Implement** tab for a brief, some fields start with values from the brief. You can change any of them.
@@ -210,9 +239,9 @@ When you open the **Implement** tab for a brief, some fields start with values f
 
 - **Demand Gen Creative** (image ad): headlines, descriptions and the business name. Headlines come from the brief's Demand Gen copy first, keeping only those of 30 characters or fewer, and then from its Search headlines. A longer headline is left out, not shortened.
 - **Display Creative**: headlines, descriptions and the business name, chosen the same way, plus a **Long headline**: the first Demand Gen headline the headlines did not use, or else the first Search description the descriptions did not use. A call to action from the brief is kept only if it is one Google accepts (see below).
-- **Performance Max Creative**: headlines, long headlines, descriptions and the business name.
+- **Performance Max Creative**: headlines, long headlines, descriptions and the business name. The descriptions include one of 60 characters or fewer when the brief has one (see [Performance Max descriptions](#performance-max-descriptions)).
 
-A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. Copy you typed before you left the tab is kept when you come back.
+A note on each of these creative sections says the copy came from the brief, while it still does. Copy from the brief makes the ad a started one, so add the required images below it to create the ad, or clear the copy to create the campaign without one. The **Search Creative** section is never filled in from the brief (see [Images, logo and business name](#images-logo-and-business-name-search-only)). Copy you typed before you left the tab is kept when you come back.
 
 ### Call to action
 
@@ -226,13 +255,13 @@ If a saved ad holds a call to action outside its list, a message under **Call to
 
 Each Google Ads campaign in the results has an **Open in Google Ads** link. It opens the campaign in the Google Ads account you are signed in to; if that is a different account, switch to the campaign's account in Google Ads.
 
-For Google Ads, **Image slot coverage** lists the image slots of the campaign types this tab sends images for: Demand Gen, Display and Performance Max. Search image slots are not listed, because the tab sends no Search images.
+For Google Ads, **Image slot coverage** lists the image slots of the campaign types this tab sends images for: Demand Gen, Display, Performance Max and Search. Video image slots are not listed, because the tab sends no Video images.
 
 ## Performance Max descriptions
 
 Google Ads shows a short description on small placements, so a Performance Max campaign needs at least one description of **60 characters or fewer**. Chinese, Japanese, Korean and full-width characters count double.
 
-The descriptions filled in from the brief are often longer than that. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
+A newly generated brief includes a description that short, and the **Performance Max Creative** section is filled in with it. An older brief may have none. If none of yours is short enough, a message appears under **Descriptions** and **Create Campaign** stays unavailable. Shorten one description, or add a short one, to continue.
 
 ## Performance Max search themes
 
@@ -246,6 +275,19 @@ Search themes tell Google which searches a Performance Max campaign is for, such
 If a search theme would be refused, a message appears under the box and **Create Campaign** stays unavailable until you fix it. If you switch to another campaign type, the box disappears and a notice says your search themes will not be sent. They are kept, so switching back to Performance Max restores them.
 
 If LFX can't confirm that search themes can be sent, for example while that check is still running or after it fails, the box is hidden and a notice says how many search themes will not be sent. When the check failed, select **Retry** to check again. This notice does not hold **Create Campaign**: a campaign created before the check succeeds is created without the search themes.
+
+## Performance Max audience signal
+
+An audience signal tells Google which people are likely to convert, using one Google Ads Audience the account already has, such as an Audience built from your customer lists or website visitors. Like a search theme, it is a hint, not targeting: Google may still show the ads to other people. The Audience itself is built in Google Ads. The **Google Audience Signal** section appears below the search themes when Performance Max is the campaign type, and only for the LF marketing team, because every foundation shares one Google Ads account.
+
+- **Pick an Audience** lists the account's Audiences by name, the same list the Demand Gen **Audience** picker shows. Type part of a name to narrow the list, then choose one. A campaign takes one audience signal. The picked Audience is shown by name with a remove button; remove it to pick another.
+- If the Audiences cannot be listed, a note says why: the picker is not available here, or the Audiences could not be read for this project's Google Ads account. If the account has no Audiences, or more than the picker shows, a note says that too. The picker lists the first 500 by name.
+- The audience signal belongs to the campaign's asset group, which Google Ads builds from the Performance Max creative. If you pick one and leave the creative empty, a message says so and **Create Campaign** stays unavailable.
+- If the audience signal would be refused by Google Ads, for example an Audience from another Google Ads account, a message under the picker says why and **Create Campaign** stays unavailable until you remove it.
+- If you switch to another campaign type, the section disappears and a notice says your audience signal will not be sent. It is kept, so switching back to Performance Max restores it.
+- If a saved campaign holds an audience signal that cannot be sent, a notice under the targeting settings says why, and shows the audience signal when its section is not shown. **Create Campaign** stays unavailable until it is sent or removed, so the audience signal is never dropped. The notice says you are not on the LF marketing team, that audience signals are not available on this deployment, that your access is still being checked, that it can be checked once the brief is saved, or that it could not be checked, with **Retry**. Choose **Remove audience signal** to create without it.
+
+Leave the picker alone and the campaign is created exactly as before, with no audience signal.
 
 ## Demand Gen video ads
 
@@ -316,6 +358,7 @@ A Demand Gen ad group can be narrowed by age, gender, household income and paren
 - An ad group takes one Audience. While an ad group has an Audience picked, its **Demographics** are replaced by a note, and while it has demographics ticked, its **Audience** picker is replaced by a note. Remove one to set the other.
 - While the campaign is split, the single ad group's demographics are kept but not sent, and a note under **Split into named ad groups** says so. An ad group's demographics are likewise kept but not sent while the checkbox is unticked.
 - If demographics would be refused by Google Ads, for example beside an Audience on a saved campaign, a message at the end of the **Demand Gen Creative** section says why and **Create Campaign** stays unavailable until you fix it.
+- While an ad group has demographics ticked, **Clear demographics** under its boxes unticks them all at once. Use it when a saved campaign holds a value that has no box, which cannot be unticked one by one.
 - If a saved campaign holds demographics that cannot be sent, a notice under the targeting settings says why and lists the ad groups when the **Demand Gen Creative** section is not shown. **Create Campaign** stays unavailable until they are sent or cleared. The notice says that Demand Gen demographics are not available on this deployment, that the check is still running, that it can be made once the brief is saved, or that it could not be made, with **Retry**. Choose **Clear demographics** to create without them.
 
 Tick nothing and the campaign is created exactly as before, with no demographic Audience.
@@ -331,10 +374,27 @@ For each ad group:
 
 Every ad group needs a complete ad. Until every ad group has a name and a complete ad, a message under the ad groups explains what to fix and **Create Campaign** stays unavailable. The same happens if you remove every ad group while the checkbox is ticked: add one, or untick the checkbox.
 
-While the campaign is split, the single Display ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too. Placement exclusions cover every ad group. Ad groups do not take their own audiences here.
+While the campaign is split, the single Display ad you entered is kept but not sent, and a note under the checkbox says so. Untick the checkbox to send the single ad instead. Your ad groups are then kept but not sent, and the note says that too. Placement exclusions cover every ad group. Each ad group takes its own audiences: see Audiences (Display).
+
+## Audiences (Display)
+
+A Display ad group can target existing audiences from the Google Ads account: user lists, custom audiences, custom affinity segments and interests (Google's affinity and in-market categories). The audiences picked for an ad group are its targeting. Google Ads may still show its ads to people beyond them: optimized targeting is left at Google's default, which can widen reach. The audiences themselves are built in Google Ads; here you pick ones the account already has. The campaign can also exclude user lists. Only the LF marketing team sees these pickers, because every foundation shares one Google Ads account.
+
+- In the **Display Creative** section, the campaign's single ad group has four pickers: **User lists**, **Custom audiences**, **Custom affinity segments** and **Interests**. When the campaign is split into named ad groups, each ad group has its own four pickers instead.
+- **Excluded user lists** keeps the campaign's ads away from people on those lists. It covers the whole campaign, every ad group included, whether or not the campaign is split. A user list cannot be both targeted and excluded.
+- Each picker lists the account's entries by name. Type part of a name to narrow the list, then choose one. Each pick is shown by name with a remove button. Google Ads takes up to 20 in each list; with more, a message says so and **Create Campaign** stays unavailable.
+- Google's interests are a long list, so the picker shows the first 500 by name. Type in **Search interests** and choose **Search** (or press Enter) to list the interests whose names contain what you typed.
+- While the campaign is split, audiences picked for the single ad group are kept but not sent, and a note says so. Untick **Split into named ad groups** to send them. An ad group's audiences are likewise kept but not sent while the checkbox is unticked.
+- If a list cannot be read, a note under its picker says why. If the account has none of a kind, or more than the picker shows, a note says that too.
+- If an audience would be refused by Google Ads, for example one from another Google Ads account, a message at the end of the **Display Creative** section says why and **Create Campaign** stays unavailable until you remove it.
+- If a saved campaign holds Display audiences that cannot be sent, a notice under the targeting settings says why and lists them. **Create Campaign** stays unavailable until they are sent or removed, so they are never dropped. The notice says you are not on the LF marketing team, that Display audiences are not available on this deployment, that your access is still being checked, that it can be checked once the brief is saved, or that it could not be checked, with **Retry**. Choose **Remove audience** (**Remove audiences** for several) to create without them.
+
+Leave the pickers alone and the campaign is created exactly as before, with no audiences.
 
 ## If something is wrong
 
-If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description or search theme would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
+While **Create Campaign** is unavailable, a line under it says what is holding it, such as an empty **Registration URL** or a section to fix. If a create is refused, the reason appears beside the button.
+
+If a window, adjustment, exclusion, excluded place, placement exclusion, display path, ad, video ad, Demand Gen ad, ad group, negative keyword, Performance Max description, search theme or audience signal would be refused by Google Ads, a message appears under the section and **Create Campaign** stays unavailable until you fix it. Messages give Google's bid modifier rather than a percentage: -20% is a bid modifier of 0.8, and +50% is 1.5.
 
 If you switch to a campaign type that does not take one of these settings, the section disappears and a notice tells you that your windows, device settings, demographic exclusions or other demographic settings will not be sent. They are kept, so switching back restores them. Search partners, display paths, more ads and negative keywords are kept the same way when you switch away from Search, and a notice says they will not be sent. Conversion actions you entered are kept the same way when you switch to Performance Max, and a notice in the bidding settings says they will not be sent. Excluded locations are sent for every campaign type. Placement exclusions are sent on Display only, and kept with a notice on the other campaign types. Sitelinks are sent on Search, Demand Gen and Performance Max, callouts and structured snippets on Search and Performance Max, and call extensions, promotions and prices on Search only; each is kept the same way on the other campaign types, with a notice.

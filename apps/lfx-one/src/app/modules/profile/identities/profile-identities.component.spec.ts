@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { CUSTOM_ELEMENTS_SCHEMA, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
@@ -403,5 +404,59 @@ describe('ProfileIdentitiesComponent — primary email row template (#4123)', ()
     );
 
     expect(query(fixture, 'identity-menu-cdp-primary')).not.toBeNull();
+  });
+});
+
+describe('ProfileIdentitiesComponent — GitLab unlink failure (#4190)', () => {
+  it('surfaces retry messaging, keeps the identity, and does not refresh on failed unlink', async () => {
+    TestBed.resetTestingModule();
+    const identity = makeIdentity({
+      id: 'auth0:linked-1',
+      platform: 'gitlab',
+      type: 'username',
+      value: 'gitlab-dev-example',
+      inAuth0: true,
+      auth0UserId: 'gitlab|1000001',
+    });
+    const add = vi.fn();
+    const refreshUserIdentities = vi.fn();
+    const rejectIdentity = vi.fn(() =>
+      throwError(
+        () => new HttpErrorResponse({ status: 502, error: { error: 'identity_unlink_failed', message: 'Failed to remove identity. Please try again.' } })
+      )
+    );
+    TestBed.configureTestingModule({
+      imports: [ProfileIdentitiesComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams: {} } } },
+        {
+          provide: UserService,
+          useValue: {
+            impersonating: signal(false),
+            identitiesRefresh$: EMPTY,
+            getIdentities: vi.fn(() => of([identity])),
+            getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+            getProfileAuthStatus: vi.fn(() => of({ authorized: true })),
+            rejectIdentity,
+            refreshUserIdentities,
+          },
+        },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileIdentitiesComponent, {
+      set: { template: '', imports: [], providers: [{ provide: DialogService, useValue: { open: vi.fn(() => ({ onClose: of(true) })) } }] },
+    });
+    const fixture = TestBed.createComponent(ProfileIdentitiesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentInstance.onRemove(fixture.componentInstance.verifiedIdentities()[0]!);
+
+    expect(rejectIdentity).toHaveBeenCalledExactlyOnceWith(identity.id, 'gitlab', identity.auth0UserId, undefined);
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'error', summary: 'Error', detail: 'Failed to remove identity. Please try again.' });
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.verifiedIdentities()).toEqual([expect.objectContaining({ id: identity.id })]);
   });
 });

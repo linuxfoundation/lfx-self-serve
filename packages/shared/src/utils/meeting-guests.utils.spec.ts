@@ -15,10 +15,10 @@ import {
   filterMeetingGuestRows,
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
-  getMeetingGuestSummary,
   getMeetingGuestRowActions,
   resortMeetingGuestRows,
   getOfferedMeetingGuestFilters,
+  isMeetingGuestViewer,
 } from './meeting-guests.utils';
 
 const viewer = { username: 'viewer', email: 'viewer@acme.example' };
@@ -239,29 +239,6 @@ describe('row details', () => {
   });
 });
 
-describe('getMeetingGuestSummary', () => {
-  const rows = buildParticipantGuestRows(
-    [participant({ uid: 'p-1' }), participant({ uid: 'p-2', is_attended: false }), participant({ uid: 'p-3', is_invited: false })],
-    { organizers: [], committees: [] },
-    viewer,
-    []
-  );
-
-  it('counts attended and invited participants once ended', () => {
-    expect(getMeetingGuestSummary(rows, true, false)).toEqual({ title: 'Meeting Participants', subtitle: '2 attended / 2 invited' });
-  });
-
-  it('counts members of a committee meeting, else guests', () => {
-    expect(getMeetingGuestSummary(rows, false, true)).toEqual({ title: 'Meeting Members', subtitle: '3 members' });
-    expect(getMeetingGuestSummary(rows, false, false)).toEqual({ title: 'Meeting Guests', subtitle: '3 guests' });
-  });
-
-  it('uses the singular for one person', () => {
-    expect(getMeetingGuestSummary(rows.slice(0, 1), false, false).subtitle).toBe('1 guest');
-    expect(getMeetingGuestSummary(rows.slice(0, 1), false, true).subtitle).toBe('1 member');
-  });
-});
-
 describe('getMeetingGuestFilterFields', () => {
   it('offers RSVP, Role and Group upcoming', () => {
     const fields = getMeetingGuestFilterFields(false, true, committees);
@@ -309,6 +286,13 @@ describe('filters and chips', () => {
       true
     );
     expect(filterMeetingGuestRows(unnamed, 'guest', MEETING_GUEST_EMPTY_FILTERS)).toEqual([]);
+  });
+
+  it('matches the viewer by email or username in any case, never on blanks', () => {
+    expect(isMeetingGuestViewer({ email: ' VIEWER@acme.example ' }, viewer)).toBe(true);
+    expect(isMeetingGuestViewer({ username: 'Viewer' }, viewer)).toBe(true);
+    expect(isMeetingGuestViewer({ email: 'other@acme.example', username: 'other' }, viewer)).toBe(false);
+    expect(isMeetingGuestViewer({ email: '', username: null }, { username: null, email: null })).toBe(false);
   });
 
   it('marks the viewer by email in any case', () => {

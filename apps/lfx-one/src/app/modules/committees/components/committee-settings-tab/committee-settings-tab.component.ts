@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal, TemplateRef, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -9,16 +9,24 @@ import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
   Committee,
+  CommitteeAssociatedMailingListRow,
   CommitteeUpdateData,
   CreateMailingListRequest,
   GroupsIOMailingList,
   JoinMode,
   MailingListAssociationUpdateResult,
   MailingListPickerDialogResult,
+  MailingListSyncPreviewDialogResult,
   ValidationError,
 } from '@lfx-one/shared/interfaces';
-import { CommitteeMemberVisibility, MailingListSyncMode } from '@lfx-one/shared/enums';
-import { MAILING_LIST_ACCESS_DENIED_MESSAGE, SLACK_INCOMING_WEBHOOK_URL_PATTERN, WG_WEEKLY_BRIEF_SLACK_FLAG } from '@lfx-one/shared/constants';
+import { CommitteeMemberVisibility, CommitteeMemberVotingStatus, MailingListSyncMode } from '@lfx-one/shared/enums';
+import {
+  MAILING_LIST_ACCESS_DENIED_MESSAGE,
+  MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
+  WG_WEEKLY_BRIEF_SLACK_FLAG,
+} from '@lfx-one/shared/constants';
+import { getMailingListCommitteeSync } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -26,9 +34,16 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, defer, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, defer, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take, tap, timer } from 'rxjs';
 
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerComponent } from '@shared/uikit/drawer/drawer.component';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+import { UiNoteComponent } from '@shared/uikit/note/note.component';
+
+import { MailingListSyncSettingsComponent } from '../../../mailing-lists/components/mailing-list-sync-settings/mailing-list-sync-settings.component';
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
+import { MailingListSyncPreviewDialogComponent } from '../mailing-list-sync-preview-dialog/mailing-list-sync-preview-dialog.component';
 import { CommitteeGeneralSettingsComponent } from '../committee-general-settings/committee-general-settings.component';
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
@@ -44,6 +59,10 @@ import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
     ConfirmDialogModule,
     MailingListEmailPipe,
     MailingListTypePipe,
+    UiDrawerComponent,
+    UiButtonComponent,
+    UiNoteComponent,
+    MailingListSyncSettingsComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-settings-tab.component.html',
@@ -59,6 +78,7 @@ export class CommitteeSettingsTabComponent {
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
+  private readonly drawerService = inject(UiDrawerService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -88,8 +108,91 @@ export class CommitteeSettingsTabComponent {
   public slackWebhookRemovalStaged = signal(false);
   private mlLoadingInternal = signal(true);
 
-  // Subject to trigger ML list refresh after association changes
+  // Committee uid that fetchedAssociatedMailingLists()'s last successful (non-fallback) fetch
+  // resolved for — undefined until the first one lands. Unlike mlLoading(), this stays true across
+  // a same-committee refresh (e.g. a drawer save's refreshMl$), only going stale during an actual
+  // committee switch's fetch gap — see showAutoSyncButton's doc comment (cursor #4899 review).
+  private fetchedAssociatedListsCommitteeUid = signal<string | undefined>(undefined);
+
+  // Associated-ML refresh. Drawer saves (onSyncSettingsUpdated) and retryMlRefresh fire only this
+  // one; association changes also fire refreshProjectMl$.
   private refreshMl$ = new Subject<void>();
+
+  // Subject to trigger project-ML list refresh — only emitted from association-change paths
+  // (removeMailingList, saveMailingListAssociation), since only those can change which lists
+  // projectMailingLists() should return (#4899 review: this used to share refreshMl$, which fired
+  // on every sync-direction save too — harmless but misleading, since the comment on
+  // initProjectMailingLists() below justified it via a payload dependency that no longer exists
+  // now that buildMlUpdatePayload reads a freshly-fetched record instead of this cached signal).
+  private refreshProjectMl$ = new Subject<void>();
+
+  // Keeps the unlink survivable by a subsequent refresh failure: without this, a transient fetch
+  // error right after an unlink would fall back to the last-good associated-list snapshot, which
+  // still contains the just-removed list, silently resurrecting it (#4899 review).
+  private lastGoodAssociatedLists: { uid: string; lists: GroupsIOMailingList[] } | null = null;
+
+  // Signal (not a plain Set) so the drawer template can reactively lock sibling cards' toggles while
+  // one card saves — two cards both reading a stale associatedMailingLists() snapshot could otherwise
+  // pass their own "no active sync elsewhere" check and fire conflicting PUTs before either save's
+  // round-trip lands (#4899 review).
+  public savingMlUids = signal<ReadonlySet<string>>(new Set());
+  // Count of Auto Sync drawer instances currently mid-save — closing the drawer destroys every open
+  // lfx-mailing-list-sync-settings instance, tearing down its (updated) binding, so a save that's
+  // still in flight would otherwise never reach onSyncSettingsUpdated() (#4899 review). Gates both
+  // the drawer's canClose (Escape/backdrop/close button) and the Done button, since DialogRef.close()
+  // — what Done calls — does not consult canClose. Derived from savingMlUids rather than tracked
+  // separately, so a future path that resets savingMlUids can't desync the two (#4899 review).
+  public drawerSavingCount = computed(() => this.savingMlUids().size);
+  // True from the moment a card's save succeeds (onSyncSettingsUpdated) until the resulting
+  // getMailingListsByCommittee refresh lands — savingMlUids alone unlocks sibling cards as soon as
+  // the saving card's own PUT completes, before associatedMailingLists() (and each sibling's
+  // activeSync()) reflects the new sync_mode, leaving a window where a second card can still submit
+  // an automatic mode against stale sibling data (#4899 review, prior item partially addressed).
+  public refreshingMl = signal(false);
+  // Set when the refresh triggered above fails — refreshingMl is deliberately left locked on
+  // failure (see initAssociatedMailingLists' catchError) rather than unlocking sibling cards
+  // against stale data, which would otherwise strand every card locked forever with no way out
+  // (#4899 review). Drives a retry affordance in the drawer; cleared on the next successful refresh.
+  public mlRefreshFailed = signal(false);
+  // Keyed by mailing list uid. Holds a sync-settings save result between the moment a drawer card
+  // emits it and the next real refresh — lets the drawer and settings card reflect a just-saved
+  // sync_mode immediately instead of racing the query index's eventual-consistency window via the
+  // refreshMl$-triggered getMailingListsByCommittee refetch (#4899 review, same root cause as
+  // #4880). Entries self-clear once a real refresh confirms the same value (see the refresh
+  // pipeline's tap below), or on committee change (see the constructor).
+  private readonly associatedMlOverrides = signal<ReadonlyMap<string, GroupsIOMailingList>>(new Map());
+
+  // Mailing list uids suppressed from associatedMailingLists()/fetchedAssociatedMailingLists after a
+  // successful unlink, until a refresh confirms the index no longer returns them — a successful but
+  // stale getMailingListsByCommittee response (eventual-consistency lag, not a fetch error) can
+  // otherwise resurrect a just-removed row and re-unlock its Auto Sync card; saving that restored
+  // card would send its old committee_uid in a full-resource PUT and silently relink the list
+  // (#4899 review). Cleared automatically once a refetch no longer contains the uid (see the refresh
+  // pipeline's tap below), or immediately on an intentional relink of the same uid (see
+  // clearUnlinkedMlSuppression's call sites), or on committee change (see the constructor).
+  private readonly unlinkedMlUids = signal<ReadonlySet<string>>(new Set());
+
+  // Mailing list uids with a genuinely pending ADD override — set only from saveMailingListAssociation's
+  // success handler, for a uid in addedMlByUid, never for a config-only change on an already-linked
+  // list. associatedMailingLists' pending-row synthesis (see initAssociatedMailingListsWithOverrides)
+  // replays ANY override missing from the fetch, pending-add or config-only (dealako #4899 review's
+  // two-miss fallback), so this set no longer gates the replay itself (commit 7ccb2b8d2 removed that
+  // gate). It's consulted only by the miss-count prune loop below, which must never age out a pending
+  // add's miss count — the add-path row is expected to be absent from the index for a while after a
+  // save, so counting that as a "miss" the same way a config-only override's absence is counted would
+  // prune a just-added list before the index catches up. Cleared the first time a refetch contains the
+  // uid at all (see initAssociatedMailingLists' refresh-pipeline tap), or on committee change (see the
+  // constructor).
+  private readonly pendingAddMlUids = signal<ReadonlySet<string>>(new Set());
+
+  // Per-uid consecutive-miss counter for the prune loop below: a non-pending override whose uid is
+  // absent from a fetch is not deleted on its first miss, only once this reaches 2. A single absence
+  // could be a transient false-negative from the committee-fetch's underlying index rather than proof
+  // the list was actually unlinked (dealako #4899 review — no guarantee was found that a sync_mode-only
+  // PUT can't momentarily drop a still-linked list from the index). Reset for a uid the moment it
+  // reappears in a fetch (see the refresh pipeline's tap below), or on committee change (see the
+  // constructor).
+  private readonly overrideMissCounts = signal<ReadonlyMap<string, number>>(new Map());
 
   // Form
   public form = new FormGroup({
@@ -115,10 +218,76 @@ export class CommitteeSettingsTabComponent {
   });
 
   // Project mailing lists (loaded when committee has a project_uid — used by the picker dialog)
-  public projectMailingLists: Signal<GroupsIOMailingList[]> = this.initProjectMailingLists();
+  private readonly fetchedProjectMailingLists: Signal<GroupsIOMailingList[]> = this.initProjectMailingLists();
 
   // Associated mailing lists (queried directly by committee_uid tag)
-  public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
+  public readonly fetchedAssociatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
+
+  // Fetched list with any pending save overrides patched in — see associatedMlOverrides' doc comment.
+  // Patches only the overridden `sync_mode` onto the freshly fetched row, rather than returning the
+  // override wholesale: the override is a pre-save snapshot, so returning it in full would mask
+  // every other field (e.g. `writer`) the subsequent fetch actually refreshed (#4899 review).
+  //
+  // A pending-add override whose uid the fetch doesn't contain at all — the add-path case, where a
+  // committee refetch lands before the index has the newly-linked row — is appended as its own
+  // (already-patched) row rather than silently dropped. Without this, a just-added auto-sync list
+  // would vanish from the card list and the drawer until a later refetch catches up, and the
+  // one-auto-direction-per-committee check above would have no row to see as occupying the slot
+  // (dealako #4899 review). This same replay also covers a non-pending, config-only-change override
+  // during its one-miss grace window: the prune loop (see initAssociatedMailingLists) no longer
+  // deletes such an override the first time a fetch misses its uid — a single absence isn't proof it
+  // was unlinked outside this component rather than a transient index false-negative — so the override
+  // stays in the map, and without this replay the row would vanish from the card list for that one
+  // refetch before reappearing (dealako #4899 review's two-miss fallback). The row only disappears for
+  // good once the prune loop actually deletes the override, on its second consecutive miss.
+  //
+  // A pending-add row still goes through `patchCommitteeSyncMode`, not just the raw override
+  // snapshot: the snapshot's own `committees[]` predates the link, so it has no entry for this
+  // committee yet, and `lfx-mailing-list-sync-settings` resolves its `committee()` input by scanning
+  // that array — without this, the card shows the list's name with no sync controls at all (greptile,
+  // Copilot, Cursor bugbot #4899 review). A config-only override's replayed row needs the same patch
+  // for a different reason: its snapshot DOES already have a `committees[]` entry (the list was
+  // already linked), but that entry still carries whatever `sync_mode` was in effect before this
+  // save — `patchCommitteeSyncMode` overwrites just that one field with the override's new value, so
+  // the replayed row shows the sync mode the user just chose rather than the stale pre-save one
+  // (dealako #4899 review).
+  public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingListsWithOverrides();
+
+  // Same override patch applied to the project-wide snapshot the picker reads — a drawer save (via
+  // onSyncSettingsUpdated) only ever patches associatedMlOverrides, it never fires refreshProjectMl$
+  // (that subject exists specifically so a sync-only save does NOT trigger this heavier project-wide
+  // refetch — see initProjectMailingLists' doc comment). Without this, the picker's `mailingLists`
+  // input and saveMailingListAssociation's configChanged detection both read the stale pre-drawer
+  // sync_mode, so re-opening the picker right after a drawer save could issue a no-op PUT or let a
+  // second list be saved as automatic (#4899 review: Greptile, Cursor bugbot, Copilot all flagged
+  // this independently).
+  //
+  // For a list this committee is linked to, prefer associatedMailingLists()'s sync_mode over the raw
+  // override map: once the associated-list refresh confirms a drawer save, it deletes the override
+  // (see initAssociatedMailingLists' refresh-pipeline tap), but fetchedProjectMailingLists only
+  // refetches on refreshProjectMl$ (a sync-only save never fires it), so without this the picker would
+  // fall straight back to the pre-save fetched project snapshot the moment the override clears,
+  // flashing the old direction and running its active-sync lock/change detection against stale data
+  // (#4899 review). associatedMailingLists() already reflects whichever is current — the override
+  // while pending, the confirmed fetched value once it lands — so looking it up there instead
+  // supersedes the override lookup for any uid linked to this committee; a project list not linked
+  // here still falls back to the raw override/fetched value.
+  public projectMailingLists: Signal<GroupsIOMailingList[]> = computed(() => {
+    const overrides = this.associatedMlOverrides();
+    const associatedByUid = new Map(this.associatedMailingLists().map((ml) => [ml.uid, ml]));
+    if (overrides.size === 0 && associatedByUid.size === 0) return this.fetchedProjectMailingLists();
+    return this.fetchedProjectMailingLists().map((ml) => {
+      const confirmed = associatedByUid.get(ml.uid);
+      if (confirmed) return this.patchCommitteeSyncMode(ml, confirmed.sync_mode);
+      const override = overrides.get(ml.uid);
+      return override ? this.patchCommitteeSyncMode(ml, override.sync_mode) : ml;
+    });
+  });
+
+  // Precomputed per-row state for the Settings tab's associated-mailing-list cards — avoids
+  // nested ternaries and repeated ml.writer/ml.sync_mode branching in the template
+  // (docs/reviews/frontend-checklist.md §4/§12, #4911 review).
+  public associatedMailingListRows: Signal<CommitteeAssociatedMailingListRow[]> = this.initAssociatedMailingListRows();
 
   // Linking or unlinking updates the mailing list itself, so it needs write access on that list.
   // Only block once lists have loaded and none are writable — an empty list is the picker's own
@@ -140,6 +309,54 @@ export class CommitteeSettingsTabComponent {
   // until the feature is ready to roll out to users, independent of when the server flag flips.
   public slackWebhookEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_WEEKLY_BRIEF_SLACK_FLAG, false);
 
+  // Dark-launch gate for the "Auto Sync" entry point (#4025) — mirrors the same flag's use as the
+  // sync settings section's own gate (mailing-list-sync-settings.component.ts). UI-only; see that
+  // constant's doc comment for the real-time auto-sync execution kill switch tracked separately in #4878.
+  public autoSyncEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
+
+  // The "Auto Sync" button only makes sense once the committee has at least one linked mailing list
+  // the viewer can actually manage sync settings on — committee canEdit() and per-list `writer`
+  // access are separate permissions (see the drawer template's per-row writer gate), so with no
+  // writable list the drawer would otherwise open to nothing but bare names (#4899 review). Also
+  // gated on fetchedAssociatedListsCommitteeUid() matching the current committee — this component
+  // instance is reused across a route navigation from one committee to another, and
+  // associatedMailingLists() keeps returning the PREVIOUS committee's data until its refetch for the
+  // new committee lands, so without this the button stays bound to (and can open a drawer full of)
+  // the prior committee's writable lists during that gap (cursor #4899 review). Deliberately NOT
+  // gated on mlLoading(), which also flips true on every same-committee refresh (e.g. a drawer save's
+  // refreshMl$) — that would hide/recreate this button, and the UiModalService it opens, on every
+  // save, breaking the drawer's restoreFocus return and flashing autoSyncButtonDisabled's "refreshing"
+  // state the user never otherwise sees (cursor #4899 review).
+  public showAutoSyncButton = computed(
+    () =>
+      this.autoSyncEnabled() &&
+      this.canEdit() &&
+      this.fetchedAssociatedListsCommitteeUid() === this.committee().uid &&
+      this.associatedMailingLists().some((ml) => ml.writer === true)
+  );
+
+  // Blocks opening the drawer while an Add List/Remove association change is in flight — a sync
+  // save opened against that snapshot sends a full-resource PUT with the pre-change `committee_uid`,
+  // which can land after and silently undo the in-flight association change (#4899 review). Also
+  // blocked while refreshingMl() — the post-save mailing-list refetch — is still in flight, so the
+  // button can't unlock between a successful association PUT and that refetch completing (#4899 review).
+  //
+  // Exempts a *failed* refresh (mlRefreshFailed()) from that refreshingMl() block: refreshingMl stays
+  // latched true until a refresh actually succeeds (see initAssociatedMailingLists' catchError), and
+  // retryMlRefresh() — the only way to fire that next refresh — lives inside this same drawer. Without
+  // this exemption a failed refresh permanently disables the one button that opens the drawer, locking
+  // the user out of their own recovery path with no way back short of reloading the page (greptile P1,
+  // cursor bugbot, copilot — #4899 review).
+  public autoSyncButtonDisabled = computed(() => this.savingMl() || this.removingMlUid() !== null || (this.refreshingMl() && !this.mlRefreshFailed()));
+
+  // Inline template passed to UiDrawerService.open() — see drawer.stories.ts for the pattern.
+  public readonly autoSyncDrawerTemplate = viewChild.required<TemplateRef<unknown>>('autoSyncDrawer');
+
+  // Dark-launch gate for the "Sync Now" preview/apply entry point on each associated mailing list
+  // card — same flag as the Mailing List Settings sync toggle (#4024), so both committee/mailing-list
+  // sync surfaces roll out together. Default false: unflagged, "Sync Now" stays hidden even for editors.
+  public syncPreviewEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG, false);
+
   // Server-blocked (committee.service.ts's updateCommittee) as well — surfaced here too so the
   // control renders visible-but-disabled instead of accepting an edit that will 403, matching the
   // established pattern (weekly-brief-card, profile-panel) of gating on
@@ -159,6 +376,28 @@ export class CommitteeSettingsTabComponent {
   // component instance got reused for a different committee via route param navigation" apart
   // from "the same committee's data just refreshed". Undefined only before the first emission.
   private lastCommitteeUid: string | undefined;
+
+  // Mirrors lastCommitteeUid above, tracked separately for associatedMlOverrides' own reset subscription.
+  private lastOverridesCommitteeUid: string | undefined;
+
+  // Set while the Auto Sync drawer is open, so the committee-change reset below can force it closed
+  // — this component instance is reused across a route navigation, and an open drawer left bound to
+  // the previous committee's cards could otherwise keep showing (and saving against) the wrong
+  // committee's mailing lists until the user happens to close it themselves (cursor #4899 review).
+  private autoSyncDrawerRef: ReturnType<UiDrawerService['open']> | null = null;
+
+  // The committee this drawer instance was opened for, captured once at open time — a card's save
+  // can still resolve and emit (updated)/(savingChange) during the drawer's own exit animation,
+  // before Angular tears down its content and drops those outputs, so a committee switch that
+  // happens while the drawer is closing can otherwise let a stale card's save write into the new
+  // committee's associatedMlOverrides (copilot #4899 review). onSyncSettingsUpdated/
+  // onSyncSettingsSavingChange compare this against the live committee() before writing anything.
+  private autoSyncDrawerCommitteeUid: string | undefined;
+
+  // Guards against scheduling more than one bounded follow-up refresh at a time — see the
+  // overrideMissCounts tap in initAssociatedMailingLists for why this exists (greptile, cursor
+  // bugbot #4899 review).
+  private pendingMissRetry = false;
 
   public constructor() {
     // Patch form when committee input changes
@@ -180,7 +419,7 @@ export class CommitteeSettingsTabComponent {
         const committeeChanged = this.lastCommitteeUid !== undefined && this.lastCommitteeUid !== c.uid;
         this.lastCommitteeUid = c.uid;
         const preserveWebhookEdit = !committeeChanged && this.form.controls.chat_webhook_url.dirty;
-        this.form.patchValue({
+        const incomingValues = {
           name: c.name,
           category: c.category,
           parent_uid: c.parent_uid ?? null,
@@ -195,7 +434,16 @@ export class CommitteeSettingsTabComponent {
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
           ...(preserveWebhookEdit ? {} : { chat_webhook_url: null }),
-        });
+        };
+        // On a same-committee refresh (e.g. after a reverse mailing-list sync via openSyncPreviewDialog),
+        // drop any field the admin has a dirty, unsaved edit on from the patch instead of clobbering it —
+        // chat_webhook_url already got this treatment above; this extends it to every other control
+        // (copilot, #4911 review). A committee-changed navigation still fully repatches: an unsaved edit
+        // for committee A must never survive onto committee B's form.
+        const patchValues = committeeChanged
+          ? incomingValues
+          : (Object.fromEntries(Object.entries(incomingValues).filter(([key]) => !this.form.get(key)?.dirty)) as typeof incomingValues);
+        this.form.patchValue(patchValues);
         if (!preserveWebhookEdit) {
           this.editingSlackWebhookUrl.set(false);
           this.slackWebhookRemovalStaged.set(false);
@@ -232,6 +480,109 @@ export class CommitteeSettingsTabComponent {
           this.form.disable();
         }
       });
+
+    // Clear any pending save overrides when the committee itself changes (route navigation reusing
+    // this component instance) — an override keyed by mailing list uid could otherwise leak a stale
+    // sync_mode onto an unrelated committee's list of the same uid (#4899 review).
+    toObservable(this.committee)
+      .pipe(
+        filter((c): c is Committee => !!c?.uid),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((c) => {
+        if (this.lastOverridesCommitteeUid !== undefined && this.lastOverridesCommitteeUid !== c.uid) {
+          this.associatedMlOverrides.set(new Map());
+          // Same leak as the override above — a suppressed uid from a different committee must not
+          // hide an unrelated mailing list of the same uid on this one (#4899 review).
+          this.unlinkedMlUids.set(new Set());
+          // Same leak as both overrides above — a pending-add marking from a different committee must
+          // not treat an unrelated mailing list of the same uid on this one as still pending (#4899 review).
+          this.pendingAddMlUids.set(new Set());
+          // Same leak as the state above — a miss count accrued against a uid on the previous
+          // committee must not prune an unrelated mailing list of the same uid on this one (dealako
+          // #4899 review).
+          this.overrideMissCounts.set(new Map());
+          // Force-close any drawer left open from the previous committee — see autoSyncDrawerRef's
+          // doc comment (cursor #4899 review). Bypasses canClose deliberately: a card's in-flight PUT
+          // is fire-and-forget (see MailingListSyncSettingsComponent.save) and still completes against
+          // the previous committee; its destroyed child drops the (updated) emit, so clearing
+          // savingMlUids here is safe even if a save was still running (dealako #4899 review).
+          this.autoSyncDrawerRef?.close();
+          this.savingMlUids.set(new Set());
+        }
+        this.lastOverridesCommitteeUid = c.uid;
+      });
+  }
+
+  public openAutoSyncDrawer(): void {
+    const ref = this.drawerService.open(this.autoSyncDrawerTemplate(), {
+      width: 600,
+      // Blocks Escape/backdrop/close-button dismissal while any card's save is in flight (#4899 review).
+      canClose: () => this.drawerSavingCount() === 0,
+    });
+    this.autoSyncDrawerRef = ref;
+    this.autoSyncDrawerCommitteeUid = this.committee()?.uid;
+    // `ref.closed` fires on every closure path, including an external disposal (e.g. browser Back)
+    // that bypasses canClose — reset savingMlUids so a card's in-flight save can't leave
+    // drawerSavingCount stuck non-empty for this component instance's next drawer open (#4899 review).
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.savingMlUids.set(new Set());
+      if (this.autoSyncDrawerRef === ref) {
+        this.autoSyncDrawerRef = null;
+      }
+    });
+  }
+
+  // Tracks how many open Auto Sync drawer cards are currently saving, keyed by whether this
+  // particular instance's own saving state just turned on or off (not a plain increment/decrement,
+  // since a misordered pair of emissions from the same instance must not leave the count permanently
+  // off by one).
+  public onSyncSettingsSavingChange(mlUid: string, saving: boolean): void {
+    // A stale card's save can still flip this during the drawer's exit animation, after a committee
+    // switch already reset savingMlUids for the new committee — see autoSyncDrawerCommitteeUid's doc
+    // comment (copilot #4899 review). autoSyncDrawerCommitteeUid is undefined until a drawer has
+    // actually been opened, so a caller that drives this directly (no drawer involved) is never gated.
+    if (this.autoSyncDrawerCommitteeUid !== undefined && this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+      return;
+    }
+    const next = new Set(this.savingMlUids());
+    if (saving) {
+      next.add(mlUid);
+    } else {
+      next.delete(mlUid);
+    }
+    this.savingMlUids.set(next);
+  }
+
+  // Patches the saved sync_mode into associatedMailingLists() via associatedMlOverrides so every open
+  // drawer card's siblingCandidates (and activeSync) updates at once, then triggers a refetch to
+  // reconcile with the server (#4899 review).
+  public onSyncSettingsUpdated(updated: GroupsIOMailingList): void {
+    // Reject a card's save result once the committee it was opened for no longer matches the live
+    // committee() — the drawer's exit animation can keep its content (and this emit) alive past the
+    // committee-switch reset, which would otherwise write a stale list into the new committee's
+    // associatedMlOverrides and let pending-row replay expose it for an incorrect relink (copilot
+    // #4899 review). autoSyncDrawerCommitteeUid is undefined until a drawer has actually been opened,
+    // so a caller that drives this directly (no drawer involved) is never gated.
+    if (this.autoSyncDrawerCommitteeUid !== undefined && this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+      return;
+    }
+    // Apply the save result directly rather than waiting on the refetch below — getMailingListsByCommittee
+    // reads an eventually-consistent query index, so the refresh triggered here can briefly return the
+    // pre-save sync_mode (#4899 review, same root cause as #4880's mailingListOverride pattern).
+    const next = new Map(this.associatedMlOverrides());
+    next.set(updated.uid, updated);
+    this.associatedMlOverrides.set(next);
+
+    this.refreshingMl.set(true);
+    this.refreshMl$.next();
+  }
+
+  // Re-fires the refresh that failed in initAssociatedMailingLists' catchError — the only recovery
+  // path once refreshingMl is latched true with no successful refresh to clear it (#4899 review).
+  public retryMlRefresh(): void {
+    this.refreshingMl.set(true);
+    this.refreshMl$.next();
   }
 
   public openMailingListPicker(): void {
@@ -255,6 +606,39 @@ export class CommitteeSettingsTabComponent {
       });
   }
 
+  public openSyncPreviewDialog(ml: GroupsIOMailingList): void {
+    // closable: true from the start — lockDynamicDialogWhile (inside the dialog) flips
+    // config.closable to false while the diff is loading, while applying, while the apply result
+    // (success or error) is on screen, so the header X and Escape are blocked during those
+    // windows. PrimeNG's Dialog only reads closeOnEscape/closable once, at open, to bind its
+    // Escape listener — opening with closable: false here would mean Escape can never be rebound
+    // later even once lockDynamicDialogWhile flips it back to true (#4911 review).
+    const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+      header: `Sync Now — ${ml.group_name}`,
+      width: '800px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid: this.committee().uid },
+    });
+
+    if (!ref) return;
+
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MailingListSyncPreviewDialogResult | null) => {
+      this.refreshMl$.next();
+      // Only a reverse sync (mailing list → committee) can change committee membership —
+      // committeeUpdated triggers the parent's onSettingsSaved(), which refetches the committee and
+      // repatches the Settings form. The same-committee dirty filter (constructor) now keeps any
+      // in-flight unsaved edit intact across that repatch, but a reverse sync is still the only
+      // reason to pay for the cache-bypassing refetch at all — a forward sync, a Cancel, or a
+      // load/apply error didn't touch committee membership, so there's nothing new to fetch
+      // (#4911 review).
+      if (result?.committeeChanged) {
+        this.committeeUpdated.emit();
+      }
+    });
+  }
+
   public removeMailingList(ml: GroupsIOMailingList): void {
     const committee = this.committee();
     if (!committee?.uid || this.removingMlUid()) return;
@@ -267,7 +651,14 @@ export class CommitteeSettingsTabComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Removed', detail: `${ml.group_name} removed from this group` });
+          this.clearMlOverride(ml.uid);
+          this.pruneLastGoodAssociatedList(ml.uid);
+          this.suppressUnlinkedMl(ml.uid);
+          // Locked before refreshMl$ fires — autoSyncButtonDisabled must stay disabled across the
+          // gap between this successful PUT and the refetch it triggers settling (#4899 review).
+          this.refreshingMl.set(true);
           this.refreshMl$.next();
+          this.refreshProjectMl$.next();
         },
         error: (err: any) => {
           const detail = this.getMlErrorDetail(err, `Failed to remove ${ml.group_name}`);
@@ -397,6 +788,21 @@ export class CommitteeSettingsTabComponent {
             this.editingSlackWebhookUrl.set(false);
             this.slackWebhookRemovalStaged.set(false);
           }
+          // Mark every other successfully-saved control pristine, only if its current value still
+          // equals what was actually submitted. Without this, the constructor's same-committee
+          // dirty filter (above) treats a saved control as "still has an unsaved edit" forever —
+          // the server-normalized value never lands, and a later unrelated save resends the stale
+          // value, reverting any change another writer made in between (cursor, greptile, copilot,
+          // dealako [blocking], #4911 review). Checking against `values` (captured at submit time)
+          // rather than unconditionally resetting dirty keeps a genuinely new edit — typed while
+          // this request was still in flight — marked dirty, since that one was never submitted.
+          Object.keys(values).forEach((key) => {
+            if (key === 'chat_webhook_url') return;
+            const control = this.form.get(key);
+            if (control?.dirty && control.value === (values as Record<string, unknown>)[key]) {
+              control.markAsPristine();
+            }
+          });
           this.committeeUpdated.emit();
         },
         error: (err: any) => {
@@ -436,6 +842,66 @@ export class CommitteeSettingsTabComponent {
 
   // -- Private methods --
 
+  // Drops a pending save override for a uid that just got unlinked — otherwise a stale automatic
+  // direction survives the unlink and resurfaces if the same list is relinked later in the session,
+  // since reconciliation (see associatedMlOverrides' refresh-pipeline tap) only inspects rows the
+  // fetch still returns (#4899 review). Also drops any in-progress miss count for the same uid —
+  // otherwise a later relink can resume counting from a stale, partially-accumulated miss count
+  // instead of starting fresh, pruning the relinked override after fewer real misses than intended
+  // (#4899 review, @dealako).
+  private clearMlOverride(uid: string): void {
+    const overrides = this.associatedMlOverrides();
+    if (overrides.has(uid)) {
+      const next = new Map(overrides);
+      next.delete(uid);
+      this.associatedMlOverrides.set(next);
+    }
+    const missCounts = this.overrideMissCounts();
+    if (missCounts.has(uid)) {
+      const nextMissCounts = new Map(missCounts);
+      nextMissCounts.delete(uid);
+      this.overrideMissCounts.set(nextMissCounts);
+    }
+  }
+
+  // See lastGoodAssociatedLists' doc comment above — called alongside clearMlOverride() from every
+  // unlink path so a refresh failure right after can't resurrect the list that was just removed.
+  private pruneLastGoodAssociatedList(uid: string): void {
+    if (!this.lastGoodAssociatedLists) return;
+    this.lastGoodAssociatedLists = { ...this.lastGoodAssociatedLists, lists: this.lastGoodAssociatedLists.lists.filter((l) => l.uid !== uid) };
+  }
+
+  // See unlinkedMlUids' doc comment above — called alongside clearMlOverride()/pruneLastGoodAssociatedList()
+  // from every successful unlink path so a stale-but-successful refetch can't resurrect the removed row.
+  private suppressUnlinkedMl(uid: string): void {
+    const uids = this.unlinkedMlUids();
+    if (uids.has(uid)) return;
+    const next = new Set(uids);
+    next.add(uid);
+    this.unlinkedMlUids.set(next);
+  }
+
+  // Lifts the suppression set by suppressUnlinkedMl() above the moment the same uid is intentionally
+  // relinked (via the Add List picker), so the just-relinked row isn't hidden by a leftover suppression
+  // from an earlier unlink in the same session (#4899 review).
+  private clearUnlinkedMlSuppression(uid: string): void {
+    const uids = this.unlinkedMlUids();
+    if (!uids.has(uid)) return;
+    const next = new Set(uids);
+    next.delete(uid);
+    this.unlinkedMlUids.set(next);
+  }
+
+  // Marks a uid as a genuinely pending add — see pendingAddMlUids' doc comment. Called only from
+  // saveMailingListAssociation's success handler, for a uid present in addedMlByUid.
+  private markPendingAddMl(uid: string): void {
+    const uids = this.pendingAddMlUids();
+    if (uids.has(uid)) return;
+    const next = new Set(uids);
+    next.add(uid);
+    this.pendingAddMlUids.set(next);
+  }
+
   private openPickerDialog(committeeUid: string, projectUid: string, projectSlug: string | undefined): void {
     const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
@@ -456,30 +922,43 @@ export class CommitteeSettingsTabComponent {
 
     ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
       if (!result) return;
-      this.saveMailingListAssociation(result.selectedUids, associatedUids, result.syncModes);
+      this.saveMailingListAssociation(result.selectedUids, associatedUids, result.syncModes, result.committeeFilters, result.committeeRoleFilters);
     });
   }
 
-  private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>, syncModes: Map<string, MailingListSyncMode>): void {
+  private saveMailingListAssociation(
+    currentSelection: Set<string>,
+    originalSelectedUids: Set<string>,
+    syncModes: Map<string, MailingListSyncMode>,
+    committeeFilters = new Map<string, CommitteeMemberVotingStatus[]>(),
+    committeeRoleFilters = new Map<string, string[]>()
+  ): void {
     const committee = this.committee();
     if (!committee?.uid) return;
 
     const added = [...currentSelection].filter((uid) => !originalSelectedUids.has(uid));
     const removed = [...originalSelectedUids].filter((uid) => !currentSelection.has(uid));
-    // Lists that stay linked across this save but may have had only their sync direction changed
-    // in the picker dialog (#4026) — `added`/`removed` above only cover link/unlink, so a
-    // direction-only change here needs its own update call.
-    const directionChanged = [...currentSelection]
+    // Lists that stay linked across this save but may have had only their sync direction, or
+    // (#4026 criterion 3) committee/role filters, changed in the picker dialog — `added`/`removed`
+    // above only cover link/unlink, so a config-only change here needs its own update call.
+    const configChanged = [...currentSelection]
       .filter((uid) => originalSelectedUids.has(uid))
       .filter((uid) => {
-        const desired = syncModes.get(uid);
-        if (desired === undefined) return false;
+        const desiredSync = syncModes.get(uid);
         const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
-        const current = ml?.sync_mode ?? MailingListSyncMode.MANUAL;
-        return desired !== current;
+        // The read model stores sync_mode/filters per-entry inside ml.committees[], not as
+        // top-level fields on the mailing list — getMailingListCommitteeSync resolves the entry
+        // for THIS committee instead of reading the (always-empty-on-reads) top-level fields.
+        const persisted = getMailingListCommitteeSync(ml, committee.uid);
+        if (desiredSync !== undefined && desiredSync !== (persisted.syncMode ?? MailingListSyncMode.MANUAL)) return true;
+        const desiredFilters = committeeFilters.get(uid);
+        if (desiredFilters !== undefined && !this.arraysEqualAsSets(desiredFilters, persisted.committeeFilters)) return true;
+        const desiredRoleFilters = committeeRoleFilters.get(uid);
+        if (desiredRoleFilters !== undefined && !this.arraysEqualAsSets(desiredRoleFilters, persisted.committeeRoleFilters)) return true;
+        return false;
       });
 
-    if (added.length === 0 && removed.length === 0 && directionChanged.length === 0) {
+    if (added.length === 0 && removed.length === 0 && configChanged.length === 0) {
       return;
     }
 
@@ -503,18 +982,36 @@ export class CommitteeSettingsTabComponent {
     // committee, so it must never gate this save's activations.
     const queueUpdate = (
       uid: string,
-      payload: Partial<CreateMailingListRequest>,
+      committeeUid: string | null,
+      explicitSyncMode: MailingListSyncMode | undefined,
+      explicitCommitteeFilters: CommitteeMemberVotingStatus[] | undefined,
+      explicitCommitteeRoleFilters: string[] | undefined,
       currentSyncMode: MailingListSyncMode | undefined,
       currentlyOnThisCommittee: boolean
     ): void => {
-      // Deferred so the service call — and thus any mock/spy recording it — fires only when this
-      // observable is actually subscribed (forkJoin for releases immediately, but for activations
-      // only inside the switchMap below, once releases have resolved), not when it's merely built.
-      const result$ = defer(() => this.mailingListService.updateMailingList(uid, payload)).pipe(
+      // Deferred so the fresh fetch and the update call — and thus any mock/spy recording them —
+      // fire only when this observable is actually subscribed (forkJoin for releases immediately,
+      // but for activations only inside the switchMap below, once releases have resolved), not
+      // when it's merely built. Fetching fresh immediately before building the payload avoids
+      // resurrecting a stale sync_mode from a cached projectMailingLists()/associatedMailingLists()
+      // snapshot that can predate another writer's change, e.g. a sync_mode flip from the Auto Sync
+      // drawer (#4899 review).
+      const result$ = defer(() =>
+        this.mailingListService
+          .getMailingList(uid, { skipCache: true })
+          .pipe(
+            switchMap((ml) =>
+              this.mailingListService.updateMailingList(
+                uid,
+                this.buildMlUpdatePayload(ml, committeeUid, explicitSyncMode, explicitCommitteeFilters, explicitCommitteeRoleFilters)
+              )
+            )
+          )
+      ).pipe(
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
       );
-      if (payload.sync_mode && payload.sync_mode !== MailingListSyncMode.MANUAL) {
+      if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
         activateUpdates.push({ uid, result$ });
       } else {
         const releasesAutoSyncSlot = currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;
@@ -527,10 +1024,25 @@ export class CommitteeSettingsTabComponent {
     // explicit direction was chosen (e.g. the sync settings feature flag is off). A newly added
     // list is by definition not currently on this committee, so it can never be releasing this
     // committee's slot.
+    // Tracked by uid, same as configChangedMlByUid below, so a successful add with an explicit
+    // sync_mode also gets patched into associatedMlOverrides — otherwise a newly-added list with an
+    // automatic direction fell back through to a stale getMailingListsByCommittee refetch that could
+    // still show it as Manual, letting the drawer activate a second auto-sync list and violate the
+    // one-auto-direction-per-committee rule this overlay exists to protect (cursor/copilot #4899 review).
+    const addedMlByUid = new Map<string, GroupsIOMailingList>();
     for (const uid of added) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode, false);
+        addedMlByUid.set(uid, ml);
+        queueUpdate(
+          uid,
+          committee.uid,
+          syncModes.get(uid),
+          committeeFilters.get(uid),
+          committeeRoleFilters.get(uid),
+          getMailingListCommitteeSync(ml, committee.uid).syncMode,
+          false
+        );
       }
     }
 
@@ -538,15 +1050,29 @@ export class CommitteeSettingsTabComponent {
     for (const uid of removed) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, null), ml.sync_mode, true);
+        queueUpdate(uid, null, undefined, undefined, undefined, getMailingListCommitteeSync(ml, committee.uid).syncMode, true);
       }
     }
 
-    // Direction-only change: the list stays linked to this same committee, only its sync_mode moves.
-    for (const uid of directionChanged) {
+    // Config-only change: the list stays linked to this same committee, only its sync_mode and/or
+    // committee/role filters (#4026 criterion 3) move. Tracked by uid so a successful save can patch
+    // associatedMlOverrides below, the same way onSyncSettingsUpdated() does for the Auto Sync drawer
+    // — otherwise a pending override from an earlier drawer save would keep masking this dialog's new
+    // mode until the next refresh happens to return it (Greptile #4899 review: "Drawer keeps an old mode").
+    const configChangedMlByUid = new Map<string, GroupsIOMailingList>();
+    for (const uid of configChanged) {
       const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
       if (ml) {
-        queueUpdate(uid, this.buildMlUpdatePayload(ml, committee.uid, syncModes.get(uid)), ml.sync_mode, true);
+        configChangedMlByUid.set(uid, ml);
+        queueUpdate(
+          uid,
+          committee.uid,
+          syncModes.get(uid),
+          committeeFilters.get(uid),
+          committeeRoleFilters.get(uid),
+          getMailingListCommitteeSync(ml, committee.uid).syncMode,
+          true
+        );
       }
     }
 
@@ -584,6 +1110,54 @@ export class CommitteeSettingsTabComponent {
         next: (results) => {
           const failed = results.filter((r) => !r.success).length;
           const succeeded = results.filter((r) => r.success).length;
+          // The committee can switch mid-flight (route navigation reusing this component instance)
+          // while this save's HTTP calls are still in flight — the constructor's committee-switch
+          // effect already resets associatedMlOverrides/unlinkedMlUids/pendingAddMlUids for the new
+          // committee, so writing into those maps here afterwards would resurrect state for a
+          // committee the user has already navigated away from (dealako #4899 review).
+          const stillSameCommittee = this.committee()?.uid === committee.uid;
+          if (stillSameCommittee) {
+            // Same override-invalidation reasoning as removeMailingList() above — a disassociation
+            // made through the picker dialog must not leave a stale pending direction behind either
+            // (#4899 review).
+            const removedUids = new Set(removed);
+            for (const r of results) {
+              if (r.success && removedUids.has(r.uid)) {
+                this.clearMlOverride(r.uid);
+                this.pruneLastGoodAssociatedList(r.uid);
+                this.suppressUnlinkedMl(r.uid);
+              }
+            }
+            // An intentional relink (via this same picker) must not stay hidden behind a leftover
+            // suppression from an earlier unlink in this session (#4899 review — see
+            // clearUnlinkedMlSuppression's doc comment).
+            const addedUids = new Set(added);
+            for (const r of results) {
+              if (r.success && addedUids.has(r.uid)) {
+                this.clearUnlinkedMlSuppression(r.uid);
+              }
+            }
+            // Replace (not just clear) the override for a successful direction change — leaving it
+            // cleared would fall straight back through to the pre-save fetched value until the next
+            // refresh resolves, flashing the old mode (Greptile #4899 review: "Drawer keeps an old mode").
+            // Covers both a config-only change and a brand-new add with an explicit direction — see
+            // addedMlByUid's doc comment above (cursor/copilot #4899 review).
+            for (const r of results) {
+              if (!r.success) continue;
+              const ml = configChangedMlByUid.get(r.uid) ?? addedMlByUid.get(r.uid);
+              const desired = ml ? syncModes.get(r.uid) : undefined;
+              if (ml && desired !== undefined) {
+                const overrides = new Map(this.associatedMlOverrides());
+                overrides.set(r.uid, { ...ml, sync_mode: desired });
+                this.associatedMlOverrides.set(overrides);
+                // Only an add-path override is a genuinely pending row — see pendingAddMlUids' doc
+                // comment (dealako #4899 review).
+                if (addedMlByUid.has(r.uid)) {
+                  this.markPendingAddMl(r.uid);
+                }
+              }
+            }
+          }
           if (failed === 0) {
             this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Mailing list associations updated' });
           } else if (succeeded > 0) {
@@ -597,7 +1171,10 @@ export class CommitteeSettingsTabComponent {
           } else {
             this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update mailing list associations' });
           }
+          // Locked before refreshMl$ fires — see removeMailingList's identical comment (#4899 review).
+          this.refreshingMl.set(true);
           this.refreshMl$.next();
+          this.refreshProjectMl$.next();
         },
       });
   }
@@ -613,10 +1190,45 @@ export class CommitteeSettingsTabComponent {
     return fallback;
   }
 
+  // Patches an overridden sync_mode onto BOTH the top-level field (read by the drawer's
+  // `lfx-mailing-list-sync-settings` child) and this committee's entry in `committees[]` (read by
+  // `getMailingListCommitteeSync` and the picker's `configChanged` detection) — an override that
+  // only touched the top-level field left the picker seeded from the stale pre-save direction, since
+  // the indexed read model never populates that field and every other reader resolves through
+  // `committees[]` instead (#4899 review).
+  //
+  // Appends a new entry when this committee has none yet, rather than only remapping an existing
+  // one — a just-added list's fetched `committees[]` can still be missing this committee's row until
+  // the indexed read catches up with the association, and a plain `.map` would silently drop the
+  // override on the floor in that case, leaving `getMailingListCommitteeSync` resolving undefined
+  // and the picker treating the auto-sync slot as free indefinitely if a later refetch never lands
+  // the row either (cursor bugbot #4899 review).
+  private patchCommitteeSyncMode(ml: GroupsIOMailingList, mode: MailingListSyncMode | undefined): GroupsIOMailingList {
+    const committeeUid = this.committee().uid;
+    const committees = ml.committees ?? [];
+    const hasEntry = committees.some((c) => c.uid === committeeUid);
+    return {
+      ...ml,
+      sync_mode: mode,
+      committees: hasEntry
+        ? committees.map((c) => (c.uid === committeeUid ? { ...c, sync_mode: mode } : c))
+        : [...committees, { uid: committeeUid, sync_mode: mode }],
+    };
+  }
+
+  /** Order-insensitive array equality, used to detect a no-op committee/role filter change (#4026 criterion 3). */
+  private arraysEqualAsSets(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    const setB = new Set(b);
+    return a.every((value) => setB.has(value));
+  }
+
   private buildMlUpdatePayload(
     ml: GroupsIOMailingList,
     committeeUid: string | null,
-    explicitSyncMode?: MailingListSyncMode
+    explicitSyncMode?: MailingListSyncMode,
+    explicitCommitteeFilters?: CommitteeMemberVotingStatus[],
+    explicitCommitteeRoleFilters?: string[]
   ): Partial<CreateMailingListRequest> {
     // Preserve the existing sync direction (#4024) only when the committee is unchanged —
     // detaching/reattaching the SAME committee is a full-resource PUT, so omitting sync_mode would
@@ -628,14 +1240,35 @@ export class CommitteeSettingsTabComponent {
     // direction with the sync settings feature flag on, so an unset value here always falls back
     // to the #4024/#4880 behavior above untouched.
     const sameCommittee = !!committeeUid && ml.committees?.[0]?.uid === committeeUid;
+    // The read model stores sync_mode/filters per-entry inside ml.committees[], not as top-level
+    // fields on the mailing list — getMailingListCommitteeSync resolves the entry for THIS
+    // committee instead of reading the (always-empty-on-reads) top-level fields directly.
+    const persisted = sameCommittee ? getMailingListCommitteeSync(ml, committeeUid) : undefined;
     let syncMode: MailingListSyncMode | undefined;
     if (explicitSyncMode !== undefined) {
       syncMode = explicitSyncMode;
     } else if (sameCommittee) {
-      syncMode = ml.sync_mode;
+      syncMode = persisted?.syncMode;
     } else if (committeeUid) {
       syncMode = MailingListSyncMode.MANUAL;
     }
+
+    // Committee/role filters (#4026 criterion 3, linuxfoundation/lfx-v2-mailing-list-service#110)
+    // are only meaningful while the resolved direction is auto_c_to_ml — mirrors the sync_mode
+    // preserve/reset rule above: carry the list's own persisted filters forward only when staying
+    // on the SAME committee, reset to unfiltered when linking to a different one, and explicitly
+    // clear both to `[]` (rather than omitting them) whenever the resolved direction isn't
+    // auto_c_to_ml, so stale filters don't linger after switching away from that direction.
+    let committeeFilters: CommitteeMemberVotingStatus[] | undefined;
+    let committeeRoleFilters: string[] | undefined;
+    if (syncMode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST) {
+      committeeFilters = explicitCommitteeFilters ?? persisted?.committeeFilters ?? [];
+      committeeRoleFilters = explicitCommitteeRoleFilters ?? persisted?.committeeRoleFilters ?? [];
+    } else if (committeeUid) {
+      committeeFilters = [];
+      committeeRoleFilters = [];
+    }
+
     return {
       name: ml.group_name,
       public: ml.public,
@@ -649,12 +1282,66 @@ export class CommitteeSettingsTabComponent {
       writers: ml.writers,
       auditors: ml.auditors,
       sync_mode: syncMode,
+      committee_filters: committeeFilters,
+      committee_role_filters: committeeRoleFilters,
     };
+  }
+
+  // See associatedMailingLists' doc comment above for the pending-row invariant this enforces.
+  private initAssociatedMailingListsWithOverrides(): Signal<GroupsIOMailingList[]> {
+    return computed(() => {
+      const overrides = this.associatedMlOverrides();
+      if (overrides.size === 0) return this.fetchedAssociatedMailingLists();
+      const fetched = this.fetchedAssociatedMailingLists();
+      const patched = fetched.map((ml) => {
+        const override = overrides.get(ml.uid);
+        return override ? this.patchCommitteeSyncMode(ml, override.sync_mode) : ml;
+      });
+      const fetchedUids = new Set(fetched.map((ml) => ml.uid));
+      // Any override still in the map and missing from this fetch gets replayed as its own row,
+      // not just a pending add: the prune loop (see initAssociatedMailingLists) now keeps a
+      // non-pending override alive through its first miss too (dealako #4899 review's two-miss
+      // fallback), so during that one-miss grace window the override is still "active" and must
+      // stay visible — the row only needs to disappear once the prune loop actually deletes the
+      // override, which it already does by the override's second consecutive miss.
+      const pendingRows = [...overrides.entries()].filter(([uid]) => !fetchedUids.has(uid)).map(([, ml]) => this.patchCommitteeSyncMode(ml, ml.sync_mode));
+      return pendingRows.length > 0 ? [...patched, ...pendingRows] : patched;
+    });
+  }
+
+  private initAssociatedMailingListRows(): Signal<CommitteeAssociatedMailingListRow[]> {
+    return computed(() =>
+      this.associatedMailingLists().map((ml) => {
+        const removable = ml.writer === true;
+        const syncModeSupported =
+          ml.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST || ml.sync_mode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE;
+
+        let syncTooltip = `Preview and apply committee sync for ${ml.group_name}`;
+        if (!removable) {
+          syncTooltip = 'You need Manage access to this mailing list to sync it.';
+        } else if (!syncModeSupported) {
+          syncTooltip = `Set a sync direction for ${ml.group_name} in Mailing List Settings before syncing.`;
+        }
+
+        const removeTooltip = removable ? `Remove mailing list ${ml.group_name}` : 'You need Manage access to this mailing list to unlink it.';
+
+        return { ...ml, removable, syncModeSupported, syncTooltip, removeTooltip };
+      })
+    );
   }
 
   private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
     const committee$ = toObservable(this.committee);
     const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
+    // Preserve the last successfully-loaded list on a failed refresh instead of wiping it to [] —
+    // a transient fetch error (e.g. a flaky refreshMl$ re-fetch) would otherwise make every open
+    // Auto Sync drawer card vanish rather than just leaving the data stale (#4899 review). Keyed by
+    // committee uid, not a bare array: this component instance is reused across /groups/:id ->
+    // /groups/:id2 navigation, so a failed fetch for committee B must not resurface committee A's
+    // lists — the fallback is only valid when it matches the committee currently being requested
+    // (#4899 review). A class field (lastGoodAssociatedLists), not a closure-local, so an unlink
+    // path (removeMailingList, saveMailingListAssociation) can prune it directly — see
+    // pruneLastGoodAssociatedList's doc comment.
 
     return toSignal(
       merge(committee$, refresh$).pipe(
@@ -662,8 +1349,145 @@ export class CommitteeSettingsTabComponent {
         switchMap((c) => {
           this.mlLoadingInternal.set(true);
           return this.mailingListService.getMailingListsByCommittee(c!.uid).pipe(
+            // The read model stores sync_mode/filters per-entry inside ml.committees[], not as a
+            // top-level field — resolve this committee's entry onto `sync_mode` here, once, so every
+            // downstream consumer of this signal (the template, the override reconciliation below,
+            // the Auto Sync drawer's children) can keep reading `ml.sync_mode` directly instead of
+            // re-deriving it, and an already-enabled list doesn't appear off (#4899 review).
+            map((lists) => lists.map((ml) => ({ ...ml, sync_mode: getMailingListCommitteeSync(ml, c!.uid).syncMode }))),
             finalize(() => this.mlLoadingInternal.set(false)),
-            catchError(() => of([] as GroupsIOMailingList[]))
+            // Clear refreshingMl only on an actual emission, not in finalize() — finalize() also
+            // fires on unsubscribe, so a switchMap cancelling this request in favor of a newer one
+            // (another refreshMl$/committee() emission) would otherwise unlock sibling cards while
+            // the replacement request is still in flight (#4899 review).
+            tap((lists) => {
+              this.refreshingMl.set(false);
+              this.mlRefreshFailed.set(false);
+              const fetchedUids = new Set(lists.map((l) => l.uid));
+              // Confirm absence: once this committee's refetch no longer contains a uid suppressed
+              // by suppressUnlinkedMl() after a successful unlink, stop suppressing it — see
+              // unlinkedMlUids' doc comment (#4899 review).
+              const suppressed = this.unlinkedMlUids();
+              if (suppressed.size > 0) {
+                const stillStale = new Set([...suppressed].filter((uid) => fetchedUids.has(uid)));
+                if (stillStale.size !== suppressed.size) {
+                  this.unlinkedMlUids.set(stillStale);
+                }
+              }
+              // Drop any override whose value the real fetch now confirms — once the query index
+              // catches up, the override would otherwise keep masking a further legitimate change
+              // to the same list made outside this component (#4899 review).
+              const overrides = this.associatedMlOverrides();
+              const pendingAdds = this.pendingAddMlUids();
+              if (overrides.size > 0) {
+                const next = new Map(overrides);
+                for (const ml of lists) {
+                  const override = next.get(ml.uid);
+                  if (override && override.sync_mode === ml.sync_mode) {
+                    next.delete(ml.uid);
+                  }
+                }
+                // A non-add override (a config-only change) whose uid this successful fetch doesn't
+                // return at all means the list was unlinked outside this component — keeping it would
+                // let it resurrect via associatedMailingLists' pendingRows. A genuinely pending add is
+                // exempt: its uid is expected to be briefly missing until the query index catches up
+                // (dealako #4899 review). Pruning only happens on a uid's SECOND consecutive miss, not
+                // its first — absent a confirmable guarantee that this fetch can't transiently omit a
+                // still-linked list (e.g. delete+reindex semantics on a sync_mode-only PUT), one miss
+                // alone isn't proof of an external unlink (dealako #4899 review).
+                const missCounts = new Map(this.overrideMissCounts());
+                let missCountsChanged = false;
+                for (const uid of next.keys()) {
+                  if (pendingAdds.has(uid)) {
+                    continue;
+                  }
+                  if (fetchedUids.has(uid)) {
+                    if (missCounts.delete(uid)) {
+                      missCountsChanged = true;
+                    }
+                    continue;
+                  }
+                  const misses = (missCounts.get(uid) ?? 0) + 1;
+                  if (misses >= 2) {
+                    next.delete(uid);
+                    missCounts.delete(uid);
+                  } else {
+                    missCounts.set(uid, misses);
+                  }
+                  missCountsChanged = true;
+                }
+                // Drop any miss count no longer backed by a tracked override (confirmed above, or
+                // pruned on this pass) so a stale count can't resurface against a later re-add.
+                for (const uid of missCounts.keys()) {
+                  if (!next.has(uid)) {
+                    missCounts.delete(uid);
+                    missCountsChanged = true;
+                  }
+                }
+                if (missCountsChanged) {
+                  this.overrideMissCounts.set(missCounts);
+                }
+                if (next.size !== overrides.size) {
+                  this.associatedMlOverrides.set(next);
+                }
+                // A uid that just took its first (non-pruning) miss is resurrected and editable via
+                // associatedMailingLists' pendingRows until a second fetch either confirms it's gone
+                // (pruning it) or sees it reappear — but nothing else guarantees that second fetch
+                // ever happens: refreshMl$ only fires on explicit user actions (a drawer save, retry,
+                // unlink, picker save), not on a timer. Left alone, an externally-unlinked list could
+                // stay resurrected indefinitely, and saving its card would silently relink it
+                // (greptile, cursor bugbot #4899 review). Schedule one bounded follow-up refresh so
+                // the grace window resolves on its own; bounded because the uid either gets pruned
+                // (no more misses to chase) or reconfirmed (count cleared) by that follow-up.
+                if (missCounts.size > 0 && !this.pendingMissRetry) {
+                  this.pendingMissRetry = true;
+                  timer(2000)
+                    .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+                    .subscribe(() => {
+                      this.pendingMissRetry = false;
+                      this.refreshMl$.next();
+                    });
+                }
+              }
+              // Lift the pending-add marking the first time a fetch contains the uid at all, matching
+              // or not — from that point the row comes from the `patched` branch above, not
+              // `pendingRows`, so the marking no longer does anything useful and must not survive a
+              // later external unlink of the same uid (dealako #4899 review).
+              if (pendingAdds.size > 0) {
+                const stillPending = new Set([...pendingAdds].filter((uid) => !fetchedUids.has(uid)));
+                if (stillPending.size !== pendingAdds.size) {
+                  this.pendingAddMlUids.set(stillPending);
+                }
+              }
+            }),
+            // Drop any row still suppressed post-unlink (#4899 review — see unlinkedMlUids' doc
+            // comment). Applied after the tap above so a just-confirmed absence isn't re-filtered
+            // here, and stored as the last-good snapshot so a subsequent failed refresh's fallback
+            // doesn't resurrect a suppressed row either.
+            map((lists) => {
+              const suppressed = this.unlinkedMlUids();
+              const filtered = suppressed.size === 0 ? lists : lists.filter((ml) => !suppressed.has(ml.uid));
+              this.lastGoodAssociatedLists = { uid: c!.uid, lists: filtered };
+              this.fetchedAssociatedListsCommitteeUid.set(c!.uid);
+              return filtered;
+            }),
+            catchError((error) => {
+              console.error('Failed to refresh associated mailing lists', error);
+              // Leave refreshingMl locked rather than unlocking sibling cards against this stale
+              // fallback — it only clears again once a refresh actually succeeds (#4899 review).
+              // Set unconditionally (not just left alone) so a failure on a committee-input-driven
+              // refresh — which never flipped refreshingMl true to begin with, unlike the
+              // onSyncSettingsUpdated/retryMlRefresh/removeMailingList/saveMailingListAssociation
+              // paths — still locks the drawer's sync controls (which gate on refreshingMl, not
+              // mlRefreshFailed; see the template's lockedBySibling binding) instead of leaving them
+              // enabled against stale or empty data (#4899 review).
+              this.refreshingMl.set(true);
+              // mlRefreshFailed surfaces a retry affordance instead of leaving the drawer locked
+              // with no way out (#4899 review).
+              this.mlRefreshFailed.set(true);
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to refresh mailing lists' });
+              return of(this.lastGoodAssociatedLists?.uid === c!.uid ? this.lastGoodAssociatedLists.lists : []);
+            })
           );
         })
       ),
@@ -672,14 +1496,28 @@ export class CommitteeSettingsTabComponent {
   }
 
   private initProjectMailingLists(): Signal<GroupsIOMailingList[]> {
-    const committee$ = toObservable(this.committee);
-    const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
+    // Also refreshes on refreshProjectMl$ (association changes: link/unlink/picker direction) so the
+    // snapshot reflects server state after those saves. A drawer sync-only save does NOT refetch
+    // here; projectMailingLists' overlay keeps sync_mode current instead.
+    // Same keyed last-good-data fallback as initAssociatedMailingLists() above — a transient fetch
+    // error otherwise empties the Add List picker instead of just leaving it stale (#4899 review).
+    let lastGoodProjectLists: { uid: string; lists: GroupsIOMailingList[] } | null = null;
 
     return toSignal(
-      merge(committee$, refresh$).pipe(
+      merge(toObservable(this.committee), this.refreshProjectMl$.pipe(map(() => this.committee()))).pipe(
         filter((c) => !!c?.project_uid),
         switchMap((c) => {
-          return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(catchError(() => of([] as GroupsIOMailingList[])));
+          return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(
+            // Same per-committee resolution as initAssociatedMailingLists() above — a project-wide
+            // list can be linked to this committee among others, and the top-level `sync_mode` field
+            // is not reliable on reads (#4899 review).
+            map((lists) => lists.map((ml) => ({ ...ml, sync_mode: getMailingListCommitteeSync(ml, c!.uid).syncMode }))),
+            tap((lists) => (lastGoodProjectLists = { uid: c!.project_uid!, lists })),
+            catchError((error) => {
+              console.error('Failed to refresh project mailing lists', error);
+              return of(lastGoodProjectLists?.uid === c!.project_uid ? lastGoodProjectLists.lists : []);
+            })
+          );
         })
       ),
       { initialValue: [] as GroupsIOMailingList[] }
