@@ -4245,6 +4245,18 @@ export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Se
 ]);
 
 /**
+ * How many years AFTER the current one the saved-brief lookup also tries as a slug suffix (#5492).
+ *
+ * A brief is stored under the slug the generator writes (`eventDetails.slug`), which often adds the
+ * event's year to the URL's last segment: the KubeCon Europe page `/kubecon-cloudnativecon-europe/`
+ * is stored as `kubecon-cloudnativecon-europe-2027`. Before generating, the page knows only the
+ * URL, so the lookup tries the bare segment, then the segment with each of the next
+ * `CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD` years and this one, latest first (`briefSlugYearCandidates`).
+ * Events are planned up to about two years out.
+ */
+export const CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD = 2;
+
+/**
  * The longest survey source document campaign-service accepts, in characters, counted as
  * `campaignSurveySourceTextLength` counts them. Longer is a 400 at brief save and at copy
  * generation upstream: the copy would otherwise be written from a cut document, silently losing a
