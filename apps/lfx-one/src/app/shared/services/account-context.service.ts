@@ -17,6 +17,7 @@ import { CookieRegistryService } from './cookie-registry.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { OrgRollUpFamiliesService } from './org-roll-up-families.service';
+import { OrgRollUpFlagService } from './org-roll-up-flag.service';
 
 const PLACEHOLDER_ACCOUNT: Account = {
   accountId: '',
@@ -33,6 +34,7 @@ export class AccountContextService {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly rollUpFamiliesService = inject(OrgRollUpFamiliesService);
+  private readonly rollUpFlag = inject(OrgRollUpFlagService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -115,21 +117,31 @@ export class AccountContextService {
     this.rollUpFamiliesService.hasServerFamilies() ? this.rollUpFamiliesService.families() : []
   );
 
-  /** True once the families answer landed as a lower bound or unknown — the switcher shows its incomplete-list notice, whose Retry re-runs the grants and so the families. */
-  public readonly rollUpFamiliesIncomplete: Signal<boolean> = this.rollUpFamiliesService.incomplete;
+  /**
+   * True once the families answer landed as a lower bound or unknown — the switcher shows its
+   * incomplete-list notice, whose Retry re-runs the grants and so the families. Only while the
+   * roll-up flag is on: with it off the families feed nothing on screen, so their failure is not
+   * the viewer's concern.
+   */
+  public readonly rollUpFamiliesIncomplete: Signal<boolean> = computed(() => this.rollUpFlag.enabled() && this.rollUpFamiliesService.incomplete());
   /** True while the families cannot settle roll-up eligibility — the window admission rides out, so held-ness must ride it out too. */
   public readonly rollUpFamiliesUnsettled: Signal<boolean> = this.rollUpFamiliesService.unsettled;
-  public readonly rollUpFamiliesLoading: Signal<boolean> = this.rollUpFamiliesService.loading;
+  /** Gated like `rollUpFamiliesIncomplete`: the switcher's Retry stays busy through the refetch only when the roll-up is offered at all. */
+  public readonly rollUpFamiliesLoading: Signal<boolean> = computed(() => this.rollUpFlag.enabled() && this.rollUpFamiliesService.loading());
 
   /**
    * The families a roll-up is offered for: those where the caller holds at least
    * `ROLLUP_MIN_ORGANIZATIONS` organizations (#4132), from a settled answer only. A partial answer
    * can name a provisional top account, and an answer to an earlier grants load can name a family
    * the reload shrank or removed; a pick made on either would demote once the current answer lands.
-   * A selection made before stays admitted: `grantsUnsettled` holds it meanwhile.
+   * A selection made before stays admitted: `rollUpEligibilityUnsettled` holds it meanwhile.
+   *
+   * None at all unless the `org-lens-rollup-enabled` flag is known to be on for this viewer.
    */
   public readonly eligibleRollUpFamilies: Signal<OrgRollUpFamily[]> = computed(() =>
-    this.rollUpFamiliesService.unsettled() ? [] : this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS)
+    !this.rollUpFlag.enabled() || this.rollUpFamiliesService.unsettled()
+      ? []
+      : this.rollUpFamilies().filter((family) => family.orgUids.length >= ROLLUP_MIN_ORGANIZATIONS)
   );
 
   /** The family behind the selected roll-up, or null when no roll-up is selected or its family is not known (yet). */
@@ -154,7 +166,7 @@ export class AccountContextService {
    */
   private readonly rollUpShouldDemote: Signal<boolean> = computed(() => {
     const rootUid = this.selectedRollUpRootUid();
-    return rootUid !== null && !this.grantsUnsettled() && !this.canSelectRollUpFor(rootUid);
+    return rootUid !== null && !this.rollUpEligibilityUnsettled() && !this.canSelectRollUpFor(rootUid);
   });
 
   /** Whether any roll-up is offered: the caller holds two or more organizations in at least one family (#4132). */
@@ -187,6 +199,15 @@ export class AccountContextService {
   public readonly grantsUnsettled: Signal<boolean> = computed(
     () => !this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.lookupOutcome() !== 'ok' || this.rollUpFamiliesService.unsettled()
   );
+
+  /**
+   * The window in which a roll-up already selected — restored from the cookie or adopted from an
+   * address — is neither confirmed nor demoted: the grants are unsettled, or the
+   * `org-lens-rollup-enabled` flag has not answered for the signed-in viewer yet. LaunchDarkly
+   * answers for an anonymous context first, so treating that answer as "off" would demote a viewer
+   * the flag targets.
+   */
+  private readonly rollUpEligibilityUnsettled: Signal<boolean> = computed(() => this.grantsUnsettled() || this.rollUpFlag.unsettled());
 
   /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
@@ -309,7 +330,7 @@ export class AccountContextService {
     // trustworthy, and a caller who no longer holds two organizations in that family falls through
     // to the ordinary default selection below.
     const storedRootUid = orgRollUpRootUid(storedUid);
-    if (storedRootUid && (this.canSelectRollUpFor(storedRootUid) || this.grantsUnsettled())) {
+    if (storedRootUid && (this.canSelectRollUpFor(storedRootUid) || this.rollUpEligibilityUnsettled())) {
       this.applyRollUpSelection(storedRootUid);
       this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
       return;
@@ -418,7 +439,7 @@ export class AccountContextService {
     // not-found. Admitting is self-correcting instead — `rollUpShouldDemote` is the exact
     // complement of this condition, so the moment the grants land either they confirm the roll-up
     // or reconciliation demotes and re-points (#4415 reviews 10 and 12).
-    const admissible = this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && this.grantsUnsettled());
+    const admissible = this.canSelectRollUpFor(rootUid) || (options?.admitWhilePending === true && this.rollUpEligibilityUnsettled());
     if (!admissible) {
       return false;
     }
@@ -506,8 +527,9 @@ export class AccountContextService {
     // — an organization this caller does not have, in the cookie, over the one they do. The server
     // still fails closed, so the pages would simply be empty rather than wrong (#4415, Copilot).
     //
-    // Only reached from `orgPathParamGuard` once the grants have settled — `admitWhilePending`
-    // admits every unsettled visit — so the held set is authoritative here, not a lower bound.
+    // Only reached from `orgPathParamGuard` once the grants and the roll-up flag have settled —
+    // `admitWhilePending` admits every unsettled visit — so the held set is authoritative here, not
+    // a lower bound.
     const concrete = !isOrgRollUpSegment(current.uid) && orgUrlSegment(current) && this.canAddressOrganization(current.uid) ? current : null;
     // The addressed family first: a link to family A lands in A while the caller still holds an
     // organization there, whatever company they happened to be viewing before.

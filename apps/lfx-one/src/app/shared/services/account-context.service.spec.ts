@@ -17,6 +17,7 @@ import { CookieRegistryService } from './cookie-registry.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { OrgRollUpFamiliesService } from './org-roll-up-families.service';
+import { OrgRollUpFlagService } from './org-roll-up-flag.service';
 
 // Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
 // before the persona refresh re-seeds organizations. That re-seed runs `initializeUserOrganizations`
@@ -66,6 +67,7 @@ describe('AccountContextService — address-adopted selection', () => {
           provide: OrgRollUpFamiliesService,
           useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
         },
+        { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
       ],
     });
@@ -415,6 +417,7 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
           provide: OrgRollUpFamiliesService,
           useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
         },
+        { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
       ],
     });
@@ -560,8 +563,11 @@ describe('AccountContextService — family roll-up', () => {
     hasServerFamilies: WritableSignal<boolean>;
     families: Signal<OrgRollUpFamily[]>;
     unsettled: WritableSignal<boolean>;
-    incomplete: Signal<boolean>;
+    incomplete: WritableSignal<boolean>;
+    loading: WritableSignal<boolean>;
   };
+  /** The `org-lens-rollup-enabled` gate — on and settled unless a test says otherwise. */
+  let rollUpFlag: { enabled: WritableSignal<boolean>; unsettled: WritableSignal<boolean> };
 
   /** Stands in for the roll-up set endpoint: groups what the caller holds (persona seeds and every grant set) under each organization's top parent. */
   const groupLikeServer = (): OrgRollUpFamily[] => {
@@ -611,7 +617,9 @@ describe('AccountContextService — family roll-up', () => {
       families: computed(() => serverAnswer() ?? groupLikeServer()),
       unsettled: signal(false),
       incomplete: signal(false),
+      loading: signal(false),
     };
+    rollUpFlag = { enabled: signal(true), unsettled: signal(false) };
     TestBed.configureTestingModule({
       providers: [
         {
@@ -626,6 +634,7 @@ describe('AccountContextService — family roll-up', () => {
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn(() => of(liveRows)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
         { provide: OrgRollUpFamiliesService, useValue: serverFamilies },
+        { provide: OrgRollUpFlagService, useValue: rollUpFlag },
         { provide: OrgClaOnlyAccessService, useValue: { claOnlyOrgUids } },
         { provide: UrlSerializer, useClass: DefaultUrlSerializer },
         {
@@ -761,6 +770,84 @@ describe('AccountContextService — family roll-up', () => {
 
       expect(service.isRollUp()).toBe(false);
       expect(service.selectedAccount().uid).toBe(UID_A);
+    });
+  });
+
+  /**
+   * The `org-lens-rollup-enabled` dark-launch gate (#4132). LaunchDarkly answers for an anonymous
+   * context before the signed-in viewer, so "not known yet" is held like unsettled grants, and only
+   * a settled "off" withdraws the roll-up.
+   */
+  describe('org-lens-rollup-enabled flag', () => {
+    it('offers no roll-up while the flag is off, though the families are known', () => {
+      service.initializeUserOrganizations([seedA, seedB]);
+      expect(service.canSelectRollUpFor(ROOT)).toBe(true);
+
+      rollUpFlag.enabled.set(false);
+
+      expect(service.rollUpFamilies()).not.toEqual([]);
+      expect(service.eligibleRollUpFamilies()).toEqual([]);
+      expect(service.canSelectRollUp()).toBe(false);
+      expect(service.selectRollUp(ROOT)).toBe(false);
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(false);
+    });
+
+    it('admits a roll-up address while the flag has not answered, but offers no new pick', () => {
+      rollUpFlag.enabled.set(false);
+      rollUpFlag.unsettled.set(true);
+      service.initializeUserOrganizations([seedA, seedB]);
+
+      expect(service.canSelectRollUpFor(ROOT)).toBe(false);
+      expect(service.selectRollUp(ROOT)).toBe(false);
+      expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
+      expect(service.isRollUp()).toBe(true);
+    });
+
+    it('holds a restored roll-up while the flag has not answered, and demotes once it settles off', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      rollUpFlag.enabled.set(false);
+      rollUpFlag.unsettled.set(true);
+      service.initializeUserOrganizations([seedA, seedB]);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
+
+      rollUpFlag.unsettled.set(false);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(false);
+      expect([UID_A, UID_B]).toContain(service.selectedAccount().uid);
+      expect(JSON.parse(cookies.get(COOKIE) as string).uid).not.toBe(SEGMENT);
+    });
+
+    it('keeps a restored roll-up once the flag settles on', () => {
+      cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
+      rollUpFlag.enabled.set(false);
+      rollUpFlag.unsettled.set(true);
+      service.initializeUserOrganizations([seedA, seedB]);
+      TestBed.tick();
+
+      rollUpFlag.unsettled.set(false);
+      rollUpFlag.enabled.set(true);
+      TestBed.tick();
+
+      expect(service.isRollUp()).toBe(true);
+      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Organizations' }));
+    });
+
+    // With the flag off the families feed nothing on screen, so the switcher must not carry their
+    // incomplete-list notice or keep its Retry busy on their refetch.
+    it('reports the families incomplete or loading only while the flag is on', () => {
+      serverFamilies.incomplete.set(true);
+      serverFamilies.loading.set(true);
+      expect(service.rollUpFamiliesIncomplete()).toBe(true);
+      expect(service.rollUpFamiliesLoading()).toBe(true);
+
+      rollUpFlag.enabled.set(false);
+
+      expect(service.rollUpFamiliesIncomplete()).toBe(false);
+      expect(service.rollUpFamiliesLoading()).toBe(false);
     });
   });
 

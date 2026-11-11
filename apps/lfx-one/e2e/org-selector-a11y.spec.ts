@@ -33,6 +33,7 @@
  * deterministic regardless of what the bootstrap identity actually holds.
  */
 
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 // The org-selector trigger only renders (data-visible=true) while the active lens is 'org'; on the
@@ -61,6 +62,13 @@ const ORG_A_NAME = 'Alpha Foundation';
 const ORG_B_NAME = 'Bravo Foundation';
 
 async function stubTwoDirectGrants(page: Page): Promise<void> {
+  // The roll-up row is dark-launched behind `org-lens-rollup-enabled`; pin it on so the listbox shape does not
+  // depend on how LaunchDarkly targets the test identity.
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
+    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+    JSON.stringify({ [ORG_LENS_ROLLUP_ENABLED_FLAG]: true }),
+  ] as const);
+
   await page.route('**/api/orgs/me/role-grants', (route) =>
     route.fulfill({
       status: 200,
