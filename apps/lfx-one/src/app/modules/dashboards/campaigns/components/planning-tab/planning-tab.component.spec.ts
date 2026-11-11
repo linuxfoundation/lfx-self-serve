@@ -566,6 +566,24 @@ describe('PlanningTabComponent brief read-back', () => {
         approved: true,
       };
 
+      it('mounts the review live region empty before the review step, then fills it, so the offer is announced', async () => {
+        campaignService.loadBrief.mockImplementation((slug: string) => of(slug === generated ? loadedUnderGenerated : none));
+        await typeEventUrl('https://events.example.com/kubecon-europe/');
+        fixture.detectChanges();
+        // Found before Generate: the region already exists, and says nothing yet.
+        const live = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]') as HTMLElement | null;
+        expect(live).not.toBeNull();
+        expect(live?.textContent?.trim()).toBe('');
+
+        finishGeneration(generated);
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        // The same element, its contents changed, which is what a screen reader announces.
+        expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]')).toBe(live);
+        expect(live?.textContent).toContain('A saved brief was found for');
+      });
+
       it('says the generated brief cannot be saved over it when someone else owns it', async () => {
         // The usual #5492 path: the year guess finds the stored edition before Generate is pressed.
         await foundBeforeGenerating(loadedUnderGenerated);
