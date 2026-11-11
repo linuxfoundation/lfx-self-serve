@@ -294,6 +294,24 @@ describe('OrganizationSearchComponent with resolveOnSelect=false', () => {
     expect(form.get('organization')?.value).toBe('Acme');
   });
 
+  it('does not search again for the picked name, but still searches once the user edits it', async () => {
+    const SEARCH_URL = '/api/organizations/search';
+    const wait = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 350));
+    const searchControl = (fixture.componentInstance as unknown as { organizationForm: FormGroup }).organizationForm.get('organizationSearch')!;
+
+    pick({ name: 'Acme Motors', domain: 'acme-motors.example' });
+    // PrimeNG writes the picked name back into the box, which is what used to trigger the extra search.
+    searchControl.setValue('Acme Motors');
+    await wait();
+
+    http.expectNone((req) => req.url === SEARCH_URL);
+
+    searchControl.setValue('Acme Motors Labs');
+    await wait();
+
+    expect(http.match((req) => req.url === SEARCH_URL && req.params.get('query') === 'Acme Motors Labs')).toHaveLength(1);
+  });
+
   it('lets a later pick overwrite typed text', async () => {
     type('Acm');
     completeSearch('Acm');

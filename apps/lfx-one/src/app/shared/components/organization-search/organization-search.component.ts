@@ -96,6 +96,9 @@ export class OrganizationSearchComponent {
   // Name of the currently selected suggestion, so onSearchComplete can tell a live re-type
   // (query no longer matches what was picked) from PrimeNG echoing the selection back.
   private selectedName: string | null = null;
+  /** resolveOnSelect=false only: the name just picked. PrimeNG writes it back into the box, and the debounced
+   *  search would then look up the name the user already chose; that one search is skipped. */
+  private pickedTerm: string | null = null;
 
   // True once the typed query has diverged from selectedName and been synced to the parent
   // form as free text. Kept separate from the string comparison in onSearchComplete so a
@@ -168,6 +171,13 @@ export class OrganizationSearchComponent {
         // Only fetch suggestions when user types something
         if (!trimmedTerm) {
           return of([]);
+        }
+
+        if (this.pickedTerm !== null) {
+          if (trimmedTerm.toLowerCase() === this.pickedTerm.toLowerCase()) {
+            return of([]);
+          }
+          this.pickedTerm = null;
         }
 
         return this.organizationService.searchOrganizations(trimmedTerm);
@@ -319,6 +329,7 @@ export class OrganizationSearchComponent {
 
     // The name is already stored; this mode never resolves the pick against CDP.
     if (!this.resolveOnSelect()) {
+      this.pickedTerm = selectedOrganization.name;
       return;
     }
 
