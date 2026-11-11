@@ -467,6 +467,6 @@ export const FORMATION_ITEM_QUERY_PARAM = 'item';
  * must not claim the project lacks access or does not exist.
  */
 export const FORMATION_NO_CHECKLIST_COPY = {
-  title: 'No formation checklist for this project',
-  subtitle: 'A checklist starts when the project moves into a formation stage.',
+  title: 'Nothing to track for this project yet',
+  subtitle: 'Formation items start when the project moves into a formation stage.',
 } as const;

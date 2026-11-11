@@ -395,8 +395,8 @@ describe('FormationChecklistSectionComponent', () => {
 
         expect(fixture.componentInstance['pageState']()).toBe('no-checklist');
         const empty = byTestId('formation-checklist-empty-no-checklist');
-        expect(empty?.textContent).toContain('No formation checklist for this project');
-        expect(empty?.textContent).toContain('A checklist starts when the project moves into a formation stage.');
+        expect(empty?.textContent).toContain('Nothing to track for this project yet');
+        expect(empty?.textContent).toContain('Formation items start when the project moves into a formation stage.');
         expect(empty?.textContent).not.toMatch(/access|exist/i);
         expect(byTestId('formation-checklist-retry')).toBeNull();
         expect(byTestId('formation-checklist-inline-error')).toBeNull();
