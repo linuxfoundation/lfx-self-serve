@@ -1253,11 +1253,12 @@ export interface CampaignImplementationDraft {
    * WHAT IS DELIBERATELY ABSENT, and why, because the obvious next edit is to add it back:
    *
    * The brief-derived arrays — Reddit's variants, subreddits, interests, keywords and geos, plus
-   * `linkedInVariants` and `metaVariants` — are NOT carried. They have no user mutation path: the
-   * complete set of event bindings in the implementation tab's template contains no handler that
-   * writes any of them, and `populateFromBrief` is now their ONLY writer — `applyDraft` has no
-   * restore arm for any of the seven, which is precisely what this change removed. A draft that
-   * carried them round-tripped the brief's own recommendation back to itself.
+   * `metaVariants` — are NOT carried. They have no user mutation path: the complete set of event
+   * bindings in the implementation tab's template contains no handler that writes any of them, and
+   * `populateFromBrief` is now their ONLY writer — `applyDraft` has no restore arm for any of the
+   * six, which is precisely what this change removed. A draft that carried them round-tripped the
+   * brief's own recommendation back to itself. (`linkedInVariants` was one of them until it gained
+   * an editor, #5547; it is carried below.)
    *
    * That single-writer fact is the reason the exclusion is safe, so do not "restore" them here on
    * the assumption that `applyDraft` still writes them: re-adding them re-creates the bug below.
@@ -1352,12 +1353,17 @@ export interface CampaignImplementationDraft {
   metaImageUploadFailedMessage?: string;
   metaImageUploadFailedBriefId?: string;
   /**
-   * The LinkedIn ad image, an upload only (LinkedIn has no image-URL path), on the Meta upload
-   * fields' terms above. Round-trips regardless of `linkedInAssetUploadEnabled`.
+   * The LinkedIn ad variants as edited (#5547): each one's intro text, headline and its own uploaded
+   * image. A real editor, so carried and restored over the brief's seed, as the Search copy is.
+   * Restored only when present; an empty list is the operator's own (Create then asks for a variant).
    */
-  linkedInImageAssetId?: string;
-  linkedInImageAssetName?: string;
-  linkedInImageAssetBriefId?: string;
+  linkedInVariants?: LinkedInVariantDraft[];
+  /**
+   * The LinkedIn image upload in flight or failed, on the Meta upload fields' terms above, and the
+   * `key` of the variant it is for. One at a time: a second LinkedIn upload would cancel the first
+   * (`CampaignService.uploadCreativeAsset`). Round-trips regardless of `linkedInAssetUploadEnabled`.
+   */
+  linkedInImageUploadVariantKey?: string;
   linkedInImageUploadPendingName?: string;
   linkedInImageUploadPendingBriefId?: string;
   linkedInImageUploadFailedMessage?: string;
@@ -1833,10 +1839,30 @@ export interface LinkedInCreativeVariant {
   /**
    * A creative asset uploaded to the brief, which campaign-service uploads through LinkedIn's Images
    * API at dispatch and uses as the dark post's article thumbnail. Mutually exclusive with
-   * `imageUrn`: campaign-service refuses a variant carrying both. The Implement tab sets the same
-   * asset on every variant.
+   * `imageUrn`: campaign-service refuses a variant carrying both. The Implement tab sends each
+   * variant its own upload, and campaign-service uploads each distinct asset once
+   * (`resolveLinkedInImages`, `internal/dispatch/linkedin_creative.go`).
    */
   imageAssetId?: string;
+}
+
+/**
+ * One LinkedIn ad variant as the Implement tab edits it: the copy, plus the image uploaded for this
+ * variant alone. Mapped to a {@link LinkedInCreativeVariant} at create; `key` and the asset's name
+ * and brief are never sent.
+ */
+export interface LinkedInVariantDraft {
+  /** Stable for the variant's life in the tab, so an upload lands on the variant it was chosen for after another is removed. */
+  key: string;
+  introText: string;
+  headline: string;
+  /** The brief's own `imageUrn`, sent while the variant has no upload of its own. */
+  imageUrn?: string;
+  /** The upload for this variant, or `''`. Sent only when made for the open brief and the upload capability is an explicit yes. */
+  imageAssetId: string;
+  imageAssetName: string;
+  /** The brief the upload was made for. */
+  imageAssetBriefId: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -6733,7 +6759,7 @@ export interface CampaignListResult {
   metaAssetUploadEnabled: boolean;
   /**
    * Whether the LinkedIn section may offer an image UPLOAD, sent as
-   * `LinkedInCreativeVariant.imageAssetId` on every variant.
+   * `LinkedInCreativeVariant.imageAssetId`, each variant its own upload.
    *
    * Needs the campaign-service create path to serve the create AND the
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` flag. Like the Meta sibling it asserts no URL
@@ -7183,6 +7209,33 @@ export interface CampaignGoogleImageAssetBlock {
 export interface CampaignLinkedInImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
+}
+
+/**
+ * What the Implement tab shows for one LinkedIn ad variant (#5547): its copy with the lengths and
+ * refusals campaign-service would apply, and the state of its own image. Errors and messages are
+ * `''` when there is none.
+ */
+export interface LinkedInVariantView {
+  key: string;
+  introText: string;
+  headline: string;
+  introTextLength: number;
+  headlineLength: number;
+  introTextError: string;
+  headlineError: string;
+  /** "Uploading image…", "Uploaded: <name>", or `''`. */
+  imageStatusMessage: string;
+  imageUploading: boolean;
+  /** Whether the variant holds an upload (for any brief), so Remove is offered. */
+  imageHeld: boolean;
+  /** Why this variant's last pick or upload failed, or `''`. */
+  imageError: string;
+  imagePickerDisabled: boolean;
+  /** Why the picker is disabled while another variant's upload is running or failed, or `''`. */
+  imagePickerNote: string;
+  /** Why Create is blocked for this variant's image, or `null`. */
+  imageBlock: CampaignLinkedInImageAssetBlock | null;
 }
 
 /** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */
