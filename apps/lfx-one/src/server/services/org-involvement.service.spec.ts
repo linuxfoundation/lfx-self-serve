@@ -844,11 +844,11 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(family).toEqual({ accountId: ROLL_UP, maintainerRoles: 1, monthlyData: [], monthlyLabels: [] });
   });
 
-  it("counts the roles table's people and projects over the family's companies with the single-company two-year overlap", async () => {
+  it("counts the roles table's member records and projects over the family's companies with the single-company two-year overlap", async () => {
     await new OrgInvolvementService().getFamilyMaintainersMonthly(ROLL_UP, [PARENT_CO, CHILD_CO]);
 
     const [sql, binds, options] = headlineCall();
-    expect(sql).toContain('SELECT COUNT(DISTINCT PERSON_KEY, SEGMENT_ID) AS MAINTAINER_ROLES');
+    expect(sql).toContain('SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES');
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES\n');
     expect(sql).toContain(
       'WHERE ACCOUNT_ID IN (?, ?)\n        AND ROLE_START_DATE <= CURRENT_DATE() AND (ROLE_END_DATE IS NULL OR ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE()))'
@@ -856,7 +856,7 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');
     expect(sql).toContain('AND FAMILY_ACCOUNT_ID = ?');
     expect(sql).not.toContain('IS_LF_PROJECT');
-    expect(sql).not.toContain('MEMBER_ID');
+    expect(sql).not.toContain('PERSON_KEY');
     expect(binds).toEqual([PARENT_CO, CHILD_CO, 730, ROOT]);
     expect(options).toEqual({ expectMissingObject: 'ORG_MAINTAINER_ROLES', expectInvalidIdentifier: ['FAMILY_ACCOUNT_ID'] });
   });
@@ -868,7 +868,7 @@ describe('OrgInvolvementService.getFamilyMaintainersMonthly', () => {
     expect(sql).toContain(
       'SELECT DISTINCT METRIC_MONTH\n        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY\n        WHERE ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)'
     );
-    expect(sql).toContain('SELECT m.METRIC_MONTH, COUNT(DISTINCT r.PERSON_KEY, r.SEGMENT_ID) AS ACTIVE_ROLES');
+    expect(sql).toContain('SELECT m.METRIC_MONTH, COUNT(DISTINCT r.MEMBER_ID, r.SEGMENT_ID) AS ACTIVE_ROLES');
     expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r');
     expect(sql).toContain('ON r.METRIC_MONTH = m.METRIC_MONTH\n        AND r.ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)');
     expect(sql).toContain('AND NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE)');

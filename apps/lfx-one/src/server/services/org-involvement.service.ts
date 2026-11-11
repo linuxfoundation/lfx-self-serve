@@ -179,8 +179,7 @@ export class OrgInvolvementService {
       return { accountId: rollUpKey, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] };
     }
     const digest = createHash('sha256').update(JSON.stringify(companies)).digest('hex').slice(0, 16);
-    // `maintainer-roles-family:v3`: a role is a person and a project, read from the roles table and the role-months view
-    // over the warehouse's family only.
+    // `maintainer-roles-family:v3`: the roles table and the role-months view, over the warehouse's family only.
     let degraded = false;
     return withOrgCache(
       rollUpKey,
@@ -498,8 +497,9 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Maintainers card for a family. A role is one person (PERSON_KEY, the same under every company) on one project
-   * (SEGMENT_ID), so a role credited to two companies of the family counts once. Both reads, and the trend's months, keep
+   * Overview Maintainers card for a family. A role is one CDP member record (MEMBER_ID, the same under every company) on
+   * one project (SEGMENT_ID), as the single-company card and LFX Insights count it, so a role credited to two companies
+   * of the family counts once. Both reads, and the trend's months, keep
    * only the companies of the warehouse's family (FAMILY_ACCOUNT_ID) among the ones the viewer may see. The headline counts the roles
    * table with the single-company headline's overlap rule (the last 2 years to today); the trend counts lf-dbt's
    * ORG_MAINTAINER_ROLE_MONTHS rows, the same window and overlap rule ORG_MAINTAINER_ROLES_MONTHLY counts, over the months
@@ -514,7 +514,7 @@ export class OrgInvolvementService {
     const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
     // IS_CDP_TEAM_MEMBER is already in both, so only the family column or the role-months view itself can be missing.
     const headlineQuery = `
-      SELECT COUNT(DISTINCT PERSON_KEY, SEGMENT_ID) AS MAINTAINER_ROLES
+      SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
       WHERE ACCOUNT_ID IN (${accountList})
         AND ${overlap.sql}
@@ -534,7 +534,7 @@ export class OrgInvolvementService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
         WHERE ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)
       )
-      SELECT m.METRIC_MONTH, COUNT(DISTINCT r.PERSON_KEY, r.SEGMENT_ID) AS ACTIVE_ROLES
+      SELECT m.METRIC_MONTH, COUNT(DISTINCT r.MEMBER_ID, r.SEGMENT_ID) AS ACTIVE_ROLES
       FROM months AS m
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r
         ON r.METRIC_MONTH = m.METRIC_MONTH
