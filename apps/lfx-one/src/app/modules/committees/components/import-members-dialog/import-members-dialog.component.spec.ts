@@ -293,6 +293,8 @@ describe('ImportMembersDialogComponent', () => {
       const notices = query('import-members-file-notices');
       expect(notices?.getAttribute('role')).toBeNull();
       expect(notices?.textContent).toContain("Ignored columns: Notes. The import doesn't use them.");
+      expect(query('import-members-status')?.getAttribute('aria-live')).toBe('polite');
+      expect(query('import-members-status')?.textContent).toContain("1 ready, 0 invalid, 0 skipped. Ignored columns: Notes. The import doesn't use them.");
       expect(notices?.textContent).not.toContain('UTF-8');
     });
 
@@ -307,6 +309,7 @@ describe('ImportMembersDialogComponent', () => {
         "This file wasn't saved as UTF-8, so it was read as Windows (Western European) text. Check that names with accents look right before adding.",
       ]);
       expect(query('import-members-file-notices')?.textContent).toContain('read as Windows (Western European) text');
+      expect(query('import-members-status')?.textContent).toContain(component.fileNotices()[0]);
     });
 
     it('clears file notices when a different file is chosen', async () => {
@@ -319,6 +322,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('preview');
       expect(component.fileNotices()).toEqual([]);
       expect(query('import-members-file-notices')).toBeNull();
+      expect(query('import-members-status')?.textContent?.trim()).toBe('1 ready, 0 invalid, 0 skipped.');
     });
 
     it('rejects a file over the size limit without reading it', async () => {

@@ -319,8 +319,10 @@ export class ImportMembersDialogComponent {
   private initStatusMessage(): Signal<string> {
     return computed(() => {
       switch (this.phase()) {
-        case 'preview':
-          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.`;
+        case 'preview': {
+          const notices = this.fileNotices().length > 0 ? ` ${this.fileNotices().join(' ')}` : '';
+          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.${notices}`;
+        }
         case 'importing':
           if (this.paused()) {
             return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
