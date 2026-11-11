@@ -4,7 +4,7 @@ description: View your signed Individual CLAs and your Corporate CLA coverage in
 audience: [all]
 product_area: Account
 tags: [account, cla, easycla, icla, ccla, identities, signing]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Account
 ---
 
@@ -35,7 +35,7 @@ An **ICLA** (Individual CLA) is _your_ paperwork, signed as yourself. A **CCLA**
 
 ## What does the CLAs list show?
 
-An info banner at the top of the tab reads: _Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities. Missing one? Link your Email, GitHub or GitLab accounts →_. The link opens [Identities](/profile/identities).
+An info banner at the top of the tab reads: _Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities. Missing one? Link your Email or GitHub accounts → Already-connected GitLab accounts are matched too; new GitLab linking is coming soon._ The link opens [Identities](/profile/identities).
 
 When agreements are found, the CLAs tab shows a table with these columns:
 
@@ -193,7 +193,7 @@ The CLAs tab only finds agreements that match an identity linked to your LFX acc
 
 1. Open [Identities](/profile/identities).
 2. Link the Email or GitHub accounts you used when signing. A GitLab account already connected to your profile is matched too; connecting a new GitLab account from Identities is coming soon.
-3. Return to **CLAs** — newly linked Email, GitHub and GitLab identities are included on the next load.
+3. Return to **CLAs** — linked identities are included on the next load.
 
 If an agreement is still missing after that, see [EasyCLA troubleshooting](https://docs.linuxfoundation.org/lfx/easycla/v2-current/getting-started/easycla-troubleshooting).
 
