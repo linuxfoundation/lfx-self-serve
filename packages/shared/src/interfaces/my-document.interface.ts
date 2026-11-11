@@ -17,7 +17,10 @@ export interface CommitteeLinkQueryResult {
   committee_uid?: string;
 }
 
-/** Raw shape returned by query service for `committee_document` resource type — indexed by committee_uid only */
+/**
+ * Raw shape returned by query service for `committee_document` resource type. It is tagged with `committee_uid` (there is
+ * no `project_uid` tag) and, when the file is in a folder, `folder_uid` — the tag the folder-empty check filters on.
+ */
 export interface CommitteeDocumentQueryResult {
   uid: string;
   name: string;
