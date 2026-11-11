@@ -22636,6 +22636,15 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
   });
 
+  it('keeps removals when Cloud Native is picked on a custom selection, whose facets it already shows', async () => {
+    const { fixture } = await mount({ briefData: brief('custom') });
+    removeChip(fixture, 'urn:li:skill:101');
+
+    pickProfile(fixture, 'cloud-native');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:102']);
+  });
+
   it('keeps removals when the already-selected profile is picked again', async () => {
     const { fixture } = await mount({});
     removeChip(fixture, 'urn:li:skill:101');

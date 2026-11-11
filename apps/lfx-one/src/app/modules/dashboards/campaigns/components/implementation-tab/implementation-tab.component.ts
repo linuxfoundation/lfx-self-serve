@@ -4864,8 +4864,10 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
-    // Another profile reseeds the facets: removals were made against the one being left.
-    if (profile !== this.campaignForm.controls.linkedInTargetingProfile.value) this.resetLinkedInTargeting();
+    // Another profile reseeds the facets: removals were made against the one being left. Compared
+    // as campaign-service resolves them, so `custom` to `cloud-native` (the same facets) keeps them.
+    const current = this.campaignForm.controls.linkedInTargetingProfile.value;
+    if (resolveLinkedInTargetingProfileId(profile) !== resolveLinkedInTargetingProfileId(current)) this.resetLinkedInTargeting();
     this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
   }
 
