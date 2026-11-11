@@ -1730,8 +1730,6 @@ export class ImplementationTabComponent implements OnInit {
   private readonly linkedInImageUploadFailedBriefId = signal('');
   protected readonly linkedInImageUploadError = signal('');
   private linkedInImageUploadSub: Subscription | null = null;
-  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
-  protected readonly linkedInImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
   /**
    * The X tweet image: an upload made for this brief, attached to the authored tweet as its image
    * (`twitterConfig.imageAssetId`). X takes no image URL here, so the upload is the whole control,
@@ -3398,7 +3396,7 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
-   * variant's; each variant shows its own beside its picker.
+   * blocked variant's; each variant shows its own beside its picker.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(
     () => this.linkedInVariantViews().find((view) => view.imageBlock !== null)?.imageBlock ?? null
@@ -7260,6 +7258,7 @@ export class ImplementationTabComponent implements OnInit {
       const slotKey = this.linkedInImageUploadVariantKey();
       const uploading = this.linkedInImageUploadStatus() === 'uploading';
       const failed = this.linkedInImageUploadStatus() === 'error';
+      // The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief.
       const pickerBlocked = !this.briefPersistence().briefId || this.briefPersistence().status === 'saving';
       const variants = this.linkedInVariants();
       const slotIndex = variants.findIndex((variant) => variant.key === slotKey);
@@ -7652,6 +7651,14 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private failLinkedInImageUpload(message: string, briefId = ''): void {
+    // A failure for a variant that no longer exists (the brief re-seeded the variants mid-upload) has
+    // no variant to show it on and no Remove to clear it, so recording it would hold every other
+    // picker. The slot is freed instead.
+    const slotKey = this.linkedInImageUploadVariantKey();
+    if (slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey)) {
+      this.clearLinkedInImageUpload();
+      return;
+    }
     this.linkedInImageUploadStatus.set('error');
     this.linkedInImageUploadError.set(message);
     this.linkedInImageUploadFailedBriefId.set(briefId);
@@ -8931,7 +8938,7 @@ export class ImplementationTabComponent implements OnInit {
       //
       //   - `applyDraft` restores on `!== undefined`, and an empty array IS defined. So carrying
       //     these made the restore overwrite the brief's fresh seed with a stale copy. Absent,
-      //     `populateFromBrief` re-seeds all seven from the brief the parent still holds.
+      //     `populateFromBrief` re-seeds all six from the brief the parent still holds.
       //   - The "a brief with no redditCopy re-seeds nothing, so an unrestored value is gone"
       //     argument does not survive being run: with no `redditCopy` the seed leaves the arrays
       //     EMPTY, so the draft carried `[]` and there was never a value to lose.

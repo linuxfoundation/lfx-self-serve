@@ -25,9 +25,9 @@ Each variant has an **Intro text** box (the body of the post) and a **Headline**
 | Intro text | 600             |
 | Headline   | 200             |
 
-Spaces at the start and end are not counted. An em dash (—) or en dash (–) counts as two characters, because it is sent as a comma and a space.
+Spaces at the start and end are not counted. An em dash (—) or en dash (–) is sent as a comma and a space, and counted that way, so the count can differ from what you typed. A dash at the very start or end is dropped.
 
-Both fields are required. If a field is empty, holds only spaces or dashes, or is over its limit, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the ad variant text." Shorten or fill in the text to continue. Longer text is not cut for you.
+Both fields are required. If a field is empty, holds only spaces or a single dash, or is over its limit, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the ad variant text." Shorten or fill in the text to continue. Longer text is not cut for you.
 
 ## Add or remove variants
 

@@ -16828,6 +16828,29 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).canSubmit()).toBe(false);
     });
 
+    it('frees the upload slot when an upload fails after the brief re-seeded its variant away', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+
+      // A refine hands the tab a new brief for the same saved id: the variants get fresh keys.
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+      pending.error(new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } }));
+      f.detectChanges();
+
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect(at(f).linkedInImageUploadError()).toBe('');
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
     it('keeps Create blocked after a failed upload, on its variant only, and the other pickers held, until the operator removes it', async () => {
       uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
       const f = (await mount(true)).fixture;
