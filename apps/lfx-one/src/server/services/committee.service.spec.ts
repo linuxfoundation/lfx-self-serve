@@ -413,7 +413,7 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
   });
 
   it('deletes an empty folder', async () => {
-    proxyRequest.mockResolvedValueOnce([{ uid: 'link-1', name: 'Elsewhere', folder_uid: 'other-folder' }]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([{ uid: 'link-1', name: 'Elsewhere', folder_uid: 'other-folder' }]);
     vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([{ uid: 'file-1', name: 'Root file' }]);
 
     await service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder');
@@ -422,7 +422,7 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
   });
 
   it('rejects a folder that still holds a link with a 409 and deletes nothing', async () => {
-    proxyRequest.mockResolvedValueOnce([{ uid: 'link-1', name: 'Inside', folder_uid: 'folder-1' }]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([{ uid: 'link-1', name: 'Inside', folder_uid: 'folder-1' }]);
     vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([]);
 
     await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toMatchObject({
@@ -433,7 +433,7 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
   });
 
   it('rejects a folder that only holds a file, which the upstream folder delete does not check', async () => {
-    proxyRequest.mockResolvedValueOnce([]);
+    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([]);
     vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([{ uid: 'file-1', name: 'Inside', folder_uid: 'folder-1' }]);
 
     await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toMatchObject({
@@ -443,34 +443,44 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
     expect(deleteWithETag).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the children lookup fails instead of treating the folder as empty', async () => {
-    proxyRequest.mockResolvedValueOnce([]);
-    vi.mocked(fetchAllQueryResources).mockRejectedValueOnce(new Error('query service down'));
+  it.each([
+    ['links', 0],
+    ['files', 1],
+  ])('fails closed when the %s lookup fails instead of treating the folder as empty', async (_what, failingCall) => {
+    const results: Promise<never[]>[] = [Promise.resolve([]), Promise.resolve([])];
+    results[failingCall] = Promise.reject(new Error('query service down'));
+    vi.mocked(fetchAllQueryResources).mockReturnValueOnce(results[0]).mockReturnValueOnce(results[1]);
 
     await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toThrow('query service down');
     expect(deleteWithETag).not.toHaveBeenCalled();
   });
 
-  it("looks the folder's files up by its own folder_uid tag and stops at the first one, not by listing every file of the committee", async () => {
-    proxyRequest.mockResolvedValueOnce([]);
-    vi.mocked(fetchAllQueryResources).mockResolvedValueOnce([]);
+  it("looks the folder's links and files up by its own folder_uid tag and stops at the first match, not by listing everything the committee holds", async () => {
+    vi.mocked(fetchAllQueryResources).mockResolvedValue([]);
 
     await service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder');
 
-    const [, fetchPage, options] = vi.mocked(fetchAllQueryResources).mock.calls[0];
-    expect(options).toEqual({ failOnPartial: true, maxResults: 0 });
-    proxyRequest.mockClear();
-    await fetchPage();
-    await fetchPage('next-page');
-    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      type: 'committee_document',
-      tags_all: ['committee_uid:committee-1', 'folder_uid:folder-1'],
-    });
-    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      type: 'committee_document',
-      tags_all: ['committee_uid:committee-1', 'folder_uid:folder-1'],
-      page_token: 'next-page',
-    });
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(fetchAllQueryResources).toHaveBeenCalledTimes(2);
+    for (const [call, type] of [
+      [0, 'committee_link'],
+      [1, 'committee_document'],
+    ] as const) {
+      const [, fetchPage, options] = vi.mocked(fetchAllQueryResources).mock.calls[call];
+      expect(options).toEqual({ failOnPartial: true, maxResults: 0 });
+      proxyRequest.mockClear();
+      await fetchPage();
+      await fetchPage('next-page');
+      expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type,
+        tags_all: ['committee_uid:committee-1', 'folder_uid:folder-1'],
+      });
+      expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type,
+        tags_all: ['committee_uid:committee-1', 'folder_uid:folder-1'],
+        page_token: 'next-page',
+      });
+    }
   });
 
   it('rejects an unknown document type before any upstream call', async () => {

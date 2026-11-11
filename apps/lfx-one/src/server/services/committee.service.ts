@@ -30,6 +30,7 @@ import {
   CommitteeUser,
   AuditUserProfile,
   CommitteeDocumentQueryResult,
+  CommitteeLinkQueryResult,
   CommitteeMailingListRef,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
@@ -2905,27 +2906,31 @@ export class CommitteeService {
    * mentions links, so the BFF checks files itself. Unlike the list view, a lookup failure is not swallowed into
    * "empty": a destructive call must fail closed.
    *
-   * The files are looked up by the folder's own `folder_uid` tag (with the committee's, so another committee can never
-   * match), not by listing every file of the committee, so a large unrelated collection cannot hit the pagination cap and
-   * make an empty folder undeletable. The query service checks access after it paginates, so a page can come back with no
-   * visible rows while more remain: the pages are followed, stopping at the first file found, rather than trusting one.
+   * Links and files are looked up by the folder's own `folder_uid` tag (with the committee's, so another committee can
+   * never match), not by listing everything the committee holds, so a large unrelated collection cannot hit the
+   * pagination cap and make an empty folder undeletable. The query service checks access after it paginates, so a page
+   * can come back with no visible rows while more remain: the pages are followed, stopping at the first match, rather
+   * than trusting one.
    */
   private async assertCommitteeFolderEmpty(req: Request, committeeId: string, folderId: string): Promise<void> {
-    const [links, files] = await Promise.all([
-      this.microserviceProxy.proxyRequest<CommitteeLink[]>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/links`, 'GET'),
-      fetchAllQueryResources<CommitteeDocumentQueryResult>(
+    const findChildren = <T extends { folder_uid?: string }>(type: 'committee_link' | 'committee_document'): Promise<T[]> =>
+      fetchAllQueryResources<T>(
         req,
         (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'committee_document',
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<T>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type,
             tags_all: [`committee_uid:${committeeId}`, `folder_uid:${folderId}`],
             ...(pageToken && { page_token: pageToken }),
           }),
         { failOnPartial: true, maxResults: 0 }
-      ),
+      );
+
+    const [links, files] = await Promise.all([
+      findChildren<CommitteeLinkQueryResult>('committee_link'),
+      findChildren<CommitteeDocumentQueryResult>('committee_document'),
     ]);
 
-    const hasChildren = (links ?? []).some((link) => link.folder_uid === folderId) || files.some((file) => file.folder_uid === folderId);
+    const hasChildren = links.some((link) => link.folder_uid === folderId) || files.some((file) => file.folder_uid === folderId);
 
     if (hasChildren) {
       throw new ConflictError(DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, 'FOLDER_NOT_EMPTY', {
