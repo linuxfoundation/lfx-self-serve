@@ -21,7 +21,7 @@ export const UNNAMED_CLA_GROUP = 'Unnamed CLA group';
 export const CLA_GROUP_MATCH_TYPE_LABELS = {
   claGroup: 'CLA group name',
   project: 'Project name',
-  organization: 'Linked company',
+  organization: 'Linked repository source',
   repository: 'Repository link',
 } as const;
 
