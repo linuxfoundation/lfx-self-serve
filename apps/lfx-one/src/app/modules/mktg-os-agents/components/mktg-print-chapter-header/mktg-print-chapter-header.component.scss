@@ -1,0 +1,29 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+/* Shared chapter chrome is always Inter; brand typography belongs to content/samples. */
+.lfx-print-chapter-title {
+  display: flex;
+  align-items: center;
+  gap: 10pt;
+  margin: 0 0 8pt;
+  font-family: var(--font-inter), sans-serif;
+  font-size: 22pt;
+  font-weight: 500;
+  line-height: 1.1;
+  break-after: avoid;
+
+  > span {
+    color: var(--mfp-chapter-accent);
+    font-size: 11pt;
+    font-weight: 600;
+  }
+
+  &::after {
+    content: '';
+    flex: 1;
+    min-width: 18pt;
+    height: 1pt;
+    background-color: var(--mfp-chapter-accent);
+  }
+}

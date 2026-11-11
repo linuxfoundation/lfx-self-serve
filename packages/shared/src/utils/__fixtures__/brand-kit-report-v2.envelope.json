@@ -1,0 +1,851 @@
+{
+  "contract": "brand-kit-output/v2",
+  "kind": "brand-kit",
+  "project": "agentic-ai-foundation",
+  "project_name": "Agentic AI Foundation",
+  "version": 1,
+  "mode": "draft",
+  "document_markdown": "# Agentic AI Foundation Brand Kit\n\n| Field | Detail |\n|---|---|\n| Project | Agentic AI Foundation · a Linux Foundation project |\n| Site | aaif.io |\n| Version | 1 · 2026-11-04 |\n| Brand line | Open foundations for agentic AI. |\n\nOpen foundations for agentic AI. Logos, color, type and usage on one reference, for members, partners and the press.\n\n## 1. Logo\n\n### Logo system\n\nThe logo is the symbol and the wordmark in a fixed relationship. The horizontal lockup is the primary logo; use it whenever there's room. The stacked lockup is for square and tall spaces. The symbol alone is shorthand for avatars and favicons. Logo artwork is supplied as files. Never retype the wordmark.\n\n- **Primary · horizontal lockup:** not supplied (placeholder mark until the file is uploaded)\n- **Stacked lockup:** not supplied (placeholder mark until the file is uploaded)\n- **Symbol:** not supplied (placeholder mark until the file is uploaded)\n- **Reversed (white):** not supplied (placeholder mark until the file is uploaded)\n\nPlaceholder artwork: upload the logo files as SVG (or a ZIP of them under 150 KB) to use the real marks.\n\n### Colorways\n\n- **Full color** — the full-color lockup on white and light grounds.\n- **Reversed** — the white (reversed) lockup on Black and dark imagery.\n- **Full color on light tint** — the full-color lockup on a light tint.\n- **One-color black** — the one-color black lockup on print, engraving and embossing only.\n\nAccent colors are never logo colors.\n\n### Clear space & minimum size\n\nKeep a margin of X on every side, where X is the height of the symbol. Nothing (type, edges, other marks) enters that space.\n\nMinimum size: 32 px tall on screen, 10 mm in print. Below that, use the symbol (minimum 16 px).\n\n### Symbol & symbol in shape\n\nThe symbol is shorthand where the full lockup doesn't fit: social avatars, app icons, favicons and select merchandise. Introduce the brand with the lockup first. For contained uses, place the symbol in a circle or rounded square, with one X of padding to the edge.\n\n### Partnership lockup\n\n- Use our logo's height as the base for every measurement.\n- Separate the logos with a vertical bar 1.5× the symbol's height.\n- Keep at least X of clear space between each element.\n- Match the partner mark's visual weight to ours.\n- Black bar on light grounds; white on dark.\n\n### Watchouts\n\nConsistency is what makes the mark recognizable. When in doubt: full color on white, or reversed on Black, with X of clear space.\n\n- Don't stretch or squash\n- Don't recolor\n- Don't rotate\n- Don't add effects\n- Don't place full color on dark or busy grounds\n- Don't retype the wordmark\n\n## 2. Color\n\n### Color palette\n\nBlack and white carry the brand. Coral and Lilac add warmth and emphasis; use them sparingly. Values come from the brand page.\n\n| Name | HEX | RGB | Role | Found in |\n|---|---|---|---|---|\n| Black | #000000 | 0 0 0 | Wordmark, headings and body text | brand page — https://aaif.io/brand |\n| White | #FFFFFF | 255 255 255 | Page and reversed type | page ground — the page ground |\n| Coral | #FF702D | 255 112 45 | Buttons, links and the one accent per page | brand page — https://aaif.io/brand |\n| Lilac | #B6B0D0 | 182 176 208 | Secondary accent and soft grounds | brand page — https://aaif.io/brand |\n\n**Proportion:** Black 41% · White 32% · Coral 16% · Lilac 11%\n\n### Color contrast\n\nText must meet WCAG AA: 4.5:1 for body text, 3:1 for large text (24 px+, or 19 px bold). Pairs below are calculated from the palette.\n\n| Pair | Ratio | Grade |\n|---|---|---|\n| Black on White | 21.0:1 | AAA |\n| Black on Lilac | 10.1:1 | AAA |\n| Black on Coral | 7.6:1 | AAA |\n| White on Coral | 2.8:1 | Fails |\n| White on Lilac | 2.1:1 | Fails |\n| Coral on Lilac | 1.3:1 | Fails |\n\n## 3. Type\n\n### Typography\n\nInstrument Sans carries every communication: headlines, body, UI and data. Instrument Sans is the typeface the brand page names and the site loads from Google Fonts; weights 400 to 700.\n\n- **Typeface:** Instrument Sans (on Google Fonts) — source: https://aaif.io/brand\n- **Weights set on the site:** 400, 500, 600, 700\n- **Fallback:** Arial\n\n- Sentence case for headlines.\n- Caps only for eyebrows and labels.\n- Never more than three weights on a page.\n\n| Step | Weight | Size / line |\n|---|---|---|\n| H1 / Display | 500 | 64/72 |\n| H2 | 500 | 32/40 |\n| H3 | 500 | 24/32 |\n| Eyebrow | 500 caps | 14/20 |\n| Body | 400 | 18/30 |\n| Caption | 500 | 12/16 |\n\n## 4. Visual\n\n### Iconography\n\n- Line icons on a 24 px grid, 2 px stroke, rounded caps and joins.\n- One color: Black on light, white on dark. Lilac only for a single active state.\n- Pair every icon with a text label.\n- Don't fill, outline twice or mix icon sets.\n\nRecommended set: Lucide (ISC license) or Material Symbols Rounded, at stroke weight 2.\n\n### Imagery & graphic elements\n\nStructure, not stock. A quiet grid on Black, lit softly from one side, is the default ground for covers and heroes. Use photography only for real people at real events.\n\nAvoid:\n\n- Generic stock (handshakes, glowing globes)\n- Hooded hackers, padlocks, alarm red\n- Busy gradients behind the logo\n\n## 5. Usage\n\nThe system applied: dark grounds for impact, one accent moment per surface, white for documents, Instrument Sans throughout.\n\n- **Keynote slide** · 16:9 · dark ground\n- **Social card** · 1200×675 · accent ground\n- **Report cover** · letter · white ground\n- **Announcement header** · 1600×900 · dark ground\n\n## 6. Voice\n\nFrom the messaging framework. Use the umbrella message and the brand line as they are; adapt everything else to the channel.\n\n**Umbrella message:** The Agentic AI Foundation is the neutral home at the Linux Foundation where the open protocols and tools for AI agents are governed in the open.\n\n**Brand line:** Open foundations for agentic AI.\n\n- **Open** — The protocols and tools are developed in the open, by the people who build with them.\n- **Neutral** — No single vendor sets the direction: governance is shared at the Linux Foundation.\n- **Practical** — Agents are moving into production; the foundation names what works today.\n- **Clear** — Plain language about protocols, projects and who decides.\n\n## Report\n\n**Sources read:** https://aaif.io/; https://aaif.io/_next/static/chunks/3tg274q-9atqx.css; https://aaif.io/_next/static/chunks/1-8f7gq9ry3my.css; https://aaif.io/_next/static/chunks/2au7-qkhpwtn-.css; https://aaif.io/_next/static/chunks/0ivddmds6q2xn.css; https://aaif.io/brand; LFX record: Agentic AI Foundation (agentic-ai-foundation)\n\n**Sources that failed:** https://aaif.io/brand-guidelines (HTTP 404)\n\n**Gaps:** No logo files: the logo chapter uses placeholder marks until the horizontal lockup, the stacked lockup and the symbol are uploaded.\n\n**Notes:** The site's buttons use #FF7D2D where the brand page says #FF702D; the brand page value is kept.\n\nCopyright © The Linux Foundation and its contributors. Agentic AI Foundation and its logo are trademarks of the Linux Foundation. Use is subject to the Linux Foundation Trademark Usage Guidelines.",
+  "content_sha256": "f893529c8a8f221f66f05db39f93e6bc9d9b82ef1dff324ebe498744cda5bd8f",
+  "kit": {
+    "colors": [
+      [
+        "Black",
+        "#000000",
+        "Wordmark, headings and body text"
+      ],
+      [
+        "White",
+        "#FFFFFF",
+        "Page and reversed type"
+      ],
+      [
+        "Coral",
+        "#FF702D",
+        "Buttons, links and the one accent per page"
+      ],
+      [
+        "Lilac",
+        "#B6B0D0",
+        "Secondary accent and soft grounds"
+      ]
+    ],
+    "font": "Instrument Sans",
+    "fontNote": "Instrument Sans is the typeface the brand page names and the site loads from Google Fonts; weights 400 to 700.",
+    "attrs": [
+      [
+        "Open",
+        "The protocols and tools are developed in the open, by the people who build with them."
+      ],
+      [
+        "Neutral",
+        "No single vendor sets the direction: governance is shared at the Linux Foundation."
+      ],
+      [
+        "Practical",
+        "Agents are moving into production; the foundation names what works today."
+      ],
+      [
+        "Clear",
+        "Plain language about protocols, projects and who decides."
+      ]
+    ],
+    "dark": "#000000",
+    "accent": "#FF702D",
+    "spark": "#FF702D",
+    "word": "AAIF"
+  },
+  "chapters": {
+    "logo": {
+      "files": {
+        "primary": null,
+        "stacked": null,
+        "symbol": null,
+        "reversed": null
+      },
+      "symbol_viewbox": null,
+      "placeholder": true,
+      "system": "The logo is the symbol and the wordmark in a fixed relationship. The horizontal lockup is the primary logo; use it whenever there's room. The stacked lockup is for square and tall spaces. The symbol alone is shorthand for avatars and favicons. Logo artwork is supplied as files. Never retype the wordmark.",
+      "colorways": [
+        {
+          "name": "Full color",
+          "ground": "white and light grounds",
+          "logo": "the full-color lockup"
+        },
+        {
+          "name": "Reversed",
+          "ground": "Black and dark imagery",
+          "logo": "the white (reversed) lockup"
+        },
+        {
+          "name": "Full color on light tint",
+          "ground": "a light tint",
+          "logo": "the full-color lockup"
+        },
+        {
+          "name": "One-color black",
+          "ground": "print, engraving and embossing only",
+          "logo": "the one-color black lockup"
+        }
+      ],
+      "clear_space": "Keep a margin of X on every side, where X is the height of the symbol. Nothing (type, edges, other marks) enters that space.",
+      "minimum_size": {
+        "screen_px": 32,
+        "print_mm": 10,
+        "symbol_px": 16,
+        "rule": "Minimum size: 32 px tall on screen, 10 mm in print. Below that, use the symbol (minimum 16 px)."
+      },
+      "symbol": "The symbol is shorthand where the full lockup doesn't fit: social avatars, app icons, favicons and select merchandise. Introduce the brand with the lockup first. For contained uses, place the symbol in a circle or rounded square, with one X of padding to the edge.",
+      "partnership": [
+        "Use our logo's height as the base for every measurement.",
+        "Separate the logos with a vertical bar 1.5× the symbol's height.",
+        "Keep at least X of clear space between each element.",
+        "Match the partner mark's visual weight to ours.",
+        "Black bar on light grounds; white on dark."
+      ],
+      "watchouts": [
+        "Don't stretch or squash",
+        "Don't recolor",
+        "Don't rotate",
+        "Don't add effects",
+        "Don't place full color on dark or busy grounds",
+        "Don't retype the wordmark"
+      ]
+    },
+    "color": {
+      "summary": "Black and white carry the brand. Coral and Lilac add warmth and emphasis; use them sparingly. Values come from the brand page.",
+      "palette": [
+        {
+          "name": "Black",
+          "hex": "#000000",
+          "rgb": [
+            0,
+            0,
+            0
+          ],
+          "role": "Wordmark, headings and body text",
+          "found_in": {
+            "kind": "brand_page",
+            "source": "https://aaif.io/brand"
+          }
+        },
+        {
+          "name": "White",
+          "hex": "#FFFFFF",
+          "rgb": [
+            255,
+            255,
+            255
+          ],
+          "role": "Page and reversed type",
+          "found_in": {
+            "kind": "page",
+            "source": "the page ground"
+          }
+        },
+        {
+          "name": "Coral",
+          "hex": "#FF702D",
+          "rgb": [
+            255,
+            112,
+            45
+          ],
+          "role": "Buttons, links and the one accent per page",
+          "found_in": {
+            "kind": "brand_page",
+            "source": "https://aaif.io/brand"
+          }
+        },
+        {
+          "name": "Lilac",
+          "hex": "#B6B0D0",
+          "rgb": [
+            182,
+            176,
+            208
+          ],
+          "role": "Secondary accent and soft grounds",
+          "found_in": {
+            "kind": "brand_page",
+            "source": "https://aaif.io/brand"
+          }
+        }
+      ],
+      "proportion": [
+        {
+          "name": "Black",
+          "hex": "#000000",
+          "share": 41
+        },
+        {
+          "name": "White",
+          "hex": "#FFFFFF",
+          "share": 32
+        },
+        {
+          "name": "Coral",
+          "hex": "#FF702D",
+          "share": 16
+        },
+        {
+          "name": "Lilac",
+          "hex": "#B6B0D0",
+          "share": 11
+        }
+      ],
+      "contrast": {
+        "rule": "Text must meet WCAG AA: 4.5:1 for body text, 3:1 for large text (24 px+, or 19 px bold). Pairs below are calculated from the palette.",
+        "pairs": [
+          {
+            "foreground": "Black",
+            "background": "White",
+            "ratio": 21,
+            "grade": "AAA"
+          },
+          {
+            "foreground": "Black",
+            "background": "Lilac",
+            "ratio": 10.11,
+            "grade": "AAA"
+          },
+          {
+            "foreground": "Black",
+            "background": "Coral",
+            "ratio": 7.61,
+            "grade": "AAA"
+          },
+          {
+            "foreground": "White",
+            "background": "Coral",
+            "ratio": 2.76,
+            "grade": "Fails"
+          },
+          {
+            "foreground": "White",
+            "background": "Lilac",
+            "ratio": 2.08,
+            "grade": "Fails"
+          },
+          {
+            "foreground": "Coral",
+            "background": "Lilac",
+            "ratio": 1.33,
+            "grade": "Fails"
+          }
+        ]
+      }
+    },
+    "type": {
+      "family": "Instrument Sans",
+      "weights": [
+        400,
+        500,
+        600,
+        700
+      ],
+      "source": "https://aaif.io/brand",
+      "google_fonts": true,
+      "fallback": "Arial",
+      "note": "Instrument Sans is the typeface the brand page names and the site loads from Google Fonts; weights 400 to 700.",
+      "summary": "Instrument Sans carries every communication: headlines, body, UI and data. Instrument Sans is the typeface the brand page names and the site loads from Google Fonts; weights 400 to 700.",
+      "scale": [
+        {
+          "step": "display",
+          "label": "H1 / Display",
+          "weight": 500,
+          "size": 64,
+          "line_height": 72,
+          "caps": false
+        },
+        {
+          "step": "h2",
+          "label": "H2",
+          "weight": 500,
+          "size": 32,
+          "line_height": 40,
+          "caps": false
+        },
+        {
+          "step": "h3",
+          "label": "H3",
+          "weight": 500,
+          "size": 24,
+          "line_height": 32,
+          "caps": false
+        },
+        {
+          "step": "eyebrow",
+          "label": "Eyebrow",
+          "weight": 500,
+          "size": 14,
+          "line_height": 20,
+          "caps": true
+        },
+        {
+          "step": "body",
+          "label": "Body",
+          "weight": 400,
+          "size": 18,
+          "line_height": 30,
+          "caps": false
+        },
+        {
+          "step": "caption",
+          "label": "Caption",
+          "weight": 500,
+          "size": 12,
+          "line_height": 16,
+          "caps": false
+        }
+      ],
+      "rules": [
+        "Sentence case for headlines.",
+        "Caps only for eyebrows and labels.",
+        "Never more than three weights on a page."
+      ]
+    },
+    "visual": {
+      "icons": {
+        "rules": [
+          "Line icons on a 24 px grid, 2 px stroke, rounded caps and joins.",
+          "One color: Black on light, white on dark. Lilac only for a single active state.",
+          "Pair every icon with a text label.",
+          "Don't fill, outline twice or mix icon sets."
+        ],
+        "recommended": "Lucide (ISC license) or Material Symbols Rounded, at stroke weight 2."
+      },
+      "imagery": {
+        "rule": "Structure, not stock. A quiet grid on Black, lit softly from one side, is the default ground for covers and heroes. Use photography only for real people at real events.",
+        "avoid": [
+          "Generic stock (handshakes, glowing globes)",
+          "Hooded hackers, padlocks, alarm red",
+          "Busy gradients behind the logo"
+        ]
+      }
+    },
+    "usage": {
+      "summary": "The system applied: dark grounds for impact, one accent moment per surface, white for documents, Instrument Sans throughout.",
+      "examples": [
+        {
+          "name": "Keynote slide",
+          "format": "16:9",
+          "ground": "dark"
+        },
+        {
+          "name": "Social card",
+          "format": "1200×675",
+          "ground": "accent"
+        },
+        {
+          "name": "Report cover",
+          "format": "letter",
+          "ground": "white"
+        },
+        {
+          "name": "Announcement header",
+          "format": "1600×900",
+          "ground": "dark"
+        }
+      ]
+    },
+    "voice": {
+      "umbrella": "The Agentic AI Foundation is the neutral home at the Linux Foundation where the open protocols and tools for AI agents are governed in the open.",
+      "line": "Open foundations for agentic AI.",
+      "source": "From the messaging framework",
+      "note": "Use the umbrella message and the brand line as they are; adapt everything else to the channel.",
+      "attributes": [
+        {
+          "name": "Open",
+          "line": "The protocols and tools are developed in the open, by the people who build with them."
+        },
+        {
+          "name": "Neutral",
+          "line": "No single vendor sets the direction: governance is shared at the Linux Foundation."
+        },
+        {
+          "name": "Practical",
+          "line": "Agents are moving into production; the foundation names what works today."
+        },
+        {
+          "name": "Clear",
+          "line": "Plain language about protocols, projects and who decides."
+        }
+      ]
+    }
+  },
+  "report": {
+    "sources_read": [
+      "https://aaif.io/",
+      "https://aaif.io/_next/static/chunks/3tg274q-9atqx.css",
+      "https://aaif.io/_next/static/chunks/1-8f7gq9ry3my.css",
+      "https://aaif.io/_next/static/chunks/2au7-qkhpwtn-.css",
+      "https://aaif.io/_next/static/chunks/0ivddmds6q2xn.css",
+      "https://aaif.io/brand",
+      "LFX record: Agentic AI Foundation (agentic-ai-foundation)"
+    ],
+    "sources_failed": [
+      {
+        "name": "https://aaif.io/brand-guidelines",
+        "reason": "HTTP 404"
+      }
+    ],
+    "gaps": [
+      "No logo files: the logo chapter uses placeholder marks until the horizontal lockup, the stacked lockup and the symbol are uploaded."
+    ],
+    "notes": "The site's buttons use #FF7D2D where the brand page says #FF702D; the brand page value is kept.",
+    "version": 2,
+    "findings": {
+      "sources_failed": [
+        {
+          "source": "https://aaif.io/brand-guidelines",
+          "kind": "brand_page",
+          "reason": "This page does not exist on the site (the server answered 404).",
+          "detail": "HTTP 404"
+        },
+        {
+          "source": "https://cdn.sanity.io/files/4o10fa7h/production/648471a723a16523e4a2bb9269e093a1ecd3d8e2.zip?dl=",
+          "kind": "logo_package",
+          "reason": "The logo package on aaif.io/brand is a ZIP file, which the agent can't download from a link. Upload the stacked, reversed, symbol and primary files as SVG in the form, or a ZIP of the SVG files under 150 KB; a larger ZIP may not send.",
+          "detail": "linked ZIP, not readable from a link"
+        }
+      ],
+      "missing_assets": [
+        {
+          "asset": "logo_primary",
+          "reason": "The site's header links a logo image (16dd7d8270b673d376cadca831ab3d5ea003bb89-838x203.svg) that was not read in this run, so the kit shows placeholder marks.",
+          "fix": "Upload the primary file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on aaif.io/brand is likely too large to send."
+        },
+        {
+          "asset": "logo_stacked",
+          "reason": "No stacked logo was uploaded and none was read from the site.",
+          "fix": "Upload the stacked file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on aaif.io/brand is likely too large to send."
+        },
+        {
+          "asset": "logo_symbol",
+          "reason": "No symbol was uploaded and none could be cropped out of a lockup.",
+          "fix": "Upload the symbol file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on aaif.io/brand is likely too large to send."
+        },
+        {
+          "asset": "logo_reversed",
+          "reason": "No white (reversed) logo was uploaded; dark grounds reuse the full-color lockup until one is.",
+          "fix": "Upload the reversed file as SVG in the form, or a ZIP of the SVG files under 150 KB; the full package linked on aaif.io/brand is likely too large to send."
+        }
+      ],
+      "warnings": [
+        {
+          "code": "color_conflict",
+          "text": "Coral is #FF702D on the brand page but the site's stylesheet also uses #FF7D2D; the kit keeps #FF702D.",
+          "source": "https://aaif.io/_next/static/chunks/3tg274q-9atqx.css"
+        },
+        {
+          "code": "palette_from_page_text",
+          "text": "Coral and Lilac were read from the brand page's printed values, not from a stylesheet token or a logo file.",
+          "source": "https://aaif.io/brand"
+        },
+        {
+          "code": "brand_page_guessed",
+          "text": "The brand page was found by its path on the site, not named on the form: check it is the project's own brand page.",
+          "source": "https://aaif.io/brand"
+        }
+      ]
+    },
+    "color_conflicts": [
+      {
+        "name": "Coral",
+        "values": [
+          {
+            "hex": "#FF702D",
+            "source": "brand_page: https://aaif.io/brand"
+          },
+          {
+            "hex": "#FF7D2D",
+            "source": "site_css: https://aaif.io/_next/static/chunks/3tg274q-9atqx.css"
+          }
+        ],
+        "chosen": "#FF702D"
+      }
+    ],
+    "rules": [
+      {
+        "path": "chapters.logo.files",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.logo.placeholder",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.logo.files"
+        ]
+      },
+      {
+        "path": "chapters.logo.system",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.colorways[0]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.colorways[1]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.colorways[2]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.colorways[3]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.clear_space",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.minimum_size.rule",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.symbol",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.partnership[0]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.partnership[1]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.partnership[2]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.partnership[3]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.partnership[4]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.logo.watchouts[0]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.watchouts[1]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.watchouts[2]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.watchouts[3]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.watchouts[4]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.logo.watchouts[5]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.color.palette",
+        "basis": "project",
+        "uses": [
+          "found_in"
+        ]
+      },
+      {
+        "path": "chapters.color.summary",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.color.proportion",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.color.contrast.rule",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.color.contrast.pairs",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.type.family",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.type.weights",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.type.source",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.type.fallback",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.type.google_fonts",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.type.note",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.type.summary",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.type.family",
+          "chapters.type.note"
+        ]
+      },
+      {
+        "path": "chapters.type.scale",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.type.family"
+        ]
+      },
+      {
+        "path": "chapters.type.rules[0]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.type.family"
+        ]
+      },
+      {
+        "path": "chapters.type.rules[1]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.type.family"
+        ]
+      },
+      {
+        "path": "chapters.type.rules[2]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.type.family"
+        ]
+      },
+      {
+        "path": "chapters.visual.icons.rules[0]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.visual.icons.rules[1]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.visual.icons.rules[2]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.visual.icons.rules[3]",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.visual.icons.recommended",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.visual.imagery.rule",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.visual.imagery.avoid[0]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.visual.imagery.avoid[1]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.visual.imagery.avoid[2]",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.usage.summary",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.type.family"
+        ]
+      },
+      {
+        "path": "chapters.usage.examples",
+        "basis": "lf-reference",
+        "uses": [
+          "chapters.color.palette"
+        ]
+      },
+      {
+        "path": "chapters.voice.umbrella",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.line",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.source",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.note",
+        "basis": "lf-reference"
+      },
+      {
+        "path": "chapters.voice.attributes[0]",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.attributes[1]",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.attributes[2]",
+        "basis": "project"
+      },
+      {
+        "path": "chapters.voice.attributes[3]",
+        "basis": "project"
+      }
+    ]
+  },
+  "inputs": {
+    "website_url": "https://aaif.io/",
+    "brand_page_url": null,
+    "framework_supplied": true,
+    "logo_files": [],
+    "questions_asked": [
+      {
+        "key": "logo_files",
+        "why": "The form carries no logo files and the site sets its wordmark in live type.",
+        "suggested_answer": "Use the header logo the site shows.",
+        "basis": "https://aaif.io/",
+        "answered": true
+      }
+    ],
+    "answers": [
+      {
+        "key": "logo_files",
+        "origin": "accepted",
+        "text": "Use what the aaif.io website shows (its header logo SVG, the colours its CSS sets and the typeface it loads); where it shows nothing, leave it as a gap in the report."
+      }
+    ],
+    "web_searches": [],
+    "fetched": [
+      {
+        "url": "https://aaif.io/",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/_next/static/chunks/3tg274q-9atqx.css",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/_next/static/chunks/1-8f7gq9ry3my.css",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/_next/static/chunks/2au7-qkhpwtn-.css",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/_next/static/chunks/0ivddmds6q2xn.css",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/brand",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/brand-guidelines",
+        "ok": false
+      }
+    ],
+    "lfx_records": [
+      {
+        "slug": "agentic-ai-foundation",
+        "uid": "a0900000000SYNTHAAA",
+        "name": "Agentic AI Foundation"
+      }
+    ]
+  },
+  "intake": {
+    "mode": "form",
+    "completed_at": "2026-11-04T22:30:00Z"
+  },
+  "revision": null,
+  "check": null,
+  "capabilities": {
+    "web_fetch": true,
+    "lfx_mcp": true
+  },
+  "generated_at": "2026-11-04T22:30:00Z",
+  "agent": {
+    "identifier": "linux-foundation~brand-kit",
+    "agent_version": "2.2.2",
+    "prompt_manifest_sha256": "18c8c7443e660648865ea7601e473b5b4374e38ef4188ef7adfd6111462b6a77"
+  }
+}

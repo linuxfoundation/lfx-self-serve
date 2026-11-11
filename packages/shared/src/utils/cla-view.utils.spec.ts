@@ -4,7 +4,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ALREADY_SIGNED_CLA_LABEL } from '../constants/cla.constants';
-import { PROFILE_TABS } from '../constants/profile.constants';
 import { ClaGroupOrg, ClaGroupOrgSource, ClaSignedVia, ClaStatus, MyClaAgreement, MyClasIdentitySummary } from '../interfaces/cla.interface';
 import {
   alreadySignedAgreementForGroup,
@@ -13,7 +12,6 @@ import {
   alreadySignedChipLabel,
   alreadySignedGroupTooltip,
   alreadySignedIdentityTooltip,
-  buildProfileTabs,
   claGroupPrimaryName,
   claGroupSecondaryName,
   claKindSeverity,
@@ -40,27 +38,6 @@ function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
 function identity(overrides: Partial<MyClasIdentitySummary> = {}): MyClasIdentitySummary {
   return { matchedUserIds: 1, unmatched: false, githubLinked: true, ...overrides };
 }
-
-describe('buildProfileTabs', () => {
-  it('returns the static PROFILE_TABS unchanged when the flag is off', () => {
-    expect(buildProfileTabs(false)).toBe(PROFILE_TABS);
-  });
-
-  it('inserts the CLAs tab immediately before Transactions when the flag is on', () => {
-    const tabs = buildProfileTabs(true);
-    const ids = tabs.map((t) => t.id);
-    expect(ids).toContain('clas');
-    expect(ids.indexOf('clas')).toBe(ids.indexOf('transactions') - 1);
-    expect(tabs.find((t) => t.id === 'clas')).toEqual({ id: 'clas', label: 'CLAs', route: 'clas' });
-  });
-
-  it('does not mutate the shared PROFILE_TABS constant', () => {
-    const before = PROFILE_TABS.length;
-    buildProfileTabs(true);
-    expect(PROFILE_TABS.length).toBe(before);
-    expect(PROFILE_TABS.some((t) => t.id === 'clas')).toBe(false);
-  });
-});
 
 describe('splitAgreementsByKind', () => {
   it('partitions ICLAs and ECLAs preserving order', () => {

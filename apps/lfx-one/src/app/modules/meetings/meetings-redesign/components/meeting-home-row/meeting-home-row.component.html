@@ -3,46 +3,22 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <div
-  class="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto_auto] items-start gap-x-0 gap-y-[10px] @[861px]:gap-x-[14px] px-[4px] py-[16px] transition-colors duration-150 hover:bg-gray-50 motion-reduce:transition-none @[861px]:flex @[861px]:flex-nowrap"
+  class="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto_auto] items-start gap-x-0 gap-y-[10px] @[861px]:gap-x-[14px] px-[4px] py-[20px] transition-colors duration-150 hover:bg-gray-50 motion-reduce:transition-none @[861px]:flex @[861px]:flex-nowrap"
+  [class]="attendance() ? '@[601px]:grid-cols-[auto_minmax(0,1fr)_minmax(240px,auto)_auto]' : ''"
   (click)="open()"
   data-testid="meetings-home-row">
   <!-- Date tile: azure band upcoming, grey band past -->
-  <div
-    class="relative col-start-1 row-start-1 flex h-[42px] w-[40px] flex-none flex-col rounded-[8px] border border-gray-200 bg-white @[861px]:h-[48px] @[861px]:w-[46px] @[861px]:rounded-[10px]"
-    data-testid="meetings-home-row-date">
-    <span
-      class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold uppercase leading-none tracking-[.08em] @[861px]:h-[14px] @[861px]:text-[8.5px]"
-      [class]="
-        past()
-          ? 'rounded-t-[7px] bg-gray-200 text-gray-900 @[861px]:rounded-t-[9px]'
-          : '-mx-px -mt-px rounded-t-[8px] bg-blue-500 text-white @[861px]:rounded-t-[10px]'
-      "
-      data-testid="meetings-home-row-date-month"
-      >{{ row().startTime | date: 'MMM' }}</span
-    >
-    <span
-      class="flex flex-auto items-center justify-center text-[16px] leading-none text-gray-900 @[861px]:text-[19px]"
-      data-testid="meetings-home-row-date-day"
-      >{{ row().startTime | date: 'd' }}</span
-    >
-    <span class="absolute -right-[11px] -top-[11px] flex">
-      @for (badge of visibilityBadges(); track badge.kind) {
-        <span
-          role="img"
-          tabindex="0"
-          class="box-content inline-flex h-[17px] w-[17px] cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-          [class]="visibilityBg[badge.kind]"
-          [attr.aria-label]="badge.title"
-          [lfxUiTooltip]="badge.description ?? ''"
-          [lfxUiTooltipTitle]="badge.title"
-          [attr.data-testid]="'meetings-home-row-visibility-' + badge.kind">
-          <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
-        </span>
-      }
-    </span>
-  </div>
+  <lfx-meeting-date-tile
+    class="col-start-1 row-start-1"
+    testIdPrefix="meetings-home-row"
+    [date]="row().startTime"
+    [past]="past()"
+    [badges]="visibilityBadges()"
+    [responsive]="true" />
 
-  <div class="col-start-2 row-start-1 ml-[14px] flex min-w-0 flex-col gap-[3px] @[861px]:ml-0 @[861px]:flex-1">
+  <div
+    class="@container/body col-start-2 row-start-1 ml-[14px] flex min-w-0 flex-col gap-[3px] @[861px]:ml-0 @[861px]:flex-1"
+    [class]="attendance() ? '@[601px]:row-span-3' : ''">
     @if (project(); as project) {
       @if (project.url; as url) {
         <a
@@ -53,15 +29,7 @@
           [lfxUiTooltipDisabled]="!projectTruncated()"
           (click)="onLinkClick($event, url, false)"
           data-testid="meetings-home-row-project">
-          <!-- Design logo: 5px-corner square, grey fill and border, 8px semibold initial. -->
-          <lfx-ui-avatar
-            class="!rounded-[5px] border border-gray-200 !bg-gray-100 !text-[8px] !font-semibold !text-gray-600 !shadow-none"
-            shape="rounded"
-            [size]="16"
-            [name]="project.name"
-            [initials]="project.initial"
-            [src]="project.logo"
-            decorative />
+          <lfx-meeting-project-logo [src]="project.logo" />
           <span
             #projectName
             class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
@@ -76,15 +44,7 @@
         <span
           class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-label-12 text-gray-500"
           data-testid="meetings-home-row-project">
-          <!-- Design logo: 5px-corner square, grey fill and border, 8px semibold initial. -->
-          <lfx-ui-avatar
-            class="!rounded-[5px] border border-gray-200 !bg-gray-100 !text-[8px] !font-semibold !text-gray-600 !shadow-none"
-            shape="rounded"
-            [size]="16"
-            [name]="project.name"
-            [initials]="project.initial"
-            [src]="project.logo"
-            decorative />
+          <lfx-meeting-project-logo [src]="project.logo" />
           <span
             #projectName
             class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
@@ -109,7 +69,7 @@
         [attr.rel]="link().newTab ? 'noopener noreferrer' : null"
         [lfxUiTooltip]="row().title"
         [lfxUiTooltipDisabled]="!titleTruncated()"
-        (click)="onLinkClick($event, link().url, link().newTab)"
+        (click)="onTitleClick($event)"
         data-testid="meetings-home-row-title"
         >{{ row().title }}</a
       >
@@ -122,8 +82,8 @@
       }
     </span>
 
-    <!-- Each item carries its leading "·"; the clipped left edge hides the one that opens a line. -->
-    <span class="-m-[2px] overflow-hidden p-[2px] text-label-12 text-gray-500" data-testid="meetings-home-row-meta">
+    <!-- Line 1: each item carries its leading "·"; the clipped left edge hides the one that opens a line. -->
+    <span class="-m-[2px] overflow-hidden p-[2px] text-[12px] leading-[18px] text-gray-500" data-testid="meetings-home-row-meta">
       <span class="-ml-[16px] flex flex-wrap gap-y-[2px]">
         @for (part of when(); track $index) {
           <!-- May wrap inside on narrow rows, so the start time is never clipped. -->
@@ -131,40 +91,61 @@
             ><span class="absolute left-0 w-[16px] text-center" aria-hidden="true">·</span>{{ part }}</span
           >
         }
-        @if (meetingType(); as type) {
-          <span class="relative inline-flex items-center gap-[5px] whitespace-nowrap pl-[16px]" data-testid="meetings-home-row-type">
+        @if (recurrenceLabel(); as label) {
+          <!-- The full label may wrap, so a rule with several days is never clipped. -->
+          <span class="relative pl-[16px]" data-testid="meetings-home-row-recurring">
             <span class="absolute left-0 w-[16px] text-center" aria-hidden="true">·</span>
-            <i class="text-[11px]" [class]="type.icon" aria-hidden="true"></i>{{ type.label }}
-          </span>
-        }
-        @if (recurrenceTooltip(); as tooltip) {
-          <span class="relative whitespace-nowrap pl-[16px]">
-            <span class="absolute left-0 w-[16px] text-center" aria-hidden="true">·</span>
+            <span class="hidden items-center gap-[5px] @[381px]/body:inline-flex" data-testid="meetings-home-row-recurring-label">
+              <i class="fa-light fa-arrows-repeat text-[11px]" aria-hidden="true"></i>{{ label }}
+            </span>
+            <!-- A body of 380px or less shows the short label, with the cadence in a tooltip. -->
             <span
               role="img"
               tabindex="0"
-              aria-label="Recurring"
-              class="inline-flex cursor-default items-center gap-[5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-              [lfxUiTooltip]="tooltip"
-              data-testid="meetings-home-row-recurring">
-              <i class="fa-light fa-arrows-rotate text-[11px]" aria-hidden="true"></i>Recurring
+              class="inline-flex cursor-default items-center gap-[5px] whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 @[381px]/body:hidden"
+              [attr.aria-label]="recurrenceTooltip()"
+              [lfxUiTooltip]="recurrenceTooltip() ?? ''"
+              data-testid="meetings-home-row-recurring-short">
+              <i class="fa-light fa-arrows-repeat text-[11px]" aria-hidden="true"></i>Recurring
             </span>
           </span>
         }
+      </span>
+    </span>
+
+    <!-- Line 2 wraps instead of clipping, so a long organizer list moves to its own line. -->
+    @if (meetingType() || groups().length || organizers().length) {
+      <span class="mt-[3px] flex min-w-0 flex-wrap items-center gap-x-[8px] gap-y-[6px] whitespace-nowrap text-[12px] leading-[18px] text-gray-500">
+        @if (meetingType(); as type) {
+          <!-- Muted tag text per the design; the library outline badge uses neutral-900. -->
+          <lfx-ui-badge class="!text-gray-600" variant="outline" size="sm" data-testid="meetings-home-row-type"
+            ><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge
+          >
+        }
+        @for (group of groups(); track group) {
+          <!-- A long group name truncates; the title keeps it whole. -->
+          <lfx-ui-badge class="max-w-full !text-gray-600" variant="outline" size="sm" [attr.title]="group" data-testid="meetings-home-row-group"
+            ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group }}</span></lfx-ui-badge
+          >
+        }
         @if (organizers().length) {
-          <span class="relative inline-flex min-w-0 items-center gap-[6px] pl-[16px]" data-testid="meetings-home-row-organizer">
-            <span class="absolute left-0 w-[16px] text-center" aria-hidden="true">·</span>
-            <span class="whitespace-nowrap">Organized by:</span>
+          <!-- In a narrow body the avatars wrap under the label; a name longer than the line ends in an ellipsis. -->
+          <span class="inline-flex min-w-0 max-w-full flex-none flex-wrap items-center gap-x-[6px] gap-y-[2px]" data-testid="meetings-home-row-organizer">
+            <span>Organized by:</span>
             <span class="inline-flex flex-none items-center pl-[2px]">
+              <!-- One organizer is named beside the avatar, so only a stack of two or more gets tooltips. -->
+              @let stack = organizers().length > 1;
               @for (organizer of organizers(); track organizer.key) {
                 <!-- Outline, not ring: the avatar's background ring would paint over a focus ring. -->
                 <span
-                  role="img"
-                  tabindex="0"
                   class="inline-flex flex-none cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
                   [style.margin-left.px]="$first ? 0 : -5"
-                  [attr.aria-label]="organizer.label"
+                  [attr.role]="stack ? 'img' : null"
+                  [attr.tabindex]="stack ? 0 : null"
+                  [attr.aria-label]="stack ? organizer.label : null"
+                  [attr.aria-hidden]="stack ? null : 'true'"
                   [lfxUiTooltip]="organizer.label"
+                  [lfxUiTooltipDisabled]="!stack"
                   data-testid="meetings-home-row-organizer-avatar">
                   <!-- Design initials are 8px semibold; the library scales them to 38% medium. -->
                   <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
@@ -172,42 +153,64 @@
               }
             </span>
             @if (organizers().length === 1) {
-              <span class="min-w-0 break-words text-gray-600" data-testid="meetings-home-row-organizer-name">{{ organizers()[0].label }}</span>
+              <span class="min-w-0 truncate text-gray-600" data-testid="meetings-home-row-organizer-name">{{ organizers()[0].label }}</span>
             }
           </span>
         }
       </span>
-    </span>
+    }
   </div>
 
   <!-- Top-right actions (RSVP or artifacts, menu); clicks here never open the row. -->
   <div
     class="contents @[861px]:ml-auto @[861px]:flex @[861px]:flex-none @[861px]:items-center @[861px]:gap-[18px]"
+    [class]="
+      attendance() ? '@[861px]:min-w-[330px] @[861px]:flex-wrap @[861px]:content-between @[861px]:justify-end @[861px]:gap-y-0 @[861px]:self-stretch' : ''
+    "
     (click)="$event.stopPropagation()"
     data-testid="meetings-home-row-actions">
     @if (past()) {
-      <!-- Shown only when a button renders, so an empty second grid line adds no gap. -->
-      <div class="col-[2/-1] row-start-2 hidden justify-self-end has-[div]:flex" data-testid="meetings-home-row-artifacts-cell">
+      <!-- Top right beside the menu; on line 2, left-aligned and wrapping, at 480px or less, so the title keeps a readable width. -->
+      <div
+        class="col-[2/-1] row-start-2 ml-[14px] hidden justify-self-start has-[div]:flex [&>*>div]:shrink [&>*>div]:flex-wrap @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:justify-self-end @[481px]:[&>*>div]:shrink-0 @[481px]:[&>*>div]:flex-nowrap @[861px]:ml-0"
+        data-testid="meetings-home-row-artifacts-cell">
         <lfx-meeting-home-artifacts [row]="row()" />
       </div>
     } @else {
-      <!-- On line 2 at 480px or less, so the title keeps a readable width on phones; Join sits after the RSVP. -->
+      <!-- Beside the menu, Join after the RSVP; at 480px or less the cell unwraps: RSVP left on line 2, Join right on the last line, over attendance. -->
       <div
-        class="col-[2/-1] row-start-2 hidden items-center justify-self-end gap-[18px] has-[button]:flex has-[span]:flex @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[861px]:ml-0"
+        class="contents items-center gap-[18px] @[481px]:col-[3/4] @[481px]:row-start-1 @[481px]:ml-[14px] @[481px]:hidden @[481px]:justify-self-end @[481px]:has-[button]:flex @[481px]:has-[span]:flex @[861px]:ml-0"
         data-testid="meetings-home-row-rsvp-cell">
-        <lfx-meeting-rsvp-controls [row]="row()" />
+        <div class="col-[2/-1] row-start-2 ml-[14px] hidden justify-self-start has-[span]:flex @[481px]:has-[span]:contents">
+          <lfx-meeting-rsvp-controls [row]="row()" />
+        </div>
         @if (joinable()) {
-          <lfx-ui-button size="small" icon="fa-light fa-video" [ariaLabel]="'Join ' + row().title" (click)="join()" data-testid="meetings-home-row-join"
+          <lfx-ui-button
+            class="z-[1] col-[2/-1] row-start-3 self-end justify-self-end @[481px]:self-auto"
+            size="small"
+            icon="fa-light fa-video"
+            [ariaLabel]="'Join ' + row().title"
+            (click)="join()"
+            data-testid="meetings-home-row-join"
             >Join</lfx-ui-button
           >
         }
       </div>
     }
-    <!-- -4px keeps the 32px menu centred on the 24px RSVP buttons. -->
+    <!-- -2px keeps the 32px menu centred on the 28px RSVP buttons. -->
     <lfx-meeting-home-actions
-      class="col-start-4 row-start-1 -my-[4px] ml-[14px] @[861px]:ml-0"
+      class="col-start-4 row-start-1 -my-[2px] ml-[14px] @[861px]:ml-0"
       [row]="row()"
       [view]="view()"
       data-testid="meetings-home-row-menu" />
+    @if (attendance(); as attendance) {
+      <!-- Under the actions on wide rows, clear of the menu; beside the body, then under it, as the row narrows; clear of Join at 480px or less. -->
+      <div
+        class="col-[2/-1] row-start-3 ml-[14px] mt-[4px] flex justify-start @[481px]:row-start-2 @[601px]:col-start-3 @[601px]:col-end-auto @[601px]:row-[2/span_2] @[601px]:self-end @[601px]:justify-end @[861px]:ml-0 @[861px]:mt-[6px] @[861px]:basis-full @[861px]:pr-[50px]"
+        [class]="joinable() ? 'pr-[80px] @[481px]:pr-0' : ''"
+        data-testid="meetings-home-row-attendance">
+        <lfx-meeting-home-attendance-popup class="w-full max-w-[220px]" [row]="row()" [past]="past()" [attendance]="attendance" />
+      </div>
+    }
   </div>
 </div>

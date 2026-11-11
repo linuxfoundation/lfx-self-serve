@@ -4,7 +4,7 @@ description: Enroll in a Linux Foundation Individual Supporter membership and ma
 audience: [all]
 product_area: Account
 tags: [account, individual-enrollment, membership, supporter, auto-renew]
-last_updated: 2026-08-17
+last_updated: 2026-11-04
 intercom_collection: Account
 ---
 
@@ -25,14 +25,14 @@ The **Individual Enrollment** tab is where you enroll in a Linux Foundation Indi
 
 ## Enroll in a membership
 
-1. Review the available membership, its **Benefits**, and its yearly price.
-2. Select **Enroll** and complete the checkout.
+1. Review the available membership — **The Linux Foundation Individual Supporter** — its **Benefits**, and its yearly price.
+2. Select **Enroll as an Individual Supporter** and complete the checkout.
 
-If no memberships are available, the tab shows _There are no individual enrollment products at this time._
+If no memberships are available, the tab shows **No enrollment products available** — _There are no individual enrollment products at this time._ If the tab can't load them, it shows **Could not load enrollment products**; reload the tab to try again.
 
 ## Your membership details
 
-Once you are enrolled, the membership card shows:
+Once you are enrolled, the membership card shows a status — **Active**, **Expiring Soon**, or **Expired** — and:
 
 - **Price** — the yearly cost
 - **Purchased** — when you enrolled

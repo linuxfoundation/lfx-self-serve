@@ -16,9 +16,13 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
   NewsletterScheduleResult,
   NewsletterSendResult,
   NewsletterShareRequest,
+  NewsletterTemplateManifest,
+  NewsletterTemplatesResponse,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -55,6 +59,30 @@ export class NewsletterServiceClient {
     );
   }
 
+  public async getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplatesResponse>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/templates`, 'GET');
+  }
+
+  public async getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {
+    return this.microserviceProxy.proxyRequest<NewsletterTemplateManifest>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/templates/${encodeURIComponent(templateKey)}/manifest`,
+      'GET'
+    );
+  }
+
+  public async renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.microserviceProxy.proxyRequest<NewsletterRenderPreviewResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/render-preview`,
+      'POST',
+      undefined,
+      payload
+    );
+  }
+
   public async listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
     const query: Record<string, string> = {};
     if (params.status) {
@@ -76,16 +104,25 @@ export class NewsletterServiceClient {
    * Member-facing committee-scoped list: sent newsletters whose audience
    * includes the committee, ordered by sent_at descending. The upstream
    * gateway authorizes the caller against `committee:{committee_uid}#member`
-   * (live FGA membership), so this must always run with the user's bearer
-   * token — never M2M.
+   * (live FGA membership), so My Newsletters runs it with the user's bearer
+   * token. The only M2M caller (`options.bearerToken`) is the signed-out guest
+   * reader, after its in-app member-company check (#5235).
    */
-  public async listCommitteeNewsletters(req: Request, committeeUid: string, pageToken?: string): Promise<CommitteeNewsletterListResponse> {
+  public async listCommitteeNewsletters(
+    req: Request,
+    committeeUid: string,
+    pageToken?: string,
+    options?: ApiRequestOptions
+  ): Promise<CommitteeNewsletterListResponse> {
     return this.microserviceProxy.proxyRequest<CommitteeNewsletterListResponse>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${committeeUid}/newsletters`,
       'GET',
-      pageToken ? { page_token: pageToken } : undefined
+      pageToken ? { page_token: pageToken } : undefined,
+      undefined,
+      undefined,
+      options
     );
   }
 

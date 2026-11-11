@@ -1,0 +1,136 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="members-growth">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Member growth unavailable"
+      subtitle="We could not load member growth for this foundation. Refresh the page to try again."
+      data-testid="members-growth-error" />
+  } @else if (loading()) {
+    <p-skeleton height="30rem" borderRadius="0.5rem" data-testid="members-growth-loading" aria-hidden="true" />
+  } @else if (!empty()) {
+    @let growth = view();
+    <div class="flex min-w-0 flex-col gap-[16px] pb-[4px] pt-[14px]" data-testid="members-growth-chart">
+      <div class="flex min-w-0 gap-[10px]">
+        <!-- Only the top and the base are labelled; each label centres on its edge of the plot. -->
+        <div class="flex h-[340px] shrink-0 flex-col justify-between text-right text-[11px] leading-[12px] text-gray-600 max-sm:hidden" aria-hidden="true">
+          <span class="-translate-y-1/2" data-testid="members-growth-y-max">{{ growth.yMax }}</span>
+          <span class="translate-y-1/2">0</span>
+        </div>
+        <div class="flex min-w-0 flex-1 flex-col gap-[8px]">
+          <div class="relative h-[340px] border-l border-[color:var(--ui-neutral-alpha-200)] max-sm:border-l-0">
+            <svg
+              width="100%"
+              height="100%"
+              preserveAspectRatio="none"
+              class="block overflow-visible"
+              role="img"
+              [attr.viewBox]="viewBox"
+              [attr.aria-label]="growth.ariaLabel">
+              <line
+                x1="0"
+                vector-effect="non-scaling-stroke"
+                style="stroke: var(--ui-neutral-alpha-200)"
+                [attr.x2]="plot.width"
+                [attr.y1]="plot.height"
+                [attr.y2]="plot.height"></line>
+              @for (line of growth.lines; track line.year) {
+                <path
+                  fill="none"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  vector-effect="non-scaling-stroke"
+                  class="transition-[stroke-opacity] duration-150"
+                  [attr.d]="line.d"
+                  [attr.stroke]="line.color"
+                  [attr.stroke-opacity]="opacities().get(line.year)"
+                  [attr.stroke-dasharray]="line.dashed ? '6 5' : null"
+                  [attr.data-testid]="'members-growth-line-' + line.year"></path>
+              }
+            </svg>
+            <!-- Every point carries its value above it, drawn outside the stretched SVG so neither distorts. -->
+            @for (line of growth.lines; track line.year) {
+              @for (point of line.points; track point.month) {
+                <span
+                  class="pointer-events-none absolute -ml-[3px] -mt-[3px] h-[6px] w-[6px] rounded-full"
+                  aria-hidden="true"
+                  [style.left.%]="point.leftPct"
+                  [style.top.%]="point.topPct"
+                  [style.background]="line.color"
+                  [style.opacity]="opacities().get(line.year)"></span>
+                <span
+                  class="pointer-events-none absolute -translate-x-1/2 -translate-y-[150%] whitespace-nowrap text-[10px] font-medium leading-[12px]"
+                  aria-hidden="true"
+                  [style.left.%]="point.leftPct"
+                  [style.top.%]="point.topPct"
+                  [style.color]="line.color"
+                  [style.opacity]="opacities().get(line.year)"
+                  >{{ point.label }}</span
+                >
+              }
+            }
+            <div class="absolute inset-0" role="list" aria-label="Cumulative new members per month">
+              @for (column of growth.columns; track column.month; let index = $index) {
+                <!-- Each month's target is centred on it and spans the month spacing; hover or focus draws a guide down its middle. -->
+                <div
+                  class="absolute inset-y-0 -translate-x-1/2 outline-none hover:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:ring-2 focus-visible:ring-blue-500"
+                  role="listitem"
+                  tabindex="0"
+                  [style.left.%]="column.leftPct"
+                  [style.width.%]="column.widthPct"
+                  [attr.aria-label]="column.ariaLabel"
+                  [attr.data-testid]="'members-growth-month-' + column.month"
+                  (mouseenter)="showTip(index, $event)"
+                  (focus)="showTip(index, $event)"
+                  (mouseleave)="hideTip(index)"
+                  (blur)="hideTip(index)"
+                  (keydown.escape)="hideTip(index)">
+                  @if (tip(); as open) {
+                    @if (open.index === index) {
+                      <lfx-health-metrics-chart-tip
+                        class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
+                        [class]="open.flip ? 'right-[calc(50%+12px)]' : 'left-[calc(50%+12px)]'"
+                        aria-hidden="true"
+                        [tip]="column.tip" />
+                    }
+                  }
+                </div>
+              }
+            </div>
+          </div>
+          <!-- On a phone only January and December show, pinned to the plot's edges. -->
+          <div class="relative h-[14px] text-[11px] leading-[14px] text-gray-600" aria-hidden="true" data-testid="members-growth-months">
+            @for (column of growth.columns; track column.month; let index = $index) {
+              <span class="absolute -translate-x-1/2 whitespace-nowrap" [class]="monthLabelClasses()[index]" [style.left.%]="column.leftPct">{{
+                column.label
+              }}</span>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Hovering or focusing a year previews it and activating it keeps it, fading every other line; the month popups carry the same values. -->
+      <div class="flex flex-wrap justify-center gap-x-[16px] gap-y-[8px]" role="group" aria-label="Highlight a year" data-testid="members-growth-legend">
+        @for (line of growth.lines; track line.year) {
+          <button
+            type="button"
+            class="inline-flex cursor-default items-center gap-[6px] whitespace-nowrap rounded-[4px] py-[2px] text-[12px] leading-[16px] text-gray-700 outline-none transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-blue-500"
+            [style.opacity]="opacities().get(line.year)"
+            [attr.aria-pressed]="selected() === line.year"
+            [attr.data-testid]="'members-growth-legend-' + line.year"
+            (mouseenter)="preview.set(line.year)"
+            (mouseleave)="preview.set(null)"
+            (focus)="preview.set(line.year)"
+            (blur)="preview.set(null)"
+            (click)="selected.set(selected() === line.year ? null : line.year)">
+            <span class="h-[10px] w-[10px] shrink-0 rounded-full" aria-hidden="true" [style.background]="line.color"></span>{{ line.year }}
+          </button>
+        }
+      </div>
+    </div>
+  }
+</div>

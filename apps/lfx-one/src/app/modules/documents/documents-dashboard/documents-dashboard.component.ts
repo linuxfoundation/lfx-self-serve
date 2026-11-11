@@ -5,6 +5,7 @@ import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -14,8 +15,17 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
-import { compareDocumentsByRecency, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
+import {
+  DocumentFormMode,
+  FilterPillOption,
+  GroupLinkState,
+  MyDocumentItem,
+  MyDocumentSource,
+  MyDocumentTableRow,
+  ProjectContext,
+  ProjectDocument,
+} from '@lfx-one/shared/interfaces';
+import { compareDocumentsByRecency, getDocumentSourceLink, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -49,6 +59,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
     SkeletonModule,
     TooltipModule,
     PageHeaderComponent,
+    RouterLink,
   ],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
   // instance must back the global <p-toast /> in app.component.html. A local provider
@@ -154,6 +165,9 @@ export class DocumentsDashboardComponent {
   private readonly viewDocuments: Signal<MyDocumentItem[]> = this.initViewDocuments();
   protected readonly projectSourceTabOptions: Signal<FilterPillOption[]> = this.initProjectSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
+  protected readonly documentRows: Signal<MyDocumentTableRow[]> = this.initDocumentRows();
+  // Group links return to this page. Documents has no Me-lens page, and the global lens can still be Me on a project route, so the Me lens is never restored.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: DOCUMENT_LABEL.plural, backPath: '/documents', fromMeLens: false };
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.filteredDocuments().length > 10 ? [10, 25, 50] : undefined));
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
@@ -410,7 +424,9 @@ export class DocumentsDashboardComponent {
       foundationName: '',
       foundationUid: undefined,
       groupOrMeetingName: groupName,
-      groupOrMeetingUid: ownerProjectUid,
+      // The id of the entity the name refers to, which is what the name's link opens: a committee's uid, or a past meeting's id.
+      // Native project rows and meeting attachments (whose name falls back to the project's) have none, so their name stays plain text.
+      groupOrMeetingUid: (docSource === 'committee' ? doc.committee_uid : doc.past_meeting_id) ?? '',
       date: doc.created_at ?? doc.updated_at ?? '',
       url: doc.url,
       attachmentUid: isProjectFile ? doc.uid : undefined,
@@ -419,6 +435,8 @@ export class DocumentsDashboardComponent {
       isChild,
       downloadUrl,
       uploadedBy: doc.uploaded_by,
+      mailingListUid: doc.mailing_list_uid,
+      pastMeetingId: doc.past_meeting_id,
       summaryUid: doc.summary_uid,
       summaryContent: doc.summary_content,
       projectDocumentSource: docSource,
@@ -502,6 +520,10 @@ export class DocumentsDashboardComponent {
       doc.foundationName.toLowerCase().includes(query) ||
       doc.groupOrMeetingName.toLowerCase().includes(query)
     );
+  }
+
+  private initDocumentRows(): Signal<MyDocumentTableRow[]> {
+    return computed(() => this.filteredDocuments().map((doc) => ({ ...doc, sourceLink: getDocumentSourceLink(doc) })));
   }
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {

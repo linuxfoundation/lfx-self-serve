@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_DELIVERY_TYPES,
+  COMPETITOR_KEYWORD_PATTERN,
+  GENERATED_GOOGLE_COPY_WIDTHS,
   GOOGLE_ADS_GEO_TARGET_MAP,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_DISPLAY_CALLS_TO_ACTION,
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
@@ -18,7 +22,15 @@ import {
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
-import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
+import {
+  campaignSurveySourceTextTooLong,
+  deriveSurveySlug,
+  googleAdsCampaignUrl,
+  parseNegativeKeywordInput,
+  surveySourceTitle,
+} from '@lfx-one/shared/utils/campaign.utils';
+import { fitAdCopyToWidth } from '@lfx-one/shared/utils/campaign-ad-copy.utils';
+import { googleAdsTextWeight } from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -577,15 +589,19 @@ function getCopySystemPromptBase(programType?: CampaignProgramType): string {
 
 const COPY_GOOGLE_SECTION = `
 GOOGLE SEARCH (RSA):
-- Headlines: 15 total, each ≤ 30 characters (STRICT — Google rejects longer)
-- Descriptions: 4 total, each ≤ 90 characters (STRICT)
+- Headlines: 15 total, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.searchHeadline} characters (STRICT — Google rejects longer)
+- Descriptions: 4 total, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.searchDescription} characters (STRICT). At least ONE description must be ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.shortDescription} characters: Performance Max needs one for its short slot.
 - Tone: direct, benefit-led, include CTA (e.g. "Register Now", "Enroll Now", "Learn More")
 
 GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, Display):
-- headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
-- descriptions: 5 variations, each ≤ 90 characters (STRICT)
-- business_name: ≤ 25 chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
-- call_to_action: one of "Learn More", "Register", "Sign Up", "Book Now", "Apply Now"`;
+- headlines: 5 variations, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline} characters (STRICT — the Demand Gen image ad takes ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline})
+- descriptions: 5 variations, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenDescription} characters (STRICT)
+- business_name: ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.businessName} chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
+- call_to_action: one of ${GOOGLE_DISPLAY_CALLS_TO_ACTION.map((option) => `"${option.value}"`).join(', ')} (exactly as written; Google Ads refuses any other text, "Register" included; used on Display ads only)
+
+GOOGLE COPY RULES:
+- Write every headline and description as a complete phrase or sentence that ends inside its limit. Copy over the limit is cut at the last whole word that fits, so never write past it.
+- Google counts Chinese, Japanese, Korean and full-width characters as 2 toward every limit.`;
 
 const COPY_LINKEDIN_SECTION = `
 LINKEDIN SPONSORED CONTENT (key: "linkedin_sponsored"):
@@ -640,7 +656,7 @@ IMPORTANT RULES:
 2. CHARACTER LIMITS ARE HARD — platforms REJECT copy that exceeds them. Verify EVERY line.
 3. NEVER abbreviate month names, city names, or proper nouns unless required to fit character limits.
 4. NEVER use em-dashes (—) or en-dashes (–) in ad copy. Use commas, periods, or colons instead.
-5. Demand Gen headlines are 40 chars max (not 30) — use the extra space for better copy.`;
+5. Demand Gen headlines are ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline} chars max: the Demand Gen image ad takes no more.`;
 
 function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgramType): string {
   const includeGoogle = platforms.includes('google-ads');
@@ -1513,18 +1529,94 @@ export class CampaignProxyService {
     // message further down promises "generating copy from URL" — which is false for email, where
     // no copy is generated at all. A status line that names work the stream will not do is the
     // same class of falsehood as a silent skip.
-    const isEmail = body.deliveryType === 'email';
+    // Every SEND surface. Email and survey both skip ad-copy, keyword and targeting generation --
+    // upstream writes their copy from the brief instead -- so the gate asks "is this not paid?".
+    const isEmailLike = body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing';
 
     // `/brief/generate` has its OWN refinement mode — `refineFeedback` + `previousCopy` — and it is
     // a second door onto the same refusal. Left open, an email refinement here skipped the scrape
-    // and extraction (because `isRefinement`) AND every generator (because `isEmail`), then
+    // and extraction (because `isRefinement`) AND every generator (because `isEmailLike`), then
     // emitted `done`: a successful no-op, which is worse than the error it should be, because the
     // caller is told the work happened.
     //
     // Same message as `streamRefinedBrief`, deliberately — one refusal reached two ways should not
     // read as two different problems.
-    if (isEmail && isRefinement) {
+    if (isEmailLike && isRefinement) {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
+      return;
+    }
+
+    // The SURVEY surface takes its facts from the pasted document, so it neither fetches nor
+    // extracts. Placed before the scrape block rather than threaded through it: every step below
+    // -- validate the URL, fetch it, run the extraction model over the HTML, verify links against
+    // the page's anchors -- asks a question about a page that is not the source of truth here. A
+    // survey's call-to-action often opens a bare form with nothing to read.
+    //
+    // Deterministic, with no model call: the operator supplied the facts, so inventing a second
+    // interpretation of them would be the thing the generator's own prompt forbids.
+    if (body.deliveryType === 'survey') {
+      const rawSourceText = typeof body.sourceText === 'string' ? body.sourceText : '';
+      // Refused here, not cut: campaign-service refuses a longer document at save and at copy
+      // generation, because the copy would otherwise be written from a truncated source. Checked
+      // on the RAW value before it is trimmed, so an oversized body is never copied.
+      if (campaignSurveySourceTextTooLong(rawSourceText)) {
+        yield {
+          type: 'error',
+          data: `The pasted text is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit. Shorten it so no finding, date or incentive is cut from the email.`,
+        };
+        return;
+      }
+      const sourceText = rawSourceText.trim();
+      if (sourceText === '') {
+        yield { type: 'error', data: 'Paste the survey or report text to write the email from.' };
+        return;
+      }
+      yield { type: 'status', data: 'Reading the source document...' };
+
+      // The first non-empty line names the asset. The brief needs an identity -- upstream keys it
+      // on `(project, slug, delivery, stage)` and the Implement tab titles campaigns from it --
+      // and a document's own opening line is what its author called it. Bounded because this
+      // becomes a campaign name, and a pasted document can open with a paragraph.
+      const name = surveySourceTitle(sourceText);
+
+      // The SAME derivation the planner looks the brief up with (`deriveSurveySlug`), so a saved
+      // survey -- a Google Form named after its title rather than `viewform` -- is found again.
+      const slug = deriveSurveySlug(body.url, sourceText);
+      // campaign-service keys the brief on the slug and refuses an empty one, so say so here.
+      if (slug === '') {
+        yield { type: 'error', data: 'Could not name this campaign: start the pasted text with the survey or report title.' };
+        return;
+      }
+
+      yield {
+        type: 'event',
+        data: {
+          // The whole factual basis of the copy. campaign-service reads it back as `sourceText`
+          // and renders it into the prompt as "Source document".
+          sourceText,
+          name,
+          slug,
+          // The call-to-action destination. Named `registrationUrl` because that is the field the
+          // generator already resolves a button's href from; on this surface it is the survey or
+          // report being promoted.
+          registrationUrl: body.url,
+          dates: '',
+          city: '',
+          countryCode: '',
+          audience: typeof body.targetAudience === 'string' ? body.targetAudience.trim() : '',
+          themes: [],
+          speakers: [],
+          formatNotes: '',
+          description: '',
+          agendaUrl: '',
+          cfpUrl: '',
+          venueUrl: '',
+          sponsorshipUrl: '',
+          heroImageUrl: '',
+          sponsors: [],
+        },
+      };
+      yield { type: 'done', data: null };
       return;
     }
 
@@ -1629,7 +1721,7 @@ export class CampaignProxyService {
         logger.warning(req, 'campaign_brief_extract', `${isEducation ? 'Course' : 'Event'} extraction failed, continuing with URL only`, { err: error });
         yield {
           type: 'status',
-          data: isEmail
+          data: isEmailLike
             ? `Could not extract structured ${extractLabel}; continuing with the URL only.`
             : `Could not extract structured ${extractLabel}, generating copy from URL...`,
         };
@@ -1680,7 +1772,7 @@ export class CampaignProxyService {
     // cheap one. The scrape, event details and HubSpot UTM above are what an email brief needs
     // from this stream today; generated subject/preview/sender copy arrives with the `email-copy`
     // endpoint (LFXV2-3198), which this path deliberately does not try to stand in for.
-    // `someContributesCopy` and not merely `!isEmail`: a Microsoft-ONLY selection reaches here with
+    // `someContributesCopy` and not merely `!isEmailLike`: a Microsoft-ONLY selection reaches here with
     // no copy keys to request. See `contributesAdCopy` for why skipping beats calling with an empty
     // schema — the failure mode is not a wasted call but a dead-ended brief.
     const someContributesCopy = selectedPlatforms.some(contributesAdCopy);
@@ -1692,10 +1784,10 @@ export class CampaignProxyService {
     // the honest value: this brief genuinely has no ad copy, and it is distinguishable from
     // `null`, which means "no brief was generated". Email deliberately keeps `null`, because its
     // copy comes from a different endpoint entirely.
-    if (!isEmail && !someContributesCopy) {
+    if (!isEmailLike && !someContributesCopy) {
       yield { type: 'copy_structured', data: {} };
     }
-    if (!isEmail && someContributesCopy) {
+    if (!isEmailLike && someContributesCopy) {
       const platformList = selectedPlatforms.filter(contributesAdCopy).join(', ');
       yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
@@ -1770,7 +1862,7 @@ export class CampaignProxyService {
     // no platform still gets the google-ads default above, so it still wants keywords. Email is the
     // one case where absence does not mean the default, and it is excluded first rather than by
     // adding another arm to that condition.
-    if (!isEmail && (body.platforms?.some((p) => p === 'google-ads' || p === 'microsoft-ads') || !body.platforms || body.platforms.length === 0)) {
+    if (!isEmailLike && (body.platforms?.some((p) => p === 'google-ads' || p === 'microsoft-ads') || !body.platforms || body.platforms.length === 0)) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -1786,7 +1878,10 @@ export class CampaignProxyService {
           intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
           notes: k['notes'] || '',
         }));
-        yield { type: 'keywords', data: keywords };
+        yield {
+          type: 'keywords',
+          data: filterGeneratedKeywords(keywords, eventYearFromDates(eventDetails?.['dates']), body.programType === 'education'),
+        };
       } catch (error) {
         logger.warning(req, 'campaign_brief_keywords', 'Keyword generation failed', { err: error });
         yield { type: 'status', data: 'Keyword generation failed, skipping...' };
@@ -1823,9 +1918,10 @@ export class CampaignProxyService {
     }
 
     // Narrower than the keyword gate above, and not by oversight. Callouts and sitelinks are
-    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts`/`sitelinks`
-    // SEARCH-only, the Implementation tab renders their editors behind `googleCalloutsAvailable`,
-    // and only `googleads/assets.go` validates them. A Microsoft-only brief takes the keyword
+    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts` (Search and
+    // Performance Max) and `sitelinks` (those two and Demand Gen), the Implementation tab renders their editors behind
+    // `googleCalloutsAvailable` and `googleSitelinksAvailable`, and only `googleads/assets.go`
+    // validates them. A Microsoft-only brief takes the keyword
     // block and skips this one, which is right — seeding extensions it has no way to dispatch
     // would fill an editor the operator never sees with text nothing reads.
     //
@@ -1835,7 +1931,7 @@ export class CampaignProxyService {
     // a silent wipe, not a no-op, since absent and empty are the same value on this wire.
     // Callouts are excluded on the matching rule rather than a different one: a refinement that
     // regenerated them would discard the operator's edits the same way.
-    if (!isEmail && !isRefinement && selectedPlatforms.includes('google-ads')) {
+    if (!isEmailLike && !isRefinement && selectedPlatforms.includes('google-ads')) {
       // Deterministic and free — no model call, so no try/catch and no status line of its own.
       // An empty result is the honest answer for a page that carries none of the four links.
       const sitelinks = buildSitelinksFromPage(eventDetails, pageLinks, pageBaseUrl, body.programType);
@@ -1866,12 +1962,12 @@ export class CampaignProxyService {
       }
     }
 
-    // `!isEmail` is not redundant with the platform check. Today's client never sends
+    // `!isEmailLike` is not redundant with the platform check. Today's client never sends
     // `linkedin-ads` alongside `deliveryType: 'email'`, but that is a CLIENT guarantee and this is
     // a server the client does not own — `{deliveryType:'email', platforms:['linkedin-ads']}` is
     // accepted by the type and would otherwise spend an AI call on a LinkedIn targeting strategy
     // for a brief that has no ad channels.
-    if (!isEmail && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
+    if (!isEmailLike && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
       yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
       try {
         const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);
@@ -1919,7 +2015,8 @@ export class CampaignProxyService {
     // no platforms `buildCopySystemPrompt` asks for a JSON object with no keys. There is nothing
     // for it to refine on an email brief either — the copy it would rewrite was never generated —
     // so the request is refused rather than answered with a broken call.
-    if (body.deliveryType === 'email') {
+    // Every send surface, as on the generate path: survey generates no ad copy either.
+    if (body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing') {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
       return;
     }
@@ -1977,7 +2074,10 @@ export class CampaignProxyService {
           intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
           notes: k['notes'] || '',
         }));
-        yield { type: 'keywords', data: keywords };
+        yield {
+          type: 'keywords',
+          data: filterGeneratedKeywords(keywords, eventYearFromDates(body.eventDetails?.dates), body.programType === 'education'),
+        };
       } catch (error) {
         if (signal.aborted) return;
         logger.warning(req, 'campaign_refine_keywords', 'Keyword regeneration failed', { err: error });
@@ -2452,7 +2552,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: keywordOps.length,
       adCount: 1,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }
@@ -2531,7 +2631,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: 0,
       adCount: 0,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }
@@ -2571,73 +2671,112 @@ function normalizeBudgetSplit(searchBudgetPct: number, campaignTypes: string[]):
   return { searchPct: raw, displayPct: 1 - raw };
 }
 
-function truncateAdCopy(obj: Record<string, unknown>): void {
-  const truncateStrings = (arr: unknown[], max: number): string[] => (arr as string[]).filter((s) => typeof s === 'string').map((s) => s.slice(0, max));
+/**
+ * Hold the model's ad copy to each platform's limits, in place, on the generate and refine paths.
+ *
+ * Every line over its limit is cut at the last whole word that fits, never mid-word, and loses any
+ * dangling "&", comma or connective word ({@link fitAdCopyToWidth}, #5378); a line left empty is
+ * dropped. Google lines are measured by Google's display width ({@link googleAdsTextWeight}, CJK and
+ * full-width characters count double), the width the Implement tab and campaign-service judge them
+ * by, so a Japanese line is not passed through at twice its allowance only to be dropped by the seed.
+ * LinkedIn, Reddit and Meta keep the UTF-16 count `slice` used before.
+ *
+ * The Google copy then gets one description short enough for Performance Max
+ * ({@link ensureShortGoogleDescription}, #5494). The older nesting under `platforms`, and the older
+ * `demand_gen` key, are held to the same limits.
+ */
+export function truncateAdCopy(obj: Record<string, unknown>): void {
+  const googleWidth = (char: string): number => googleAdsTextWeight(char);
+  const fitLines = (arr: unknown[], max: number, charWidth?: (char: string) => number): string[] =>
+    arr
+      .filter((line): line is string => typeof line === 'string')
+      .map((line) => fitAdCopyToWidth(line, max, charWidth))
+      .filter((line) => line !== '');
+  const fitField = (rec: Record<string, unknown>, key: string, max: number, charWidth?: (char: string) => number): void => {
+    if (typeof rec[key] === 'string') rec[key] = fitAdCopyToWidth(rec[key] as string, max, charWidth);
+  };
+  const variantsOf = (copy: Record<string, unknown> | undefined): Record<string, unknown>[] =>
+    Array.isArray(copy?.['variants']) ? (copy['variants'] as unknown[]).filter((v): v is Record<string, unknown> => v !== null && typeof v === 'object') : [];
 
-  const gs = obj['google_search'] as Record<string, unknown> | undefined;
-  if (gs) {
-    if (Array.isArray(gs['headlines'])) gs['headlines'] = truncateStrings(gs['headlines'], 30);
-    if (Array.isArray(gs['descriptions'])) gs['descriptions'] = truncateStrings(gs['descriptions'], 90);
-  }
-
-  const gd = obj['google_display'] as Record<string, unknown> | undefined;
-  if (gd) {
-    if (Array.isArray(gd['headlines'])) gd['headlines'] = truncateStrings(gd['headlines'], 40);
-    if (Array.isArray(gd['descriptions'])) gd['descriptions'] = truncateStrings(gd['descriptions'], 90);
-    if (typeof gd['business_name'] === 'string') gd['business_name'] = (gd['business_name'] as string).slice(0, 25);
-  }
-
-  const li = obj['linkedin_sponsored'] as Record<string, unknown> | undefined;
-  if (li) {
-    const variants = li['variants'] as unknown[] | undefined;
-    if (Array.isArray(variants)) {
-      for (const v of variants) {
-        if (v == null || typeof v !== 'object') continue;
-        const rec = v as Record<string, unknown>;
-        if (typeof rec['intro_text'] === 'string') rec['intro_text'] = (rec['intro_text'] as string).slice(0, 600);
-        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 200);
+  const nested = obj['platforms'] as Record<string, unknown> | undefined;
+  const pick = (...keys: string[]): Record<string, unknown> | undefined => {
+    for (const source of [obj, nested]) {
+      for (const key of keys) {
+        const found = source?.[key];
+        if (found !== null && typeof found === 'object' && !Array.isArray(found)) return found as Record<string, unknown>;
       }
     }
-  }
+    return undefined;
+  };
+  // Every copy object the brief can hold, top-level and nested alike; a brief holds one shape, and
+  // the seed reads the same keys in the same order (`generatedCopy` in the Implement tab).
+  const all = (...keys: string[]): Record<string, unknown>[] =>
+    [obj, nested].flatMap((source) =>
+      keys.map((key) => source?.[key]).filter((found): found is Record<string, unknown> => found !== null && typeof found === 'object' && !Array.isArray(found))
+    );
 
-  const rd = obj['reddit_promoted'] as Record<string, unknown> | undefined;
-  if (rd) {
-    const variants = rd['variants'] as unknown[] | undefined;
-    if (Array.isArray(variants)) {
-      for (const v of variants) {
-        if (v == null || typeof v !== 'object') continue;
-        const rec = v as Record<string, unknown>;
-        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 300);
-        if (typeof rec['body'] === 'string') rec['body'] = (rec['body'] as string).slice(0, 500);
-      }
+  const widths = GENERATED_GOOGLE_COPY_WIDTHS;
+  for (const gs of all('google_search')) {
+    if (Array.isArray(gs['headlines'])) gs['headlines'] = fitLines(gs['headlines'], widths.searchHeadline, googleWidth);
+    if (Array.isArray(gs['descriptions'])) gs['descriptions'] = fitLines(gs['descriptions'], widths.searchDescription, googleWidth);
+  }
+  for (const gd of all('google_display', 'demand_gen')) {
+    if (Array.isArray(gd['headlines'])) gd['headlines'] = fitLines(gd['headlines'], widths.demandGenHeadline, googleWidth);
+    if (Array.isArray(gd['descriptions'])) gd['descriptions'] = fitLines(gd['descriptions'], widths.demandGenDescription, googleWidth);
+    fitField(gd, 'business_name', widths.businessName, googleWidth);
+  }
+  ensureShortGoogleDescription(pick('google_search'), pick('google_display', 'demand_gen'));
+
+  for (const li of all('linkedin_sponsored')) {
+    for (const rec of variantsOf(li)) {
+      fitField(rec, 'intro_text', 600);
+      fitField(rec, 'headline', 200);
     }
   }
-
-  const ma = obj['meta_ads'] as Record<string, unknown> | undefined;
-  if (ma) {
-    const variants = ma['variants'] as unknown[] | undefined;
-    if (Array.isArray(variants)) {
-      for (const v of variants) {
-        if (v == null || typeof v !== 'object') continue;
-        const rec = v as Record<string, unknown>;
-        if (typeof rec['primary_text'] === 'string') rec['primary_text'] = (rec['primary_text'] as string).slice(0, META_CHAR_LIMITS.primaryText);
-        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, META_CHAR_LIMITS.headline);
-        if (typeof rec['description'] === 'string') rec['description'] = (rec['description'] as string).slice(0, META_CHAR_LIMITS.description);
-      }
+  for (const rd of all('reddit_promoted')) {
+    for (const rec of variantsOf(rd)) {
+      fitField(rec, 'headline', 300);
+      fitField(rec, 'body', 500);
     }
   }
-
-  const platforms = obj['platforms'] as Record<string, unknown> | undefined;
-  if (platforms) {
-    if (platforms['google_search']) truncateAdCopy({ google_search: platforms['google_search'] } as Record<string, unknown>);
-    if (platforms['google_display'] || platforms['demand_gen']) {
-      const key = platforms['google_display'] ? 'google_display' : 'demand_gen';
-      truncateAdCopy({ google_display: platforms[key] } as Record<string, unknown>);
+  for (const ma of all('meta_ads')) {
+    for (const rec of variantsOf(ma)) {
+      fitField(rec, 'primary_text', META_CHAR_LIMITS.primaryText);
+      fitField(rec, 'headline', META_CHAR_LIMITS.headline);
+      fitField(rec, 'description', META_CHAR_LIMITS.description);
     }
-    if (platforms['linkedin_sponsored']) truncateAdCopy({ linkedin_sponsored: platforms['linkedin_sponsored'] } as Record<string, unknown>);
-    if (platforms['reddit_promoted']) truncateAdCopy({ reddit_promoted: platforms['reddit_promoted'] } as Record<string, unknown>);
-    if (platforms['meta_ads']) truncateAdCopy({ meta_ads: platforms['meta_ads'] } as Record<string, unknown>);
   }
+}
+
+/**
+ * Make sure the brief's Google copy holds at least one description of
+ * `GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH` or fewer by Google's display width (#5494),
+ * so the Performance Max seed has one to pick for Google's short slot and an untouched brief creates.
+ *
+ * The prompt asks for one; this is the net for when the model does not write it. When neither the
+ * Search nor the Demand Gen descriptions hold a short line, the SHORTEST Search description (or,
+ * with no Search descriptions, the shortest Demand Gen one) is cut to the short width on a word
+ * boundary, in place, so neither list grows past the count its ad accepts. The cut line cannot repeat
+ * another line, since every other line is wider than it; a line that would lose everything to the cut
+ * is left as it was.
+ */
+export function ensureShortGoogleDescription(search: Record<string, unknown> | undefined, demandGen: Record<string, unknown> | undefined): void {
+  const max = GENERATED_GOOGLE_COPY_WIDTHS.shortDescription;
+  const written = (line: unknown): line is string => typeof line === 'string' && googleAdsTrimSpace(line) !== '';
+  const isShort = (line: unknown): boolean => written(line) && googleAdsTextWeight(googleAdsTrimSpace(line)) <= max;
+  const lists = [search, demandGen].map((copy) => copy?.['descriptions']).filter((list): list is unknown[] => Array.isArray(list));
+  if (lists.some((list) => list.some(isShort))) return;
+
+  const target = [search, demandGen].find((copy) => Array.isArray(copy?.['descriptions']) && (copy['descriptions'] as unknown[]).some(written));
+  if (!target) return;
+  const descriptions = target['descriptions'] as unknown[];
+  const width = (index: number): number => googleAdsTextWeight(googleAdsTrimSpace(descriptions[index] as string));
+  let shortest = -1;
+  descriptions.forEach((line, index) => {
+    if (written(line) && (shortest === -1 || width(index) < width(shortest))) shortest = index;
+  });
+  const shortened = fitAdCopyToWidth(googleAdsTrimSpace(descriptions[shortest] as string), max, (char) => googleAdsTextWeight(char));
+  if (shortened !== '') descriptions[shortest] = shortened;
 }
 
 function extractEventNameFromUrl(url: string): string {
@@ -2931,8 +3070,8 @@ CRITICAL RULES:
 }
 
 /**
- * Shape a model's negative-keyword response into the bounded list the Optimize tab's editor opens
- * pre-filled with.
+ * Shape a model's negative-keyword response into the bounded list the Implement tab's Search
+ * negatives (#4991) and the Optimize tab's editor open pre-filled with.
  *
  * Accepts the wrapped object form (`{ "negativeKeywords": [...] }`, and the snake_case spelling
  * the prompt's own key could be echoed as) alongside the bare array the prompt asks for, as
@@ -2998,6 +3137,40 @@ CRITICAL RULES:
 - Each negative keyword must be DIFFERENT from the others, not a case variant or a repeat.`;
 }
 
+/**
+ * What an event's keywords must never target (#5383). A Linux Foundation event is often co-located
+ * with a larger host event (ArgoCon at KubeCon) and shares a calendar with sibling project events;
+ * keywords naming them as "alternatives" bid against the foundation's own events. Shared by the
+ * generate and refine prompts so the two cannot drift. Education prompts do not carry it: their
+ * "alternative certifications" category names other vendors' certifications on purpose.
+ */
+const KEYWORD_EVENT_TARGETING_RULES = `- Never target another event. Do not name the host event this event is co-located with (e.g. KubeCon for a co-located event), its other co-located events, or any other Linux Foundation, CNCF or open source foundation event, and never pair an open source project's name with "conference", "summit" or "con" unless this event is about that project.
+- Never write competitor or comparison terms: no "alternative", "vs", "versus", "competitor" or "instead of".`;
+
+/** The event's year as the keyword prompt states it, or `null` when its dates name none. */
+function eventYearFromDates(dates: unknown): string | null {
+  return typeof dates === 'string' ? (dates.match(/20\d{2}/)?.[0] ?? null) : null;
+}
+
+/**
+ * Drop the generated EVENT keywords the prompt forbids but the model can still write (#5383): a
+ * competitor or comparison term (`COMPETITOR_KEYWORD_PATTERN`) and, when the event's dates name
+ * its year, a term naming any other year. Education keywords pass through, since
+ * their prompt asks for alternative certifications and states no year rule.
+ *
+ * Sibling events named without such a marker ("Flux conference") are left to the prompt: telling a
+ * sibling project from this event's own topic needs a list of every foundation's events, which the
+ * brief does not have, and guessing would drop legitimate topic keywords.
+ */
+export function filterGeneratedKeywords<T extends { term: string }>(keywords: T[], eventYear: string | null, isEducation: boolean): T[] {
+  return keywords.filter((keyword) => {
+    const term = typeof keyword.term === 'string' ? keyword.term : '';
+    if (isEducation) return true;
+    if (COMPETITOR_KEYWORD_PATTERN.test(term)) return false;
+    return eventYear === null || [...term.matchAll(/\b20\d{2}\b/gu)].every(([year]) => year === eventYear);
+  });
+}
+
 function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
   const extraParts: string[] = [];
   if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
@@ -3052,9 +3225,9 @@ Audience: ${audience}${extraBlock}
 
 Keyword categories to cover:
 1. Brand/event name exact: e.g. "${name}", "${name} ${eventYear}"
-2. Topic exact/phrase: conference names, protocol/tech names + "conference"/"summit"/"event"
+2. Topic exact/phrase: the technologies THIS event is about + "conference"/"summit"/"event"
 3. Role-based: "[role] conference", "[role] summit" for relevant job titles
-4. Competitor/adjacent: alternative events, "open source [topic] conference [city]"
+4. Adjacent: "open source [topic] conference [city]" for this event's own topics
 
 Return a JSON array where each object has EXACTLY these keys:
 - "term": the keyword string
@@ -3065,7 +3238,8 @@ Return a JSON array where each object has EXACTLY these keys:
 CRITICAL RULES:
 - The event year is ${eventYear}. NEVER use any other year in keywords.
 - Prefer HIGH INTENT — keywords that indicate someone actively searching for this event.
-- Avoid generic broad terms that waste budget (e.g. "conference" alone).`;
+- Avoid generic broad terms that waste budget (e.g. "conference" alone).
+${KEYWORD_EVENT_TARGETING_RULES}`;
 }
 
 function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
@@ -3124,7 +3298,7 @@ Return a JSON array where each object has EXACTLY these keys:
 - "intent_level": "High" (${intentLabel}), "Medium" (related topic), "Low" (broad)
 - "notes": any flag (e.g. "added per user feedback")
 
-Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.`;
+Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.${isEducation ? '' : `\n\n${KEYWORD_EVENT_TARGETING_RULES}`}`;
 }
 
 function buildLinkedInStrategyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {

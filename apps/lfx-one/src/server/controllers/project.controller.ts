@@ -489,6 +489,36 @@ export class ProjectController {
   }
 
   /**
+   * PUT /projects/:uid/formation-record - Change a project's stage and legal-entity fields from the
+   * formation card (#5134). Only the keys present in the body change; the service guards on
+   * `writer_guard` + formation-team membership before any upstream read.
+   */
+  public async updateFormationRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    // Never log the body: it carries legal-entity data. Key names only, inside the service.
+    const startTime = logger.startOperation(req, 'update_formation_record_request', { uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_formation_record',
+          service: 'project_controller',
+        })
+      ) {
+        return;
+      }
+
+      const result = await this.projectService.updateFormationRecord(req, uid, req.body);
+
+      logger.success(req, 'update_formation_record_request', startTime, { uid });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /projects/:uid/permissions/:username - Remove user
    */
   public async removeUserFromProjectPermissions(req: Request, res: Response, next: NextFunction): Promise<void> {

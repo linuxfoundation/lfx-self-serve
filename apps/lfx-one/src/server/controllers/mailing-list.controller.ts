@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SyncMemberType } from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
   CreateMailingListRequest,
+  SyncApplyRequest,
+  SyncDiffAdd,
+  SyncDiffRemove,
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
@@ -382,6 +386,222 @@ export class MailingListController {
   }
 
   // ============================================
+  // Committee ↔ Mailing List Sync Endpoints
+  // ============================================
+
+  /**
+   * GET /mailing-lists/:id/sync-diff
+   */
+  public async getSyncDiff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_diff', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'get_sync_diff',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const diff = await this.mailingListService.getSyncDiff(req, id);
+
+      logger.success(req, 'get_sync_diff', startTime, {
+        mailing_list_id: id,
+      });
+
+      res.json(diff);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/sync-apply
+   */
+  public async applySyncDiff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'apply_sync_diff', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'apply_sync_diff',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const applyRequest = this.parseSyncApplyRequest(req, next);
+      if (!applyRequest) return;
+
+      const result = await this.mailingListService.applySyncDiff(req, id, applyRequest);
+
+      logger.success(req, 'apply_sync_diff', startTime, {
+        mailing_list_id: id,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/sync-diff/start
+   */
+  public async startSyncDiff(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'start_sync_diff', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Mailing List ID is required', {
+            operation: 'start_sync_diff',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const start = await this.mailingListService.startSyncDiff(req, id);
+
+      logger.success(req, 'start_sync_diff', startTime, {
+        mailing_list_id: id,
+        job_id: start.job_id,
+      });
+
+      res.json(start);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/sync-diff/:jobId/status
+   */
+  public async getSyncDiffStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, jobId } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_diff_status', {
+      mailing_list_id: id,
+      job_id: jobId,
+    });
+
+    try {
+      if (!id || !jobId) {
+        next(
+          ServiceValidationError.forField(!id ? 'id' : 'jobId', 'Mailing List ID and job ID are required', {
+            operation: 'get_sync_diff_status',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const status = await this.mailingListService.getSyncDiffStatus(req, id, jobId);
+
+      logger.success(req, 'get_sync_diff_status', startTime, {
+        mailing_list_id: id,
+        job_id: jobId,
+        status: status.status,
+      });
+
+      res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/sync-apply/start
+   */
+  public async startSyncApply(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'start_sync_apply', {
+      mailing_list_id: id,
+    });
+
+    try {
+      if (!id) {
+        next(
+          ServiceValidationError.forField('id', 'Mailing List ID is required', {
+            operation: 'start_sync_apply',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const applyRequest = this.parseSyncApplyRequest(req, next);
+      if (!applyRequest) return;
+
+      const start = await this.mailingListService.startSyncApply(req, id, applyRequest);
+
+      logger.success(req, 'start_sync_apply', startTime, {
+        mailing_list_id: id,
+        job_id: start.job_id,
+      });
+
+      res.json(start);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/sync-apply/:jobId/status
+   */
+  public async getSyncApplyStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, jobId } = req.params;
+    const startTime = logger.startOperation(req, 'get_sync_apply_status', {
+      mailing_list_id: id,
+      job_id: jobId,
+    });
+
+    try {
+      if (!id || !jobId) {
+        next(
+          ServiceValidationError.forField(!id ? 'id' : 'jobId', 'Mailing List ID and job ID are required', {
+            operation: 'get_sync_apply_status',
+            service: 'mailing_list_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const status = await this.mailingListService.getSyncApplyStatus(req, id, jobId);
+
+      logger.success(req, 'get_sync_apply_status', startTime, {
+        mailing_list_id: id,
+        job_id: jobId,
+        status: status.status,
+      });
+
+      res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
   // Mailing List Member Endpoints
   // ============================================
 
@@ -629,5 +849,75 @@ export class MailingListController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Validates and narrows an untyped `req.body` into a {@link SyncApplyRequest}, forwarding only an
+   * explicit allowlist of fields upstream. Calls `next(validationError)` and returns `null` on any
+   * shape violation — callers must bail out when `null` is returned (#4911 review).
+   */
+  private parseSyncApplyRequest(req: Request, next: NextFunction): SyncApplyRequest | null {
+    const fail = (field: string, message: string): null => {
+      next(
+        ServiceValidationError.forField(field, message, {
+          operation: 'apply_sync_diff',
+          service: 'mailing_list_controller',
+          path: req.path,
+        })
+      );
+      return null;
+    };
+
+    const body = req.body;
+    if (body === null || body === undefined || typeof body !== 'object' || Array.isArray(body)) {
+      return fail('body', 'Request body must be a JSON object');
+    }
+
+    const { committee_uid, adds, removes } = body as Record<string, unknown>;
+
+    if (typeof committee_uid !== 'string' || !committee_uid.trim()) {
+      return fail('committee_uid', 'committee_uid is required and must be a non-empty string');
+    }
+    if (!Array.isArray(adds)) {
+      return fail('adds', 'adds must be an array');
+    }
+    if (!Array.isArray(removes)) {
+      return fail('removes', 'removes must be an array');
+    }
+
+    const parsedAdds: SyncDiffAdd[] = [];
+    for (const row of adds) {
+      const base = this.parseSyncDiffRowBase(row);
+      if (!base) return fail('adds', 'Each add row must have a valid email, member_id, and member_type');
+      const name = (row as Record<string, unknown>)['name'];
+      parsedAdds.push(typeof name === 'string' && name.trim() ? { ...base, name } : base);
+    }
+
+    const parsedRemoves: SyncDiffRemove[] = [];
+    for (const row of removes) {
+      const remove = this.parseSyncDiffRowBase(row);
+      if (!remove) return fail('removes', 'Each remove row must have a valid email, member_id, and member_type');
+      parsedRemoves.push(remove);
+    }
+
+    return {
+      committee_uid: committee_uid.trim(),
+      adds: parsedAdds,
+      removes: parsedRemoves,
+    };
+  }
+
+  /** Shape-validates the fields shared by every add/remove row. */
+  private parseSyncDiffRowBase(row: unknown): SyncDiffRemove | null {
+    if (row === null || typeof row !== 'object' || Array.isArray(row)) return null;
+
+    const { email, member_id, member_type } = row as Record<string, unknown>;
+    const validMemberTypes: string[] = Object.values(SyncMemberType);
+
+    if (typeof email !== 'string' || !email.trim()) return null;
+    if (typeof member_id !== 'string' || !member_id.trim()) return null;
+    if (typeof member_type !== 'string' || !validMemberTypes.includes(member_type)) return null;
+
+    return { email, member_id, member_type: member_type as SyncMemberType };
   }
 }

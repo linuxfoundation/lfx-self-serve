@@ -1457,6 +1457,11 @@ export class MeetingService {
       { failOnPartial }
     );
 
+    return this.dedupePastMeetingParticipants(raw);
+  }
+
+  /** Merges one past meeting's participant records into one row per person (see {@link getPastMeetingParticipants}). */
+  public dedupePastMeetingParticipants(raw: PastMeetingParticipant[]): PastMeetingParticipant[] {
     // Plain union-find over connected identity-match edges (pure transitive closure, no
     // conflict veto during union). isSamePerson is not transitive — a no-username row can
     // share an email with two records that carry different, conflicting usernames — so a
@@ -2464,6 +2469,77 @@ export class MeetingService {
     return this.projectService.enrichWithProjectData(req, meetings) as Promise<T[]>;
   }
 
+  /**
+   * Fetches committee names for all unique committees referenced in meetings.
+   * Returns a Map of committee UID -> committee name for merging into meeting data.
+   * Never throws: a failed batch only leaves its committees out of the map.
+   */
+  public async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
+    const uniqueCommitteeUids = [
+      ...new Set(
+        meetings
+          .filter((m) => m.committees && m.committees.length > 0)
+          .flatMap((m) => m.committees)
+          .map((c: { uid: string }) => c.uid)
+      ),
+    ];
+
+    if (uniqueCommitteeUids.length === 0) return new Map();
+
+    const meetingsWithCommittees = meetings.filter((m) => m.committees && m.committees.length > 0).length;
+    logger.info(req, 'enrich_committees', 'Enriching meetings with committee data', {
+      total_meetings: meetings.length,
+      meetings_with_committees: meetingsWithCommittees,
+      unique_committees: uniqueCommitteeUids.length,
+    });
+
+    const unique = uniqueCommitteeUids.filter(Boolean);
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      batches.push(unique.slice(i, i + BATCH_SIZE));
+    }
+
+    // Use Promise.allSettled so one transient batch failure doesn't wipe names resolved by other
+    // batches — mirrors the pattern in getCommitteesWithMailingList.
+    // In practice a project's displayed meetings touch ≤1 unique committee, so this is almost always
+    // a single concurrent request; batching guards only against pathological cardinality.
+    const results = await Promise.allSettled(
+      batches.map((batch) =>
+        fetchAllQueryResources<Committee>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'committee',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+
+    const nameMap = new Map<string, string>();
+    for (const [i, result] of results.entries()) {
+      if (result.status === 'fulfilled') {
+        for (const committee of result.value) {
+          if (committee?.uid && committee.name) {
+            nameMap.set(committee.uid, committee.name);
+          }
+        }
+      } else {
+        logger.warning(req, 'get_meeting_committees', 'Batch committee fetch failed; affected meetings will have no committee name', {
+          batch_index: i,
+          batch_size: batches[i].length,
+          sample_uids: batches[i].slice(0, 3),
+          err: result.reason,
+        });
+      }
+    }
+
+    return nameMap;
+  }
+
   // `email` keeps the stored casing and term matching is case-sensitive, so also match the lowercased copy.
   private emailClauses(email: string): string[] {
     return [`email:${email}`, `case_insensitive_email:${email}`];
@@ -2519,74 +2595,6 @@ export class MeetingService {
     const candidates = [scopedToViewed, seriesWide, registrants].find((group) => group.length > 0) ?? registrants;
 
     return candidates.find((row) => row.type === 'direct') ?? candidates[0];
-  }
-
-  /**
-   * Fetches committee names for all unique committees referenced in meetings.
-   * Returns a Map of committee UID -> committee name for merging into meeting data.
-   */
-  private async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
-    const uniqueCommitteeUids = [
-      ...new Set(
-        meetings
-          .filter((m) => m.committees && m.committees.length > 0)
-          .flatMap((m) => m.committees)
-          .map((c: { uid: string }) => c.uid)
-      ),
-    ];
-
-    const meetingsWithCommittees = meetings.filter((m) => m.committees && m.committees.length > 0).length;
-    logger.info(req, 'enrich_committees', 'Enriching meetings with committee data', {
-      total_meetings: meetings.length,
-      meetings_with_committees: meetingsWithCommittees,
-      unique_committees: uniqueCommitteeUids.length,
-    });
-
-    const unique = uniqueCommitteeUids.filter(Boolean);
-    const BATCH_SIZE = 100;
-    const batches: string[][] = [];
-    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
-      batches.push(unique.slice(i, i + BATCH_SIZE));
-    }
-
-    // Use Promise.allSettled so one transient batch failure doesn't wipe names resolved by other
-    // batches — mirrors the pattern in getCommitteesWithMailingList.
-    // In practice a project's displayed meetings touch ≤1 unique committee, so this is almost always
-    // a single concurrent request; batching guards only against pathological cardinality.
-    const results = await Promise.allSettled(
-      batches.map((batch) =>
-        fetchAllQueryResources<Committee>(
-          req,
-          (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'committee',
-              filters_or: batch.map((uid) => `uid:${uid}`),
-              ...(pageToken && { page_token: pageToken }),
-            }),
-          { failOnPartial: true }
-        )
-      )
-    );
-
-    const nameMap = new Map<string, string>();
-    for (const [i, result] of results.entries()) {
-      if (result.status === 'fulfilled') {
-        for (const committee of result.value) {
-          if (committee?.uid && committee.name) {
-            nameMap.set(committee.uid, committee.name);
-          }
-        }
-      } else {
-        logger.warning(req, 'get_meeting_committees', 'Batch committee fetch failed; affected meetings will have no committee name', {
-          batch_index: i,
-          batch_size: batches[i].length,
-          sample_uids: batches[i].slice(0, 3),
-          err: result.reason,
-        });
-      }
-    }
-
-    return nameMap;
   }
 
   /**

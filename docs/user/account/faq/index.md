@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github]
-last_updated: 2026-11-02
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid]
+last_updated: 2026-11-09
 intercom_collection: Account
 ---
 
@@ -12,9 +12,13 @@ intercom_collection: Account
 
 **Profile** is your personal identity — your name, photo, About Me, primary email, and location, edited in the Edit Profile drawer. **Account** covers everything else tied to your Linux Foundation account: work history and affiliations, connected identities, individual enrollment, CLAs, transactions, and settings (email, password, and developer API token). Both live under the **Profile & Account** hub.
 
+## Is my LFID on the Identities tab?
+
+No. The **Identities** tab lists the accounts and email addresses linked to your profile. Your LFID (Linux Foundation ID) is your LFX username, shown under your name in your account menu and in the profile panel on [**Profile & Account**](/profile). See [What is my LFID, and where do I find it?](../../profile/faq/#what-is-my-lfid-and-where-do-i-find-it).
+
 ## How do I change my email address?
 
-Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. If the address can be added to your account, a 6-digit verification code is sent to it; enter it to confirm the address. The **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. While the request is pending, the button shows **Requesting code…** and is disabled. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
+Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. A 6-digit verification code is sent to the address; enter it to confirm the address. A wrong or expired code shows **Verification failed. Please try again or request a new code.** If the code is correct but the address is already linked to an LFX account, you see **This email is already linked to an LFX account. Contact support if you need help.** — the address is not added, and support can help if it should belong to this account. The **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. While the request is pending, the button shows **Requesting code…** and is disabled. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
 
 ## How do I change my password?
 
@@ -38,7 +42,11 @@ Go to [**Profile & Account**](/profile) and use the **Work history & Affiliation
 
 ## What are affiliations, and how are my contributions attributed?
 
-Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and your maintainer/contributor role, and override anything the system gets wrong. See [Work history & Affiliations](../work-history/).
+Affiliations are the Linux Foundation projects and organizations you are associated with. They are calculated automatically from your **verified identities**, your **work experience**, and the overlap between your contribution timestamps and your employment dates — you don't add projects manually. View and adjust them on the **Work history & Affiliations** tab (`/profile/attributions`); you can confirm your affiliation history and override anything the system gets wrong. See [Work history & Affiliations](../work-history/).
+
+## I'm listed as a contributor on a project. How do I get maintainer access?
+
+The **Maintainer** and **Contributor** labels on your projects describe your involvement only; neither grants access. Access to a project (**View**, **Manage**, or **Meeting Coordinator**) is granted by a project manager on the project's **Permissions** page. Contact a project manager for the project and ask them to add you with the role you need. If you don't know who that is, contact support. See [Permissions](../../permissions/).
 
 ## Why don't my GitHub contributions show up?
 
@@ -62,7 +70,7 @@ The Linux.com email alias is a one-time add-on for Individual Supporters that gi
 
 ## How do I enroll as an Individual Supporter?
 
-Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** tab (`/profile/individual-enrollment`). Review the membership and its benefits, then select **Enroll**. See [Individual Enrollment](../individual-enrollment/).
+Go to [**Profile & Account**](/profile) and open the **Individual Enrollment** tab (`/profile/individual-enrollment`). Review the membership and its benefits, then select **Enroll as an Individual Supporter**. See [Individual Enrollment](../individual-enrollment/).
 
 ## How do I turn off auto-renew or stop my membership?
 
@@ -74,7 +82,7 @@ Go to [**Profile & Account**](/profile) and open the **CLAs** tab (`/profile/cla
 
 ## What is the difference between an ICLA and a CCLA?
 
-An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab when EasyCLA has the file and the agreement has not been invalidated. A **CCLA** (Corporate CLA) is your employer's agreement; you're covered under it once approved via the company's **Approved List**. The CLAs tab lists your CCLA coverage with the company name and no individual PDF, and keeps listing it with a status that says so if that coverage later ends. See [CLAs](../my-clas/).
+An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can download its PDF from the CLAs tab unless the agreement has been invalidated. A **CCLA** (Corporate CLA) is your employer's agreement; you're covered under it once approved via the company's **Approved List**. The CLAs tab lists your CCLA coverage with the company name and no individual PDF, and keeps listing it with a status that says so if that coverage later ends. See [CLAs](../my-clas/).
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
@@ -82,7 +90,7 @@ The CLAs tab matches agreements to your LF username, verified emails, and linked
 
 ## Can I sign a CLA from the CLAs tab?
 
-You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which linked GitHub account to sign under. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
+You can start there. Select **Sign CLA**, search for the project, CLA group, or repository you need to sign for, and choose which identity to sign under — a linked GitHub account, your LF identity for Gerrit, or either, depending on where the CLA group's repositories live. Signing for a GitLab-only CLA group isn't supported from Self Serve. Self Serve then hands you off to the EasyCLA Contributor Console, which presents and records the agreement — the signing itself does not happen in Self Serve. See [How do I sign a new CLA?](../my-clas/#how-do-i-sign-a-new-cla).
 
 ## Why does a search result say "Already signed as" when I search for a CLA to sign?
 
@@ -98,7 +106,7 @@ When EasyCLA recorded the account used to sign, the **Signed** column adds a sec
 
 ## Can I download my signed CLA PDF?
 
-You can download a signed **ICLA** (Individual CLA) when EasyCLA has the file — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA does not have the file, the row offers no download. An **Invalidated** ICLA carries no **⋮** menu at all, so there is nothing to download from it even when the signed file still exists. There is no PDF for coverage under a **CCLA** (Corporate CLA), because that coverage sits under your employer's agreement rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** row has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
+You can download a signed **ICLA** (Individual CLA) — open the **⋮** menu on that row and choose **Download PDF**. If EasyCLA can't find the file, the download fails with **Download failed**. An **Invalidated** ICLA carries no **⋮** menu at all, so there is nothing to download from it even when the signed file still exists. There is no PDF for coverage under a **CCLA** (Corporate CLA), because that coverage sits under your employer's agreement rather than an agreement of your own; where such a row has a **⋮** menu, **Download PDF** appears greyed out and annotated _Covered by Corporate CLA (CCLA)_, and a **Revoked** row has no menu at all. See [Can I download my signed CLA PDF?](../my-clas/#can-i-download-my-signed-cla-pdf).
 
 ## How do I ask my employer's CLA manager to approve or remove my CCLA coverage?
 

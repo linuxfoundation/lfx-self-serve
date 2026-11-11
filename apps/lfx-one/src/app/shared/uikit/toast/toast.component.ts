@@ -2,26 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT } from '@angular/common';
-import {
-  afterNextRender,
-  booleanAttribute,
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  DestroyRef,
-  ElementRef,
-  inject,
-  input,
-  output,
-  Signal,
-  signal,
-} from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, Signal } from '@angular/core';
 import { UiToastAction, UiToastVariant } from '@lfx-one/shared/interfaces';
 
 /**
  * A short message about something that just happened. `UiToastService.show` renders these in a stack at the bottom-right of the window,
  * or the bottom centre for `dark`; the component can also be placed directly. It dismisses itself after `duration` (5s, 3s for `dark`,
- * 8s with actions, never for `error`) and the countdown pauses while the pointer is over the toast or focus is inside it.
+ * 8s with actions) and the countdown pauses while the pointer is over the toast or focus is inside it. Only `error` has a close button and
+ * stays until it is closed.
  * The message is the projected content; `description` adds a quieter second line.
  *
  * Announced to screen readers as a polite status, or as an alert for `error`. The countdown is read once, when the toast first renders.
@@ -46,27 +34,21 @@ export class UiToastComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly document = inject(DOCUMENT);
 
-  /** Colour and urgency: `success`, `warning` and `error` are solid; `error` is an alert and stays until dismissed; `dark` is a short confirmation with a check. */
+  /** Colour and urgency: `success`, `warning` and `error` are solid; `error` is an alert and stays until closed; `dark` is a short confirmation with a check. */
   public readonly variant = input<UiToastVariant>('default');
   /** A second, quieter line under the message. */
   public readonly description = input<string>('');
   /** Up to two action buttons; any more are ignored. Running one dismisses the toast. */
   public readonly actions = input<UiToastAction[]>([]);
-  /** Milliseconds before it dismisses itself, `0` for never. Leave unset for 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
+  /** Milliseconds before it dismisses itself; `0` for never is for static previews, as only `error` can be closed. Leave unset for 5000, 3000 for `dark`, 8000 with actions, and never for `error`. */
   public readonly duration = input<number | null>(null);
-  /** Shows the dismiss button. A toast that never dismisses itself and has no action shows it regardless, so it can always be closed. */
-  public readonly dismissible = input<boolean, unknown>(true, { transform: booleanAttribute });
-  /** Emits when the toast wants to go away: the countdown ended, the dismiss button or an action was pressed. */
+  /** Emits when the toast wants to go away: the countdown ended, the close button or an action was pressed. */
   public readonly dismissed = output<void>();
-
-  // The duration the countdown started with; later changes of `duration` do not restart it, so the dismiss rule follows this value.
-  private readonly startedDuration = signal<number | null>(null);
 
   protected readonly role: Signal<'alert' | 'status'> = this.initRole();
   protected readonly hostClasses: Signal<string> = this.initHostClasses();
   protected readonly visibleActions: Signal<{ action: UiToastAction; classes: string }[]> = this.initVisibleActions();
   protected readonly dismissClasses: Signal<string> = this.initDismissClasses();
-  protected readonly showDismiss: Signal<boolean> = this.initShowDismiss();
   protected readonly messageClasses: Signal<string> = this.initMessageClasses();
   protected readonly descriptionClasses: Signal<string> = this.initDescriptionClasses();
 
@@ -83,7 +65,6 @@ export class UiToastComponent {
     // afterNextRender never runs on the server, so no timer is left behind there.
     afterNextRender(() => {
       this.remaining = this.resolvedDuration();
-      this.startedDuration.set(this.remaining);
       this.resume();
     });
     this.destroyRef.onDestroy(() => {
@@ -149,9 +130,11 @@ export class UiToastComponent {
 
   private initHostClasses(): Signal<string> {
     return computed(() => {
-      // Exact px, not rem; 14px root. 12px gap, 12px padding (16px at the start), 56px minimum height and 420px width are library values.
+      // Exact px, not rem; 14px root. 12px vertical padding and 420px maximum width are library values.
       const base =
-        'flex min-h-[56px] w-[420px] max-w-[calc(100vw-32px)] items-center gap-[12px] rounded-ui-md py-[12px] pl-[16px] pr-[12px] shadow-modal copy-14 forced-colors:border forced-colors:border-[color:CanvasText]';
+        'flex w-fit max-w-[min(420px,calc(100vw-32px))] items-center rounded-ui-md py-[12px] shadow-modal copy-14 forced-colors:border forced-colors:border-[color:CanvasText]';
+      // Library: 12px gap, 16px/12px sides, 56px min height; the dark feedback toast hugs its line with a 10px gap and 14px/16px sides.
+      const box = this.variant() === 'dark' ? 'gap-[10px] pl-[14px] pr-[16px]' : 'min-h-[56px] gap-[12px] pl-[16px] pr-[12px]';
       const variants = {
         default: 'bg-ui-background-100 text-ui-neutral-900',
         success: 'bg-ui-success-600 text-ui-white',
@@ -160,7 +143,7 @@ export class UiToastComponent {
         // Background-100 ink is white here, and stays legible when the dark theme flips neutral-900 to a light surface.
         dark: 'bg-ui-neutral-900 text-ui-background-100',
       };
-      return `${base} ${variants[this.variant()]}`;
+      return `${base} ${box} ${variants[this.variant()]}`;
     });
   }
 
@@ -181,7 +164,7 @@ export class UiToastComponent {
   }
 
   private initDismissClasses(): Signal<string> {
-    return computed(() => `${this.buttonBase()} aspect-square rounded-ui-full ${this.quietInk()}`);
+    return computed(() => `${this.buttonBase()} aspect-square shrink-0 rounded-ui-full ${this.quietInk()}`);
   }
 
   private initMessageClasses(): Signal<string> {
@@ -191,10 +174,6 @@ export class UiToastComponent {
   private initDescriptionClasses(): Signal<string> {
     // leading-[20px]: the dark description keeps the toast's 20px line, as in the library.
     return computed(() => `block copy-13 ${this.variant() === 'dark' ? 'leading-[20px] text-ui-neutral-300' : ''}`.trim());
-  }
-
-  private initShowDismiss(): Signal<boolean> {
-    return computed(() => this.dismissible() || ((this.startedDuration() ?? this.resolvedDuration()) === 0 && !this.visibleActions().length));
   }
 
   private syncTimer(): void {

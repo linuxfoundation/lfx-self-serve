@@ -1,0 +1,104 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="org-roi-value-drivers">
+  @if (loading()) {
+    <p-skeleton width="100%" height="360px" data-testid="org-roi-value-drivers-loading" />
+  } @else if (emptyState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      testId="org-roi-value-drivers-empty"
+      [values]="{ orgName: orgName(), noun: 'value driver figures', filterActive: false }"
+      (retry)="retry()" />
+  } @else {
+    <p class="rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700" data-testid="org-roi-value-drivers-how-to-read">
+      <span class="font-semibold text-gray-900">How to read this.</span> {{ copy.howToRead }}
+    </p>
+
+    <div class="flex flex-col gap-1" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="org-roi-value-drivers-chart">
+      @for (bar of bars(); track bar.category) {
+        <div class="grid grid-cols-[8.5rem_1fr] items-center gap-3 sm:grid-cols-[11rem_1fr]" [attr.data-testid]="'org-roi-value-drivers-row-' + $index">
+          <div class="flex flex-col text-right">
+            <span class="text-sm font-semibold text-gray-900">{{ bar.category }}</span>
+            @if (bar.subtitle) {
+              <span class="hidden text-xs text-gray-500 sm:block">{{ bar.subtitle }}</span>
+            }
+          </div>
+          <div class="relative h-10">
+            @for (tick of ticks(); track tick.position) {
+              <div
+                class="absolute inset-y-0 w-px"
+                [class.bg-gray-900]="tick.position === 50"
+                [class.bg-gray-200]="tick.position !== 50"
+                [style.left.%]="tick.position"></div>
+            }
+            <div
+              class="absolute top-2 bottom-2"
+              [class.rounded-r]="bar.pctDeviation >= 0"
+              [class.rounded-l]="bar.pctDeviation < 0"
+              [style.background-color]="bar.color"
+              [style.left.%]="bar.pctDeviation >= 0 ? 50 : 50 - bar.widthPct"
+              [style.width.%]="bar.widthPct"
+              [attr.data-testid]="'org-roi-value-drivers-bar-' + $index"></div>
+            <span
+              class="absolute top-1/2 -translate-y-1/2 text-xs font-semibold whitespace-nowrap"
+              [class.text-gray-900]="!bar.labelInside || bar.pctDeviation < 0"
+              [class.text-white]="bar.labelInside && bar.pctDeviation >= 0"
+              [style.left]="bar.labelSide === 'left' ? bar.labelOffset : null"
+              [style.right]="bar.labelSide === 'right' ? bar.labelOffset : null"
+              [attr.data-testid]="'org-roi-value-drivers-value-' + $index"
+              >{{ bar.label }}</span
+            >
+          </div>
+        </div>
+      }
+
+      <div class="grid grid-cols-[8.5rem_1fr] gap-3 sm:grid-cols-[11rem_1fr]" aria-hidden="true">
+        <div></div>
+        <div class="relative h-5">
+          @for (tick of ticks(); track tick.position) {
+            <span class="absolute -translate-x-1/2 text-xs text-gray-500" [style.left.%]="tick.position">{{ tick.label }}</span>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-1.5 text-xs text-gray-700" data-testid="org-roi-value-drivers-legend">
+      <span class="flex items-center gap-2"
+        ><span class="inline-block h-3 w-3 rounded-sm" [style.background-color]="colors.moreThanAverage"></span>{{ copy.moreLegend }}</span
+      >
+      <span class="flex items-center gap-2"
+        ><span class="inline-block h-3 w-3 rounded-sm" [style.background-color]="colors.lessThanAverage"></span>{{ copy.lessLegend }}</span
+      >
+    </div>
+
+    <table class="sr-only" data-testid="org-roi-value-drivers-table">
+      <caption>
+        Return from each value driver relative to a typical organization-project pair
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Value driver</th>
+          <th scope="col">Difference from typical</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (bar of bars(); track bar.category) {
+          <tr>
+            <th scope="row">{{ bar.category }}</th>
+            <td>{{ bar.label }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <div class="flex flex-col gap-2 text-sm text-gray-700" data-testid="org-roi-value-drivers-details">
+      <h3 class="text-sm font-semibold text-gray-900" data-testid="org-roi-value-drivers-details-heading">Details</h3>
+      <p data-testid="org-roi-value-drivers-summary">Based on your {{ projectCount() }} projects.</p>
+      <p data-testid="org-roi-value-drivers-typical">{{ copy.typical }}</p>
+      <p data-testid="org-roi-value-drivers-association">{{ copy.association }}</p>
+      <p data-testid="org-roi-value-drivers-fit">{{ copy.fit }} {{ copy.methodDifference }}</p>
+      <p data-testid="org-roi-value-drivers-directional">{{ copy.directional }}</p>
+    </div>
+  }
+</div>

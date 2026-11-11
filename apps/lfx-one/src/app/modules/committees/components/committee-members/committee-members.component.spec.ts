@@ -6,7 +6,8 @@
 import { HttpParams } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { Committee, CommitteeInvite, CommitteeMember, MemberImportDialogResult } from '@lfx-one/shared/interfaces';
+import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
+import { Committee, CommitteeEngagementResponse, CommitteeInvite, CommitteeMember, MemberImportDialogResult } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -63,6 +64,21 @@ describe('CommitteeMembersComponent add-people actions', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  function expectManagerToolbar(): void {
+    const toolbar = query('members-toolbar');
+    const actions = query('members-toolbar-actions');
+    expect(toolbar).not.toBeNull();
+    expect(actions?.parentElement).toBe(toolbar);
+    expect(Array.from(actions!.children).map((child) => child.getAttribute('data-testid'))).toEqual(['add-member-btn', 'import-members-csv-btn']);
+    for (const testId of ['add-member-btn', 'import-members-csv-btn']) {
+      expect(fixture.nativeElement.querySelectorAll(`[data-testid="${testId}"]`)).toHaveLength(1);
+      expect(query(testId)?.closest('[data-testid="members-search-filters"]')).toBeNull();
+    }
+    expect(query('import-members-csv-btn')?.textContent).toContain('Import Members');
+    expect(query('import-members-csv-btn')?.textContent).not.toContain('CSV');
+    expect(query('invite-member-btn')).toBeNull();
+  }
+
   afterEach(() => {
     vi.useRealTimers();
     TestBed.resetTestingModule();
@@ -71,15 +87,48 @@ describe('CommitteeMembersComponent add-people actions', () => {
   describe('as a group manager', () => {
     beforeEach(async () => setup(WRITER_GROUP));
 
-    it('shows Import Members before Add Member', () => {
-      const actions = Array.from(fixture.nativeElement.querySelectorAll('lfx-button')) as HTMLElement[];
-      const importButton = query('import-members-csv-btn');
-      const addButton = query('add-member-btn');
-      expect(addButton).not.toBeNull();
-      expect(importButton?.textContent).toContain('Import Members');
-      expect(importButton?.textContent).not.toContain('CSV');
-      expect(actions.indexOf(importButton!)).toBeLessThan(actions.indexOf(addButton!));
-      expect(query('invite-member-btn')).toBeNull();
+    it('places member pills and Add then Import in the toolbar above search filters', () => {
+      expectManagerToolbar();
+      const toolbar = query('members-toolbar')!;
+      expect(query('members-filter-chips')?.parentElement).toBe(toolbar);
+      expect(toolbar.firstElementChild).toBe(query('members-filter-chips'));
+      expect(toolbar.nextElementSibling).toBe(query('members-search-filters'));
+      expect(query('members-search-filters')?.querySelector('lfx-input-text')).not.toBeNull();
+      expect(query('members-search-filters')?.querySelectorAll('lfx-select')).toHaveLength(3);
+    });
+
+    it('retains the single action pair on Pending without chips, engagement, or an empty search row', async () => {
+      fixture.componentRef.setInput('engagementEnabled', true);
+      fixture.componentRef.setInput('engagementAccessible', true);
+      component.onTabChange('pending');
+      await fixture.whenStable();
+
+      expectManagerToolbar();
+      expect(query('members-tab-bar')).not.toBeNull();
+      expect(query('members-filter-chips')).toBeNull();
+      expect(query('members-engagement-controls')).toBeNull();
+      expect(query('members-search-filters')).toBeNull();
+    });
+
+    it('restores the All toolbar and filters when pending invitations disappear', async () => {
+      component.onTabChange('pending');
+      await fixture.whenStable();
+      fixture.componentRef.setInput('invites', []);
+      await fixture.whenStable();
+
+      expect(component.activeTab()).toBe('all');
+      expectManagerToolbar();
+      expect(query('members-tab-bar')).toBeNull();
+      expect(query('members-filter-chips')).not.toBeNull();
+      expect(query('members-search-filters')).not.toBeNull();
+    });
+
+    it('disables only Import while invitations load with a ready roster', async () => {
+      fixture.componentRef.setInput('invitesLoading', true);
+      await fixture.whenStable();
+
+      expect((query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect((query('add-member-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
     });
 
     it('opens the import dialog with the group snapshot and only its own close controls', () => {
@@ -160,6 +209,16 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
     });
 
+    it('refreshes without inventing an addition count when an import outcome is unknown', () => {
+      vi.useFakeTimers();
+      component.openImportMembersDialog();
+      dialogClose.next({ added: 0, conflicts: 0, uncertain: true } satisfies MemberImportDialogResult);
+      vi.advanceTimersByTime(3000);
+
+      expect(refreshes).toBe(1);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
+    });
+
     it('does nothing after a cancelled preview', () => {
       component.openImportMembersDialog();
       dialogClose.next({ added: 0, conflicts: 0 } satisfies MemberImportDialogResult);
@@ -217,6 +276,8 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(fixture.nativeElement.textContent).toContain('No members found');
       expect(fixture.nativeElement.textContent).toContain('Add the first member');
       expect((query('add-member-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      expect((query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      expectManagerToolbar();
     });
 
     it('keeps Add Member opening the existing direct-add dialog', () => {
@@ -237,6 +298,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
       component.openImportMembersDialog();
       await fixture.whenStable();
       expect((query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect((query('add-member-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
       component.openImportMembersDialog();
       expect(committeeService.getCommitteeMembers).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid, expect.any(HttpParams));
       expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid, expect.any(HttpParams));
@@ -298,6 +360,9 @@ describe('CommitteeMembersComponent add-people actions', () => {
 
     expect(query('invite-member-btn')).not.toBeNull();
     expect(query('import-members-csv-btn')).toBeNull();
+    expect(query('add-member-btn')).toBeNull();
+    expect(query('members-toolbar-actions')).toBeNull();
+    expect(query('invite-member-btn')?.closest('[data-testid="members-search-filters"]')).toBe(query('members-search-filters'));
     component.openImportMembersDialog();
     expect(dialogService.open).not.toHaveBeenCalled();
   });
@@ -307,5 +372,51 @@ describe('CommitteeMembersComponent add-people actions', () => {
 
     expect(query('add-member-btn')).toBeNull();
     expect(query('import-members-csv-btn')).toBeNull();
+    expect(query('invite-member-btn')).toBeNull();
+    expect(query('members-toolbar-actions')).toBeNull();
+  });
+
+  it('preserves the hidden-roster invitation flow without exposing the toolbar', async () => {
+    await setup({ ...WRITER_GROUP, writer: false, member_visibility: CommitteeMemberVisibility.HIDDEN }, { canSendMemberInvites: true });
+
+    expect(query('members-invite-only')).not.toBeNull();
+    expect(query('members-toolbar')).toBeNull();
+    expect(query('add-member-btn')).toBeNull();
+    expect(query('import-members-csv-btn')).toBeNull();
+    query('invite-member-btn')?.querySelector('button')?.click();
+    expect(dialogService.open).toHaveBeenCalledWith(AddMemberDialogComponent, expect.objectContaining({ header: 'Invite Someone' }));
+  });
+
+  it.each([
+    { engagementEnabled: false, engagementAccessible: false },
+    { engagementEnabled: false, engagementAccessible: true },
+    { engagementEnabled: true, engagementAccessible: false },
+  ])('hides engagement controls unless both gates allow access: %j', async (inputs) => {
+    await setup(WRITER_GROUP, inputs);
+
+    expect(query('members-engagement-controls')).toBeNull();
+    expectManagerToolbar();
+  });
+
+  it('keeps allowed engagement controls in a separate row between the toolbar and search', async () => {
+    await setup(WRITER_GROUP, {
+      engagementEnabled: true,
+      engagementAccessible: true,
+      engagement: {
+        members: [],
+        summary: { attendance_rate: 0, active_count: 0, eligible_count: 0, total_count: 0, at_risk_count: 0 },
+        computed_at: null,
+        data_available: true,
+        data_source: 'mock',
+      } satisfies CommitteeEngagementResponse,
+    });
+
+    const controls = query('members-engagement-controls')!;
+    expect(query('members-toolbar')?.nextElementSibling).toBe(controls);
+    expect(controls.nextElementSibling).toBe(query('members-search-filters'));
+    expect(controls.querySelector('lfx-filter-pills')).not.toBeNull();
+    expect(query('members-engagement-mock-tag')?.textContent).toContain('Sample data');
+    expect(query('members-engagement-freshness')?.textContent).toBe(component.engagementFreshnessLabel());
+    expectManagerToolbar();
   });
 });

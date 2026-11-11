@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  IMPERSONATION_SEARCH_FAILED_MESSAGE,
+  IMPERSONATION_SEARCH_NATS_ERROR_CODE,
+  IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
+  IMPERSONATION_USER_NOT_FOUND_MESSAGE,
+} from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -83,5 +89,79 @@ describe('ImpersonationService.exchangeToken', () => {
       statusCode: 502,
       code: 'CTE_NATS_ERROR',
     });
+  });
+});
+
+describe('ImpersonationService.searchUsers', () => {
+  let service: ImpersonationService;
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ImpersonationService();
+  });
+
+  it("sends the admin's token and the query to auth-service and returns the users", async () => {
+    const users = [{ user_id: 'auth0|1', username: 'jdoe', name: 'Jane Doe', email: 'jane.doe@example.test' }];
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, users }) });
+
+    await expect(service.searchUsers(req, 'jane', 'admin-token', 10)).resolves.toEqual(users);
+
+    const [subject, payload] = natsRequest.mock.calls[0];
+    expect(subject).toBe(NatsSubjects.USER_SEARCH);
+    expect(JSON.parse(payload)).toEqual({ subject_token: 'admin-token', query: 'jane', limit: 10 });
+  });
+
+  it('returns an empty list when the reply carries no users', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true }) });
+
+    await expect(service.searchUsers(req, 'jane', 'admin-token', 10)).resolves.toEqual([]);
+  });
+
+  it.each([
+    ['subject_token is not authorized to impersonate', 403, 'IMPERSONATION_SEARCH_FORBIDDEN'],
+    ['query needs at least one term of 3 or more characters', 400, 'IMPERSONATION_SEARCH_INVALID'],
+    ['user search is unavailable', 503, 'IMPERSONATION_SEARCH_UNAVAILABLE'],
+    ['unexpected failure', 502, 'IMPERSONATION_SEARCH_FAILED'],
+  ])('maps the auth-service error %j to %i and keeps the raw text off the public message', async (upstreamError, statusCode, code) => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false, error: upstreamError }) });
+
+    const error = (await service.searchUsers(req, 'jane', 'admin-token', 10).catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error.statusCode).toBe(statusCode);
+    expect(error.code).toBe(code);
+    expect(error.message).not.toBe(upstreamError);
+    expect(error.errorBody).toEqual({ upstreamError });
+  });
+
+  it('replies with a fixed message when the request itself fails, keeping the transport error in the log-only body', async () => {
+    natsRequest.mockRejectedValue(new Error('timeout while searching for jane.doe@example.test'));
+
+    const error = (await service.searchUsers(req, 'jane', 'admin-token', 10).catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error.statusCode).toBe(502);
+    expect(error.code).toBe(IMPERSONATION_SEARCH_NATS_ERROR_CODE);
+    expect(error.message).toBe(IMPERSONATION_SEARCH_FAILED_MESSAGE);
+    expect(error.message).not.toContain('jane.doe');
+    expect(error.errorBody).toEqual({ transportError: 'timeout while searching for jane.doe@example.test' });
+  });
+
+  it('traces the search with only the length of the query', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, users: [] }) });
+
+    await service.searchUsers(req, 'jane.doe@example.test', 'admin-token', 10);
+
+    expect(logger.debug).toHaveBeenCalledWith(req, 'impersonation_user_search', expect.any(String), { query_length: 21, limit: 10 });
+  });
+
+  it('never logs the query', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, users: [] }) });
+
+    await service.searchUsers(req, 'jane.doe@example.test', 'admin-token', 10);
+
+    for (const method of Object.values(logger)) {
+      expect(JSON.stringify(method.mock.calls)).not.toContain('jane.doe');
+    }
   });
 });

@@ -14,6 +14,7 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -124,6 +125,7 @@ describe('VotesDashboardComponent personal summary', () => {
         { provide: LensService, useValue: { activeLens } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true), hasBoardRole: signal(true), hasProjectRole: signal(true) } },
         { provide: ProjectContextService, useValue: { activeContext, canWrite } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: MailingListService, useValue: {} },
       ],

@@ -66,6 +66,7 @@ import {
   matchesMyVotesQuickFilter,
   matchesVoteVoterChoice,
   mergeCommentResults,
+  partitionVoteSummaryRecipients,
   resolveVoterResultsState,
   sortVoteVotersForDisplay,
   votePermalinkPath,
@@ -2278,7 +2279,7 @@ describe('buildVoteAnswerSummary', () => {
 });
 
 describe('buildVoteSummarySendNotice', () => {
-  const counts = { recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0 };
+  const counts = { recipient_count: 0, failed_count: 0, skipped_count: 0, uncertain_count: 0, recipients: [] };
 
   it('reports a plain success only when every invited voter was sent', () => {
     expect(buildVoteSummarySendNotice({ ...counts, recipient_count: 3 })).toEqual({
@@ -2320,7 +2321,7 @@ describe('buildVoteSummarySendNotice', () => {
     expect(alone.detail).toContain('retrying may send duplicate summaries');
     expect(alone.life).toBe(8000);
 
-    const mixed = buildVoteSummarySendNotice({ recipient_count: 2, failed_count: 1, skipped_count: 1, uncertain_count: 2 });
+    const mixed = buildVoteSummarySendNotice({ ...counts, recipient_count: 2, failed_count: 1, skipped_count: 1, uncertain_count: 2 });
     expect(mixed.summary).toBe('Summary delivery unconfirmed');
     expect(mixed.detail).toContain('Sent to 2 voter(s)');
     expect(mixed.detail).toContain('1 skipped');
@@ -2341,6 +2342,48 @@ describe('buildVoteSummarySendNotice', () => {
     expect(notice.severity).toBe('info');
     expect(notice.summary).toBe('No summaries sent');
     expect(notice.detail).toContain('no invited voters have an email address');
+  });
+
+  it('describes total failures in voters rather than email send attempts', () => {
+    const notice = buildVoteSummarySendNotice({ ...counts, failed_count: 2, skipped_count: 1 });
+    expect(notice.summary).toBe('No summaries sent');
+    expect(notice.detail).toContain('2 voter(s) not sent');
+    expect(notice.detail).toContain('1 invited voter(s) have no email address');
+    expect(notice.detail).not.toContain('send(s) failed');
+  });
+});
+
+describe('partitionVoteSummaryRecipients (#4830)', () => {
+  it('splits voters with and without an email address, preserving input order', () => {
+    const result = partitionVoteSummaryRecipients([
+      { uid: 'r-1', user_name: 'Ada', user_email: 'ada@example.test' },
+      { uid: 'r-2', user_name: 'Ben' },
+      { uid: 'r-3', user_name: 'Cy', user_email: 'cy@example.test' },
+      { uid: 'r-4', user_name: 'Dee', user_email: '' },
+    ]);
+
+    expect(result.ready.map(({ uid }) => uid)).toEqual(['r-1', 'r-3']);
+    expect(result.missingEmail.map(({ uid }) => uid)).toEqual(['r-2', 'r-4']);
+    expect(result.uniqueEmailRecipients.map(({ uid }) => uid)).toEqual(['r-1', 'r-3']);
+    expect(result.sharedEmailVoterCount).toBe(0);
+  });
+
+  it('keeps the first voter per case-insensitive address and counts every voter sharing one', () => {
+    const result = partitionVoteSummaryRecipients([
+      { uid: 'r-1', user_email: 'Shared@Example.test' },
+      { uid: 'r-2', user_email: 'solo@example.test' },
+      { uid: 'r-3', user_email: 'shared@example.test' },
+      { uid: 'r-4' },
+    ]);
+
+    expect(result.ready).toHaveLength(3);
+    expect(result.uniqueEmailRecipients.map(({ uid }) => uid)).toEqual(['r-1', 'r-2']);
+    expect(result.sharedEmailVoterCount).toBe(2);
+    expect(result.missingEmail.map(({ uid }) => uid)).toEqual(['r-4']);
+  });
+
+  it('returns empty groups for no recipients', () => {
+    expect(partitionVoteSummaryRecipients([])).toEqual({ ready: [], missingEmail: [], uniqueEmailRecipients: [], sharedEmailVoterCount: 0 });
   });
 });
 

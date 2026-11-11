@@ -18,7 +18,7 @@
   } @else if (text()) {
     <span aria-hidden="true" data-testid="ui-avatar-initials">{{ text() }}</span>
   } @else {
-    <!-- No photo, icon or initials to show: a neutral person glyph keeps the circle from looking broken. -->
+    <!-- No photo, icon or initials to show: a person glyph keeps the circle from looking broken. -->
     <i class="ui-icon fa-light fa-user" aria-hidden="true" data-testid="ui-avatar-fallback"></i>
   }
   @if (badgeIcon()) {
@@ -29,6 +29,11 @@
       aria-hidden="true"
       data-testid="ui-avatar-badge">
       <i class="ui-icon" [class]="badgeIcon()"></i>
+    </span>
+  }
+  @if (status(); as current) {
+    <span [class]="statusClasses()" [lfxUiTooltip]="current.label" title="" aria-hidden="true" data-testid="ui-avatar-status">
+      <i class="ui-icon" [class]="current.icon"></i>
     </span>
   }
 }

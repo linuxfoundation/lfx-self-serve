@@ -9,7 +9,13 @@ import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { MicroserviceError } from '../errors';
 import { canonicalizeProjectQuery } from '../middleware/canonicalize-project-query.middleware';
-import { requireCampaignManager, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
+import {
+  requireCampaignManager,
+  requireGoogleAudiencesAccess,
+  requireGoogleConversionActionsAccess,
+  requireGoogleMonitorAccess,
+  requireGoogleUserListsAccess,
+} from '../middleware/require-marketing-access.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -48,8 +54,11 @@ const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
 const optimizeController = new CampaignOptimizeController();
 
-// Google Ads account monitor: requires `?project=`, but reads the shared account, not that project's
-// data. Its route-specific guard admits ROOT callers without granting access to project writes.
+// Google Ads account monitor: requires `?project=`. With LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR on it reads
+// only the project's own campaigns, and campaign-service answers whoever holds `campaign_manager` on the
+// project; a caller it refuses gets a 403 naming that role (#4837). Off, it reads the shared account
+// across foundations and the controller keeps it root-only. Its route-specific guard admits ROOT callers
+// (for that legacy arm) without granting access to project writes.
 router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignController.getMonitorData(req, res, next));
 
 // The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
@@ -57,6 +66,32 @@ router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignC
 // its slug BEFORE the guard runs: the guard and the brief index both key a project by slug, and the same
 // project must get the same authorization and the same briefs whichever identifier names it (#4507).
 router.get('/briefs', canonicalizeProjectQuery, requireCampaignManager, (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
+
+// The enabled conversion actions on the Google Ads account a create uses, for the Implement tab's
+// picker (#4991). The account is shared, so the list names every foundation's actions: answered only
+// to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#486).
+// 404 while the campaign-service Google create road is off. Registered ahead of
+// `router.use(requireCampaignManager)` so an access-check outage reaches the controller's coded 503
+// instead of that guard's uncoded 403; its own guard is narrower (#5239).
+router.get('/google/conversion-actions', requireGoogleConversionActionsAccess, (req, res, next) =>
+  campaignController.getGoogleAdsConversionActions(req, res, next)
+);
+
+// The user lists on the Google Ads account a create uses, for the Implement tab's audience segment
+// picker (#5244). The account is shared, so the list names every foundation's audiences: answered only
+// to `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#508).
+// 404 while audience segments cannot be created. Registered ahead of `router.use(requireCampaignManager)`
+// for the same reason as the conversion-action list above: an access-check outage must reach the
+// controller's coded 503, not that guard's uncoded 403.
+router.get('/google/user-lists', requireGoogleUserListsAccess, (req, res, next) => campaignController.getGoogleAdsUserLists(req, res, next));
+
+// The Audiences on the Google Ads account a create uses, for the Implement tab's Demand Gen audience
+// picker (#5244) and Performance Max audience signal picker (#5262). The account is shared, so the list names every foundation's Audiences: answered only to
+// `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#504). 404
+// while the campaign-service create road is off. Registered ahead of `router.use(requireCampaignManager)`
+// for the same reason as the two lists above: an access-check outage must reach the controller's coded
+// 503, not that guard's uncoded 403.
+router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) => campaignController.getGoogleAdsAudiences(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -81,7 +116,8 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
 // not a drop-in replacement for them; nothing is cut over to it yet. Because the Google, Meta,
 // Reddit and X accounts are shared by every foundation, those account monitors (and LinkedIn's
-// legacy arm) are root-only in the controller (lfx-self-serve-ops#54).
+// legacy arm) are root-only in the controller (lfx-self-serve-ops#54), except Google's
+// campaign-service arm, which reads only the project's own campaigns (#4837).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 // An image for the brief, stored by campaign-service and named by asset id in a platform's
@@ -112,6 +148,7 @@ router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(r
 router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
+router.post('/send-workflow', (req, res, next) => campaignController.createSendWorkflow(req, res, next));
 // Which account each LinkedIn/Reddit/Meta/Microsoft/X Monitor panel offers: the project's OWN
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
@@ -122,10 +159,12 @@ router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMo
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 // campaign-service account discovery for the project's Google Ads connection, behind
-// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
+// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only: a project with no connection
+// of its own is answered from the LF system credential, so the list can name every account the LF reaches.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
 // Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
-// behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as above.
+// behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as the Google
+// Ads accounts route is.
 router.get('/twitter/accounts', (req, res, next) => campaignController.getTwitterAdsAccounts(req, res, next));
 // Whether X creation is open on this deployment, read by the Plan picker before any brief exists.
 router.get('/twitter/create-capability', (req, res) => campaignController.getTwitterCreateCapability(req, res));

@@ -5,7 +5,6 @@ import { expect, Page, Route, test } from '@playwright/test';
 // Deep-imported, not from the `constants` barrel: the barrel pulls in modules that depend on
 // @angular/common and fail to load outside the app, the same trap the specs hit with `utils`.
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY } from '@lfx-one/shared/constants/feature-flags.constants';
 import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
 import type { OrgLensRoiAnnualRow, OrgLensRoiProjectAnnual } from '@lfx-one/shared/interfaces';
 
@@ -307,6 +306,18 @@ export function mockProjectAnnual(slug: string, efficiencyConstant = true, appor
   return { method: 'logit', projectSlug: slug, rows, apportioned, efficiencyConstant };
 }
 
+export const MOCK_VALUE_DRIVERS = {
+  method: 'logit',
+  nProjects: 12,
+  rows: [
+    { category: 'Revenue Boosters', pctDeviation: 14.2 },
+    { category: 'Strategic', pctDeviation: 6.8 },
+    { category: 'Prosocial', pctDeviation: 1.9 },
+    { category: 'Risk Mitigation', pctDeviation: -5.3 },
+    { category: 'Direct Cost Savings', pctDeviation: -9.7 },
+  ],
+};
+
 interface StubOptions {
   hasAccess?: boolean;
   summary?: unknown;
@@ -314,6 +325,9 @@ interface StubOptions {
   annual?: unknown;
   investmentBreakdown?: unknown;
   projects?: unknown;
+  valueDrivers?: unknown;
+  /** Status to answer the value drivers route with; 200 uses the payload above. */
+  valueDriversStatus?: number;
   /** Status to answer both project-detail routes with; 200 uses the payloads below. */
   projectDetailStatus?: number;
   projectDetail?: unknown;
@@ -341,6 +355,11 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   await page.route('**/api/orgs/*/lens/roi/annual*', (route) => fulfillJson(route, options.annual ?? MOCK_ANNUAL));
   await page.route('**/api/orgs/*/lens/roi/investment-breakdown*', (route) => fulfillJson(route, options.investmentBreakdown ?? MOCK_INVESTMENT_BREAKDOWN));
   await page.route('**/api/orgs/*/lens/roi/projects*', (route) => fulfillJson(route, options.projects ?? MOCK_PROJECTS));
+  await page.route('**/api/orgs/*/lens/roi/value-drivers*', (route) => {
+    const status = options.valueDriversStatus ?? 200;
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(stubbedError(status)) });
+    return fulfillJson(route, options.valueDrivers ?? MOCK_VALUE_DRIVERS);
+  });
 
   // These three globs cannot overlap: `*` does not cross a `/`, so the collection route above
   // cannot capture `/projects/{slug}`, and neither can capture `/projects/{slug}/annual`. That
@@ -402,24 +421,6 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
       total: hasAccess ? 1 : 0,
     })
   );
-}
-
-/**
- * Pin feature flags for this page, before any application code runs.
- *
- * A flag-gated route cannot be exercised without this. The flag SDK evaluates twice — first against an
- * anonymous context at bootstrap, then again once the authenticated user context is applied. A flag
- * targeted at named users is false in that first window, so a `canMatch` guard can resolve against it
- * and redirect before the real value arrives, leaving every case skipped or asserting against a page
- * that has already navigated away.
- *
- * The override is read only by non-production builds; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
- */
-export async function stubFeatureFlags(page: Page, flags: Record<string, boolean>): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify(flags),
-  ] as const);
 }
 
 /**

@@ -22,7 +22,7 @@
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
           }
         }
-        @if (view() && !runState()) {
+        @if (view()) {
           <p class="text-xs text-gray-500" data-testid="mktg-document-view-readiness">{{ readiness() }}</p>
         }
       </div>
@@ -172,7 +172,7 @@
         [polling]="publicProgressPolling()"
         [continuous]="publicProgressPolling()"
         [refreshKey]="progressRefreshKey()"
-        [loadRevision]="publicProgressPolling()"
+        [loadRevision]="readStoredBody()"
         [revisionId]="revisionParam()"
         [expectedPending]="!!generationParam()"
         [viewSnapshot]="view()"
@@ -302,25 +302,35 @@
           aria-label="Audit summary">
           <div class="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 class="text-2xl font-bold text-gray-900">{{ report.report?.headline ?? aeoTitle() }}</h2>
-              <p class="text-sm text-gray-500" data-testid="mktg-document-view-audit-subline">
-                AEO/GEO report — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
-                @if (report.auditCounts; as counts) {
-                  ·
-                  @if (counts.keyPagesNamed === 0) {
-                    no key pages named,
-                  } @else {
-                    {{ counts.keyPagesNamed }} key pages named,
-                  }
-                  {{ counts.pagesAudited }} audited
-                }
-                · stored under AEO/GEO reports
-              </p>
+              <ng-container [ngTemplateOutlet]="auditTitle" />
             </div>
           </div>
+          <!-- The title and its facts open the web summary and the printed report alike (the print drops the storage note). -->
+          <ng-template #auditTitle let-print="print">
+            <h2
+              class="text-2xl font-bold break-after-avoid text-gray-900"
+              [attr.data-testid]="print ? 'mktg-document-view-print-headline' : 'mktg-document-view-headline'">
+              {{ report.report?.headline ?? aeoTitle() }}
+            </h2>
+            <p class="text-sm text-gray-500" [attr.data-testid]="print ? 'mktg-document-view-print-subline' : 'mktg-document-view-audit-subline'">
+              AEO/GEO report — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
+              @if (report.auditCounts; as counts) {
+                ·
+                @if (counts.keyPagesNamed === 0) {
+                  no key pages named,
+                } @else {
+                  {{ counts.keyPagesNamed }} key pages named,
+                }
+                {{ counts.pagesAudited }} audited
+              }
+              @if (!print) {
+                · stored under AEO/GEO reports
+              }
+            </p>
+          </ng-template>
           <ng-template #auditHero let-print="print">
-            <!-- 200px summary column matches the design board; stack it on narrow screens. -->
-            <div class="grid grid-cols-1 gap-6 md:grid-cols-[200px_1fr]">
+            <!-- 200px summary column matches the design board; stack it on narrow screens. The score card never splits across printed pages. -->
+            <div class="grid grid-cols-1 gap-6 break-inside-avoid md:grid-cols-[200px_1fr]">
               <div class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-4 text-center">
                 <span class="text-xs uppercase tracking-wider text-gray-500">Overall score</span>
                 <div
@@ -358,17 +368,39 @@
           }
           <p class="text-sm text-gray-500">Report · one-off document · never revised. Audit again creates a separate report.</p>
         </section>
-        <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. -->
+        <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. The report flows
+             through one sheet row: the sheet repeats the page's top and bottom room on every page it runs over, and its
+             head group carries the running head the other Marketing OS prints wear (Chromium repeats it per page; WebKit
+             prints a table's head once). A typed report opens with its title, then the score card, then the report without
+             its own headline; a legacy Markdown report keeps the heading its Markdown carries. No page numbers: the
+             zero-margin Chromium page setup leaves no margin area for a counter. -->
         <div [class]="aeoPrintOnlyClass" data-testid="mktg-document-view-print">
           <article class="lfx-framework-print bg-white text-gray-900 print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]">
-            <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
-            @if (report.report; as typed) {
-              <lfx-aeo-geo-report [report]="typed" />
-            } @else {
-              <lfx-markdown-renderer [content]="view()?.markdown ?? ''" />
-            }
+            <lfx-mktg-print-sheet [head]="auditRunningHead">
+              <lfx-mktg-print-sheet-row [flows]="true">
+                <div class="flex flex-col gap-5">
+                  @if (report.report; as typed) {
+                    <!-- The typed report: its title and facts open the print, then the score card, then the report without its own headline. -->
+                    <div class="flex flex-col break-inside-avoid">
+                      <ng-container [ngTemplateOutlet]="auditTitle" [ngTemplateOutletContext]="{ print: true }" />
+                    </div>
+                    <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
+                    <lfx-aeo-geo-report [report]="typed" [showHeadline]="false" />
+                  } @else {
+                    <!-- A legacy report without a typed sidecar: the score card, then its Markdown, which carries its own title. -->
+                    <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
+                    <lfx-markdown-renderer [content]="view()?.markdown ?? ''" />
+                  }
+                </div>
+              </lfx-mktg-print-sheet-row>
+            </lfx-mktg-print-sheet>
           </article>
         </div>
+        <ng-template #auditRunningHead>
+          <lfx-mktg-print-running-head
+            [brand]="printBrand()"
+            [label]="projectName() + ' AEO/GEO report · ' + (view()?.revision?.createdAt | date: 'd MMM y')" />
+        </ng-template>
       }
     </ng-template>
     @if (isAeoDocument() && !view()?.aeoGeoReport?.report) {
@@ -466,72 +498,6 @@
           @if (isAeoDocument() && current.aeoGeoReport?.report) {
             <ng-container [ngTemplateOutlet]="auditReport" />
           }
-          @if (current.type.kind === 'living' && !current.revision.latest) {
-            @let active = currentRevision();
-            @let viewedAuthor = viewedAuthorLabel();
-            @let viewedDate = current.revision.createdAt | date: 'd MMM';
-            @let historySummary =
-              "You're viewing v" +
-              current.revision.number +
-              (viewedDate ? ' · ' + viewedDate : '') +
-              ' · ' +
-              viewedAuthor +
-              (active ? ' · v' + active.number + ' is current' : '');
-            <!-- The tester requested 32–36px height and 13px type. Below lg, clear the layout's sticky menu (h-10 + py-3 + border = 4rem + 1px). -->
-            <!-- Offsets target the standard layout; the impersonation banner is an accepted offset exception. -->
-            <div
-              class="sticky top-[calc(4rem+1px)] lg:top-0 z-10 flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
-              role="group"
-              aria-label="Revision navigation"
-              [attr.aria-busy]="restoringId() !== null"
-              data-testid="mktg-document-view-history-bar">
-              <span
-                class="hidden min-w-0 flex-1 truncate sm:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
-                tabindex="0"
-                role="note"
-                [textContent]="historySummary"
-                [attr.aria-label]="historySummary"
-                [pTooltip]="historySummary"
-                tooltipPosition="bottom"
-                tooltipEvent="both"
-                [escape]="true"
-                appendTo="body"
-                data-testid="mktg-document-view-history-bar-summary"></span>
-              <span
-                class="min-w-0 flex-1 sm:hidden"
-                [textContent]="'Viewing v' + current.revision.number"
-                data-testid="mktg-document-view-history-bar-mobile-summary"></span>
-              <span class="sm:hidden" aria-hidden="true">·</span>
-              <button
-                type="button"
-                class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
-                [disabled]="writePending()"
-                data-testid="mktg-document-view-history-bar-make-current"
-                (click)="onRestore(current.revision)">
-                @if (restoringId() === current.revision.id) {
-                  <span>Saving…</span>
-                } @else {
-                  <span class="hidden sm:inline" [textContent]="'Make v' + current.revision.number + ' current'"></span>
-                  <span class="sm:hidden">Make current</span>
-                }
-              </button>
-              @if (active) {
-                <span class="sm:hidden" aria-hidden="true">·</span>
-                <a
-                  class="shrink-0 text-blue-700 underline hover:text-blue-900"
-                  [routerLink]="submittingGeneration() ? null : []"
-                  [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
-                  [attr.tabindex]="submittingGeneration() ? -1 : null"
-                  [queryParams]="{ revision: active.id }"
-                  queryParamsHandling="merge"
-                  data-testid="mktg-document-view-history-bar-back">
-                  <span class="hidden sm:inline" [textContent]="'Back to v' + active.number"></span>
-                  <span class="sm:hidden">Back</span>
-                </a>
-              }
-            </div>
-          }
-          <!-- History precedes the asset headers in DOM, preserving its keyboard summary after Back. -->
           @if (asset(); as framework) {
             <lfx-mktg-framework-view
               class="block min-w-0"
@@ -540,10 +506,12 @@
               state="ready"
               [version]="current.revision.number"
               [showMetadata]="false"
-              [kit]="printKit()"
+              [kitRead]="printKitRead()"
               [approvedAsset]="approvedFramework()"
               [approvedVersion]="approvedVersion()"
-              [approvedLoading]="approvedView().loading"
+              [approvedCreatedAt]="approvedCreatedAt()"
+              [approvedAt]="approvedAt()"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
@@ -583,7 +551,9 @@
               [showMetadata]="false"
               [approvedKit]="approvedKit()"
               [approvedVersion]="approvedVersion()"
-              [approvedLoading]="approvedView().loading"
+              [approvedApproval]="approvedApproval()"
+              [approvedCreatedAt]="approvedCreatedAt()"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
               [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
               [exportLookupTarget]="exportLookupTarget()"
@@ -668,7 +638,29 @@
                     </span>
                   </div>
                   @if (revision.id === current.revision.id) {
-                    <span class="shrink-0 text-gray-500">here</span>
+                    <span class="flex w-16 shrink-0 flex-col items-end gap-1 text-right text-gray-500">
+                      <span>here</span>
+                      @if (!revision.latest && current.type.kind === 'living') {
+                        <button
+                          type="button"
+                          data-testid="mktg-document-view-viewed-make-current"
+                          class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
+                          [disabled]="writePending()"
+                          [attr.aria-label]="'Make revision ' + revision.number + ' current'"
+                          [pTooltip]="makeCurrentHint"
+                          lfxTooltipHostFocus
+                          tooltipEvent="hover"
+                          tooltipPosition="top"
+                          aria-describedby="mktg-document-view-make-current-help"
+                          (click)="onRestore(revision)">
+                          @if (restoringId() === revision.id) {
+                            Saving…
+                          } @else {
+                            Make current
+                          }
+                        </button>
+                      }
+                    </span>
                   } @else {
                     <!-- w-16 intentionally wraps Make current below Open in the design's narrow right-aligned actions column. -->
                     <span

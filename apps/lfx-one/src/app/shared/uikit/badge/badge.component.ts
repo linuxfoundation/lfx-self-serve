@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, HostAttributeToken, inject, input, output, Signal } from '@angular/core';
 import { UiBadgeSize, UiBadgeTone, UiBadgeVariant } from '@lfx-one/shared/interfaces';
 
 /**
  * Small pill that labels a status, category or plan, such as "Beta", "Secure" or "Gold". Project the text as content.
  * Add `title` on the element for icon-only or ambiguous badges. Never rely on colour alone: the text carries the meaning.
+ * Set `interactive` for a badge that acts on click, such as a group link; listen to `(activated)`.
  */
 @Component({
   selector: 'lfx-ui-badge',
@@ -14,26 +15,51 @@ import { UiBadgeSize, UiBadgeTone, UiBadgeVariant } from '@lfx-one/shared/interf
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class]': 'classes()',
+    '[attr.role]': 'interactive() ? "button" : staticRole',
+    '[attr.tabindex]': 'interactive() ? 0 : staticTabindex',
+    '(click)': 'activate()',
+    '(keydown.enter)': 'onKey($event)',
+    '(keydown.space)': 'onKey($event)',
     'data-testid': 'ui-badge',
   },
 })
 export class UiBadgeComponent {
-  /** Colour role. `neutral` is the default; `accent` comes first among the coloured roles. Ignored by the `outline` form. */
+  /** Colour role. `neutral` is the default; `accent` comes first among the coloured roles. Ignored by the `outline` form; `line` draws in it. */
   public readonly tone = input<UiBadgeTone>('neutral');
-  /** `subtle` is the role's 100 fill with 700 text, the default for most UI. `solid` is the role's solid fill with white text (slate-900 on warning). `outline` is neutral metadata: a hairline ring on the page background. */
+  /** `subtle` is the role's 100 fill with 700 text, the default for most UI. `solid` is the role's solid fill with white text (slate-900 on warning). `outline` is neutral metadata: a hairline ring on the page background. `line` is the role's solid colour as text and a 1px ring on a transparent fill, for a quiet coloured fact such as "Registration goal: 1,000". */
   public readonly variant = input<UiBadgeVariant>('subtle');
   /** `sm` is 20px tall with 11px text; `md` is 24px tall with 12px text. */
   public readonly size = input<UiBadgeSize>('md');
   /** Shows a 6px status dot before the text in the given role colour, for plain status badges such as "Active". */
   public readonly dot = input<UiBadgeTone | null>(null);
+  /** Makes the badge a keyboard-reachable button: hover fill, accent focus ring, and `(activated)` on click, Enter or Space. */
+  public readonly interactive = input<boolean, unknown>(false, { transform: booleanAttribute });
+
+  /** Fires on click, Enter or Space while `interactive` is set. */
+  public readonly activated = output<void>();
+
+  // Keeps a caller's static role and tabindex (e.g. a tooltip badge) on a plain badge.
+  protected readonly staticRole = inject(new HostAttributeToken('role'), { optional: true });
+  protected readonly staticTabindex = inject(new HostAttributeToken('tabindex'), { optional: true });
 
   protected readonly classes: Signal<string> = this.initClasses();
   protected readonly dotClasses: Signal<string> = this.initDotClasses();
 
+  protected activate(): void {
+    if (this.interactive()) this.activated.emit();
+  }
+
+  protected onKey(event: Event): void {
+    if (!this.interactive()) return;
+    event.preventDefault();
+    if ((event as KeyboardEvent).repeat) return;
+    this.activated.emit();
+  }
+
   private initClasses(): Signal<string> {
     return computed(() => {
       // Exact px, not rem: the app root font is 14px, so rem utilities undershoot the design.
-      const base = 'inline-flex items-center gap-[4px] rounded-ui-full font-features-ui font-medium whitespace-nowrap tabular-nums';
+      const base = 'inline-flex items-center gap-[4px] rounded-ui-full font-medium whitespace-nowrap';
       const sizes = {
         sm: 'h-[20px] px-[6px] text-[11px] leading-[16px] [&_svg]:h-[10px] [&_svg]:w-[10px] [&_i]:text-[10px]',
         md: 'h-ui-tiny px-[10px] text-label-12 [&_svg]:h-[12px] [&_svg]:w-[12px] [&_i]:text-[12px]',
@@ -56,10 +82,29 @@ export class UiBadgeComponent {
         danger: 'bg-ui-danger-100 text-ui-danger-700',
         success: 'bg-ui-success-100 text-ui-success-700',
       };
+      // Line draws its text and 1px ring in the solid fill's colour, on a transparent fill, as the design library's lfx-badge-line does.
+      const line: Record<UiBadgeTone, string> = {
+        neutral: 'text-ui-neutral-600',
+        accent: 'text-ui-accent-500',
+        feature: 'text-ui-feature-600',
+        warning: 'text-ui-warning-500',
+        danger: 'text-ui-danger-600',
+        success: 'text-ui-success-600',
+      };
       const tone = this.tone();
-      const looks = { solid: solid[tone], subtle: subtle[tone], outline: 'bg-ui-background-100 text-ui-neutral-900 edge' };
-      const look = looks[this.variant()];
-      return `${base} ${sizes[this.size()]} ${look}`;
+      const looks = {
+        solid: solid[tone],
+        subtle: subtle[tone],
+        outline: 'bg-ui-background-100 text-ui-neutral-900 edge',
+        line: `bg-transparent ${line[tone]} shadow-[inset_0_0_0_1px_currentColor]`,
+      };
+      const variant = this.variant();
+      const look = looks[variant];
+      if (!this.interactive()) return `${base} ${sizes[this.size()]} ${look}`;
+      const hover = variant === 'solid' ? 'hover:brightness-95' : 'hover:bg-ui-neutral-100';
+      // Outline, not shadow-focus: the outline and line variants already use box-shadow for their edge.
+      const interactive = `cursor-pointer transition-[background-color,filter] duration-ui-base ease-ui-standard motion-reduce:transition-none ${hover} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ui-focus`;
+      return `${base} ${sizes[this.size()]} ${look} ${interactive}`;
     });
   }
 

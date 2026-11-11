@@ -117,6 +117,35 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
     expect(service.isActiveProjectInFormation()).toBe(false);
   });
 
+  describe('refreshActiveProject (#5134)', () => {
+    it('re-fetches the active project and its stage when the uid is the active context', () => {
+      getProject.mockReturnValue(of(project('Formation - Engaged')));
+      service.setProject({ ...CONTEXT, uid: 'refresh-me' }, false);
+      TestBed.inject(ApplicationRef).tick();
+      expect(service.activeProjectStage()).toBe('Formation - Engaged');
+
+      getProject.mockReturnValue(of(project('Active')));
+      service.refreshActiveProject('refresh-me');
+      TestBed.inject(ApplicationRef).tick();
+
+      expect(service.activeProjectStage()).toBe('Active');
+      expect(service.isActiveProjectInFormation()).toBe(false);
+    });
+
+    it('leaves the foundation context alone when a child project was edited from the drill-down', () => {
+      getProject.mockReturnValue(of(project('Formation - Engaged')));
+      service.setProject({ ...CONTEXT, uid: 'foundation-context' }, false);
+      TestBed.inject(ApplicationRef).tick();
+      const callsBefore = getProject.mock.calls.length;
+
+      service.refreshActiveProject('some-child-uid');
+      TestBed.inject(ApplicationRef).tick();
+
+      expect(getProject.mock.calls.length).toBe(callsBefore);
+      expect(service.activeContext()?.uid).toBe('foundation-context');
+    });
+  });
+
   it('reports isActiveProjectConfidential only for the Confidential stage', () => {
     getProject.mockReturnValue(of(project('Formation - Confidential')));
     service.setProject({ ...CONTEXT, uid: 'confidential-project' }, false);

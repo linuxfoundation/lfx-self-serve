@@ -635,7 +635,7 @@ describe('OrgEasyclaComponent', () => {
   });
 
   describe('access and org-selection states', () => {
-    // The route guard only checks the dark-launch flag, so the component owns the access answer.
+    // The component owns the access answer.
     // Telling an unauthorized caller "No CLAs signed yet" would describe their CLAs rather than
     // their access, and imply the org has none.
     it('says the lens is unavailable, not that no CLAs exist, when the caller holds no org access', async () => {

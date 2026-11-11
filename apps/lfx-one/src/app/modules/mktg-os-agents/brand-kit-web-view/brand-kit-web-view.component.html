@@ -159,6 +159,16 @@
                   <h4 class="text-base font-semibold text-gray-900">{{ chapter.title }}</h4>
                   <span class="text-xs text-gray-400">{{ chapter.number }}</span>
                 </div>
+                <!-- Where the chapter's rules come from (a v2 report), on its own row so the title and number keep one line; nothing when the report does not say. -->
+                @if (chapterBasisLabels().get(chapter.id); as basis) {
+                  <div class="flex">
+                    <span
+                      class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600"
+                      [attr.data-testid]="'brand-kit-web-view-chapter-basis-' + chapter.id"
+                      >{{ basis }}</span
+                    >
+                  </div>
+                }
                 <p class="grow text-sm text-gray-800">{{ chapter.summary }}</p>
               </article>
             }
@@ -238,7 +248,13 @@
               <article [class]="card" data-testid="brand-kit-web-view-colorway">
                 <div class="h-32" [class]="sample" [ngClass]="{ 'border border-gray-200': colorway.light }" [style.background]="colorway.ground">
                   <div class="flex h-full w-full items-center justify-center" [style.filter]="colorway.logoFilter || null">
-                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: colorway.logo, what: 'Logo' }" />
+                    @if (colorway.missing) {
+                      <span [class]="colorway.light ? 'text-xs text-gray-500' : 'text-xs text-white/80'" data-testid="brand-kit-web-view-colorway-missing">{{
+                        colorway.missing
+                      }}</span>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: colorway.logo, what: 'Logo' }" />
+                    }
                   </div>
                 </div>
                 <span class="text-sm text-gray-800">{{ colorway.name }}</span>
@@ -565,21 +581,25 @@
         <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-icons">
             <h3 [class]="cardTitle">Iconography</h3>
-            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
+            <!-- The board's sample icons in the kit's colours; the rules and the recommended set stay under them. -->
+            <lfx-mktg-brand-kit-icon-samples [colours]="v.iconColours" />
+            <!--
+              The tester's hand test (round 1): a clear gap between the strip and the first rule (the card's 8 px gap + mt-3), and
+              the rules close together: each rule's comment affordance (a block under the text until now, so every rule was two
+              rows tall) floats at the right end of the rule's first line with the text flowing beside it, so it never adds a
+              row (a rule is as tall as its text, or the 28 px button); its empty count takes no room until a thread exists;
+              while its composer is open it goes back to a block under the text (edit mode). The ::after clearfix keeps the
+              float inside its list item without losing the list marker.
+            -->
+            <ul class="mt-3 flex list-disc flex-col gap-0.5 pl-5 text-sm leading-snug text-gray-800">
               @for (rule of v.visual.icons.rules; track $index) {
-                <li class="group/commentfield" data-mktg-comment-group>
+                <li
+                  class="group/commentfield after:block after:clear-both after:content-[''] [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:float-none [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:block [&>lfx-mktg-field-comments:has([data-testid=mktg-field-comment-composer])]:ml-0 [&>lfx-mktg-field-comments]:float-right [&>lfx-mktg-field-comments]:ml-2 [&_[data-testid=mktg-field-comment-count].invisible]:hidden"
+                  data-mktg-comment-group>
                   {{ rule }}<ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.rules[' + $index + ']' }" />
                 </li>
               }
             </ul>
-            <div class="grid grid-cols-4 gap-3 rounded-lg border border-gray-200 bg-white p-4">
-              @for (icon of v.icons; track icon.label) {
-                <div class="flex flex-col items-center gap-1.5 text-xs text-gray-600">
-                  <i class="text-2xl" [class]="icon.icon" [style.color]="v.dark" aria-hidden="true"></i>
-                  <span>{{ icon.label }}</span>
-                </div>
-              }
-            </div>
             <div class="group/commentfield" data-mktg-comment-group>
               <p [class]="caption">Recommended set: {{ v.visual.icons.recommended }}</p>
               <ng-container *ngTemplateOutlet="commentTpl; context: { $implicit: 'chapters.visual.icons.recommended' }" />
@@ -616,7 +636,8 @@
             </div>
             <div class="flex flex-col items-start gap-2 rounded-lg border border-gray-200 bg-white p-5">
               <span class="font-sans" [class]="label">Buttons</span>
-              <span class="rounded-md px-4 py-2 text-sm font-medium text-white" [style.background]="v.accent">Primary button</span>
+              <!-- The renderer's Primary button: the kit's dark fill with white text, never text on the accent. -->
+              <span class="rounded-md px-4 py-2 text-sm font-medium text-white" [style.background]="v.dark">Primary button</span>
               <span class="rounded-md border px-4 py-2 text-sm font-medium" [style.border-color]="v.dark" [style.color]="v.dark">Secondary</span>
             </div>
             <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5">
@@ -755,27 +776,132 @@
             <p [class]="caption" data-testid="brand-kit-web-view-sources-read-empty">Nothing was read.</p>
           }
         </div>
+        @let sources = sourcesView();
+        <!-- The agent's own words for what failed, what is missing and what it noticed; the UI never rewrites a reason.
+             Under an approved revision, each item the approval's snapshot lists says when it was accepted. -->
         <div [class]="card">
-          <h3 [class]="cardTitle">Could not be read</h3>
-          @if (v.report.sources_failed.length > 0) {
+          <h3 [class]="cardTitle">{{ sourcesTitles.failed }}</h3>
+          @if (sources.failed.length > 0) {
             <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-sources-failed">
-              @for (failed of v.report.sources_failed; track $index) {
-                <li class="flex flex-col">
-                  <span class="text-gray-800">{{ failed.name }}</span>
-                  <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+              @for (failed of sources.failed; track $index) {
+                <li class="flex flex-col" data-testid="brand-kit-web-view-failed-item">
+                  <span class="text-gray-800" [attr.title]="failed.source !== failed.title ? failed.source : null">{{ failed.title }}</span>
+                  <span class="text-xs text-amber-700" data-testid="brand-kit-web-view-failed-reason">{{ failed.text }}</span>
+                  @if (failed.detail) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-failed-detail">{{ failed.detail }}</span>
+                  }
+                  @if (failed.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
                 </li>
               }
             </ul>
           } @else {
-            <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">{{ noSourceFailedNote }}</p>
+            <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">{{ sourcesEmpty.failed }}</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">{{ sourcesTitles.missing }}</h3>
+          @if (sources.missing.length > 0) {
+            <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-missing-assets">
+              @for (missing of sources.missing; track $index) {
+                <li class="flex flex-col" data-testid="brand-kit-web-view-missing-item">
+                  <span class="text-gray-800">{{ missing.title }}</span>
+                  <span class="text-xs text-amber-700" data-testid="brand-kit-web-view-missing-reason">{{ missing.text }}</span>
+                  @if (missing.fix) {
+                    <span class="text-xs text-gray-700" data-testid="brand-kit-web-view-missing-fix">{{ fixPrefix }}{{ missing.fix }}</span>
+                  }
+                  @if (missing.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-missing-assets-empty">{{ sourcesEmpty.missing }}</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">{{ sourcesTitles.warnings }}</h3>
+          @if (sources.warnings.length > 0) {
+            <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-warnings">
+              @for (warning of sources.warnings; track $index) {
+                <li class="flex flex-col" data-testid="brand-kit-web-view-warning-item">
+                  <span class="text-gray-800" data-testid="brand-kit-web-view-warning-text">{{ warning.text }}</span>
+                  @if (warning.href) {
+                    <a
+                      class="text-xs text-blue-600 hover:text-blue-800"
+                      [href]="warning.href"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="brand-kit-web-view-warning-source-link"
+                      >{{ warning.source }}<span class="sr-only"> (opens in a new tab)</span></a
+                    >
+                  } @else if (warning.source) {
+                    <span [class]="caption">{{ warning.source }}</span>
+                  }
+                  @if (warning.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-warnings-empty">{{ sourcesEmpty.warnings }}</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">{{ sourcesTitles.conflicts }}</h3>
+          @if (sources.conflicts.length > 0) {
+            <ul class="flex flex-col gap-2 text-sm" data-testid="brand-kit-web-view-color-conflicts">
+              @for (conflict of sources.conflicts; track $index) {
+                <li class="flex flex-col gap-1" data-testid="brand-kit-web-view-conflict-item">
+                  <span class="text-gray-800">{{ conflict.name }}</span>
+                  <!-- The Colour chapter's swatch card, one per value seen, at list size: the hex on its own ground, where it was seen beside it. -->
+                  <ul class="flex flex-col gap-2">
+                    @for (value of conflict.values; track value.hex + $index) {
+                      <li class="flex overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="brand-kit-web-view-conflict-value">
+                        <div
+                          class="flex h-12 w-24 shrink-0 items-end p-2 font-mono text-xs font-medium"
+                          [ngClass]="{ 'border-r border-gray-200': value.light }"
+                          [style.background]="value.hex"
+                          [attr.data-testid]="'brand-kit-web-view-swatch-' + value.hexDigits">
+                          <span [style.color]="value.ink">{{ value.hex }}</span>
+                        </div>
+                        <span
+                          class="min-w-0 self-center break-words px-3 py-2 text-xs text-gray-500"
+                          [attr.title]="value.source !== value.sourceLabel ? value.source : null"
+                          >{{ value.sourceLabel }}</span
+                        >
+                      </li>
+                    }
+                  </ul>
+                  <span class="text-xs text-gray-700" data-testid="brand-kit-web-view-conflict-kept"
+                    >{{ keptWord }} <span class="font-mono">{{ conflict.chosen }}</span></span
+                  >
+                  @if (conflict.accepted) {
+                    <span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span>
+                  }
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-color-conflicts-empty">{{ sourcesEmpty.conflicts }}</p>
           }
         </div>
         <div [class]="card">
           <h3 [class]="cardTitle">Gaps</h3>
-          @if (v.report.gaps.length > 0) {
+          @if (sources.gaps.length > 0) {
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800" data-testid="brand-kit-web-view-gaps">
-              @for (gap of v.report.gaps; track $index) {
-                <li>{{ gap }}</li>
+              @for (gap of sources.gaps; track $index) {
+                <li>
+                  {{ gap.text }}
+                  @if (gap.accepted) {
+                    <span class="block"
+                      ><span [class]="caption" data-testid="brand-kit-web-view-accepted">{{ sources.acceptedMarker }}</span></span
+                    >
+                  }
+                </li>
               }
             </ul>
             @if (acceptedGapsNote(); as accepted) {
@@ -807,10 +933,10 @@
     typeface and logo.
   </p>
 
-  <!-- The same native portrait chapters as the family PDF; the screen view stays unchanged. -->
+  <!-- The portrait book Download PDF prints; the screen view stays unchanged. -->
   @if (printView(); as approvedPrint) {
     <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
-      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" />
+      <lfx-mktg-brand-kit-print [view]="approvedPrint" [brand]="printBrand()" [projectName]="projectName()" [approval]="printApproval()" />
     </div>
   }
 </section>

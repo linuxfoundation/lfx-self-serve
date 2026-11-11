@@ -7,6 +7,8 @@ import type {
   VoteDetailTab,
   VoteDetailTabOption,
   VoteParticipationStatusFilter,
+  VoteSummaryOutcomeDisplay,
+  VoteSummaryRecipientOutcome,
   VoteVoterStatusFilter,
 } from '../interfaces/poll.interface';
 
@@ -18,12 +20,6 @@ export const MY_VOTES_STATS_WINDOW_DAYS = VOTES_STATS_WINDOW_DAYS;
 
 /** Sentinel thrown by `submitMyResponse` when the user has no pre-allocated vote_response row. */
 export const INVITATION_NOT_FOUND = 'INVITATION_NOT_FOUND';
-
-/** Page size for the paginated comment-response lists in the vote comment results. */
-export const VOTE_COMMENT_RESULTS_PAGE_SIZE = 25;
-
-/** Page-size options for the comment-results paginator in the vote comment results. Includes the default page size. */
-export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
 
 /** Notice above text-only comment results, keyed by why the comments carry no names (#4330). */
 export const VOTE_COMMENT_ANONYMOUS_NOTICES: Record<VoteCommentAnonymityReason, string> = {
@@ -97,11 +93,29 @@ export const VOTE_SUMMARY_NOT_ENDED = 'VOTE_SUMMARY_NOT_ENDED';
 /** The on-demand close summary (#3662) was confirmed not sent to any recipient: every attempt was rejected, none was uncertain. */
 export const VOTE_SUMMARY_SEND_FAILED = 'VOTE_SUMMARY_SEND_FAILED';
 
-/** Toast lifetime (ms) for a summary send outcome the user needs time to read (partial, unconfirmed, nothing sent). */
+/** Client wait budget for a summary POST; expiry is unconfirmed, not proof that server-side sending stopped. */
+export const VOTE_SUMMARY_SEND_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Legacy toast lifetime hint (ms) returned by the notice helper; the persistent results dialog ignores it. */
 export const VOTE_SUMMARY_NOTICE_LIFE_MS = 8000;
 
 /** Pre-send checks failed before any summary email was attempted; nothing was sent and retrying cannot duplicate this attempt. */
 export const VOTE_SUMMARY_PRECHECK_FAILED = 'VOTE_SUMMARY_PRECHECK_FAILED';
+
+/** Tag label, severity and meaning for each per-voter summary send outcome (#4830). */
+export const VOTE_SUMMARY_OUTCOME_DISPLAY: Readonly<Record<VoteSummaryRecipientOutcome, VoteSummaryOutcomeDisplay>> = {
+  sent: { label: 'Sent', severity: 'success', description: 'The email service confirmed the send. Inbox delivery and opens are not tracked.' },
+  failed: { label: 'Not sent', severity: 'danger', description: 'The email was not sent.' },
+  skipped: { label: 'Missing email', severity: 'secondary', description: 'No email address on file, so nothing could be sent.' },
+  uncertain: {
+    label: 'Unconfirmed',
+    severity: 'warn',
+    description: "LFX couldn't confirm this send. The email may already have arrived, so sending again could create duplicates.",
+  },
+};
+
+/** Display order of the summary results groups (#4830). */
+export const VOTE_SUMMARY_OUTCOME_ORDER: readonly VoteSummaryRecipientOutcome[] = ['sent', 'failed', 'skipped', 'uncertain'];
 
 /** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
 export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;

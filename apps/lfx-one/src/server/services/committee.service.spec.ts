@@ -70,6 +70,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
   return {
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
+    // Mirrors packages/shared/src/constants/member-import.constants.ts; that module pulls in the mocked enums barrel.
+    MEMBER_IMPORT_BULK_TIMEOUT_MS: 60_000,
     ACCESS_CHECK_BATCH_SIZE: 100,
     // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
     QUERY_SERVICE_MAX_PAGES: apiConstants.QUERY_SERVICE_MAX_PAGES,
@@ -2067,5 +2069,61 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
       expect(updateWithETag.mock.calls[0][4]).toMatchObject({ members_can_view_social_listening: true });
       expect(result).toMatchObject({ members_can_view_social_listening: true });
     });
+  });
+});
+
+describe('CommitteeService.bulkCreateCommitteeMembers', () => {
+  let service: CommitteeService;
+  const COMMITTEE_UID = 'committee-1';
+  const members = [{ email: 'ada@example.com' }, { email: 'grace@example.com' }];
+  const result = {
+    results: [
+      { index: 0, email: 'ada@example.com', status: 'added', retryable: false, member_uid: 'm-1' },
+      { index: 1, email: 'grace@example.com', status: 'skipped', reason: 'already_member', retryable: false, member_uid: 'm-2' },
+    ],
+    added: 1,
+    skipped: 1,
+    failed: 0,
+  };
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new CommitteeService();
+  });
+
+  it('proxies the rows to the upstream bulk route with the caller token and a longer timeout', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await expect(service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members)).resolves.toEqual(result);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/committees/${COMMITTEE_UID}/members/bulk`, 'POST', {}, { members }, undefined, {
+      timeoutMs: 60_000,
+    });
+    // No bearerToken override: the user's own token authorizes the write.
+    expect(proxyRequest.mock.calls[0][7]).not.toHaveProperty('bearerToken');
+  });
+
+  it('sends X-Skip-Notification when notifications are off', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members, true);
+
+    expect(proxyRequest.mock.calls[0][6]).toEqual({ 'X-Skip-Notification': 'true' });
+  });
+
+  it('logs counts without row data', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members);
+
+    const metadata = vi.mocked(logger.debug).mock.calls.find(([, operation]) => operation === 'bulk_create_committee_members')?.[3];
+    expect(metadata).toEqual({ committee_uid: COMMITTEE_UID, row_count: 2, added: 1, skipped: 1, failed: 0, skip_notification: false });
+    expect(JSON.stringify(metadata)).not.toContain('@example.com');
+  });
+
+  it('propagates an upstream error status', async () => {
+    proxyRequest.mockRejectedValueOnce(new MicroserviceError('Committee not found', 404, 'NOT_FOUND'));
+
+    await expect(service.bulkCreateCommitteeMembers(req, COMMITTEE_UID, members)).rejects.toMatchObject({ statusCode: 404 });
   });
 });

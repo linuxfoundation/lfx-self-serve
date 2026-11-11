@@ -8,9 +8,13 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
+  FORMATION_RECORD_CONFLICT_CODE,
+  FORMATION_RECORD_ERROR_MESSAGES,
+  FORMATION_TEAM_REQUIRED_CODE,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_RANGES,
   NATS_CONFIG,
+  NOT_PROJECT_WRITER_CODE,
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
@@ -182,7 +186,17 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
-import { AuthorizationError, ConflictError, isBaseApiError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  InvalidRequestError,
+  isBaseApiError,
+  MicroserviceError,
+  ResourceNotFoundError,
+  ServiceValidationError,
+} from '../errors';
+import { assertMergedRecordValid, mergeFormationRecord, validateFormationRecordBody } from '../helpers/formation-record.helper';
+import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -1034,6 +1048,49 @@ export class ProjectService {
     });
 
     return result;
+  }
+
+  /**
+   * Updates a project's stage and legal-entity fields from the formation card (#5134). Upstream's
+   * `PUT /projects/{uid}` is a full replace, so the raw stored project is read with its ETag, only the
+   * caller's keys are applied, and the whole object is written back under `If-Match`.
+   *
+   * Guard order: body validation, then `writer_guard` on the project AND `team:formation`
+   * membership (both fail-closed), all before any upstream read.
+   */
+  public async updateFormationRecord(req: Request, uid: string, body: unknown): Promise<Record<string, unknown>> {
+    const operation = 'update_formation_record';
+    const edits = validateFormationRecordBody(body);
+
+    const [canWrite, isFormationTeamMember] = await Promise.all([
+      this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' }),
+      checkFormationTeamMembership(this.accessCheckService, req),
+    ]);
+
+    if (!canWrite) {
+      throw new AuthorizationError(FORMATION_RECORD_ERROR_MESSAGES.notWriter, { operation, service: 'project_service', code: NOT_PROJECT_WRITER_CODE });
+    }
+    if (!isFormationTeamMember) {
+      throw new AuthorizationError(FORMATION_RECORD_ERROR_MESSAGES.notFormationTeam, {
+        operation,
+        service: 'project_service',
+        code: FORMATION_TEAM_REQUIRED_CODE,
+      });
+    }
+
+    const startTime = logger.startOperation(req, operation, { project_id: uid, changed_keys: Object.keys(edits) });
+
+    try {
+      const { data: stored, etag } = await this.etagService.fetchWithETag<Record<string, unknown>>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, operation);
+      const merged = mergeFormationRecord(stored, edits);
+      assertMergedRecordValid(merged);
+      const result = await this.etagService.updateWithETag<Record<string, unknown>>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, etag, merged, operation);
+
+      logger.success(req, operation, startTime, { project_id: uid, changed_keys: Object.keys(edits) });
+      return result;
+    } catch (error) {
+      throw this.mapFormationRecordError(error, req, uid, operation);
+    }
   }
 
   /**
@@ -7735,7 +7792,7 @@ export class ProjectService {
     // Resolve mailing list titles for groupsio artifacts. Query by project_uid, then
     // match on the numeric group_id field (groupsio_mailing_list_uid tags hold the
     // mailing list's UUID uid, not the numeric group_id).
-    const mailingListTitleByGroupId = new Map<number, string>();
+    const mailingListByGroupId = new Map<number, { title: string; uid: string }>();
     if (groupsioArtifacts && groupsioArtifacts.length > 0) {
       const mlResults = await fetchAllQueryResources<GroupsIOMailingList>(
         req,
@@ -7755,13 +7812,14 @@ export class ProjectService {
       });
       for (const ml of mlResults) {
         if (ml.group_id != null && ml.title) {
-          mailingListTitleByGroupId.set(ml.group_id, ml.title);
+          mailingListByGroupId.set(ml.group_id, { title: ml.title, uid: ml.uid });
         }
       }
     }
 
     const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => {
-      const mailingListTitle = a.group_id ? mailingListTitleByGroupId.get(a.group_id) : undefined;
+      const mailingList = a.group_id ? mailingListByGroupId.get(a.group_id) : undefined;
+      const mailingListTitle = mailingList?.title;
       return {
         uid: `groupsio_artifact:${a.artifact_id}`,
         type: 'link' as const,
@@ -7772,6 +7830,7 @@ export class ProjectService {
         project_uid: a.project_uid,
         document_source: 'mailing_list' as const,
         document_source_name: mailingListTitle ?? '',
+        mailing_list_uid: mailingList?.uid,
         document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
       };
     });
@@ -7786,6 +7845,7 @@ export class ProjectService {
         created_at: l.created_at,
         document_source: 'committee' as const,
         document_source_name: l.committee_uid ? (committeeNameByUid.get(l.committee_uid) ?? '') : '',
+        committee_uid: l.committee_uid,
       }));
 
     const committeeFileDocs: ProjectDocument[] = (committeeDocs || []).map((f) => ({
@@ -7835,6 +7895,7 @@ export class ProjectService {
       created_at: r.start_time || r.created_at,
       document_source: 'recording' as const,
       document_source_name: r.title || '',
+      past_meeting_id: r.meeting_and_occurrence_id,
     }));
 
     const pastTranscriptDocs: ProjectDocument[] = (pastTranscripts || []).map((t) => ({
@@ -7845,6 +7906,7 @@ export class ProjectService {
       created_at: t.start_time || t.created_at,
       document_source: 'transcript' as const,
       document_source_name: t.title || '',
+      past_meeting_id: t.meeting_and_occurrence_id,
     }));
 
     const pastSummaryDocs: ProjectDocument[] = (pastSummaries || []).map((s) => ({
@@ -7854,6 +7916,7 @@ export class ProjectService {
       created_at: s.summary_start_time || s.created_at,
       document_source: 'summary' as const,
       document_source_name: s.zoom_meeting_topic || '',
+      past_meeting_id: s.meeting_and_occurrence_id,
       summary_uid: s.id,
       // edited_content is an empty string (not absent) for a summary nobody edited, so `??` would never fall back to content.
       summary_content: s.edited_content || s.content,
@@ -8343,6 +8406,26 @@ export class ProjectService {
         originalError: error instanceof Error ? error : new Error(String(error)),
       });
     }
+  }
+
+  /** Maps upstream failures on the formation-record read/write to the #5134 error table. */
+  private mapFormationRecordError(error: unknown, req: Request, uid: string, operation: string): unknown {
+    const statusCode = (error as { statusCode?: number } | null)?.statusCode;
+    const options = { operation, service: 'project_service', path: req.path };
+
+    if (statusCode === 404) {
+      return new ResourceNotFoundError('Project', uid, options);
+    }
+    if (statusCode === 409 || statusCode === 412) {
+      return new ConflictError('Project changed since it was read', FORMATION_RECORD_CONFLICT_CODE, {
+        ...options,
+        clientMessage: FORMATION_RECORD_ERROR_MESSAGES.conflict,
+      });
+    }
+    if (statusCode === 400 && !(error instanceof ServiceValidationError)) {
+      return new InvalidRequestError(FORMATION_RECORD_ERROR_MESSAGES.invalidValue, 'INVALID_FORMATION_RECORD', options);
+    }
+    return error;
   }
 
   /**

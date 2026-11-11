@@ -19,16 +19,37 @@
             <i [class]="provider.icon + ' text-lg text-slate-600'"></i>
           </div>
           <div class="flex-1">
-            <span class="mb-0.5 block text-sm font-bold text-slate-900">{{ provider.name }}</span>
+            <span class="mb-0.5 flex items-center gap-2 text-sm font-bold text-slate-900">
+              {{ provider.name }}
+              @if (provider.id === 'gitlab') {
+                <span class="text-xs font-medium text-slate-500" data-testid="provider-gitlab-coming-soon">Coming soon</span>
+              }
+            </span>
             <span class="text-[13px] leading-snug text-slate-500">{{ provider.description }}</span>
           </div>
-          <lfx-button
-            [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
-            severity="secondary"
-            [outlined]="true"
-            size="small"
-            (onClick)="onSelectProvider(provider)"
-            [attr.data-testid]="'provider-action-' + provider.id" />
+          <!-- Keep GitLab unavailable until the #4151 rollout is verified; enable it in a follow-up PR. -->
+          <span class="relative inline-flex">
+            <lfx-button
+              [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              [disabled]="provider.id === 'gitlab'"
+              (onClick)="onSelectProvider(provider)"
+              [attr.data-testid]="'provider-action-' + provider.id" />
+            @if (provider.id === 'gitlab') {
+              <!-- A child-free tooltip target keeps PrimeNG's focus listener off the disabled .p-component button. -->
+              <span
+                class="absolute inset-0 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                tabindex="0"
+                role="group"
+                aria-label="GitLab account linking: Coming soon"
+                pTooltip="Coming soon"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                data-testid="provider-action-hint-gitlab"></span>
+            }
+          </span>
         </div>
       }
     </div>

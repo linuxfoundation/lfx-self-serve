@@ -6,6 +6,8 @@ import type {
   OrgAccessRole,
   OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
+  OrgAllEmployeeCompanyEmailFilter,
+  OrgAllEmployeeCompanyEmailOption,
   OrgAllEmployeeEmploymentFilter,
   OrgAllEmployeeEmploymentOption,
   OrgAllEmployeesResponse,
@@ -88,6 +90,23 @@ export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploym
  * (lfx-self-serve#4694). The URL drops `?employment=` when it is active.
  */
 export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'all';
+
+/**
+ * Company email filter options for the All Employees table: what the person drawer's company-email lookup answers for
+ * each row. Rows without a status (the server could not read the company-email keys) are listed only under `all`.
+ */
+export const ORG_ALL_EMPLOYEE_COMPANY_EMAIL_OPTIONS: readonly OrgAllEmployeeCompanyEmailOption[] = [
+  { label: 'All email statuses', value: 'all' },
+  { label: 'Has company email', value: 'has' },
+  { label: 'No company email', value: 'none' },
+  { label: 'Unlinked profile', value: 'unconfirmed' },
+] as const;
+
+/** Default Company email filter on All Employees; the URL drops `?companyEmail=` when it is active. */
+export const DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL: OrgAllEmployeeCompanyEmailFilter = 'all';
+
+/** Most key-contact record ids one drawer company-email lookup takes (`by-key-contact/company-emails?ids=`). */
+export const ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS = 50;
 
 /**
  * Hint on an All Employees row for someone with code credited to the company but no employment record there
@@ -196,8 +215,18 @@ export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> 
 
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
-/** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
-export const ORG_TRAINEES_INITIAL_LIMIT = 30;
+/** Rows-per-page options of the Trainees table and of its learners-not-on-the-people-list section. */
+export const ORG_TRAINEES_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
+
+/** Default rows per page of the Trainees table and of its learners-not-on-the-people-list section. */
+export const ORG_TRAINEES_DEFAULT_PAGE_SIZE = 10;
+
+/**
+ * Prefix of the per-response key the BFF gives a Trainees learner not on the people list (`outside:1`, `outside:2`, …)
+ * in place of their warehouse key (lfx-self-serve#4287). The `:` fails `PERSON_KEY_PATTERN`, so the person endpoints
+ * reject it with a 400.
+ */
+export const ORG_TRAINEE_OUTSIDE_KEY_PREFIX = 'outside:';
 
 /** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
@@ -205,8 +234,9 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   trainees: [],
   details: [],
-  foundationOptions: [],
-  courseOptions: [],
+  outsideLearners: [],
+  formerOnPeopleList: { people: 0, pairs: 0 },
+  asOf: null,
 };
 
 // Event Attendees tab (LFXV2-1875) — same bundle-then-client-filter pattern as Trainees.
@@ -217,8 +247,8 @@ export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 /** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
-  attendees: [],
   details: [],
+  summary: { attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
   foundationOptions: [],
   eventOptions: [],
 };

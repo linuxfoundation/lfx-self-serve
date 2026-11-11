@@ -124,6 +124,10 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-segments-block-live">
   {{ googleAudienceSegmentsBlockMessage() }}
 </div>
+<!-- Retained Demand Gen audiences Create is held for (#5244): LF marketing only, the capability unanswered, or the cutover dark. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-block-live">
+  {{ demandGenAudienceBlockMessage() }}
+</div>
 <!--
   The other reason extensions are withheld — the capability, not the channel. Same region shape and
   same politeness: the campaign is still created, it just carries no extensions.
@@ -139,13 +143,124 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-proximity-withheld-live">
   {{ googleProximityWithheldMessage() }}
 </div>
+<!-- Ad schedules or device adjustments held by a channel that takes none, announced on the same terms. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-targeting-withheld-live">
+  {{ googleTargetingWithheldMessage() }}
+</div>
+<!-- Search partners, display paths, further ads and negatives held off Search, announced likewise. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-ads-withheld-live">
+  {{ googleSearchAdsWithheldMessage() }}
+</div>
 <!--
-  Campaign languages held by a channel that takes none (Demand Gen), announced. Top-level for the
-  reason the radius region above is: the visible notice is created by the switch that gives it its
-  text. Polite, because the campaign is still created; the visible `<p>` carries no role (#3568).
+  The conversion-action picker's loading line, reason or empty note, announced. Top-level so it exists
+  before its text changes: a region mounted with the section would carry the text it is created with,
+  which is not reliably announced. Empty while the section is hidden; the visible notes carry no role.
 -->
-<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-languages-withheld-live">
-  {{ googleLanguagesWithheldMessage() }}
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-action-picker-live">
+  {{ googleConversionActionPickerAnnouncement() }}
+</div>
+<!-- The audience segment picker's loading line, reason, empty or partial-list note, announced on the same terms (#5244). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-user-list-picker-live">
+  {{ googleUserListPickerAnnouncement() }}
+</div>
+<!-- The Demand Gen format the create will not send, kept and announced on the same terms (#5226); empty off Demand Gen. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-format-held-live">
+  {{ demandGenFormatHeldMessage() }}
+</div>
+<!-- The Performance Max search themes' refusal, and the themes a switch away holds back (#5262). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-themes-error-live">
+  {{ googleSearchThemesError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-search-themes-withheld-live">
+  {{ googleSearchThemesWithheldWarning() }}
+</div>
+<!-- The Performance Max audience signal's refusal, the signal a switch away holds back, and why Create is held for a retained one (#5262). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-performance-max-audience-signal-error-live">
+  {{ performanceMaxAudienceSignalError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-performance-max-audience-signal-withheld-live">
+  {{ performanceMaxAudienceSignalWithheldWarning() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-performance-max-audience-signal-block-live">
+  {{ performanceMaxAudienceSignalBlockMessage() }}
+</div>
+<!-- The named Demand Gen ad groups' refusal and what the split leaves unsent (#5226); empty off Demand Gen. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-error-live">
+  {{ demandGenAdGroupsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ad-groups-held-live">
+  {{ demandGenAdGroupsHeldMessage() }}
+</div>
+<!--
+  The Audience pickers' loading line, reason, empty or partial-list note (#5244, #5262): one list serves the
+  Demand Gen audience and the Performance Max audience signal; empty while neither picker may show.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-audience-picker-live">
+  {{ googleAudiencePickerAnnouncement() }}
+</div>
+<!-- Why Create is held for a Demand Gen audience, and the single ad group's audience held while split (#5244). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-error-live">
+  {{ demandGenAudienceError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-audience-held-live">
+  {{ demandGenAudienceHeldMessage() }}
+</div>
+<!-- Why Create is held for Demand Gen demographics, the single ad group's held while split, and retained ones the request cannot carry. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-demographics-error-live">
+  {{ demandGenDemographicsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-demographics-held-live">
+  {{ demandGenDemographicsHeldMessage() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-demographics-block-live">
+  {{ demandGenDemographicsBlockMessage() }}
+</div>
+<!-- The single Demand Gen ad group's several ads' refusal (#5226); empty with one ad. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-demand-gen-ads-error-live">
+  {{ demandGenAdsError() ?? '' }}
+</div>
+<!-- The named Display ad groups' refusal and what the split leaves unsent (#475); empty off Display. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-ad-groups-error-live">
+  {{ displayAdGroupsError() ?? '' }}
+</div>
+<!-- The Display audience pickers' notes, why Create is held for Display audiences, and the held note (#5262). -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audience-picker-live">
+  {{ displayAudiencePickerAnnouncement() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audiences-error-live">
+  {{ displayAudiencesError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audiences-held-live">
+  {{ displayAudiencesHeldMessage() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-audiences-block-live">
+  {{ displayAudiencesBlockMessage() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-display-ad-groups-held-live">
+  {{ displayAdGroupsHeldMessage() }}
+</div>
+<!-- The first ad's display-width errors, announced on the same terms; empty off Search. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-first-ad-copy-live">
+  {{ googleFirstAdHeadlinesError() ?? '' }} {{ googleFirstAdDescriptionsError() ?? '' }}
+</div>
+<!-- Display placement exclusions (#462): the refusal, and the list held after a switch off Display. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-excluded-placements-error-live">
+  {{ googleExcludedPlacementsError() ?? '' }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-excluded-placements-held-live">
+  {{ googleExcludedPlacementsHeldMessage() }}
+</div>
+<!-- Conversion actions held by a channel that takes none, announced on the same terms. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-conversion-actions-withheld-live">
+  {{ googleConversionActionsWithheldMessage() }}
+</div>
+<!-- Device adjustments held by a bidding strategy that takes none, announced on the same terms. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-device-adjustments-held-live">
+  {{ googleDeviceAdjustmentsHeldMessage() }}
+</div>
+<!-- Ad schedule adjustments held by a bidding strategy that ignores them, announced on the same terms. -->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-schedule-adjustments-held-live">
+  {{ googleScheduleAdjustmentsHeldMessage() }}
 </div>
 <!-- Postal-code and radius targets held back by the same capability. Same region shape; see the visible block. -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-locations-capability-live">
@@ -230,7 +345,7 @@
       data-testid="implementation-edit-brief-btn" />
     <span class="text-xs text-gray-500" data-testid="implementation-edit-brief-hint">
       @if (canEditBrief()) {
-        Opens this brief in the Plan tab to change its copy and keywords. Changes made on this tab are not carried over.
+        Opens this brief in the Plan tab to change its copy, keywords and Registration URL. Changes made on this tab are not carried over.
       } @else {
         Available once campaign creation finishes.
       }
@@ -399,6 +514,12 @@
                   The brief plans {{ planned | number: '1.0-2' }} in total.
                 }
               </span>
+              @if (googleBudgetOverPlan()) {
+                <span class="text-xs text-amber-700" data-testid="implementation-budget-over-plan"
+                  >This flight spends more than the brief plans. Lower the daily budget, which can't go below 1, or shorten the flight to stay within the
+                  plan.</span
+                >
+              }
               @if (googleBudgetInvalid()) {
                 <span id="implementation-budget-error" class="text-xs text-red-600" data-testid="implementation-budget-error"
                   >Enter a daily budget of at least 1.</span
@@ -458,6 +579,7 @@
               <input
                 type="checkbox"
                 formControlName="includeSearch"
+                data-testid="implementation-include-search"
                 (change)="onGoogleChannelPicked('search', $event)"
                 [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
                 class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
@@ -473,7 +595,8 @@
                   formControlName="includeDemandGen"
                   (change)="onGoogleChannelPicked('demand-gen', $event)"
                   [attr.aria-describedby]="googleChannelNoteShown() ? 'implementation-google-channel-single-note' : null"
-                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  data-testid="implementation-include-demand-gen" />
                 Demand Gen Campaign
               </label>
             }
@@ -995,9 +1118,8 @@
         Google Ads: campaign languages.
 
         Rendered against ONE channel — `googleLanguagesChannel()`, the same one the request will
-        carry — because upstream's `validateCriteriaPlan` accepts campaign languages on Search,
-        Performance Max, Video and Display but REFUSES the whole non-location criteria set on
-        Demand Gen. Offering the control on Demand Gen would offer a refusal.
+        carry. Campaign-service v1.0.31's `validateCriteriaPlan` takes languages on every channel; on
+        Demand Gen it attaches them to the ad group (#459).
 
         Empty means every language, which is Google's own default: this list only ever NARROWS, so
         an untouched section changes nothing about what the campaign serves.
@@ -1053,12 +1175,113 @@
       }
 
       <!--
-        Languages picked under one channel and then withheld because the dispatched channel takes
-        none. The list is held, not sent, so the campaign serves in every language — said out loud
-        here rather than left for the operator to infer from the section disappearing.
+        Google Ads: ad schedule and device bid adjustments (#4991). Each section opens only on a channel
+        the BFF and campaign-service accept it on; the panel's errors are the shared refusals the BFF
+        answers the create with, and Create waits on them.
       -->
-      @if (googleLanguagesWithheldMessage(); as warning) {
-        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-languages-withheld">
+      @if (googleAdSchedulesAvailable() || googleDeviceBidModifiersAvailable()) {
+        <lfx-campaign-google-targeting-panel
+          [showAdSchedules]="googleAdSchedulesAvailable()"
+          [showDevices]="googleDeviceBidModifiersAvailable()"
+          [adSchedules]="googleAdSchedules()"
+          (adSchedulesChange)="onGoogleAdSchedulesChange($event)"
+          [devices]="googleDeviceVocabulary()"
+          [deviceBidModifiers]="googleDeviceBidModifiers()"
+          (deviceBidModifiersChange)="onGoogleDeviceBidModifiersChange($event)"
+          [adSchedulesError]="googleAdSchedulesError()"
+          [devicesError]="googleDeviceBidModifiersError()"
+          [scheduleAdjustBlockedReason]="googleScheduleAdjustBlockedReason()"
+          [deviceAdjustBlockedReason]="googleDeviceAdjustBlockedReason()" />
+      }
+      @if (googleScheduleAdjustmentsHeldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-schedule-adjustments-held">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googleDeviceAdjustmentsHeldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-device-adjustments-held">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      <!--
+        Google Ads: demographic exclusions and excluded locations (#4991). Demographics open only on a
+        channel the shared fence accepts; excluded locations on every Google channel of the
+        campaign-service road, as upstream fences them on none. Errors are the shared refusals the BFF
+        answers the create with, and Create waits on them.
+      -->
+      @if (googleDemographicExclusionsAvailable() || googleExcludedGeoTargetsAvailable()) {
+        <lfx-campaign-google-exclusions-panel
+          [showDemographics]="googleDemographicExclusionsAvailable()"
+          [showExcludedGeos]="googleExcludedGeoTargetsAvailable()"
+          [excludedAgeRanges]="googleExcludedAgeRanges()"
+          (excludedAgeRangesChange)="onGoogleExcludedAgeRangesChange($event)"
+          [excludedGenders]="googleExcludedGenders()"
+          (excludedGendersChange)="onGoogleExcludedGendersChange($event)"
+          [excludedGeoTargets]="googleExcludedGeoTargets()"
+          (excludedGeoTargetsChange)="onGoogleExcludedGeoTargetsChange($event)"
+          [demographicsError]="googleDemographicExclusionsError()"
+          [excludedGeosError]="googleExcludedGeoTargetsError()" />
+      }
+      <!--
+        Google Ads: ad-group demographics (linuxfoundation/lfx-v2-campaign-service#473, #497, #499) —
+        income and parental-status exclusions, Search's observed dimensions and Display's targeting,
+        each section on its own shared channel fence. The error is the shared refusal the BFF answers
+        the create with, and Create waits on it.
+      -->
+      @if (googleBiddingChannel()) {
+        <lfx-campaign-google-demographics-panel
+          [showIncomeExclusions]="googleIncomeExclusionsAvailable()"
+          [showParentalExclusions]="googleParentalExclusionsAvailable()"
+          [showObserved]="googleObservedDemographicsAvailable()"
+          [showTargeting]="googleDemographicTargetingAvailable()"
+          [excludedIncomeRanges]="googleExcludedIncomeRanges()"
+          (excludedIncomeRangesChange)="onGoogleExcludedIncomeRangesChange($event)"
+          [excludedParentalStatuses]="googleExcludedParentalStatuses()"
+          (excludedParentalStatusesChange)="onGoogleExcludedParentalStatusesChange($event)"
+          [observedDemographics]="googleObservedDemographics()"
+          (observedDemographicsChange)="onGoogleObservedDemographicsChange($event)"
+          [displayDemographics]="googleDisplayDemographics()"
+          (displayDemographicsChange)="onGoogleDisplayDemographicsChange($event)"
+          [error]="googleAdGroupDemographicsError()" />
+      }
+      @if (googleTargetingWithheldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-targeting-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+
+      <!--
+        Google Ads: Display placement exclusions (#462). DISPLAY ONLY, as campaign-service attaches them
+        only on the Display cascade; on another channel the box is hidden and what it holds is kept but
+        not sent, and the note below says so. Empty sends no key.
+      -->
+      @if (googleExcludedPlacementsAvailable()) {
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-excluded-placements-section">
+          <label class="text-xs font-medium text-gray-700" for="google-excluded-placements">Placement exclusions (one website per line)</label>
+          <lfx-textarea
+            [form]="campaignForm"
+            control="googleExcludedPlacements"
+            inputId="google-excluded-placements"
+            [rows]="4"
+            placeholder="example.com"
+            [describedBy]="
+              googleExcludedPlacementsError() ? 'google-excluded-placements-hint google-excluded-placements-error' : 'google-excluded-placements-hint'
+            "
+            [invalid]="!!googleExcludedPlacementsError()"
+            data-testid="implementation-google-excluded-placements" />
+          <span id="google-excluded-placements-hint" class="text-xs text-gray-500">
+            Websites this campaign's ads must never appear on, as bare domains such as example.com, up to {{ googleMaxExcludedPlacements }}. Leave out https://
+            and any path.
+          </span>
+          @if (googleExcludedPlacementsError(); as error) {
+            <span id="google-excluded-placements-error" class="text-xs text-red-600" data-testid="implementation-google-excluded-placements-error">{{
+              error
+            }}</span>
+          }
+        </div>
+      }
+      @if (googleExcludedPlacementsHeldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-excluded-placements-held">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
@@ -1066,26 +1289,69 @@
       <!--
         Google Ads: audience segments.
 
-        SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — upstream attaches audience criteria
-        to the Search ad group and refuses them on every other channel rather than dropping them.
-        Each entry is an EXISTING user list's resource name: campaign-service creates no audiences
-        and lists none, so there is nothing to pick from. Empty sends no key, so an untouched
-        section changes nothing about the campaign.
+        SEARCH ONLY, gated on `googleAudienceSegmentsAvailable` — sent as `campaignAudienceSegments`,
+        which upstream observes on the whole Search campaign and refuses on every other channel rather
+        than dropping them (linuxfoundation/lfx-v2-campaign-service#525).
+        Each entry is an EXISTING user list's resource name. The picker lists the account's user lists
+        (#5244) and adds the picked one's resource name exactly as typing it would; the typed box stays
+        for a list the picker does not show. Empty sends no key, so an untouched section changes
+        nothing about the campaign.
       -->
       @if (googleAudienceSegmentsAvailable()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-audience-segments-section">
           <label class="mb-2 block text-xs font-medium text-gray-700" for="google-audience-segment-add">
             Google Audience Segments ({{ googleAudienceSegments().length }}/{{ googleMaxAudienceSegments }})
           </label>
+          <p class="mb-3 text-xs text-gray-500" data-testid="implementation-google-audience-segments-scope">
+            These lists apply to the whole campaign, including any ad group added later. They only observe: Google reports on them without narrowing who sees
+            the ads.
+          </p>
+          @switch (googleUserListPicker().status) {
+            @case ('loaded') {
+              @if (googleUserListPickerOptions().length > 0 && !googleAudienceSegmentsFull()) {
+                <div class="mb-3">
+                  <lfx-ui-combobox
+                    #googleUserListCombobox
+                    label="Pick a user list"
+                    placeholder="Search this account's user lists"
+                    emptyText="No user list matches"
+                    size="small"
+                    (valueChange)="onGoogleUserListPicked($event)"
+                    data-testid="implementation-google-user-list-picker">
+                    @for (list of googleUserListPickerOptions(); track list.resourceName) {
+                      <lfx-ui-option [value]="list.resourceName" [label]="list.label" />
+                    }
+                  </lfx-ui-combobox>
+                </div>
+              }
+              @if (googleUserListPicker().lists.length === 0) {
+                <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-empty">{{ userListPickerEmpty }}</p>
+              } @else if (googleUserListPicker().truncated) {
+                <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-truncated">{{ userListPickerTruncated }}</p>
+              }
+            }
+            @case ('loading') {
+              <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-loading">{{ userListPickerLoading }}</p>
+            }
+            @case ('unavailable') {
+              <p class="mb-2 text-xs text-gray-500" data-testid="implementation-google-user-list-picker-unavailable">
+                {{ googleUserListPicker().reason }}
+              </p>
+            }
+          }
           <div class="flex flex-wrap items-center gap-2">
             @for (segment of googleAudienceSegments(); track segment; let i = $index) {
-              <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                {{ segment }}
+              @let segmentName = googleAudienceSegmentNames().get(segment) ?? segment;
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                [attr.data-testid]="'implementation-google-audience-segment-' + i">
+                {{ segmentName }}
                 <button
+                  #googleAudienceSegmentRemove
                   type="button"
                   (click)="removeGoogleAudienceSegment(i)"
                   class="ml-0.5 text-blue-600 hover:text-blue-800"
-                  [attr.aria-label]="'Remove ' + segment"
+                  [attr.aria-label]="'Remove ' + segmentName"
                   [attr.data-testid]="'implementation-google-audience-segment-remove-' + i">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                 </button>
@@ -1095,6 +1361,7 @@
               <!-- Free text, as the callout box is: the resource name is the input, and its shape is
                    judged on add so a refusal arrives while the text is still in the box. -->
               <input
+                #googleAudienceSegmentAddInput
                 id="google-audience-segment-add"
                 type="text"
                 placeholder="+ Add user list resource name"
@@ -1121,10 +1388,20 @@
             <p id="google-audience-segment-shape" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-shape">
               Enter a user list's full resource name, like customers/1234567890/userLists/987654321 — the customer id without dashes.
             </p>
+          } @else if (googleAudienceSegmentDraftError() === 'id') {
+            <p id="google-audience-segment-id" role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segment-id">
+              Write the list id as Google Ads shows it: a positive number with no leading zeros, like customers/1234567890/userLists/987654321.
+            </p>
           } @else if (googleAudienceSegments().length === 0) {
             <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-audience-segments-default">
-              No audience segments added — this campaign targets no user lists.
+              No audience segments added — this campaign observes no user lists.
             </span>
+          }
+          <!-- A restored list the campaign-level field refuses: Create waits until it is removed. -->
+          @if (googleAudienceSegmentsInvalidPosition(); as position) {
+            <p role="alert" class="mt-2 text-xs text-red-600" data-testid="implementation-google-audience-segments-invalid">
+              Audience segment {{ position }} cannot be sent: its list id is not written as Google Ads shows it. Remove it, then pick or type the list again.
+            </p>
           }
         </div>
       }
@@ -1177,9 +1454,196 @@
       }
 
       <!--
-        Callouts and sitelinks withheld because the create capability is not an explicit yes — the
-        state in which the two channel warnings below cannot speak, because the channel they read is
-        itself null. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
+        Retained Demand Gen audiences the request cannot carry (#5244), on the segments block's terms: it
+        sits outside Demand Gen's creative section, which is hidden while the cutover is dark or its answer
+        is still out, so the held audiences are listed here while that section is not on screen. Create is
+        held while it shows; Remove is offered in every state.
+      -->
+      @if (demandGenAudienceBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-demand-gen-audience-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!demandGenAdsShown() && !demandGenAdGroupsActive()) {
+            <ul class="flex flex-col gap-0.5" data-testid="implementation-demand-gen-audience-block-list">
+              @for (held of demandGenAudienceRetained(); track $index) {
+                <li class="break-all">{{ held.owner }}: {{ held.audience }}</li>
+              }
+            </ul>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-demand-gen-audience-block-retry" />
+            }
+            <lfx-button
+              [label]="demandGenAudienceRetained().length === 1 ? 'Remove audience' : 'Remove audiences'"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onDemandGenAudiencesRemoveAll()"
+              data-testid="implementation-demand-gen-audience-block-remove" />
+          </div>
+        </div>
+      }
+
+      <!--
+        Retained Demand Gen demographics the request cannot carry, on the audience block's terms: listed by
+        ad group while Demand Gen's creative section is not on screen. Create is held while it shows; Clear is
+        offered in every state.
+      -->
+      @if (demandGenDemographicsBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-demand-gen-demographics-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!demandGenAdsShown() && !demandGenAdGroupsActive()) {
+            <ul class="flex flex-col gap-0.5" data-testid="implementation-demand-gen-demographics-block-list">
+              @for (owner of demandGenDemographicsRetained(); track $index) {
+                <li class="break-all">{{ owner }}</li>
+              }
+            </ul>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-demand-gen-demographics-block-retry" />
+            }
+            <lfx-button
+              label="Clear demographics"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onDemandGenDemographicsClearAll()"
+              data-testid="implementation-demand-gen-demographics-block-clear" />
+          </div>
+        </div>
+      }
+
+      <!--
+        Retained Display audiences the request cannot carry (#5262), on the Demand Gen block's terms: listed here
+        while Display's creative section, where their chips sit, is not on screen. Create is held while it shows; Remove is offered in
+        every state.
+      -->
+      @if (displayAudiencesBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-display-audiences-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!displayCreativeShown()) {
+            <ul class="flex flex-col gap-0.5" data-testid="implementation-display-audiences-block-list">
+              @for (held of displayAudiencesRetained(); track $index) {
+                <li class="break-all">{{ held.owner }}: {{ displayAudienceNames().get(held.audience) ?? held.audience }}</li>
+              }
+            </ul>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-display-audiences-block-retry" />
+            }
+            <lfx-button
+              [label]="displayAudiencesRetained().length === 1 ? 'Remove audience' : 'Remove audiences'"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="onDisplayAudiencesRemoveAll()"
+              data-testid="implementation-display-audiences-block-remove" />
+          </div>
+        </div>
+      }
+
+      <!--
+        A retained Performance Max audience signal the request cannot carry (#5262), on the Demand Gen
+        audience block's terms. The signal's own section shows only on the campaign-service road, so the held
+        signal is listed here while that section is not on screen. Create is held while it shows; Remove is
+        offered in every state.
+      -->
+      @if (performanceMaxAudienceSignalBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-performance-max-audience-signal-block-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (!performanceMaxAudienceSignalShown()) {
+            <p class="break-all" data-testid="implementation-performance-max-audience-signal-block-value">
+              Audience signal: {{ performanceMaxAudienceSignal() }}
+            </p>
+          }
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryCreateCapabilities.emit()"
+                data-testid="implementation-performance-max-audience-signal-block-retry" />
+            }
+            <lfx-button
+              label="Remove audience signal"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="removePerformanceMaxAudienceSignal()"
+              data-testid="implementation-performance-max-audience-signal-block-remove" />
+          </div>
+        </div>
+      }
+
+      <!--
+        Ad extensions and search themes withheld because the create capability is not an explicit yes, on a
+        channel that takes them — the state the channel warnings below leave to it. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
         the only action and only where a read could succeed.
       -->
       @if (googleExtensionsCapabilityBlock(); as block) {
@@ -1245,9 +1709,9 @@
       <!--
         Google Ads: callout extensions.
 
-        SEARCH ONLY, and the gate is `googleCalloutsAvailable` rather than `showGoogleSection` —
-        upstream's `validateAssetPlan` refuses the whole extension set on any other channel at
-        preflight, BEFORE the budget mutate, so a callout sent on a Performance Max create produces
+        SEARCH AND PERFORMANCE MAX, and the gate is `googleCalloutsAvailable` rather than
+        `showGoogleSection` — upstream's `validateAssetPlan` refuses callouts on Demand Gen, Display and
+        Video at preflight, BEFORE the budget mutate, so a callout sent on a Demand Gen create produces
         no campaign at all rather than a campaign without callouts. Hiding the section there is the
         same withholding the payload makes, in the one place the operator can see it.
       -->
@@ -1326,13 +1790,14 @@
       <!--
         Google Ads: sitelink extensions.
 
-        Same gate as the callouts above, and for the same reason: `validateAssetPlan` counts EVERY
-        extension list together and refuses the whole create on any channel but Search, before the
-        budget mutate. Four fields per entry rather than one string, so this is a sub-form with its
-        own add button instead of an enter-to-add box — a sitelink is only addable once both of its
-        required fields are filled, which no single input can express.
+        Gated on `googleSitelinksAvailable`, not the callouts' gate: `validateAssetPlan` takes
+        sitelinks on Search and Performance Max, and alone on Demand Gen (campaign-service v1.0.31),
+        and refuses them on Display and Video before the budget mutate. Four fields per entry rather than one
+        string, so this is a sub-form with its own add button instead of an enter-to-add box — a
+        sitelink is only addable once both of its required fields are filled, which no single input
+        can express.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleSitelinksAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-sitelinks-section"
@@ -1480,7 +1945,7 @@
       <!--
         Google Ads: structured snippets.
 
-        Same gate and same reason as the two sections above. TYPED, not generated: there is no
+        Same gate and same reason as the callouts above. TYPED, not generated: there is no
         generator event for snippets, so this section is the only way one reaches the campaign — and
         the only way one survives a visit is the implementation draft.
 
@@ -1601,15 +2066,15 @@
       <!--
         Google Ads: call extensions.
 
-        Same gate and same reason as the three sections above — `validateAssetPlan` refuses every
-        extension list on a channel but Search. Typed, as the snippets are. Both boxes are required:
+        Gated on `googleAssetExtensionsAvailable`, Search alone, not the callouts' gate —
+        `validateAssetPlan` refuses call extensions on every channel but Search, Performance Max included. Typed, as the snippets are. Both boxes are required:
         Google interprets a number against its country and has no default to pick.
 
         One message line for the sub-form rather than one per refusal: the refusals come from the
         shared judge the BFF also refuses by, already as sentences, so the line says exactly what the
         create would be refused for.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleAssetExtensionsAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-call-extensions-section"
@@ -1689,12 +2154,12 @@
       <!--
         Google Ads: promotion extensions.
 
-        Same gate. Google's two oneofs are each ONE select here rather than two boxes, so the form
+        Same gate as the call extensions. Google's two oneofs are each ONE select here rather than two boxes, so the form
         cannot express what upstream refuses: exactly one discount (percentage or money), and at most
         one condition (a coupon code or a minimum order). The currency box appears only while a money
         field is in use, the one case upstream reads it.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleAssetExtensionsAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-promotions-section"
@@ -1923,12 +2388,12 @@
       <!--
         Google Ads: price extensions.
 
-        Same gate. A table of rows, so the sub-form holds Google's minimum of three rows from the
+        Same gate as the call extensions. A table of rows, so the sub-form holds Google's minimum of three rows from the
         start and lets the operator grow it to eight; the remove-row control disappears at three and
         the add-row control at eight, so no table the form can build is refused for its size. One
         currency box for the table, copied onto each row's `currencyCode` on the wire.
       -->
-      @if (googleCalloutsAvailable()) {
+      @if (googleAssetExtensionsAvailable()) {
         <div
           class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
           data-testid="implementation-google-prices-section"
@@ -2168,6 +2633,10 @@
             </div>
           }
 
+          @if (googleTargetCpaWithheldMessage(); as message) {
+            <p class="text-xs text-gray-500" data-testid="implementation-google-target-cpa-withheld">{{ message }}</p>
+          }
+
           @if (googleTakesTargetRoas()) {
             <div class="flex flex-col gap-2">
               <label class="block text-xs font-medium text-gray-700" for="google-target-roas">Target ROAS (ratio)</label>
@@ -2185,6 +2654,33 @@
 
           @if (googleTakesConversionActions()) {
             <div class="flex flex-col gap-2">
+              @switch (googleConversionActionPicker().status) {
+                @case ('loaded') {
+                  <lfx-ui-multi-select
+                    label="Pick conversion actions"
+                    size="small"
+                    [values]="googlePickedConversionActions()"
+                    (valuesChange)="onGooglePickedConversionActionsChange($event)"
+                    data-testid="implementation-google-conversion-action-picker">
+                    @for (action of googleConversionActionPicker().actions; track action.id) {
+                      <lfx-ui-option [value]="action.id" [label]="action.label" />
+                    }
+                  </lfx-ui-multi-select>
+                  @if (googleConversionActionPicker().actions.length === 0) {
+                    <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-empty">{{ conversionActionPickerEmpty }}</p>
+                  }
+                }
+                @case ('loading') {
+                  <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-loading">
+                    {{ conversionActionPickerLoading }}
+                  </p>
+                }
+                @case ('unavailable') {
+                  <p class="text-xs text-gray-500" data-testid="implementation-google-conversion-action-picker-unavailable">
+                    {{ googleConversionActionPicker().reason }}
+                  </p>
+                }
+              }
               <label class="block text-xs font-medium text-gray-700" for="google-conversion-actions">Conversion Actions (one per line)</label>
               <textarea
                 id="google-conversion-actions"
@@ -2192,11 +2688,19 @@
                 formControlName="googleConversionActions"
                 class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 data-testid="implementation-google-conversion-actions"></textarea>
-              <span class="text-xs text-gray-400">
+              <span class="text-xs text-gray-500">
                 An id such as 987654321, or a full customers/&lt;id&gt;/conversionActions/&lt;id&gt; name. Leave blank to use the account's own conversion
                 goals.
+                @if (googleConversionActionPicker().status === 'loaded') {
+                  Picking from the list above fills this box; any other id stays, trimmed, and blank lines are dropped.
+                }
               </span>
             </div>
+          }
+          @if (googleConversionActionsWithheldMessage(); as warning) {
+            <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-conversion-actions-withheld">
+              <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+            </p>
           }
 
           @if (googleBiddingError()) {
@@ -2234,6 +2738,7 @@
                   type="text"
                   [formControlName]="i"
                   [maxlength]="charLimits.searchHeadline"
+                  [attr.aria-describedby]="googleFirstAdHeadlinesError() === null ? null : 'implementation-headlines-width-error'"
                   placeholder="Headline (max {{ charLimits.searchHeadline }} chars)"
                   class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   [attr.data-testid]="'implementation-headline-' + i" />
@@ -2246,6 +2751,9 @@
               </div>
             }
           </div>
+          @if (googleFirstAdHeadlinesError(); as message) {
+            <p id="implementation-headlines-width-error" class="mt-2 text-xs text-red-600" data-testid="implementation-headlines-width-error">{{ message }}</p>
+          }
         </div>
 
         <!-- Google Ads: Descriptions -->
@@ -2267,6 +2775,7 @@
                 <textarea
                   [formControlName]="i"
                   [maxlength]="charLimits.searchDescription"
+                  [attr.aria-describedby]="googleFirstAdDescriptionsError() === null ? null : 'implementation-descriptions-width-error'"
                   placeholder="Description (max {{ charLimits.searchDescription }} chars)"
                   rows="2"
                   class="flex-1 resize-none rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -2284,15 +2793,50 @@
               </div>
             }
           </div>
+          @if (googleFirstAdDescriptionsError(); as message) {
+            <p id="implementation-descriptions-width-error" class="mt-2 text-xs text-red-600" data-testid="implementation-descriptions-width-error">
+              {{ message }}
+            </p>
+          }
         </div>
+      }
+
+      <!--
+        Google Ads: the Search campaign's Search partners opt-in, display paths, its second and third
+        ads, and its create-time negative keywords (#4991). Search only, on the campaign-service road; errors are the shared
+        refusals the BFF answers the create with, and Create waits on them.
+      -->
+      @if (googleSearchAdsAvailable()) {
+        <lfx-campaign-google-search-ads-panel
+          [path1]="googleSearchPath1()"
+          (path1Change)="onGoogleSearchPath1Change($event)"
+          [path2]="googleSearchPath2()"
+          (path2Change)="onGoogleSearchPath2Change($event)"
+          [additionalAds]="googleAdditionalSearchAds()"
+          (additionalAdsChange)="onGoogleAdditionalSearchAdsChange($event)"
+          [searchPartners]="googleSearchPartners()"
+          (searchPartnersChange)="onGoogleSearchPartnersChange($event)"
+          [negativeKeywordsText]="googleNegativeKeywordsText()"
+          (negativeKeywordsTextChange)="onGoogleNegativeKeywordsTextChange($event)"
+          [negativeKeywordMatchType]="googleNegativeKeywordMatchType()"
+          (negativeKeywordMatchTypeChange)="onGoogleNegativeKeywordMatchTypeChange($event)"
+          [pathsError]="googleSearchPathsError()"
+          [adsError]="googleAdditionalSearchAdsError()"
+          [negativeKeywordsError]="googleNegativeKeywordsError()" />
+      }
+      @if (googleSearchAdsWithheldMessage(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-search-ads-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
       }
 
       <!--
         Google Ads: per-channel creative.
 
         One section per selected channel that carries a creative OBJECT rather than the two copy
-        arrays above — Demand Gen, Performance Max and Display. Search is absent because its copy IS
-        those arrays, and Video because Google Ads cannot create a Video campaign at all.
+        arrays above — Demand Gen, Performance Max, Display, and Search, whose object is its campaign
+        assets (ad images, business logo, business name, #5262) because its copy IS those arrays.
+        Video is absent because Google Ads cannot create a Video campaign at all.
 
         Everything rendered here comes from `googleCreativeSections()`, which resolves the shared
         field catalogue: the fields, their order, their bounds and their hints are stated once, in
@@ -2305,68 +2849,920 @@
         whenever Search is ticked alongside it. See its docblock for why each one is withheld rather
         than shown and ignored.
       -->
+      <!-- Tracked by the channel, so the Demand Gen "Ad format" choice below stays mounted (and keeps
+           keyboard focus) when the format changes. Only the fields container re-mounts on a format
+           change, through the one-item loop tracked by the group further down: a `formGroupName`
+           does not re-register when its name changes in place. -->
       @for (section of googleCreativeSections(); track section.channel) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" [attr.data-testid]="'implementation-creative-section-' + section.channel">
           <h3 class="text-sm font-semibold text-gray-900">{{ section.label }} Creative</h3>
           <!--
             The notice sits on every section rather than once above them because a warning about
-            what an empty creative costs belongs beside the fields it is about. More than one
+            what an empty creative costs belongs beside the fields it is about. Search's says its
+            assets are optional instead, because its campaign serves without them. More than one
             section can be on screen — ticking Performance Max and Display renders both — and only
             `canSubmit` refuses that pair, so a single notice above the group would read as being
             about whichever section the operator happened to be looking at.
           -->
-          <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">{{ googleCreativeNotice }}</p>
-          @if (section.channel === 'performance-max' && performanceMaxPrefillShown()) {
-            <p class="mt-1 text-xs text-gray-500" data-testid="implementation-creative-prefill-notice-performance-max">{{ performanceMaxPrefillNotice }}</p>
+          <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-notice-' + section.channel">
+            {{ googleCreativeNotices[section.channel] }}
+          </p>
+          <!-- Only over the seeded image creative's own fields: not the Demand Gen video ad, nor a split. -->
+          @if (googleCreativePrefillShown()[section.channel] && section.format === 'image' && section.fields.length > 0) {
+            <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'implementation-creative-prefill-notice-' + section.channel">
+              {{ googleCreativePrefillNotices[section.channel] }}
+            </p>
           }
-          <div class="mt-4 flex flex-col gap-4" [formGroupName]="section.groupName">
-            @for (field of section.fields; track field.control) {
-              <div class="flex flex-col gap-1">
-                <label class="text-xs font-medium text-gray-700" [attr.for]="section.channel + '-' + field.control">{{ field.label }}</label>
-                @if (field.kind === 'list') {
-                  <textarea
-                    [id]="section.channel + '-' + field.control"
-                    [formControlName]="field.control"
-                    (blur)="onGoogleImageFieldBlur(section.groupName, field)"
-                    rows="3"
-                    class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
-                } @else {
-                  <input
-                    type="text"
-                    [id]="section.channel + '-' + field.control"
-                    [formControlName]="field.control"
-                    class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
-                }
-                <span class="text-xs text-gray-400">{{ field.guidance }}</span>
-                @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
-                  <span class="text-xs text-red-600" [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control">{{
-                    error
-                  }}</span>
-                }
-                @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
-                  <span
-                    class="text-xs break-all text-amber-700"
-                    [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
-                    >{{ warning }}</span
-                  >
-                }
-                <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
+          <!--
+            Demand Gen split into named ad groups (#5226), each with its own image or video ad. On, the
+            groups replace the single ad below, which is kept but not sent; off, the groups are kept
+            but not sent. The note under the checkbox says which.
+          -->
+          @if (section.channel === 'demand-gen') {
+            <!-- `change` bubbles from the wrapper's own input to its host, as on the postal geo box. -->
+            <lfx-checkbox
+              [form]="campaignForm"
+              control="demandGenAdGroupsSplit"
+              inputId="implementation-demand-gen-ad-groups-split-input"
+              label="Split into named ad groups"
+              [ariaDescribedBy]="demandGenAdGroupsHeldMessage() ? 'implementation-demand-gen-ad-groups-held' : ''"
+              (change)="onDemandGenAdGroupsSplitChange()"
+              class="mt-4 block"
+              data-testid="implementation-demand-gen-ad-groups-split" />
+            @if (demandGenAdGroupsHeldMessage()) {
+              <p id="implementation-demand-gen-ad-groups-held" class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-ad-groups-held">
+                {{ demandGenAdGroupsHeldMessage() }}
+              </p>
+            }
+            @if (demandGenAudienceHeldMessage()) {
+              <p class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-audience-held">{{ demandGenAudienceHeldMessage() }}</p>
+            }
+            @if (demandGenDemographicsHeldMessage()) {
+              <p class="mt-1 text-xs text-gray-500" data-testid="implementation-demand-gen-demographics-held">{{ demandGenDemographicsHeldMessage() }}</p>
+            }
+          }
+          @if (section.channel === 'demand-gen' && demandGenAdGroupsActive()) {
+            <div class="mt-4 flex flex-col gap-4" formArrayName="demandGenAdGroups" data-testid="implementation-demand-gen-ad-groups">
+              <p class="text-xs text-gray-500">
+                Up to {{ demandGenMaxAdGroups }} ad groups, such as Retargeting and Prospecting, each with its own ad. Google Ads names each one after the
+                event, then " - Display | " and its name.
+              </p>
+              @for (group of campaignForm.controls.demandGenAdGroups.controls; track group; let i = $index) {
+                <fieldset
+                  class="flex flex-col gap-3 rounded-md border border-gray-200 p-4"
+                  [formGroupName]="i"
+                  [attr.data-testid]="'implementation-demand-gen-ad-group-' + i">
+                  <legend class="px-1 text-xs font-medium text-gray-700">Ad group {{ i + 1 }}</legend>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="'demand-gen-ad-group-' + i + '-name'">Name</label>
+                    <lfx-input-text
+                      [form]="group"
+                      control="name"
+                      type="text"
+                      size="small"
+                      [inputId]="'demand-gen-ad-group-' + i + '-name'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-name-' + i" />
+                  </div>
+                  @if (group.controls.ads.length > 0) {
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" [attr.for]="'demand-gen-ad-group-' + i + '-ad-1-name'">Ad 1 name</label>
+                      <lfx-input-text
+                        [form]="group"
+                        control="adName"
+                        type="text"
+                        size="small"
+                        [inputId]="'demand-gen-ad-group-' + i + '-ad-1-name'"
+                        [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-ad-1-name'" />
+                    </div>
+                  }
+                  <div class="flex flex-wrap gap-4" [attr.data-testid]="'implementation-demand-gen-ad-group-format-' + i">
+                    <lfx-radio-button
+                      [form]="group"
+                      control="format"
+                      [name]="'demand-gen-ad-group-' + i + '-format'"
+                      value="image"
+                      label="Image ad"
+                      [inputId]="'demand-gen-ad-group-' + i + '-format-image'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-format-image-' + i" />
+                    <lfx-radio-button
+                      [form]="group"
+                      control="format"
+                      [name]="'demand-gen-ad-group-' + i + '-format'"
+                      value="video"
+                      label="Video ad (YouTube)"
+                      [inputId]="'demand-gen-ad-group-' + i + '-format-video'"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-format-video-' + i" />
+                  </div>
+                  <!-- One-item loop tracked by the format, so the fields re-mount on the other group when it changes. -->
+                  @for (format of [group.controls.format.value]; track format) {
+                    <div class="flex flex-col gap-4" [formGroupName]="format === 'video' ? 'videoCreative' : 'creative'">
+                      @for (field of demandGenAdGroupFields[format]; track field.control) {
+                        @let fieldId = 'demand-gen-ad-group-' + i + '-' + field.control;
+                        @let fieldError = demandGenAdGroupFieldErrors()[i + '.' + format + '.' + field.control];
+                        <div class="flex flex-col gap-1">
+                          <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
+                          @if (field.kind === 'list') {
+                            <lfx-textarea
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              [inputId]="fieldId"
+                              [rows]="3"
+                              [describedBy]="fieldError ? fieldId + '-error' : undefined"
+                              [invalid]="!!fieldError"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          } @else if (field.options) {
+                            <lfx-select
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              [options]="field.selectOptions ?? []"
+                              [inputId]="fieldId"
+                              size="small"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          } @else {
+                            <lfx-input-text
+                              [form]="format === 'video' ? group.controls.videoCreative : group.controls.creative"
+                              [control]="field.control"
+                              type="text"
+                              size="small"
+                              [inputId]="fieldId"
+                              [describedBy]="fieldError ? fieldId + '-error' : null"
+                              [invalid]="!!fieldError"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-' + i + '-' + field.control" />
+                          }
+                          <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                          @if (fieldError) {
+                            <span
+                              class="text-xs text-red-600"
+                              [id]="fieldId + '-error'"
+                              [attr.data-testid]="'implementation-demand-gen-ad-group-error-' + i + '-' + field.control"
+                              >{{ fieldError }}</span
+                            >
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                  <ng-container
+                    *ngTemplateOutlet="
+                      demandGenAdListTemplate;
+                      context: { $implicit: i, ads: group.controls.ads, prefix: 'demand-gen-ad-group-' + i + '-ad' }
+                    " />
+                  <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: i, audience: group.controls.audience }" />
+                  <ng-container
+                    *ngTemplateOutlet="
+                      demandGenDemographicsTemplate;
+                      context: { $implicit: i, demographics: group.controls.demographics, audience: group.controls.audience }
+                    " />
+                  <div>
+                    <lfx-button
+                      label="Remove ad group"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="removeDemandGenAdGroup(i)"
+                      [attr.data-testid]="'implementation-demand-gen-ad-group-remove-' + i" />
+                  </div>
+                </fieldset>
+              }
+              @if (campaignForm.controls.demandGenAdGroups.length < demandGenMaxAdGroups) {
+                <div>
+                  <lfx-button
+                    label="Add ad group"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="addDemandGenAdGroup()"
+                    data-testid="implementation-demand-gen-ad-group-add" />
+                </div>
+              }
+              @if (demandGenAdGroupsError(); as error) {
+                <p class="text-xs text-red-600" data-testid="implementation-demand-gen-ad-groups-error">{{ error }}</p>
+              }
+            </div>
+          }
+          <!--
+            Display split into named ad groups (#475), each with its own responsive display ad, on the
+            Demand Gen split's terms: on, the groups replace the single ad, which is kept but not sent;
+            off, the groups are kept but not sent. The note under the checkbox says which.
+          -->
+          @if (section.channel === 'display') {
+            <lfx-checkbox
+              [form]="campaignForm"
+              control="displayAdGroupsSplit"
+              inputId="implementation-display-ad-groups-split-input"
+              label="Split into named ad groups"
+              [ariaDescribedBy]="displayAdGroupsHeldMessage() ? 'implementation-display-ad-groups-held' : ''"
+              (change)="onDisplayAdGroupsSplitChange()"
+              class="mt-4 block"
+              data-testid="implementation-display-ad-groups-split" />
+            @if (displayAdGroupsHeldMessage()) {
+              <p id="implementation-display-ad-groups-held" class="mt-1 text-xs text-gray-500" data-testid="implementation-display-ad-groups-held">
+                {{ displayAdGroupsHeldMessage() }}
+              </p>
+            }
+          }
+          @if (section.channel === 'display' && displayAdGroupsActive()) {
+            <div class="mt-4 flex flex-col gap-4" formArrayName="displayAdGroups" data-testid="implementation-display-ad-groups">
+              <p class="text-xs text-gray-500">
+                Up to {{ displayMaxAdGroups }} ad groups, such as Retargeting and Prospecting, each with its own ad. Google Ads names each one after the event,
+                then " - Display Network | " and its name.
+              </p>
+              @for (group of campaignForm.controls.displayAdGroups.controls; track group; let i = $index) {
+                <fieldset
+                  class="flex flex-col gap-3 rounded-md border border-gray-200 p-4"
+                  [formGroupName]="i"
+                  [attr.data-testid]="'implementation-display-ad-group-' + i">
+                  <legend class="px-1 text-xs font-medium text-gray-700">Ad group {{ i + 1 }}</legend>
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="'display-ad-group-' + i + '-name'">Name</label>
+                    <lfx-input-text
+                      [form]="group"
+                      control="name"
+                      type="text"
+                      size="small"
+                      [inputId]="'display-ad-group-' + i + '-name'"
+                      [attr.data-testid]="'implementation-display-ad-group-name-' + i" />
+                  </div>
+                  <div class="flex flex-col gap-4" formGroupName="creative">
+                    @for (field of displayAdGroupFields; track field.control) {
+                      @let fieldId = 'display-ad-group-' + i + '-' + field.control;
+                      @let fieldError = displayAdGroupFieldErrors()[i + '.' + field.control];
+                      <div class="flex flex-col gap-1">
+                        <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
+                        @if (field.kind === 'list') {
+                          <lfx-textarea
+                            [form]="group.controls.creative"
+                            [control]="field.control"
+                            [inputId]="fieldId"
+                            [rows]="3"
+                            [describedBy]="fieldError ? fieldId + '-error' : undefined"
+                            [invalid]="!!fieldError"
+                            [attr.data-testid]="'implementation-display-ad-group-' + i + '-' + field.control" />
+                        } @else if (field.options) {
+                          <lfx-select
+                            [form]="group.controls.creative"
+                            [control]="field.control"
+                            [options]="field.selectOptions ?? []"
+                            [inputId]="fieldId"
+                            size="small"
+                            [attr.data-testid]="'implementation-display-ad-group-' + i + '-' + field.control" />
+                        } @else {
+                          <lfx-input-text
+                            [form]="group.controls.creative"
+                            [control]="field.control"
+                            type="text"
+                            size="small"
+                            [inputId]="fieldId"
+                            [describedBy]="fieldError ? fieldId + '-error' : null"
+                            [invalid]="!!fieldError"
+                            [attr.data-testid]="'implementation-display-ad-group-' + i + '-' + field.control" />
+                        }
+                        <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                        @if (fieldError) {
+                          <span class="text-xs text-red-600" [id]="fieldId + '-error'">{{ fieldError }}</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <ng-container *ngTemplateOutlet="displayAudiencesTemplate; context: { $implicit: '' + i, audiences: group.controls.audiences.controls }" />
+                  <div>
+                    <lfx-button
+                      label="Remove ad group"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="removeDisplayAdGroup(i)"
+                      [attr.data-testid]="'implementation-display-ad-group-remove-' + i" />
+                  </div>
+                </fieldset>
+              }
+              @if (campaignForm.controls.displayAdGroups.length < displayMaxAdGroups) {
+                <div>
+                  <lfx-button
+                    label="Add ad group"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="addDisplayAdGroup()"
+                    data-testid="implementation-display-ad-group-add" />
+                </div>
+              }
+              @if (displayAdGroupsError(); as error) {
+                <p class="text-xs text-red-600" data-testid="implementation-display-ad-groups-error">{{ error }}</p>
+              }
+            </div>
+          }
+          <!--
+            Demand Gen builds ONE ad, an image ad or a video ad (#5226). The choice decides which of the
+            two creative groups this section renders and the create sends; the other keeps what was
+            typed into it, and the note below says it will not be sent.
+          -->
+          @if (section.channel === 'demand-gen' && !demandGenAdGroupsActive() && campaignForm.controls.demandGenAds.length > 0) {
+            <div class="mt-4 flex flex-col gap-1">
+              <label class="text-xs font-medium text-gray-700" for="demand-gen-ad-1-name">Ad 1 name</label>
+              <lfx-input-text
+                [form]="campaignForm"
+                control="demandGenAdName"
+                type="text"
+                size="small"
+                inputId="demand-gen-ad-1-name"
+                data-testid="implementation-demand-gen-ad-1-name" />
+            </div>
+          }
+          @if (section.channel === 'demand-gen' && !demandGenAdGroupsActive()) {
+            <fieldset
+              class="mt-4 flex flex-col gap-2"
+              [attr.aria-describedby]="demandGenFormatHeldMessage() ? 'implementation-demand-gen-format-held' : null"
+              data-testid="implementation-creative-demand-gen-format">
+              <legend class="text-xs font-medium text-gray-700">Ad format</legend>
+              <div class="flex flex-wrap gap-4">
+                <lfx-radio-button
+                  [form]="campaignForm"
+                  control="demandGenAdFormat"
+                  name="demandGenAdFormat"
+                  value="image"
+                  label="Image ad"
+                  inputId="implementation-demand-gen-format-image"
+                  data-testid="implementation-creative-demand-gen-format-image" />
+                <lfx-radio-button
+                  [form]="campaignForm"
+                  control="demandGenAdFormat"
+                  name="demandGenAdFormat"
+                  value="video"
+                  label="Video ad (YouTube)"
+                  inputId="implementation-demand-gen-format-video"
+                  data-testid="implementation-creative-demand-gen-format-video" />
+              </div>
+              @if (demandGenFormatHeldMessage()) {
+                <p id="implementation-demand-gen-format-held" class="text-xs text-gray-500" data-testid="implementation-demand-gen-format-held">
+                  {{ demandGenFormatHeldMessage() }}
+                </p>
+              }
+            </fieldset>
+          }
+          @for (groupName of [section.groupName]; track groupName) {
+            <div class="mt-4 flex flex-col gap-4" [formGroupName]="groupName">
+              @for (field of section.fields; track field.control) {
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-medium text-gray-700" [attr.for]="section.channel + '-' + field.control">{{ field.label }}</label>
+                  @if (field.kind === 'list') {
+                    <textarea
+                      [id]="section.channel + '-' + field.control"
+                      [formControlName]="field.control"
+                      (blur)="onGoogleImageFieldBlur(section.groupName, field)"
+                      [attr.aria-describedby]="
+                        creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                      "
+                      rows="3"
+                      class="resize-y rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control"></textarea>
+                  } @else if (field.options) {
+                    <!-- A closed list upstream accepts, so a select rather than free text; "None" sends none. -->
+                    <lfx-select
+                      [form]="creativeGroups[section.groupName]"
+                      [control]="field.control"
+                      [options]="field.selectOptions ?? []"
+                      [inputId]="section.channel + '-' + field.control"
+                      size="small"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
+                  } @else {
+                    <input
+                      type="text"
+                      [id]="section.channel + '-' + field.control"
+                      [formControlName]="field.control"
+                      [attr.aria-describedby]="
+                        creativeFieldErrors()[section.groupName + '.' + field.control] ? section.channel + '-' + field.control + '-error' : null
+                      "
+                      class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      [attr.data-testid]="'implementation-creative-' + section.channel + '-' + field.control" />
+                  }
+                  <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                  @if (creativeFieldErrors()[section.groupName + '.' + field.control]; as error) {
+                    <span
+                      class="text-xs text-red-600"
+                      [id]="section.channel + '-' + field.control + '-error'"
+                      [attr.data-testid]="'implementation-creative-error-' + section.channel + '-' + field.control"
+                      >{{ error }}</span
+                    >
+                  }
+                  @if (googleTypedImageWarnings()[section.groupName + '.' + field.control]; as warning) {
+                    <span
+                      class="text-xs break-all text-amber-700"
+                      [attr.data-testid]="'implementation-creative-url-check-' + section.channel + '-' + field.control"
+                      >{{ warning }}</span
+                    >
+                  }
+                  <!-- The slot's stored images, beside its pasted URLs. Present only on an image slot,
                      and only on an explicit yes from `googleAssetUploadAvailable()`; see `googleImageSlots`. -->
-                @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
-                  <lfx-google-creative-image-library
-                    [slot]="slot"
-                    [accept]="creativeAssetAccept"
-                    (pick)="onGoogleImagePick(slot.key, $event)"
-                    (remove)="onGoogleImageRemove(slot.key, $event)"
-                    (upload)="onGoogleImageUpload(slot.key, $event)"
-                    (cancelUpload)="onGoogleImageUploadCancel()" />
+                  @if (googleImageSlots()[section.groupName + '.' + field.control]; as slot) {
+                    <lfx-google-creative-image-library
+                      [slot]="slot"
+                      [accept]="creativeAssetAccept"
+                      (pick)="onGoogleImagePick(slot.key, $event)"
+                      (remove)="onGoogleImageRemove(slot.key, $event)"
+                      (upload)="onGoogleImageUpload(slot.key, $event)"
+                      (cancelUpload)="onGoogleImageUploadCancel()" />
+                  }
+                </div>
+              }
+            </div>
+          }
+          @if (section.channel === 'demand-gen' && demandGenAdsShown()) {
+            <ng-container
+              *ngTemplateOutlet="demandGenAdListTemplate; context: { $implicit: null, ads: campaignForm.controls.demandGenAds, prefix: 'demand-gen-ad' }" />
+            @if (demandGenAdsError(); as error) {
+              <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-ads-error">{{ error }}</p>
+            }
+            <ng-container *ngTemplateOutlet="demandGenAudienceTemplate; context: { $implicit: null, audience: campaignForm.controls.demandGenAudience }" />
+            <ng-container
+              *ngTemplateOutlet="
+                demandGenDemographicsTemplate;
+                context: { $implicit: null, demographics: campaignForm.controls.demandGenDemographics, audience: campaignForm.controls.demandGenAudience }
+              " />
+          }
+          @if (section.channel === 'demand-gen') {
+            @if (demandGenAudienceError(); as error) {
+              <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-audience-error">{{ error }}</p>
+            }
+            @if (demandGenDemographicsError(); as error) {
+              <p class="mt-2 text-xs text-red-600" data-testid="implementation-demand-gen-demographics-error">{{ error }}</p>
+            }
+          }
+          <!--
+            Display audiences (#5262): the single ad group's four lists while not split (each named group has its
+            own above), the user lists the whole campaign excludes, split or not, and the interest search the
+            interest pickers share. Shown to a caller who may send them, and to anyone while the form holds some,
+            so they can be removed.
+          -->
+          @if (section.channel === 'display') {
+            <div class="mt-4 flex flex-col gap-3" data-testid="implementation-display-audiences">
+              @if (displayAudiencesAvailable()) {
+                <p class="text-xs text-gray-500">
+                  The user lists, custom audiences, custom affinity segments and interests picked for an ad group are its targeting. Google Ads may still show
+                  its ads to people beyond them: optimized targeting is left at Google's default, which can widen reach.
+                </p>
+                <!-- Not a nested form: the tab is one form already, so Enter searches here and is kept from submitting it. -->
+                <div class="flex items-end gap-2" (keydown.enter)="onDisplayInterestSearch(); $event.preventDefault()">
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" for="display-interest-search">Search interests</label>
+                    <lfx-input-text
+                      [form]="displayInterestSearchForm"
+                      control="q"
+                      inputId="display-interest-search"
+                      type="text"
+                      size="small"
+                      placeholder="e.g. cloud computing"
+                      [maxlength]="interestQueryMaxLength"
+                      data-testid="implementation-display-interest-search" />
+                  </div>
+                  <lfx-button
+                    label="Search"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="onDisplayInterestSearch()"
+                    data-testid="implementation-display-interest-search-submit" />
+                </div>
+              }
+              @if (!displayAdGroupsActive()) {
+                <ng-container
+                  *ngTemplateOutlet="displayAudiencesTemplate; context: { $implicit: 'single', audiences: campaignForm.controls.displayAudiences.controls }" />
+              }
+              <ng-container
+                *ngTemplateOutlet="
+                  displayAudienceListTemplate;
+                  context: {
+                    $implicit: 'excluded',
+                    kind: 'audienceSegments',
+                    label: 'Excluded user lists',
+                    addLabel: 'Add to excluded user lists',
+                    list: campaignForm.controls.displayExcludedUserLists,
+                  }
+                " />
+              @if (displayAudiencesHeldMessage()) {
+                <p class="text-xs text-gray-500" data-testid="implementation-display-audiences-held">{{ displayAudiencesHeldMessage() }}</p>
+              }
+              @if (displayAudiencesError(); as error) {
+                <p class="text-xs text-red-600" data-testid="implementation-display-audiences-error">{{ error }}</p>
+              }
+            </div>
+          }
+        </div>
+      }
+
+      <!-- One Display audience target's four lists (#5262): the single ad group's for 'single', else named group i's. -->
+      <ng-template #displayAudiencesTemplate lfxDisplayAudiencesContext let-target let-audiences="audiences">
+        @for (entry of displayAudienceKinds; track entry.kind) {
+          <ng-container
+            *ngTemplateOutlet="
+              displayAudienceListTemplate;
+              context: { $implicit: target + '-' + entry.kind, kind: entry.kind, label: entry.label, addLabel: entry.addLabel, list: audiences[entry.kind] }
+            " />
+        }
+      </ng-template>
+
+      <!--
+        One Display audience list (#5262): its picks as chips with Remove, then a picker over the account's
+        entries of its kind not yet picked. A pick adds the resource name and clears the picker, so the same
+        entry can be picked again after a Remove.
+      -->
+      <ng-template #displayAudienceListTemplate lfxDisplayAudienceListContext let-id let-kind="kind" let-label="label" let-addLabel="addLabel" let-list="list">
+        @if (displayAudiencesAvailable() || list.value.length > 0) {
+          <div class="flex flex-col gap-1" [attr.data-testid]="'implementation-display-audience-' + id">
+            <span class="text-xs font-medium text-gray-700" [id]="'display-audience-' + id + '-label'" tabindex="-1">{{ label }}</span>
+            @if (list.value.length > 0) {
+              <div class="flex flex-wrap items-center gap-1">
+                @for (resourceName of list.value; track resourceName; let n = $index) {
+                  @let name = displayAudienceNames().get(resourceName) ?? resourceName;
+                  <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    {{ name }}
+                    <button
+                      type="button"
+                      (click)="removeDisplayAudience(list, resourceName, id)"
+                      class="ml-0.5 text-blue-600 hover:text-blue-800"
+                      [attr.aria-label]="'Remove ' + name"
+                      [attr.data-testid]="'implementation-display-audience-remove-' + id + '-' + n">
+                      <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                    </button>
+                  </span>
                 }
               </div>
             }
+            @if (displayAudiencesAvailable()) {
+              @let picker = displayAudiencePickers()[kind];
+              @if (picker.status === 'loaded' && picker.audiences.length > 0) {
+                <lfx-ui-combobox
+                  #displayAudienceCombobox
+                  [label]="addLabel"
+                  placeholder="Search by name"
+                  emptyText="Nothing matches"
+                  size="small"
+                  (valueChange)="onDisplayAudiencePicked(list, $event, displayAudienceCombobox)"
+                  [attr.data-testid]="'implementation-display-audience-picker-' + id">
+                  @for (option of displayAudienceUnpicked()[id] ?? []; track option.resourceName) {
+                    <lfx-ui-option [value]="option.resourceName" [label]="option.name" />
+                  }
+                </lfx-ui-combobox>
+              }
+              @if (displayAudiencePickerNotes()[kind]; as note) {
+                <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-display-audience-note-' + id">{{ note }}</p>
+              }
+            }
           </div>
+        }
+      </ng-template>
+
+      <!--
+        The Audience of one Demand Gen ad group (#5244): the single one for a null context, else named
+        group i. Shown to a caller who may send one, and to anyone while a restored draft holds one, so it
+        can be removed. A picked Audience is shown by name with Remove; with none, the picker lists the
+        account's Audiences. A pick sets the resource name and replaces the picker, so it is never cleared.
+      -->
+      <ng-template #demandGenAudienceTemplate lfxDemandGenAudienceContext let-group>
+        @let key = group === null ? 'single' : '' + group;
+        <!-- Trimmed as the payload trims it, so a blank Audience reads as none, here and below. -->
+        @let audience = demandGenAudienceTrimmed()[key];
+        @if (demandGenAudienceAvailable() || audience !== '') {
+          <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-audience-' + key">
+            <span class="text-xs font-medium text-gray-700">Audience</span>
+            @if (audience !== '') {
+              @let audienceName = googleAudienceNames().get(audience) ?? audience;
+              <span
+                class="inline-flex w-fit items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+                [attr.data-testid]="'implementation-demand-gen-audience-picked-' + key">
+                {{ audienceName }}
+                <button
+                  [id]="'demand-gen-audience-' + key + '-remove'"
+                  type="button"
+                  (click)="removeDemandGenAudience(group)"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
+                  [attr.aria-label]="'Remove ' + audienceName"
+                  [attr.data-testid]="'implementation-demand-gen-audience-remove-' + key">
+                  <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                </button>
+              </span>
+            } @else if (demandGenDemographicsNamed()[key]) {
+              <!-- Google Ads takes one Audience per Demand Gen ad group, and the demographics below build one. -->
+              <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-held-by-demographics-' + key">
+                The demographics below are built into a new Audience for this ad group, and Google Ads takes one Audience per Demand Gen ad group. Clear the
+                demographics to pick an existing Audience instead.
+              </p>
+            } @else {
+              @switch (googleAudiencePicker().status) {
+                @case ('loaded') {
+                  @if (googleAudiencePicker().audiences.length > 0) {
+                    <lfx-ui-combobox
+                      label="Pick an Audience"
+                      placeholder="Search this account's Audiences"
+                      emptyText="No Audience matches"
+                      size="small"
+                      (valueChange)="onDemandGenAudiencePicked(group, $event)"
+                      [attr.data-testid]="'implementation-demand-gen-audience-picker-' + key">
+                      @for (option of googleAudiencePicker().audiences; track option.resourceName) {
+                        <lfx-ui-option [value]="option.resourceName" [label]="option.name" />
+                      }
+                    </lfx-ui-combobox>
+                    @if (googleAudiencePicker().truncated) {
+                      <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-truncated-' + key">
+                        {{ audiencePickerTruncated }}
+                      </p>
+                    }
+                  } @else {
+                    <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-empty-' + key">{{ audiencePickerEmpty }}</p>
+                  }
+                }
+                @case ('loading') {
+                  <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-loading-' + key">
+                    {{ audiencePickerLoading }}
+                  </p>
+                }
+                @case ('unavailable') {
+                  <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-audience-picker-unavailable-' + key">
+                    {{ googleAudiencePicker().reason }}
+                  </p>
+                }
+              }
+            }
+          </div>
+        }
+      </ng-template>
+
+      <!--
+        The demographics of one Demand Gen ad group (linuxfoundation/lfx-v2-campaign-service#498, #518): the
+        single one for a null context, else named group i. Upstream builds them into a new Audience, and an
+        ad group takes one Audience, so they are offered only while no Audience is picked; demographics a
+        restored draft holds beside one stay on show so they can be cleared, and the shared refusal holds
+        Create until one of the two goes.
+      -->
+      <ng-template #demandGenDemographicsTemplate lfxDemandGenDemographicsContext let-group let-demographicsControl="demographics">
+        @let key = group === null ? 'single' : '' + group;
+        <div class="mt-4 flex flex-col gap-2" [attr.data-testid]="'implementation-demand-gen-demographics-' + key">
+          @if (demandGenAudienceTrimmed()[key] !== '' && !demandGenDemographicsNamed()[key]) {
+            <span class="text-xs font-medium text-gray-700">Demographics</span>
+            <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-held-by-audience-' + key">
+              This ad group targets the Audience above, and Google Ads takes one Audience per Demand Gen ad group. Remove the Audience to set demographics
+              instead.
+            </p>
+          } @else {
+            <lfx-campaign-google-demographic-targeting
+              legend="Demographics (tick nothing in a group to reach all of it)"
+              [testId]="'implementation-demand-gen-demographics-targeting-' + key"
+              [optionTestIdPrefix]="'implementation-demand-gen-demographics-' + key + '-'"
+              [describedBy]="'demand-gen-demographics-' + key + '-hint'"
+              [targeting]="demographicsControl.value"
+              (targetingChange)="onDemandGenDemographicsChange(group, $event)" />
+            <p [id]="'demand-gen-demographics-' + key + '-hint'" class="text-xs text-gray-500">
+              Google Ads builds the ticked values into a new Audience for this ad group. Unknown adds the people Google could not classify and needs a value
+              ticked beside it. Demand Gen takes no observed demographics, so leave a group unticked to reach all of it.
+            </p>
+            @if (demandGenDemographicsLeftOut()[key]; as note) {
+              <p class="text-xs text-gray-500" [attr.data-testid]="'implementation-demand-gen-demographics-left-out-' + key">{{ note }}</p>
+            }
+            <!-- A restored value no box offers cannot be unticked, so Clear is the way out of its refusal. -->
+            @if (demandGenDemographicsNamed()[key]) {
+              <lfx-button
+                label="Clear demographics"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                (onClick)="onDemandGenDemographicsClear(group)"
+                [attr.data-testid]="'implementation-demand-gen-demographics-clear-' + key" />
+            }
+          }
         </div>
+      </ng-template>
+
+      <!--
+        The second and later ads of one Demand Gen ad group (#5226): the single one for a null context,
+        else named group i. With any, the group's own ad above becomes ad 1 and needs a name.
+      -->
+      <!-- The context carries the ad list and its id stem, typed by lfxDemandGenAdListContext, so the template reads them rather than calling methods. -->
+      <ng-template #demandGenAdListTemplate lfxDemandGenAdListContext let-group let-ads="ads" let-prefix="prefix">
+        <div class="mt-4 flex flex-col gap-3" [attr.data-testid]="'implementation-' + prefix + 's'">
+          @for (ad of ads.controls; track ad; let j = $index) {
+            @let adId = prefix + '-' + (j + 2);
+            @let errorPrefix = (group === null ? '' : group + '.') + 'ad-' + (j + 2) + '.';
+            <fieldset class="flex flex-col gap-3 rounded-md border border-gray-200 p-4" [attr.data-testid]="'implementation-' + adId">
+              <legend class="px-1 text-xs font-medium text-gray-700">Ad {{ j + 2 }}</legend>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" [attr.for]="adId + '-name'">Name</label>
+                <lfx-input-text
+                  [form]="ad"
+                  control="name"
+                  type="text"
+                  size="small"
+                  [inputId]="adId + '-name'"
+                  [attr.data-testid]="'implementation-' + adId + '-name'" />
+              </div>
+              <div class="flex flex-wrap gap-4">
+                <lfx-radio-button
+                  [form]="ad"
+                  control="format"
+                  [name]="adId + '-format'"
+                  value="image"
+                  label="Image ad"
+                  [inputId]="adId + '-format-image'"
+                  [attr.data-testid]="'implementation-' + adId + '-format-image'" />
+                <lfx-radio-button
+                  [form]="ad"
+                  control="format"
+                  [name]="adId + '-format'"
+                  value="video"
+                  label="Video ad (YouTube)"
+                  [inputId]="adId + '-format-video'"
+                  [attr.data-testid]="'implementation-' + adId + '-format-video'" />
+              </div>
+              @for (format of [ad.controls.format.value]; track format) {
+                @let creative = format === 'video' ? ad.controls.videoCreative : ad.controls.creative;
+                @for (field of demandGenAdGroupFields[format]; track field.control) {
+                  @let fieldId = adId + '-' + field.control;
+                  @let fieldError = demandGenAdGroupFieldErrors()[errorPrefix + format + '.' + field.control];
+                  <div class="flex flex-col gap-1">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="fieldId">{{ field.label }}</label>
+                    @if (field.kind === 'list') {
+                      <lfx-textarea
+                        [form]="creative"
+                        [control]="field.control"
+                        [inputId]="fieldId"
+                        [rows]="3"
+                        [describedBy]="fieldError ? fieldId + '-error' : undefined"
+                        [invalid]="!!fieldError"
+                        [attr.data-testid]="'implementation-' + fieldId" />
+                    } @else if (field.options) {
+                      <lfx-select
+                        [form]="creative"
+                        [control]="field.control"
+                        [options]="field.selectOptions ?? []"
+                        [inputId]="fieldId"
+                        size="small"
+                        [attr.data-testid]="'implementation-' + fieldId" />
+                    } @else {
+                      <lfx-input-text
+                        [form]="creative"
+                        [control]="field.control"
+                        type="text"
+                        size="small"
+                        [inputId]="fieldId"
+                        [describedBy]="fieldError ? fieldId + '-error' : null"
+                        [invalid]="!!fieldError"
+                        [attr.data-testid]="'implementation-' + fieldId" />
+                    }
+                    <span class="text-xs text-gray-400">{{ field.guidance }}</span>
+                    @if (fieldError) {
+                      <span class="text-xs text-red-600" [id]="fieldId + '-error'" [attr.data-testid]="'implementation-' + fieldId + '-error'">{{
+                        fieldError
+                      }}</span>
+                    }
+                  </div>
+                }
+              }
+              <div>
+                <lfx-button
+                  label="Remove ad"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="removeDemandGenAd(group, j)"
+                  [attr.data-testid]="'implementation-' + adId + '-remove'" />
+              </div>
+            </fieldset>
+          }
+          @if (ads.length + 1 < demandGenMaxAds) {
+            <div class="flex flex-col gap-1">
+              <div>
+                <lfx-button
+                  label="Add another ad"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  (onClick)="addDemandGenAd(group)"
+                  [attr.data-testid]="'implementation-' + prefix + '-add'" />
+              </div>
+              <p class="text-xs text-gray-500">
+                Up to {{ demandGenMaxAds }} ads in this ad group, each with its own name. Google Ads names a video ad after the ad group, then " - " and its
+                name.
+              </p>
+            </div>
+          }
+        </div>
+      </ng-template>
+
+      <!--
+        Google Ads: Performance Max search themes (#5262).
+
+        PERFORMANCE MAX ONLY, gated on `googleSearchThemesAvailable`: a theme is an asset group signal,
+        and `validatePerformanceMaxSignals` refuses it on every other channel before the budget mutate.
+        One theme per line in the LFX textarea wrapper. `googleSearchThemesError` holds Create on any
+        refusal the BFF would make, and says why under the box.
+      -->
+      @if (googleSearchThemesAvailable()) {
+        <div
+          class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-google-search-themes-section"
+          role="group"
+          aria-labelledby="google-search-themes-heading">
+          <label id="google-search-themes-heading" for="google-search-themes-input" class="block text-xs font-medium text-gray-700">
+            Google Search Themes ({{ googleSearchThemes().length }}/{{ googleMaxSearchThemes }})
+          </label>
+          <p id="google-search-themes-hint" class="text-xs text-gray-500">
+            One per line, up to {{ googleMaxSearchThemeRunes }} characters each. Search themes tell Google which searches this campaign is for; Google may still
+            serve beyond them.
+          </p>
+          <lfx-textarea
+            [form]="campaignForm"
+            control="googlePerformanceMaxSearchThemes"
+            inputId="google-search-themes-input"
+            [rows]="5"
+            ariaDescribedBy="google-search-themes-hint"
+            [describedBy]="googleSearchThemesError() ? 'google-search-themes-error' : undefined"
+            [invalid]="!!googleSearchThemesError()"
+            data-testid="implementation-google-search-themes-input" />
+          @if (googleSearchThemesError(); as error) {
+            <p id="google-search-themes-error" class="text-xs text-red-600" data-testid="implementation-google-search-themes-error">{{ error }}</p>
+          }
+        </div>
+      }
+      @if (googleSearchThemesWithheldWarning(); as warning) {
+        <p class="text-xs text-amber-700" data-testid="implementation-google-search-themes-withheld">{{ warning }}</p>
+      }
+
+      <!--
+        Google Ads: the Performance Max audience signal (#5262).
+
+        PERFORMANCE MAX ONLY (`performanceMaxAudienceSignalShown`): the signal is an asset group signal, and
+        `validatePerformanceMaxSignals` refuses it on every other channel. Shown to a caller who may send one,
+        and to anyone while a restored draft holds one, so it can be removed. A picked Audience is shown by
+        name with Remove; with none, the picker lists the account's Audiences from the read the Demand Gen
+        picker uses. `performanceMaxAudienceSignalError` holds Create on any refusal and says why below.
+      -->
+      @if (performanceMaxAudienceSignalShown()) {
+        @let signal = performanceMaxAudienceSignal();
+        <div
+          class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5"
+          data-testid="implementation-performance-max-audience-signal-section"
+          role="group"
+          aria-labelledby="performance-max-audience-signal-heading">
+          <span id="performance-max-audience-signal-heading" class="block text-xs font-medium text-gray-700">Google Audience Signal</span>
+          <p class="text-xs text-gray-500">
+            One of this account's Audiences, as a hint about who is likely to convert. Google may still show the ads to other people.
+          </p>
+          @if (signal !== '') {
+            @let signalName = googleAudienceNames().get(signal) ?? signal;
+            <span
+              class="inline-flex w-fit items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+              data-testid="implementation-performance-max-audience-signal-picked">
+              {{ signalName }}
+              <button
+                id="performance-max-audience-signal-remove"
+                type="button"
+                (click)="removePerformanceMaxAudienceSignal()"
+                class="ml-0.5 text-blue-600 hover:text-blue-800"
+                [attr.aria-label]="'Remove ' + signalName"
+                data-testid="implementation-performance-max-audience-signal-remove">
+                <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+              </button>
+            </span>
+          } @else {
+            @switch (googleAudiencePicker().status) {
+              @case ('loaded') {
+                @if (googleAudiencePicker().audiences.length > 0) {
+                  <lfx-ui-combobox
+                    label="Pick an Audience"
+                    placeholder="Search this account's Audiences"
+                    emptyText="No Audience matches"
+                    size="small"
+                    (valueChange)="onPerformanceMaxAudienceSignalPicked($event)"
+                    data-testid="implementation-performance-max-audience-signal-picker">
+                    @for (option of googleAudiencePicker().audiences; track option.resourceName) {
+                      <lfx-ui-option [value]="option.resourceName" [label]="option.name" />
+                    }
+                  </lfx-ui-combobox>
+                  @if (googleAudiencePicker().truncated) {
+                    <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-truncated">
+                      {{ audiencePickerTruncated }}
+                    </p>
+                  }
+                } @else {
+                  <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-empty">{{ audiencePickerEmpty }}</p>
+                }
+              }
+              @case ('loading') {
+                <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-loading">{{ audiencePickerLoading }}</p>
+              }
+              @case ('unavailable') {
+                <p class="text-xs text-gray-500" data-testid="implementation-performance-max-audience-signal-picker-unavailable">
+                  {{ googleAudiencePicker().reason }}
+                </p>
+              }
+            }
+          }
+          @if (performanceMaxAudienceSignalError(); as error) {
+            <p class="text-xs text-red-600" data-testid="implementation-performance-max-audience-signal-error">{{ error }}</p>
+          }
+        </div>
+      }
+      @if (performanceMaxAudienceSignalWithheldWarning(); as warning) {
+        <p class="text-xs text-amber-700" data-testid="implementation-performance-max-audience-signal-withheld">{{ warning }}</p>
       }
 
       <!--
@@ -4119,6 +5515,7 @@
             [applyResult]="googleSuggestedApplyResult()"
             [applySeq]="googleSuggestedApplySeq()"
             [formFilled]="googleFormFilledSlots()"
+            [excludedGroups]="googleSlotGroupsNotSent"
             (applySuggested)="onApplySuggestedGoogleImages($event)" />
         </div>
       }
@@ -4214,18 +5611,26 @@
         </div>
       }
 
-      <!-- Submit -->
-      <div class="flex items-center gap-3">
-        <lfx-button
-          label="Create Campaign"
-          icon="fa-light fa-rocket"
-          severity="primary"
-          [disabled]="!canSubmit()"
-          (onClick)="submit()"
-          ariaLabel="Create campaign"
-          data-testid="implementation-submit-btn" />
-        @if (errors().length > 0) {
-          <p class="text-sm text-red-600">{{ errors()[0] }}</p>
+      <!-- Submit. Beside the button: the last create's refusal, and while the button is disabled, what
+           blocks it (#5491) — a disabled button alone says nothing. -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-3">
+          <lfx-button
+            label="Create Campaign"
+            icon="fa-light fa-rocket"
+            severity="primary"
+            [disabled]="!canSubmit()"
+            (onClick)="submit()"
+            ariaLabel="Create campaign"
+            data-testid="implementation-submit-btn" />
+          @if (errors().length > 0) {
+            <p #createMessage role="alert" class="text-sm text-red-600" data-testid="implementation-submit-error">{{ errors()[0] }}</p>
+          }
+        </div>
+        @if (createBlockedReason(); as reason) {
+          <p class="text-xs text-gray-600" data-testid="implementation-submit-blocked-reason">
+            <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>Create Campaign is unavailable: {{ reason }}
+          </p>
         }
       </div>
     </form>
@@ -4459,6 +5864,17 @@
                 </p>
                 @if (pr.campaignId) {
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
+                }
+                @if (pr.platformUrl) {
+                  <a
+                    [href]="pr.platformUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                    data-testid="implementation-platform-result-link">
+                    Open in Google Ads
+                    <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                  </a>
                 }
               </div>
               <!-- campaign-service handed back an existing campaign instead of creating one (#4983):

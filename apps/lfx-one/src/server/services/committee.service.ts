@@ -4,6 +4,7 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
+  MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   QUERY_SERVICE_MAX_PAGE_SIZE,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
@@ -19,6 +20,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeMemberBulkCreateResult,
   CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
@@ -1001,6 +1003,42 @@ export class CommitteeService {
     });
 
     return newMember;
+  }
+
+  /**
+   * Adds up to 100 members in one upstream request and returns one result per row (GH-5111).
+   * Uses the caller's own token, so the gateway applies the same writer check as a single add.
+   */
+  public async bulkCreateCommitteeMembers(
+    req: Request,
+    committeeId: string,
+    members: CreateCommitteeMemberRequest[],
+    skipNotification: boolean = false
+  ): Promise<CommitteeMemberBulkCreateResult> {
+    // X-Skip-Notification applies to every row, matching the single-member create.
+    const customHeaders = skipNotification ? { 'X-Skip-Notification': 'true' } : undefined;
+    const result = await this.microserviceProxy.proxyRequest<CommitteeMemberBulkCreateResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members/bulk`,
+      'POST',
+      {},
+      { members },
+      customHeaders,
+      { timeoutMs: MEMBER_IMPORT_BULK_TIMEOUT_MS }
+    );
+
+    // Counts only: the rows carry imported personal data.
+    logger.debug(req, 'bulk_create_committee_members', 'Committee members bulk create completed', {
+      committee_uid: committeeId,
+      row_count: members.length,
+      added: result.added,
+      skipped: result.skipped,
+      failed: result.failed,
+      skip_notification: skipNotification,
+    });
+
+    return result;
   }
 
   /**

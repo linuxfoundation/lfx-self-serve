@@ -28,7 +28,7 @@ export class UiSwitchComponent implements ControlValueAccessor {
 
   /** Accessible name of the radio group, such as `View`. Always required: the control has no visible legend. */
   public readonly ariaLabel = input.required<string>();
-  /** `tiny` is 24px tall, `small` 32px and `medium` 40px, as for buttons. There is no large size. */
+  /** `tiny` is 24px tall, `small` 32px and `medium` 40px, as for the tiny, default and large buttons. There is no large size. */
   public readonly size = input<UiSwitchSize>('medium');
   /** Native `name` shared by every option. Defaults to a unique generated name, so several switches on a page stay independent. */
   public readonly name = input<string>('');

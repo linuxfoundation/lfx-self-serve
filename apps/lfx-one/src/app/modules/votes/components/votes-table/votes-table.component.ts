@@ -7,7 +7,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -19,19 +19,13 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import {
-  VOTE_CLOSE_CONFIRMATION,
-  VOTE_SUMMARY_NOT_ENDED,
-  VOTE_SUMMARY_NOTICE_LIFE_MS,
-  VOTE_SUMMARY_PRECHECK_FAILED,
-  VOTE_SUMMARY_SEND_FAILED,
-} from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
 import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   FilterPillOption,
+  GroupLinkState,
   GroupsIOMailingList,
   MyVotesQuickFilter,
-  SendVoteSummaryResponse,
   Vote,
   VoteFilterState,
   VoteMailingListReminderDialogData,
@@ -41,7 +35,6 @@ import {
 import {
   buildMailtoHref,
   buildVoteMailingListReminder,
-  buildVoteSummarySendNotice,
   computeVoteRowParticipation,
   getEntityCommands,
   getMailingListEmail,
@@ -62,10 +55,10 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
 import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
-import { isBffTransportFailure } from '@shared/utils/upstream-error.utils';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -74,6 +67,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, start
 
 import { VoteMailingListReminderDialogComponent } from '../vote-mailing-list-reminder-dialog/vote-mailing-list-reminder-dialog.component';
 import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
+import { VoteSummaryDialogComponent } from '../vote-summary-dialog/vote-summary-dialog.component';
 
 @Component({
   selector: 'lfx-votes-table',
@@ -98,6 +92,7 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     EmptyStateComponent,
     NgTemplateOutlet,
     UiSpinnerComponent,
+    RouterLink,
   ],
   // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
   providers: [ConfirmationService, DialogService],
@@ -109,6 +104,7 @@ export class VotesTableComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
+  private readonly summarySendService = inject(VoteSummarySendService);
   private readonly clipboardShare = inject(ClipboardShareService);
   private readonly dialogService = inject(DialogService);
   private readonly mailingListService = inject(MailingListService);
@@ -148,6 +144,8 @@ export class VotesTableComponent {
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
+  // Group links carry state so the group page returns to this list instead of Groups, and restores the Me lens when that is where the user was.
+  public readonly isMeLens = input<boolean>(false);
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
@@ -194,8 +192,15 @@ export class VotesTableComponent {
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
-  /** Vote uids with a summary send in flight (#4831), so each row shows its own progress and a second send of the same vote can't start. */
-  protected readonly sendingSummaryUids = signal<ReadonlySet<string>>(new Set());
+  /** Session-owned sends drive row progress, including when a manager returns after navigation (#4830, #4831). */
+  protected readonly sendingSummaryUids = computed<ReadonlySet<string>>(
+    () =>
+      new Set(
+        this.votes()
+          .filter((vote) => this.summarySendService.getAttempt(vote.uid)?.status === 'sending')
+          .map((vote) => vote.uid)
+      )
+  );
   /** Messages not yet written by LiveAnnouncer; a burst must retain every vote's lifecycle update. */
   private pendingSummaryAnnouncements: readonly string[] = [];
   /**
@@ -214,6 +219,7 @@ export class VotesTableComponent {
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
+  protected readonly groupLinkState: Signal<GroupLinkState> = this.initGroupLinkState();
   // Phone layout (cards) below the sm breakpoint; false through the first render so it matches the SSR table, then swaps.
   protected readonly isMobile: Signal<boolean> = injectIsMobileViewport();
   // 44px is an exact [44px]: the 14px html root makes min-h-11 render ~38px (drawer-pattern.md § Phone sheet and touch targets).
@@ -243,6 +249,25 @@ export class VotesTableComponent {
   // === Constructor ===
   public constructor() {
     this.initFormSubscriptions();
+    let previousSending: ReadonlySet<string> = new Set();
+    toObservable(this.sendingSummaryUids)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((sending) => {
+        for (const vote of this.votes()) {
+          if (sending.has(vote.uid) && !previousSending.has(vote.uid)) {
+            this.announceSummaryState(`Sending the summary for "${vote.name}"…`);
+          } else if (previousSending.has(vote.uid) && !sending.has(vote.uid) && this.summarySendService.getAttempt(vote.uid)) {
+            this.announceSummaryState(`The summary send for "${vote.name}" has finished. Open Send summary to review the result.`);
+          }
+        }
+        const menuUid = this.rowActionMenuVoteUid();
+        if (menuUid && sending.has(menuUid) !== previousSending.has(menuUid)) {
+          this.rowActionMenuItems.update((items) =>
+            items.map((item) => (item.id === `send-summary-${menuUid}` ? { ...item, ...this.summarySendMenuState(sending.has(menuUid)) } : item))
+          );
+        }
+        previousSending = sending;
+      });
     effect(() => {
       if (!this.showDraftTab() && this.statusTab() === PollStatus.DISABLED) {
         untracked(() => this.statusTab.set('all'));
@@ -348,11 +373,11 @@ export class VotesTableComponent {
     }
     // Summary can only be sent once the vote has closed (#3662) — upstream rejects it otherwise.
     if (vote.writer === true && vote.status === PollStatus.ENDED) {
-      // Only this vote's own send locks the item; other votes and the other row actions stay available (#4831).
+      // A pending send can be reopened for inspection; the session service prevents a duplicate request (#4830, #4831).
       items.push({
         id: `send-summary-${vote.uid}`,
         ...this.summarySendMenuState(this.sendingSummaryUids().has(vote.uid)),
-        tooltipOptions: { tooltipLabel: 'Sends the results summary to every invited voter', tooltipPosition: 'left' },
+        tooltipOptions: { tooltipLabel: 'Review recipients and send the results summary', tooltipPosition: 'left' },
         command: () => this.onSendSummary(vote),
       });
     }
@@ -467,39 +492,15 @@ export class VotesTableComponent {
     });
   }
 
-  /** Sends the on-demand close summary to every invited voter, once confirmed (#3662). On demand only — never scheduled. */
+  /** Opens the summary dialog to review recipients, send the close summary and see each voter's outcome (#3662, #4830). On demand only — never scheduled. */
   protected onSendSummary(vote: VoteTableRow): void {
-    if (this.sendingSummaryUids().has(vote.uid)) return;
-    this.confirmationService.confirm({
-      message: `Send the results summary for "${vote.name}" to every invited voter? This cannot be undone.`,
+    this.dialogService.open(VoteSummaryDialogComponent, {
       header: 'Send summary',
-      acceptLabel: 'Send',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-info p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => {
-        // A stale or double-accepted confirm must not start a second send for the same vote.
-        if (this.sendingSummaryUids().has(vote.uid)) return;
-        this.setSendingSummary(vote.uid, true);
-        this.announceSummaryState(`Sending the summary for "${vote.name}"…`);
-        this.voteService
-          .sendVoteSummary(vote.uid)
-          .pipe(
-            take(1),
-            // Neutral on purpose: the outcome may be a failure or unconfirmed, and the toast reports it.
-            finalize(() => {
-              this.setSendingSummary(vote.uid, false);
-              this.announceSummaryState(`The summary send for "${vote.name}" has finished. See the notification for the result.`);
-            })
-          )
-          .subscribe({
-            next: (result) => {
-              const notice = buildVoteSummarySendNotice(result);
-              this.messageService.add({ ...notice, summary: this.summaryNoticeTitle(notice.summary, vote.name) });
-            },
-            error: (error: unknown) => this.onSendSummaryFailed(error, vote.name),
-          });
-      },
+      width: 'min(960px, 96vw)',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { vote },
     });
   }
 
@@ -563,6 +564,10 @@ export class VotesTableComponent {
   }
 
   // === Private Initializers ===
+  private initGroupLinkState(): Signal<GroupLinkState> {
+    return computed(() => ({ backLabel: VOTE_LABEL.plural, backPath: '/votes', fromMeLens: this.isMeLens() }));
+  }
+
   private initStatusTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const base: FilterPillOption[] = [
@@ -772,75 +777,6 @@ export class VotesTableComponent {
     }
   }
 
-  private summaryNoticeTitle(title: string, voteName: string): string {
-    return `${title}: "${voteName}"`;
-  }
-
-  /**
-   * Reports a failed summary send (#4689). Only a clear rejection or a pre-send failure invites an
-   * immediate retry; a transport failure, timeout, gateway error or unknown 5xx can leave summaries
-   * already delivered, so those warn about duplicates instead of saying nothing was sent.
-   */
-  private onSendSummaryFailed(error: unknown, voteName: string): void {
-    const code = error instanceof HttpErrorResponse ? (error.error?.code as string | undefined) : undefined;
-
-    if (error instanceof HttpErrorResponse && error.status === 409 && code === VOTE_SUMMARY_NOT_ENDED) {
-      this.messageService.add({
-        severity: 'error',
-        summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
-        detail: 'This vote has not closed yet.',
-      });
-      return;
-    }
-
-    if (error instanceof HttpErrorResponse && code === VOTE_SUMMARY_PRECHECK_FAILED) {
-      let detail = 'Nothing was sent. Please try again.';
-      if (error.status === 401) {
-        detail = 'Nothing was sent. Sign in again before sending a summary.';
-      } else if (error.status === 404) {
-        detail = 'Nothing was sent. This vote is no longer available.';
-      }
-      this.messageService.add({ severity: 'error', summary: this.summaryNoticeTitle("Couldn't send summary", voteName), detail });
-      return;
-    }
-
-    if (error instanceof HttpErrorResponse && error.status === 502 && code === VOTE_SUMMARY_SEND_FAILED && !isBffTransportFailure(error)) {
-      const counts = error.error?.details as SendVoteSummaryResponse | undefined;
-      // Only a complete, confirmed-unsent BFF result is retry-safe. Legacy or invalid counts stay unconfirmed below.
-      if (
-        counts &&
-        counts.recipient_count === 0 &&
-        counts.uncertain_count === 0 &&
-        counts.failed_count > 0 &&
-        [counts.failed_count, counts.skipped_count].every((count) => Number.isInteger(count) && count >= 0)
-      ) {
-        this.messageService.add({
-          ...buildVoteSummarySendNotice(counts),
-          severity: 'error',
-          summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
-        });
-        return;
-      }
-    }
-
-    const rejected = error instanceof HttpErrorResponse && !isBffTransportFailure(error) && [400, 401, 403, 429].includes(error.status);
-    if (rejected) {
-      this.messageService.add({
-        severity: 'error',
-        summary: this.summaryNoticeTitle("Couldn't send summary", voteName),
-        detail: 'No summaries were sent. Please try again.',
-      });
-      return;
-    }
-
-    this.messageService.add({
-      severity: 'warn',
-      summary: this.summaryNoticeTitle('Summary delivery unconfirmed', voteName),
-      detail: "We couldn't confirm whether the summary was sent. Check with voters before retrying, since retrying may send duplicate summaries.",
-      life: VOTE_SUMMARY_NOTICE_LIFE_MS,
-    });
-  }
-
   /** CDK coalesces calls before its live-region write; carry every pending message into that write. */
   private announceSummaryState(message: string): void {
     const pending = [...this.pendingSummaryAnnouncements, message];
@@ -850,28 +786,10 @@ export class VotesTableComponent {
     });
   }
 
-  private setSendingSummary(uid: string, sending: boolean): void {
-    this.sendingSummaryUids.update((current) => {
-      const next = new Set(current);
-      if (sending) {
-        next.add(uid);
-      } else {
-        next.delete(uid);
-      }
-      return next;
-    });
-    // The popup model is a snapshot from when ⋮ opened; keep its summary item current without rebuilding vote rows.
-    if (this.rowActionMenuVoteUid() !== uid) return;
-    this.rowActionMenuItems.update((items) =>
-      items.map((item) => (item.id === `send-summary-${uid}` ? { ...item, ...this.summarySendMenuState(sending) } : item))
-    );
-  }
-
-  private summarySendMenuState(sending: boolean): Pick<MenuItem, 'label' | 'icon' | 'disabled'> {
+  private summarySendMenuState(sending: boolean): Pick<MenuItem, 'label' | 'icon'> {
     return {
       label: sending ? 'Sending summary…' : 'Send summary',
       icon: sending ? 'fa-light fa-spinner-third motion-safe:animate-spin' : 'fa-light fa-chart-simple',
-      disabled: sending,
     };
   }
 
@@ -901,9 +819,17 @@ export class VotesTableComponent {
     if (vote.project_slug) editQueryParams['project'] = vote.project_slug;
     if (vote.committee_uid) editQueryParams['committee_uid'] = vote.committee_uid;
 
+    // The committee tab already sits on this group's page, so a link back to it would be a no-op.
+    const viewedCommitteeUid = this.editQueryParamsFallback()['committee_uid'];
+    const groupUid = vote.committee_uid?.trim();
+    const showGroupLink = !!groupUid && groupUid !== viewedCommitteeUid;
+
     return {
       ...vote,
       endedEarlyTooltip,
+      groupName: vote.committee_name?.trim() || null,
+      groupCommands: showGroupLink ? (getEntityCommands('groups', groupUid, vote.is_foundation) ?? ['/groups', groupUid]) : null,
+      groupQueryParams: vote.project_slug ? { project: vote.project_slug } : null,
       participation: computeVoteRowParticipation(vote, this.voteService.isAwaitingInvitationCount(vote.uid)),
       editCommands,
       editQueryParams,

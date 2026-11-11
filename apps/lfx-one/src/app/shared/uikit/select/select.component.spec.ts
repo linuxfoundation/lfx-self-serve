@@ -497,7 +497,7 @@ describe('UiSelectComponent', () => {
   });
 
   it('is out of the tab order, ignores the keyboard and the pointer, and drops the hover ring when disabled', async () => {
-    expect(trigger().className).toContain('edge-hover');
+    expect(trigger().className).toContain('edge-control-hover');
 
     await set('disabled', true);
     await press('ArrowDown');
@@ -505,7 +505,7 @@ describe('UiSelectComponent', () => {
 
     expect(trigger().tabIndex).toBe(-1);
     expect(trigger().getAttribute('aria-disabled')).toBe('true');
-    expect(trigger().className).not.toContain('edge-hover');
+    expect(trigger().className).not.toContain('edge-control-hover');
     expect(listbox()).toBeNull();
   });
 

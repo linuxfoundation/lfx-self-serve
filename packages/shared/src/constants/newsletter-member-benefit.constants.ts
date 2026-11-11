@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FOOTER_LEGAL_LINKS } from './footer.constants';
+
 /**
  * Registrable-domain labels of personal (consumer) mailbox providers. An address whose registrable
  * domain starts with one of these labels never qualifies for the member benefit, even if a member
@@ -165,3 +167,60 @@ export const NEWSLETTER_INVITE_EMAIL_PATTERN = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[
  * domain check cannot be probed for free.
  */
 export const NEWSLETTER_INVITE_COUNTED_LOCALS_KEY = 'newsletterInviteCounted';
+
+/** App route a signed-out invitee lands on from a newsletter invite email; the signed token rides in the URL fragment. */
+export const NEWSLETTER_GUEST_INVITE_PATH = '/newsletters/invite';
+
+/** Legal pages the signed-out newsletter modal's consent line links to (the app footer is not shown on guest pages). */
+export const NEWSLETTER_GUEST_LEGAL_LINKS = {
+  privacyPolicy: FOOTER_LEGAL_LINKS.privacyPolicy,
+  termsOfUse: 'https://www.linuxfoundation.org/legal/terms',
+} as const;
+
+/** Longest plain-text excerpt of an issue a signed-out reader sees behind the guest modal before they qualify. */
+export const NEWSLETTER_GUEST_TEASER_MAX_LENGTH = 600;
+
+/** URL-fragment key of the signed newsletter invite token (`/newsletters/invite#token=…`), kept out of server and proxy logs. */
+export const NEWSLETTER_INVITE_TOKEN_FRAGMENT_KEY = 'token';
+
+/** How long a signed newsletter invite or subscription-confirmation link stays valid. */
+export const NEWSLETTER_INVITE_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Longest signed newsletter invite token or guest cookie value the BFF will try to verify. */
+export const NEWSLETTER_GUEST_TOKEN_MAX_LENGTH = 1024;
+
+/** Browser-session cookie that lets a signed-out member-company reader see a foundation's newsletter. */
+export const NEWSLETTER_GUEST_COOKIE_NAME = 'lfx_newsletter_guest';
+
+/** Path the guest cookie is scoped to — only the public newsletter endpoints ever receive it. */
+export const NEWSLETTER_GUEST_COOKIE_PATH = '/public/api/newsletters';
+
+/** Guest newsletter requests (invite checks, email checks) one IP may make per window (per pod). */
+export const NEWSLETTER_GUEST_RATE_LIMIT_MAX = 30;
+
+/** Window of the guest newsletter rate limit. */
+export const NEWSLETTER_GUEST_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+/** Code of a signed-out reader whose email is not at a member company of the newsletter's foundation: 400 on the shared-link email check, 403 on an invite accept. */
+export const NEWSLETTER_GUEST_NOT_ELIGIBLE_ERROR_CODE = 'NEWSLETTER_GUEST_NOT_ELIGIBLE';
+
+/** 404 code of a shared newsletter link a signed-out reader cannot open as a member benefit (unknown, unsent, or sent to no newsletter group). */
+export const NEWSLETTER_GUEST_UNAVAILABLE_ERROR_CODE = 'NEWSLETTER_GUEST_UNAVAILABLE';
+
+/** 400 code of an expired or tampered newsletter invite link. */
+export const NEWSLETTER_INVITE_EXPIRED_ERROR_CODE = 'NEWSLETTER_INVITE_EXPIRED';
+
+/** How long a signed-out reader's guest session is honoured, whatever the browser does with the session cookie. */
+export const NEWSLETTER_GUEST_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+
+/** HMAC purpose label of a signed newsletter invite / confirmation link token — keeps a cookie from replaying as a token. */
+export const NEWSLETTER_INVITE_TOKEN_PURPOSE = 'newsletter-invite';
+
+/** HMAC purpose label of a signed newsletter guest session cookie. */
+export const NEWSLETTER_GUEST_SESSION_PURPOSE = 'newsletter-guest';
+
+/** HKDF info label deriving the newsletter guest signing key from `PCC_AUTH0_SECRET` (never the raw session secret). */
+export const NEWSLETTER_GUEST_SIGNING_KEY_INFO = 'lfx-newsletter-guest-v1';
+
+/** 503 code of the guest newsletter endpoints when the signing secret is not configured. */
+export const NEWSLETTER_GUEST_SIGNING_UNAVAILABLE_ERROR_CODE = 'NEWSLETTER_GUEST_SIGNING_UNAVAILABLE';

@@ -25,9 +25,6 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
@@ -47,7 +44,6 @@ import type {
   HealthMetricsEventsOrganizationsSegment,
   HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersBoardCohort,
-  HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsNonMembersOrgsFilter,
@@ -91,9 +87,6 @@ const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAG
 /** Membership segments the Events organizations table accepts. */
 const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
 const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
-
-/** Bridge bars whose organizations the Members movements list serves. */
-const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
 
 /** NPS categories the Members directory filter accepts. */
 const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -2042,57 +2035,6 @@ export class AnalyticsController {
     }
   }
 
-  /**
-   * GET /api/analytics/org-involvement-certified-employees-monthly
-   * Get cross-foundation certified employees monthly for an organization
-   * Query params: accountId (required)
-   */
-  public async orgCertifiedEmployeesMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_certified_employees_monthly');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_certified_employees_monthly');
-
-      const response = await this.orgInvolvementService.getCertifiedEmployeesMonthly(accountId);
-
-      logger.success(req, 'get_org_involvement_certified_employees_monthly', startTime, {
-        account_id: accountId,
-        total_certifications: response.totalCertifications,
-        total_certified_employees: response.totalCertifiedEmployees,
-        monthly_data_points: response.monthlyData.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/org-involvement-training-enrollments
-   * Get cross-foundation training enrollments YTD for an organization
-   * Query params: accountId (required)
-   */
-  public async orgTrainingEnrollments(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_training_enrollments');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_training_enrollments');
-
-      const response = await this.orgInvolvementService.getTrainingEnrollments(accountId);
-
-      logger.success(req, 'get_org_involvement_training_enrollments', startTime, {
-        account_id: accountId,
-        total_enrollments: response.totalEnrollments,
-        daily_data_points: response.dailyData.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   // Marketing Analytics Endpoints
   // All marketing endpoints (Web Activities, Email CTR, Social Reach, Social Media, and the
   // ED dashboard KPIs) use `foundationSlug` — underlying Snowflake Platinum views key on a
@@ -3642,6 +3584,43 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/events-snapshot` — one event's registration weeks and sponsorship packages for the event dialog.
+   * The foundation is required alongside the event so an id alone cannot read another foundation's.
+   */
+  public async getEventsSnapshot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_snapshot');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_snapshot');
+
+      const eventId = getStringQueryParam(req, 'eventId');
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_events_snapshot',
+        });
+      }
+      if (!EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_events_snapshot',
+        });
+      }
+
+      const response = await this.healthMetricsEventsService.getSnapshot(req, { foundationSlug, eventId });
+
+      logger.success(req, 'get_events_snapshot', startTime, {
+        foundation_slug: foundationSlug,
+        event_id: eventId,
+        week_count: response.weeks.length,
+        package_count: response.packages.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * `GET /api/analytics/events-past` — every closed event in the four periods, with each period's
    * header totals. The client picks the period, so no `range` param reaches the wire.
    */
@@ -3782,7 +3761,24 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/members-tiers` — every year's members, new members and revenue per tier, and the foundation's revenue per period. */
+  /** `GET /api/analytics/members-growth` — every month's running total of new members. */
+  public async getMembersGrowth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_growth');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_growth');
+
+      const response = await this.healthMetricsMembersService.getGrowth(req, { foundationSlug });
+
+      logger.success(req, 'get_members_growth', startTime, { foundation_slug: foundationSlug, month_count: response.months.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-tiers` — every year's members and revenue per tier. */
   public async getMembersTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_members_tiers');
 
@@ -3792,70 +3788,6 @@ export class AnalyticsController {
       const response = await this.healthMetricsMembersService.getTiers(req, { foundationSlug });
 
       logger.success(req, 'get_members_tiers', startTime, { foundation_slug: foundationSlug, row_count: response.rows.length });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** `GET /api/analytics/members-bridge` — every year's start total, movements and closing total. */
-  public async getMembersBridge(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_members_bridge');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_bridge');
-
-      const response = await this.healthMetricsMembersService.getBridge(req, { foundationSlug });
-
-      logger.success(req, 'get_members_bridge', startTime, { foundation_slug: foundationSlug, step_count: response.steps.length });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** `GET /api/analytics/members-movements` — one page of the organizations behind a bridge bar. */
-  public async getMembersMovements(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_members_movements');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_movements');
-
-      const rawYear = getStringQueryParam(req, 'year') ?? '';
-      if (!YEAR_PATTERN.test(rawYear)) {
-        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_movements' });
-      }
-
-      const movementType = getStringQueryParam(req, 'movementType') ?? '';
-      if (!MEMBERS_MOVEMENT_LIST_TYPES.has(movementType)) {
-        throw ServiceValidationError.forField('movementType', `Invalid movementType value. Allowed: ${[...MEMBERS_MOVEMENT_LIST_TYPES].join(', ')}`, {
-          operation: 'get_members_movements',
-        });
-      }
-
-      const { pageSize, offset } = parseOffsetPagination(req, {
-        defaultPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
-        maxPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
-      });
-
-      const year = Number(rawYear);
-      const response = await this.healthMetricsMembersService.getMovements(req, {
-        foundationSlug,
-        year,
-        movementType: movementType as HealthMetricsMembersMovementListType,
-        offset,
-        pageSize,
-      });
-
-      logger.success(req, 'get_members_movements', startTime, {
-        foundation_slug: foundationSlug,
-        year,
-        movement_type: movementType,
-        row_count: response.rows.length,
-        total_records: response.totalRecords,
-      });
 
       res.json(response);
     } catch (error) {

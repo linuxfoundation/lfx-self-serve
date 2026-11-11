@@ -4,7 +4,7 @@ description: The LFX Self Serve dashboard provides a lens-based overview of your
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, overview, lens, access, me, foundation, project, org, organization, company, employer]
-last_updated: 2026-11-03
+last_updated: 2026-11-06
 intercom_collection: Dashboards
 ---
 
@@ -68,7 +68,7 @@ Your choice stays in the page address (`?orgScope=all`) and carries to the other
 
 On the **Projects** list the choice changes the **Contributors** column only; influence, health, participants and maintainers are the same under both options. On a project's detail page, contributors' first and most recent activity dates come from every related organization. Under **Insights organization**, the influence level next to **Our Technical Influence** and **Our Ecosystem Influence** is the Insights organization's own; if it has no leaderboard ranking on the project, no level is shown, even when a related organization has one.
 
-**People**, **Code Contributions** and the **Projects** list also have a **Team members** dropdown under **More filters**. People marked as team members in the Community Data Platform are excluded by default, as LFX Insights does; choose **Include team members** to count them. Your choice stays in the page address (`?teamMembers=include`) and carries between these pages when you move between them from the sidebar. On the **Projects** list it changes the **Contributors** column only; participants and maintainers are the same under both options.
+**People**, **Code Contributions** and the **Projects** list also have a **Team members** dropdown under **More filters**. People marked as team members in LFX are excluded by default, as LFX Insights does; choose **Include team members** to count them. Your choice stays in the page address (`?teamMembers=include`) and carries between these pages when you move between them from the sidebar. On the **Projects** list it changes the **Contributors** column only; participants and maintainers are the same under both options.
 
 ### Navigation
 
@@ -90,6 +90,7 @@ If you are a CLA Manager or an initial CLA Manager designee, see [Why can't I se
 
 ## Related sections
 
+- [Organization involvement in a foundation](./organization-involvement/) — one organization's membership tier, contributors, maintainers, events and training in the foundation you are viewing
 - [Committees](../committees/) — manage your project governance groups
 - [Meetings](../meetings/) — view upcoming and past meetings
 - [Votes](../votes/) — participate in and manage polls

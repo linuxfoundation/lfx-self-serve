@@ -80,6 +80,9 @@ export interface DashboardMetricCard {
   /** Chart type - line or bar */
   chartType: ChartType;
 
+  /** Stat-only card: renders no chart area (and no chart skeleton) so the value sits directly under the header */
+  hideChart?: boolean;
+
   /**
    * Chart.js data configuration.
    * Typed `ChartData<any>` rather than `ChartData<ChartType>` because `ChartDataset<TType>`
@@ -440,6 +443,8 @@ export interface FilterPillOption {
   ariaLabel?: string;
   /** Optional accent for the default `pill` variant; omitted pills keep the blue selected style */
   color?: FilterPillColor;
+  /** Optional count shown as a small badge beside the label; omitted (or 0) renders none */
+  count?: number;
 }
 
 /** Accent colors a filter pill can take */

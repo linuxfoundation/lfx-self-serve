@@ -11,6 +11,7 @@ import { NavigationEnd, NavigationStart, Router } from '@angular/router';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { Meeting, MeetingWriteAccess, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -46,6 +47,7 @@ describe('MeetingComposerHostComponent', () => {
   let meetingWriteAccess: WritableSignal<MeetingWriteAccess>;
   let currentPersona: WritableSignal<string>;
   let clearContextLens: ReturnType<typeof vi.fn>;
+  let setLauncherHidden: ReturnType<typeof vi.fn>;
 
   const createdMeeting = { id: 'meeting-1', title: 'Weekly sync' } as Meeting;
 
@@ -108,6 +110,7 @@ describe('MeetingComposerHostComponent', () => {
     meetingWriteAccess = signal<MeetingWriteAccess>({ contextUid: 'project-1', canWrite: true });
     currentPersona = signal('maintainer');
     clearContextLens = vi.fn();
+    setLauncherHidden = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -145,6 +148,7 @@ describe('MeetingComposerHostComponent', () => {
         // The create picker's lens override is the only one the host ends; the real service reads
         // cookies and the router to work out a lens nothing here asks it for.
         { provide: LensService, useValue: { clearContextLens } },
+        { provide: IntercomService, useValue: { setLauncherHidden } },
         { provide: Router, useValue: { events: routerEvents, url: '/meetings', parseUrl: () => ({ queryParams: {} }), navigateByUrl } },
       ],
     });
@@ -255,6 +259,25 @@ describe('MeetingComposerHostComponent', () => {
       await flush();
 
       expect(clearContextLens).toHaveBeenCalledTimes(1);
+    });
+
+    // Intercom's launcher bubble covers the drawer footer's actions (#5416).
+    it('hides the Intercom launcher while the composer is open and restores it on close', async () => {
+      await openCreate();
+      expect(setLauncherHidden).toHaveBeenLastCalledWith(true);
+
+      component['onVisibleChange'](false);
+      await flush();
+
+      expect(setLauncherHidden).toHaveBeenLastCalledWith(false);
+    });
+
+    it('restores the Intercom launcher when the host is destroyed with the composer open', async () => {
+      await openCreate();
+
+      fixture.destroy();
+
+      expect(setLauncherHidden).toHaveBeenLastCalledWith(false);
     });
 
     it('leaves the override alone while the composer is still open', async () => {
@@ -406,7 +429,7 @@ describe('MeetingComposerHostComponent', () => {
       vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
     });
 
-    it('raises a sticky bottom-right uikit toast carrying the created meeting', () => {
+    it('raises a timed bottom-right uikit toast carrying the created meeting', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
 
       component['onSubmit']();
@@ -416,9 +439,8 @@ describe('MeetingComposerHostComponent', () => {
         position: 'bottom-right',
         message: 'Meeting created',
         description: 'Weekly sync',
-        duration: 0,
-        dismissible: true,
       });
+      expect(lastUiToast().duration).toBeUndefined();
       expect(lastUiToast().actions?.map((action) => action.label)).toEqual(['Edit meeting', 'View meeting']);
       expect(messageService.add).not.toHaveBeenCalled();
     });
@@ -442,7 +464,7 @@ describe('MeetingComposerHostComponent', () => {
 
       await openCreate();
 
-      // Sticky toasts never expire, so creating several meetings in a row would stack them over the drawer.
+      // A toast still on screen would otherwise sit over the reopened drawer.
       expect(first.dismiss).toHaveBeenCalledTimes(1);
     });
 

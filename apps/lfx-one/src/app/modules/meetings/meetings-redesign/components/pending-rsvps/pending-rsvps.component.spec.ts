@@ -1,16 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { ApplicationRef, signal, TemplateRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingVisibility, RecurrenceType } from '@lfx-one/shared/enums';
 import { Meeting, MeetingHomeRow, MeetingRsvp, RsvpScope } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { MeetingsHomeDetailsService } from '../../services/meetings-home-details.service';
 
 import { PendingRsvpsComponent } from './pending-rsvps.component';
 
@@ -44,6 +47,9 @@ describe('PendingRsvpsComponent', () => {
   let submit: ReturnType<typeof vi.fn>;
   let openModal: ReturnType<typeof vi.fn>;
   let closed: Subject<RsvpScope | undefined>;
+  let openDrawer: ReturnType<typeof vi.fn>;
+  let closeDrawer: ReturnType<typeof vi.fn<() => void>>;
+  let openDetails: ReturnType<typeof vi.fn>;
 
   const byTestId = (testId: string): HTMLElement | null => document.querySelector(`[data-testid="${testId}"]`);
   const all = (testId: string): HTMLElement[] => Array.from(document.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`));
@@ -76,7 +82,7 @@ describe('PendingRsvpsComponent', () => {
   };
 
   beforeEach(() => {
-    // jsdom has no layout, so every element reads as hidden to the popover's focusable check.
+    // jsdom has no layout, so every element reads as hidden to focusable checks.
     vi.spyOn(Element.prototype, 'getClientRects').mockReturnValue([new DOMRect(0, 0, 10, 10)] as unknown as DOMRectList);
     fallback = document.body.appendChild(document.createElement('button'));
     submit = vi.fn((_meeting: Meeting, occurrenceId: string | undefined, response: MeetingRsvp['response_type'], scope: RsvpScope) =>
@@ -84,12 +90,34 @@ describe('PendingRsvpsComponent', () => {
     );
     closed = new Subject<RsvpScope | undefined>();
     openModal = vi.fn(() => ({ closed, close: () => closed.next(undefined) }));
+    // Renders the drawer template straight into the page; the uikit drawer has its own spec.
+    closeDrawer = vi.fn();
+    openDetails = vi.fn();
+    openDrawer = vi.fn((template: TemplateRef<unknown>) => {
+      const appRef = TestBed.inject(ApplicationRef);
+      const view = template.createEmbeddedView({});
+      appRef.attachView(view);
+      document.body.append(...view.rootNodes);
+      const drawerClosed = new Subject<void>();
+      return {
+        closed: drawerClosed,
+        close: () => {
+          closeDrawer();
+          view.rootNodes.forEach((node: Node) => node.parentNode?.removeChild(node));
+          view.destroy();
+          drawerClosed.next();
+          drawerClosed.complete();
+        },
+      };
+    });
     TestBed.configureTestingModule({
       providers: [
         { provide: MeetingRsvpService, useValue: { submit$: submit, submittingMeetingIds: signal<ReadonlySet<string>>(new Set()) } },
         { provide: MeetingService, useValue: { removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()) } },
         { provide: UiModalService, useValue: { open: openModal } },
+        { provide: UiDrawerService, useValue: { open: openDrawer } },
         { provide: UiToastService, useValue: { show: vi.fn() } },
+        { provide: MeetingsHomeDetailsService, useValue: { open: openDetails } },
       ],
     });
   });
@@ -116,7 +144,29 @@ describe('PendingRsvpsComponent', () => {
     expect(trigger()?.getAttribute('aria-label')).toBe('1 Pending RSVP');
   });
 
-  it('lists each pending date with its project, title, time and 24px RSVP buttons', async () => {
+  it('opens a 640px drawer titled with the live count of dates left, and marks the button expanded', async () => {
+    await render([buildRow('a'), buildRow('b')]);
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('false');
+    await open();
+
+    expect(openDrawer).toHaveBeenCalledWith(expect.any(TemplateRef), { width: 640, describedBy: true });
+    expect(byTestId('ui-drawer-title')?.textContent?.trim()).toBe('Pending RSVPs');
+    expect(byTestId('ui-drawer-subtitle')?.textContent?.trim()).toBe('2 waiting for a response');
+    expect(trigger()?.getAttribute('aria-expanded')).toBe('true');
+
+    await setRows([buildRow('b')]);
+    expect(byTestId('ui-drawer-subtitle')?.textContent?.trim()).toBe('1 waiting for a response');
+  });
+
+  it('opens one drawer at a time', async () => {
+    await render([buildRow('a')]);
+    await open();
+    await open();
+
+    expect(openDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists each pending date with its date tile, project, title, time and 28px RSVP buttons', async () => {
     await render([buildRow('a'), buildRow('b', { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 } })]);
     await open();
 
@@ -127,10 +177,46 @@ describe('PendingRsvpsComponent', () => {
     expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-when"]')?.textContent).toContain('Thu, Oct 1 · 9:00 AM');
     expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-recurring"]')).toBeNull();
     expect(rows[1].querySelector('[data-testid="meetings-home-pending-rsvps-row-recurring"]')).not.toBeNull();
-    expect(rows[0].querySelector('[data-testid="meetings-home-rsvp-accepted"] button')?.className).toContain('h-ui-tiny');
+    expect(rows[0].querySelector('[data-testid="meetings-home-rsvp-accepted"] button')?.className).toContain('h-ui-xsmall');
+    expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-date-month"]')?.textContent?.trim()).toBe('Oct');
+    expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-date-day"]')?.textContent?.trim()).toBe('1');
+    expect(rows[0].querySelector('[data-testid="meetings-home-pending-rsvps-row-date"]')?.classList).toContain('w-[46px]');
   });
 
-  it('puts the RSVP buttons in the top-right corner of each row, wrapping right-aligned on phones', async () => {
+  it('swaps the drawer for the meeting details once it has closed when a title is clicked', async () => {
+    const row = buildRow('a');
+    await render([row]);
+    await open();
+
+    const title = byTestId('meetings-home-pending-rsvps-row-title') as HTMLAnchorElement;
+    expect(title.getAttribute('href')).toBeTruthy();
+    expect(title.getAttribute('target')).toBe('_blank');
+    expect(title.getAttribute('rel')).toBe('noopener noreferrer');
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+    openDetails.mockImplementation(() => expect(closeDrawer).toHaveBeenCalled());
+    title.dispatchEvent(click);
+    await settle();
+
+    expect(click.defaultPrevented).toBe(true);
+    expect(openDetails).toHaveBeenCalledWith(row, 'pending_rsvps');
+  });
+
+  it('keeps the drawer open and leaves a modified title click to the link', async () => {
+    await render([buildRow('a')]);
+    await open();
+
+    const title = byTestId('meetings-home-pending-rsvps-row-title') as HTMLAnchorElement;
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+    // jsdom would follow the link otherwise.
+    title.addEventListener('click', (event) => event.preventDefault());
+    title.dispatchEvent(click);
+    await settle();
+
+    expect(openDetails).not.toHaveBeenCalled();
+    expect(closeDrawer).not.toHaveBeenCalled();
+  });
+
+  it('puts the RSVP buttons in the top-right corner of each row, on a second line right-aligned below a 480px row', async () => {
     await render([buildRow('a')]);
     await open();
 
@@ -138,8 +224,9 @@ describe('PendingRsvpsComponent', () => {
     const rsvp = row.querySelector('[data-testid="meetings-home-pending-rsvps-row-rsvp"]');
     expect(row.classList).toContain('items-start');
     expect(row.classList).toContain('flex-wrap');
+    expect(row.classList).toContain('@[480px]:flex-nowrap');
     expect(row.lastElementChild).toBe(rsvp);
-    expect(rsvp?.classList).toContain('ml-auto');
+    expect(Array.from(rsvp?.classList ?? [])).toEqual(expect.arrayContaining(['basis-full', 'justify-end', '@[480px]:basis-auto']));
     expect(rsvp?.querySelector('[data-testid="meetings-home-rsvp"]')).not.toBeNull();
   });
 
@@ -201,12 +288,60 @@ describe('PendingRsvpsComponent', () => {
     await answer(all('meetings-home-pending-rsvps-row')[0], 'meetings-home-rsvp-declined');
     await setRows([]);
 
+    expect(closeDrawer).toHaveBeenCalled();
     expect(byTestId('meetings-home-pending-rsvps-panel')).toBeNull();
     expect(trigger()).toBeNull();
     expect(document.activeElement).toBe(fallback);
   });
 
-  it('leaves focus alone when a date is answered elsewhere while the popover is closed', async () => {
+  it('hands focus to the fallback when the drawer closes before the opener leaves the page', async () => {
+    await render([buildRow('a')]);
+    await open();
+    trigger()?.focus();
+
+    await setRows([]);
+
+    expect(closeDrawer).toHaveBeenCalled();
+    expect(document.activeElement).toBe(fallback);
+  });
+
+  it('keeps a date whose answer fails', async () => {
+    submit.mockReturnValueOnce(throwError(() => new Error('down')));
+    await render([buildRow('a'), buildRow('b')]);
+    await open();
+
+    await answer(all('meetings-home-pending-rsvps-row')[0], 'meetings-home-rsvp-accepted');
+
+    expect(all('meetings-home-pending-rsvps-row')).toHaveLength(2);
+    expect(closeDrawer).not.toHaveBeenCalled();
+  });
+
+  it('closes the drawer with the page', async () => {
+    await render([buildRow('a')]);
+    await open();
+
+    fixture.destroy();
+
+    expect(closeDrawer).toHaveBeenCalled();
+  });
+
+  it('moves no focus when an emptied drawer finishes closing after the page is gone', async () => {
+    // The drawer is still sliding out when the page goes; it reports closed later.
+    const drawerClosed = new Subject<void>();
+    openDrawer.mockReturnValueOnce({ closed: drawerClosed, close: closeDrawer });
+    await render([buildRow('a')]);
+    await open();
+    await setRows([]);
+    const focused = vi.spyOn(fallback, 'focus');
+
+    fixture.destroy();
+    drawerClosed.next();
+
+    expect(closeDrawer).toHaveBeenCalled();
+    expect(focused).not.toHaveBeenCalled();
+  });
+
+  it('leaves focus alone when a date is answered elsewhere while the drawer is closed', async () => {
     await render([buildRow('a'), buildRow('b')]);
     const outside = document.body.appendChild(document.createElement('button'));
     outside.focus();

@@ -1,0 +1,53 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<lfx-mktg-portrait-page
+  [look]="look()"
+  [book]="book()"
+  [pageId]="page().id"
+  [page]="page().number"
+  [section]="page().label"
+  [title]="page().title"
+  [band]="page().band">
+  <p class="pp-body pp-body--wide" [lfxPpRect]="[x, 136, w]" data-testid="brand-kit-clear-space-intro">{{ intro() }}</p>
+  @if (v.logos.primary?.src) {
+    <div [lfxPpRect]="[x, 232, w]">
+      <div class="kp-stage" data-testid="brand-kit-clear-space-stage">
+        <div class="kp-clear">
+          <lfx-mktg-brand-kit-artwork [view]="v" [height]="60" />
+          <span class="kp-x kp-x--top">X</span>
+          <span class="kp-x kp-x--bottom">X</span>
+          <span class="kp-x kp-x--left">X</span>
+          <span class="kp-x kp-x--right">X</span>
+        </div>
+      </div>
+      <div class="pp-cap">X = the height of the symbol. Nothing enters the dashed area.</div>
+    </div>
+    <div [lfxPpRect]="[x, 610, w]">
+      <div class="pp-lab pp-lab--dark">Scaling</div>
+      <div class="kp-scaling" data-testid="brand-kit-clear-space-scaling">
+        @for (step of steps; track step) {
+          <div>
+            <lfx-mktg-brand-kit-artwork [view]="v" [height]="step" />
+            <div class="kp-scaling-label">{{ measure(step, 'px') }}</div>
+          </div>
+        }
+        @if (v.symbol?.src) {
+          <div>
+            <lfx-mktg-brand-kit-artwork [view]="v" kind="symbol" [height]="minimum().symbol_px" />
+            <div class="kp-scaling-label">Symbol {{ measure(minimum().symbol_px, 'px') }}</div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+  <div class="kp-tiles" [lfxPpRect]="[x, 770, w]" data-testid="brand-kit-clear-space-cards">
+    @for (card of cards(); track card.label) {
+      <div class="kp-figure-card">
+        <div class="kp-figure">{{ card.figure }}</div>
+        <div class="kp-figure-label">{{ card.label }}</div>
+      </div>
+    }
+  </div>
+</lfx-mktg-portrait-page>

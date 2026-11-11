@@ -5,7 +5,7 @@ import { isPlatformBrowser, Location } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
-import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MAILING_LIST_ACCESS_DENIED_MESSAGE, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
@@ -24,13 +24,14 @@ import { PersonaService } from './shared/services/persona.service';
 import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
+import { TranscendService } from './shared/services/transcend.service';
 import { UserService } from './shared/services/user.service';
 import { isBrowserCredentialUrlPath, isBrowserInviteLandingPath } from './shared/utils/invite-landing.util';
 import { identifiedIntercomBootOptions } from './shared/utils/intercom-boot.util';
 
 const ACCESS_DENIED_MESSAGES: Record<string, string> = {
   meetings: "You don't have permission to schedule meetings for this project.",
-  'mailing-lists': "You don't have permission to manage mailing lists for this project.",
+  'mailing-lists': MAILING_LIST_ACCESS_DENIED_MESSAGE,
   votes: "You don't have permission to manage votes for this project.",
   surveys: "You don't have permission to manage surveys for this project.",
   committees: "You don't have permission to manage committees for this project.",
@@ -52,6 +53,7 @@ export class AppComponent {
   private readonly intercomService = inject(IntercomService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly transcendService = inject(TranscendService);
   protected readonly meetingComposer = inject(MeetingComposerService);
   /**
    * Whether meetings v2 is enabled for this user.
@@ -71,7 +73,7 @@ export class AppComponent {
   );
   /**
    * Latches once the host has been in the tree, and never goes back.
-   * @description Closing is not the end of the host's job: `onSubmit()` raises the sticky create toast
+   * @description Closing is not the end of the host's job: `onSubmit()` raises the create toast
    * and calls `composer.close()` in the same tick, and the host keeps the handle that retires that toast
    * when the composer next opens. On the flag alone those two legs both read false at that point, so the
    * outlet would be destroyed and a later remount would start without the handle, leaving the old toast
@@ -111,8 +113,12 @@ export class AppComponent {
     const onInviteLanding = isBrowserInviteLandingPath();
     // Segment, Plausible and Intercom record the page URL, which carries the invite token here.
     const onCredentialUrl = isBrowserCredentialUrlPath();
+    // Inside a frame Transcend shows no notice and no Cookie settings, so analytics never start there:
+    // a visitor in an opt-out regime would be tracked with no way to say no (lfx-self-serve-ops#1438).
+    // Datadog RUM is gated the same way in provideDataDogRum.
+    const startAnalytics = !onCredentialUrl && this.transcendService.preferencesAvailable;
 
-    if (!onCredentialUrl) {
+    if (startAnalytics) {
       this.segmentService.initialize();
       this.plausibleService.initialize();
     }
@@ -155,7 +161,7 @@ export class AppComponent {
 
       const authedUser = this.auth.user;
 
-      if (!onCredentialUrl) {
+      if (startAnalytics) {
         this.segmentService.setImpersonating(isImpersonating);
         this.plausibleService.setImpersonating(isImpersonating);
         this.segmentService.identifyUser(authedUser);

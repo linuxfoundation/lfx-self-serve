@@ -26,6 +26,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
+  MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS,
   MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE,
   MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS,
@@ -48,7 +49,7 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipProgramMentor,
 } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import { formatIsoDateLabel, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipUpstreamReasonMessage } from '@lfx-one/shared/utils';
 import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -336,8 +337,9 @@ export class MentorsTabComponent {
 
   /**
    * A 409 means the person is already invited or a mentor, so the field clears and the page reloads to show them. A 400
-   * (an unpublished program), a 422 (no LF account), a 503 (account lookup down) and every other failure keep the pick
-   * so the admin can retry.
+   * (an unpublished program), a 422 (no LF account, or another reason upstream names; see
+   * `MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS`), a 503 (account lookup down) and every other failure keep the
+   * pick so the admin can retry.
    */
   private onInviteError(err: unknown): void {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
@@ -352,7 +354,8 @@ export class MentorsTabComponent {
       return;
     }
     if (status === 422) {
-      this.showToast('error', 'Error', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE, 5000);
+      const reason = mentorshipUpstreamReasonMessage(MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS, serverAuthoredMessage(err, ''));
+      this.showToast('error', 'Error', reason ?? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE, 5000);
       return;
     }
     if (status === 503) {

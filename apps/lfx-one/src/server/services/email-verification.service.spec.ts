@@ -129,3 +129,65 @@ describe('EmailVerificationService.verifyOtp', () => {
     expect(loggedPayloads()).not.toContain(USER_MANAGEMENT_TOKEN);
   });
 });
+
+describe('EmailVerificationService.listIdentities', () => {
+  const BEARER_TOKEN = 'synthetic-bearer-token';
+  const githubIdentity = { provider: 'github', user_id: 'github-1', connection: 'github', isSocial: true, profileData: { nickname: 'test-user' } };
+  const reqWithToken = { bearerToken: BEARER_TOKEN, path: '/api/profile/identities' } as unknown as Request;
+  const reqWithoutToken = { path: '/api/profile/identities' } as unknown as Request;
+  let service: EmailVerificationService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new EmailVerificationService();
+  });
+
+  it("sends the request's bearer token, not a bare sub, as user.auth_token", async () => {
+    natsRequest.mockResolvedValue(reply({ success: true, data: [githubIdentity] }));
+
+    await expect(service.listIdentities(reqWithToken)).resolves.toEqual([githubIdentity]);
+
+    expect(natsRequest).toHaveBeenCalledExactlyOnceWith(NatsSubjects.USER_IDENTITY_LIST, expect.any(Uint8Array), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+    expect(decodeRequestPayload()).toEqual({ user: { auth_token: BEARER_TOKEN } });
+    // Skip each call's leading `req` (it carries the token by design); the logged fields must not.
+    const loggedFields = JSON.stringify(Object.values(loggerMock).flatMap((fn) => fn.mock.calls.map((call: unknown[]) => call.slice(1))));
+    expect(loggedFields).not.toContain(BEARER_TOKEN);
+  });
+
+  it('rejects with 401, without calling auth-service, when the request has no bearer token', async () => {
+    await expect(service.listIdentities(reqWithoutToken)).rejects.toMatchObject({ statusCode: 401, code: 'AUTHENTICATION_REQUIRED' });
+
+    expect(natsRequest).not.toHaveBeenCalled();
+    expect(loggerMock.warning).not.toHaveBeenCalled();
+  });
+
+  it('maps an unsuccessful auth-service reply to AUTH_SERVICE_UNAVAILABLE', async () => {
+    natsRequest.mockResolvedValue(reply({ success: false, error: 'a valid JWT token is required' }));
+
+    await expect(service.listIdentities(reqWithToken)).rejects.toMatchObject({ statusCode: 503, code: 'AUTH_SERVICE_UNAVAILABLE' });
+  });
+
+  it('maps a NATS transport failure to AUTH_SERVICE_UNAVAILABLE', async () => {
+    natsRequest.mockRejectedValue(new Error('request timeout'));
+
+    await expect(service.listIdentities(reqWithToken)).rejects.toMatchObject({ statusCode: 503, code: 'AUTH_SERVICE_UNAVAILABLE' });
+  });
+
+  it('logs a missing-token fallback only once in listIdentitiesSafe', async () => {
+    await expect(service.listIdentitiesSafe(reqWithoutToken)).resolves.toEqual([]);
+
+    expect(natsRequest).not.toHaveBeenCalled();
+    expect(loggerMock.warning).toHaveBeenCalledExactlyOnceWith(reqWithoutToken, 'list_identities_safe', 'Identity list unavailable — continuing without it', {
+      err: expect.objectContaining({ statusCode: 401, code: 'AUTHENTICATION_REQUIRED' }),
+    });
+  });
+
+  it.each([
+    ['there is no bearer token', reqWithoutToken, undefined],
+    ['auth-service rejects the request', reqWithToken, { success: false, error: 'a valid JWT token is required' }],
+  ])('listIdentitiesSafe degrades to an empty list when %s', async (_label, request, upstream) => {
+    if (upstream) natsRequest.mockResolvedValue(reply(upstream));
+
+    await expect(service.listIdentitiesSafe(request)).resolves.toEqual([]);
+  });
+});

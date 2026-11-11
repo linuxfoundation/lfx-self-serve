@@ -34,6 +34,8 @@ export class InitiativeDetailHeaderComponent {
   public readonly activeTab = input.required<string>();
   /** Show the creator-only Edit attribution action (lfx-crowdfunding#342); the page decides lens, owner, status and flag. */
   public readonly canEditAttribution = input(false);
+  /** Show who created the initiative; the lens pages set it (lfx-crowdfunding#452). */
+  public readonly showCreator = input(false);
   public readonly tabChange = output<string>();
   public readonly settingsClick = output<void>();
   public readonly editAttributionClick = output<void>();

@@ -196,6 +196,7 @@ describe('orgs router — ROI Metrics LF-staff gate', () => {
     '/lens/roi/coverage',
     '/lens/roi/annual',
     '/lens/roi/investment-breakdown',
+    '/lens/roi/value-drivers',
     '/lens/roi/projects',
     '/lens/roi/projects/synthetic-project/annual',
     '/lens/roi/projects/synthetic-project',

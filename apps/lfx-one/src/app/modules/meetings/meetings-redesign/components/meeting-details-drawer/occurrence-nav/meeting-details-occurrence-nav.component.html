@@ -1,0 +1,92 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (visible()) {
+  <div class="flex items-center justify-between gap-[8px]" data-testid="meeting-details-occurrence-nav">
+    <lfx-ui-button
+      variant="secondary"
+      size="small"
+      icon="fa-light fa-angle-left"
+      iconOnly
+      ariaLabel="Previous"
+      [disabled]="index() <= 0"
+      (click)="step(-1)"
+      data-testid="meeting-details-occurrence-prev" />
+    <lfx-ui-button
+      class="[font-variant-numeric:tabular-nums]"
+      variant="tertiary"
+      size="small"
+      icon="fa-light fa-calendars"
+      trailingIcon="fa-light fa-angles-up-down"
+      popoverLabel="Jump to occurrence"
+      popoverPadding="none"
+      popoverAlign="center"
+      [popover]="menu"
+      [popoverWidth]="320"
+      (click)="menuTab.set(null)"
+      data-testid="meeting-details-occurrence-menu-button">
+      Occurrence {{ index() + 1 }} of {{ timeline().length }}
+    </lfx-ui-button>
+    <lfx-ui-button
+      variant="secondary"
+      size="small"
+      icon="fa-light fa-angle-right"
+      iconOnly
+      ariaLabel="Next"
+      [disabled]="index() >= timeline().length - 1"
+      (click)="step(1)"
+      data-testid="meeting-details-occurrence-next" />
+  </div>
+}
+
+<ng-template #menu let-close="close">
+  <div class="flex flex-col p-[4px]" data-testid="meeting-details-occurrence-menu">
+    <lfx-ui-switch class="m-[4px] mb-[6px] flex" size="small" ariaLabel="Occurrences" [value]="shownTab()" (valueChange)="selectTab($event)">
+      <lfx-ui-switch-option class="flex-1" value="upcoming" label="Upcoming" />
+      <lfx-ui-switch-option class="flex-1" value="past" label="Past" />
+    </lfx-ui-switch>
+    <ul class="m-0 flex max-h-[300px] list-none flex-col gap-[2px] overflow-y-auto p-0 py-[6px] [scrollbar-width:none]" aria-label="Jump to occurrence">
+      @for (option of items(); track option.occurrence.start_time) {
+        @let shown = isShown(option);
+        <li>
+          <button
+            type="button"
+            class="flex w-full items-center gap-[10px] rounded-[8px] px-[10px] py-[8px] text-left [font-variant-numeric:tabular-nums] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            [class.bg-blue-50]="shown"
+            [class.hover:bg-gray-50]="!shown"
+            [class.cursor-not-allowed]="option.cancelled"
+            [class.opacity-[.55]]="option.cancelled"
+            [attr.aria-disabled]="option.cancelled || null"
+            [attr.aria-current]="shown ? 'date' : null"
+            (click)="pick(option, close)"
+            data-testid="meeting-details-occurrence-option">
+            <span class="flex h-[38px] w-[36px] flex-none flex-col overflow-hidden rounded-[7px] border border-gray-200 bg-white" aria-hidden="true">
+              <span
+                class="flex h-[12px] flex-none items-center justify-center text-[7.5px] font-semibold uppercase leading-none tracking-[.08em] text-white"
+                [class]="option.cancelled || shownTab() === 'past' ? 'bg-gray-400' : 'bg-blue-500'"
+                >{{ option.occurrence.start_time | date: 'MMM' }}</span
+              >
+              <span class="flex flex-auto items-center justify-center text-[15px] leading-none text-gray-900">{{
+                option.occurrence.start_time | date: 'd'
+              }}</span>
+            </span>
+            <span class="flex min-w-0 flex-auto flex-col gap-[2px]">
+              <span class="text-[13px] font-medium leading-[18px] text-gray-900">{{ option.occurrence.start_time | date: 'EEE, MMMM d, y' }}</span>
+              <span class="text-[12px] leading-[16px] text-gray-500">{{ timeOf(option) }}</span>
+            </span>
+            @if (option.cancelled) {
+              <lfx-ui-badge size="sm" data-testid="meeting-details-occurrence-cancelled">Cancelled</lfx-ui-badge>
+            } @else if (option.next) {
+              <lfx-ui-badge size="sm" tone="accent" data-testid="meeting-details-occurrence-next-badge">Next</lfx-ui-badge>
+            }
+          </button>
+        </li>
+      } @empty {
+        <li class="px-[10px] py-[8px] text-[13px] text-gray-500" data-testid="meeting-details-occurrence-empty">
+          {{ shownTab() === 'past' ? 'No past occurrences' : 'No upcoming occurrences' }}
+        </li>
+      }
+    </ul>
+  </div>
+</ng-template>

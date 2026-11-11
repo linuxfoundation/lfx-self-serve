@@ -4,7 +4,7 @@ description: How to view initiative details, edit settings, and archive or activ
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, edit, attribution, archive, activate]
-last_updated: 2026-10-29
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
@@ -30,16 +30,16 @@ Select **Back to Initiatives** above the header to return to your initiatives li
 - **On behalf of** and the organization or project name, for an attributed initiative
 - Actions: **View Public Page** (opens the initiative on the public crowdfunding site in a new tab), **Edit attribution** (see [Change an initiative's attribution](#change-an-initiatives-attribution)), **Settings**, and the **More** menu (⋯)
 
-**Overview tab** — a financial summary with the current balance, amount raised against the goal, percent funded, and sponsor count, followed by the **Funding goals** for the initiative (when set), each showing its goal, amount donated, and amount spent. Below it, **About this Initiative** shows the full description. A **Recent donations** sidebar lists the five most recent donations with the donor, date, and amount.
+**Overview tab** — a financial summary with the current balance, amount raised against the goal, percent funded, and sponsor count, followed by the **Funding goals** for the initiative (when set), each showing its goal, amount donated, and amount spent. Below it, **About this Initiative** shows the full description with its formatting (headings, bold, lists, and links). A **Recent donations** sidebar lists the five most recent donations with the donor, date, and amount.
 
-**Financials tab** — total received, total expenses, and balance, followed by the **Donations received** and **Expense breakdown** tables. Use **Load more** to page through either table.
+**Financials tab** — total received, total expenses, and balance, followed by the **Donations received** and **Expense breakdown** tables. Use **Load more** to page through either table. A donor who chose to hide their name is listed as **Anonymous**, here and in **Recent donations**; the amount still shows, and an organization donation keeps the organization's name.
 
 ## Edit an initiative
 
 1. Open an initiative from the [View Initiatives](../view-initiatives/) page.
 1. Select **Settings** in the initiative header to open the **Initiative Settings** drawer.
 1. Update fields across the settings tabs:
-   - **Initiative details** — name, elevator pitch, topics, website URL
+   - **Initiative details** — name, elevator pitch, topics, website URL. The elevator pitch uses a rich-text editor (headings, bold, italic, underline, strikethrough, lists, and links) and is limited to 500 characters of text. If heavy formatting makes the pitch too long to save, the field shows an error; remove some formatting or shorten the text.
    - **Branding** — logo image
    - **Beneficiaries** — add or remove by name and email
    - **Funding** — goal amount and distribution percentages across Development, Marketing, Meetups, Bug Bounty, Travel, and Documentation

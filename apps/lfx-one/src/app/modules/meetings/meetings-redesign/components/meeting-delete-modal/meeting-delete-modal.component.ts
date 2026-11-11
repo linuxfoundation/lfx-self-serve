@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
-import { formatDate } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { MeetingDeleteDialogData } from '@lfx-one/shared/interfaces';
-import { codePointLength, formatMeetingTimeRange, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { MeetingDeleteDialogData, MeetingDialogOrigin, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { codePointLength, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
@@ -17,13 +16,15 @@ import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { Observable, take } from 'rxjs';
 
+import { MeetingDialogContextComponent } from '../meeting-dialog-context/meeting-dialog-context.component';
+
 /**
  * Confirms deleting a meeting, or with an occurrence cancelling that date with an optional reason, then runs it; closes with `true` once done.
  * @description On failure it stays open with an error toast so the organizer can retry, as the legacy delete dialog does.
  */
 @Component({
   selector: 'lfx-meeting-delete-modal',
-  imports: [UiButtonComponent, UiModalComponent, UiNoteComponent, UiTextareaComponent],
+  imports: [MeetingDialogContextComponent, UiButtonComponent, UiModalComponent, UiNoteComponent, UiTextareaComponent],
   templateUrl: './meeting-delete-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -36,14 +37,21 @@ export class MeetingDeleteModalComponent {
 
   protected readonly occurrence = this.data.occurrence;
   protected readonly recurring = !!this.data.row.meeting.recurrence;
-  protected readonly title = this.occurrence?.title || this.data.row.meeting.title || 'Untitled Meeting';
-  protected readonly start = this.occurrence?.start_time ?? this.data.row.startTime;
-  protected readonly date = formatDate(this.start, 'EEE, MMM d, y', 'en-US');
-  protected readonly time = formatMeetingTimeRange(
-    this.start,
-    this.occurrence ? this.occurrence.duration || this.data.row.meeting.duration || 0 : this.data.row.durationMinutes
-  );
-  protected readonly guestCount = resolveMeetingBaseCount(this.data.row.meeting) ?? 0;
+  protected readonly origin: MeetingDialogOrigin = this.data.origin ?? 'page';
+  /** The row as the context block shows it: on a cancel, the picked date, which can differ from the clicked row's. */
+  protected readonly contextRow: MeetingHomeRow = this.occurrence
+    ? {
+        ...this.data.row,
+        occurrence: this.occurrence,
+        occurrenceId: this.occurrence.occurrence_id,
+        title: this.occurrence.title || this.data.row.meeting.title,
+        startTime: this.occurrence.start_time,
+        durationMinutes: this.occurrence.duration || this.data.row.meeting.duration || 0,
+      }
+    : this.data.row;
+  /** The invited total the row's attendance block shows, else the registrant counts; null hides the line. */
+  protected readonly guestCount: number | null =
+    (this.data.row.occurrence ?? this.data.row.meeting).rsvp_summary?.invited ?? resolveMeetingBaseCount(this.data.row.meeting) ?? null;
   protected readonly reasonMaxLength = MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH;
   protected readonly reason = signal('');
   // Counted like the BFF: code points of the trimmed text.
@@ -52,6 +60,10 @@ export class MeetingDeleteModalComponent {
   );
   /** True while the request runs; the dialog cannot close meanwhile, or the list would miss the result. */
   public readonly busy = signal(false);
+  protected readonly confirmLabel: Signal<string> = computed(() => {
+    if (!this.occurrence) return 'Delete Meeting';
+    return this.busy() ? 'Canceling...' : 'Cancel Occurrence';
+  });
 
   protected cancel(): void {
     this.dialogRef.close();

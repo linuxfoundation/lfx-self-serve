@@ -58,6 +58,9 @@
         }
       }
     </div>
+    @if (creator(); as creator) {
+      <p class="text-xs text-gray-500" data-testid="initiative-card-creator">Created by {{ creator }}</p>
+    }
     <p class="text-xs text-gray-500 truncate">{{ description() }}</p>
   </div>
 

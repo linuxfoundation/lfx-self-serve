@@ -11,10 +11,16 @@ const {
   getContributors,
   getCompanyEmails,
   getCompanyEmailsByUsername,
+  getCompanyEmailsByKeyContacts,
+  getCompanyEmailKeys,
   getEmployeeDetail,
   getEmployeeDetailByUsername,
   getKeyContactsForPerson,
+  getOrgKeyContacts,
   resolveUsernameByPersonKey,
+  getTrainees,
+  readEventAttendeesSummary,
+  assertOrgLensRead,
   logger,
 } = vi.hoisted(() => ({
   getAllEmployees: vi.fn(),
@@ -23,10 +29,16 @@ const {
   getContributors: vi.fn(),
   getCompanyEmails: vi.fn(),
   getCompanyEmailsByUsername: vi.fn(),
+  getCompanyEmailsByKeyContacts: vi.fn(),
+  getCompanyEmailKeys: vi.fn(),
   getEmployeeDetail: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   getKeyContactsForPerson: vi.fn(),
+  getOrgKeyContacts: vi.fn(),
   resolveUsernameByPersonKey: vi.fn(),
+  getTrainees: vi.fn(),
+  readEventAttendeesSummary: vi.fn(),
+  assertOrgLensRead: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
@@ -39,6 +51,8 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-employment.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-team-members.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-scope.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-key-contact.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
@@ -47,6 +61,8 @@ vi.mock('../services/org-lens-people.service', () => ({
     public getFormerEmployees = getFormerEmployees;
     public getCompanyEmails = getCompanyEmails;
     public getCompanyEmailsByUsername = getCompanyEmailsByUsername;
+    public getCompanyEmailsByKeyContacts = getCompanyEmailsByKeyContacts;
+    public getCompanyEmailKeys = getCompanyEmailKeys;
     public getEmployeeDetail = getEmployeeDetail;
     public getEmployeeDetailByUsername = getEmployeeDetailByUsername;
     public resolveUsernameByPersonKey = resolveUsernameByPersonKey;
@@ -64,13 +80,25 @@ vi.mock('../services/org-people-directory.service', () => ({
     public getLive = getLive;
   },
 }));
-vi.mock('../services/org-people-event-attendees.service', () => ({ OrgPeopleEventAttendeesService: class {} }));
+vi.mock('../services/org-people-event-attendees.service', () => ({
+  OrgPeopleEventAttendeesService: class {
+    public readSummary = readEventAttendeesSummary;
+  },
+}));
 vi.mock('../services/org-people-key-contacts.service', () => ({
   OrgPeopleKeyContactsService: class {
     public getKeyContactsForPerson = getKeyContactsForPerson;
+    public getKeyContacts = getOrgKeyContacts;
   },
 }));
-vi.mock('../services/org-people-trainees.service', () => ({ OrgPeopleTraineesService: class {} }));
+vi.mock('../services/org-people-trainees.service', () => ({
+  OrgPeopleTraineesService: class {
+    public getTrainees = getTrainees;
+  },
+}));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead }));
+
+import { ORG_TRAINEE_OUTSIDE_KEY_PREFIX } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { OrgLensPeopleController } from './org-lens-people.controller';
@@ -152,6 +180,64 @@ describe('OrgLensPeopleController All Employees time range (lfx-self-serve#4163)
     expect(getAllEmployees).not.toHaveBeenCalled();
     expect(getLive).not.toHaveBeenCalled();
     expect(getFormerEmployees).not.toHaveBeenCalled();
+  });
+});
+
+// lfx-self-serve#4598: the All Employees Event Attendees tile is the People -> Event Attendees tab's default Attendees number.
+describe('OrgLensPeopleController All Employees Event Attendees tile (lfx-self-serve#4598)', () => {
+  const controller = new OrgLensPeopleController();
+  const roster = { ...EMPTY_ROSTER, stats: { activeInOss: 3, inGovernance: 0, codeContributors: 1, eventAttendees: 2, trainees: 0 } };
+
+  async function respond(query: Record<string, string>): Promise<{ eventAttendeesTotal?: number | null; stats: { eventAttendees: number } }> {
+    const res = buildRes();
+    await controller.getAllEmployees(buildRosterReq(query), res, vi.fn());
+    return (res.json as ReturnType<typeof vi.fn>).mock.calls[0][0];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getAllEmployees.mockResolvedValue(roster);
+    getLive.mockResolvedValue(roster);
+    readEventAttendeesSummary.mockResolvedValue({ attendeesCount: 486, speakersCount: 9, eventsCount: 12, foundationsCount: 3 });
+  });
+
+  it('reads the summary row of the range at the Event Attendees defaults (Employee match, registered or attended) and serves its Attendees count', async () => {
+    const stored = await respond({ range: '90d' });
+    const live = await respond({ live: 'true', range: '730d' });
+
+    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(1, ORG_UID, '90d', 'all');
+    expect(readEventAttendeesSummary).toHaveBeenNthCalledWith(2, ORG_UID, '730d', 'all');
+    expect(stored).toMatchObject({ eventAttendeesTotal: 486, stats: { eventAttendees: 486, activeInOss: 3 } });
+    expect(live.eventAttendeesTotal).toBe(486);
+  });
+
+  it.each(['all', 'lf'])('uses the summary under the %s project scope: events do not depend on it', async (projectScope) => {
+    expect((await respond({ range: '730d', projectScope })).eventAttendeesTotal).toBe(486);
+  });
+
+  it('keeps the listed-employee count under the Non-LF project scope', async () => {
+    const response = await respond({ range: '730d', projectScope: 'non_lf' });
+
+    expect(readEventAttendeesSummary).not.toHaveBeenCalled();
+    expect(response.eventAttendeesTotal).toBeUndefined();
+    expect(response.stats.eventAttendees).toBe(2);
+  });
+
+  it('keeps the listed-employee count for the unranged roster read', async () => {
+    const response = await respond({});
+
+    expect(readEventAttendeesSummary).not.toHaveBeenCalled();
+    expect(response.eventAttendeesTotal).toBeUndefined();
+  });
+
+  it('serves the roster and marks the tile unavailable, never a different count, when the summary cannot be read', async () => {
+    readEventAttendeesSummary.mockRejectedValue(new Error('warehouse down'));
+
+    const response = await respond({ range: '730d' });
+
+    expect(response.eventAttendeesTotal).toBeNull();
+    expect(response.stats).toBeDefined();
+    expect(logger.warning).toHaveBeenCalled();
   });
 });
 
@@ -341,6 +427,168 @@ describe('OrgLensPeopleController getCompanyEmails', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(getCompanyEmails).toHaveBeenCalledWith(req, ORG_UID, 'live-0123456789abcdef', expected);
+  });
+});
+
+describe('OrgLensPeopleController getCompanyEmailsByKeyContacts', () => {
+  const controller = new OrgLensPeopleController();
+  const ID_ONE = 'a0F000000000001AAA';
+  const ID_TWO = 'a0F000000000002AAA';
+  const keyContactReq = (query: Record<string, string>): Request => ({ params: { orgUid: ORG_UID }, query, path: '/test' }) as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCompanyEmailsByKeyContacts.mockResolvedValue({ companyEmails: [], companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' });
+    getOrgKeyContacts.mockResolvedValue({
+      assignments: [
+        { contactUid: ID_ONE, username: 'JDoe', email: ' JDoe@Company.example ' },
+        { contactUid: ID_TWO, username: 'jdoe', email: 'jdoe@company.example' },
+        { contactUid: 'a0F000000000009AAA', username: 'someone-else', email: 'someone@company.example' },
+      ],
+    });
+  });
+
+  it.each([
+    ['no ids', {}],
+    ['an empty id list', { ids: '' }],
+    ['a 15-character id', { ids: 'a0F000000000001' }],
+    ['a non-alphanumeric id', { ids: `${ID_ONE},a0F00000000000'AAA` }],
+    ['more than 50 ids', { ids: Array.from({ length: 51 }, (_, index) => `a0F${String(index).padStart(15, '0')}`).join(',') }],
+  ])('answers 400 for %s, before any lookup', async (_label, query) => {
+    const next = vi.fn();
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq(query), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(getCompanyEmailsByKeyContacts).not.toHaveBeenCalled();
+  });
+
+  it('passes the deduplicated ids, the username their assignments agree on and their current contact emails, ignoring a client-supplied username', async () => {
+    const res = buildRes();
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO},${ID_ONE}`, username: 'a/b' }), res, vi.fn());
+
+    expect(getOrgKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID);
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], 'JDoe', new Set(['jdoe@company.example']));
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  // A role reassigned from A to B keeps its record id: the record addresses are bound to the contact it names now.
+  it('binds the record addresses to the email of the contact each record names now', async () => {
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: null, email: 'b.current@company.example' }] });
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), buildRes(), vi.fn());
+
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null, new Set(['b.current@company.example']));
+  });
+
+  it('looks up the records alone when their assignments agree on no username', async () => {
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: null, email: 'first@company.example' }] });
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), buildRes(), vi.fn());
+
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null, new Set(['first@company.example']));
+  });
+
+  it('looks up the records alone when any requested id has no assignment, even if the found ones agree', async () => {
+    // ID_TWO is absent from the org's assignments: agreement over ID_ONE alone could hand an email-grouped opener one
+    // member's LF addresses. Fail closed to the records, as agreedUsername does for a member without a username.
+    getOrgKeyContacts.mockResolvedValue({ assignments: [{ contactUid: ID_ONE, username: 'JDoe', email: 'jdoe@company.example' }] });
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: `${ID_ONE},${ID_TWO}` }), buildRes(), vi.fn());
+
+    // The found record's current email still binds its addresses; only the username needs every id.
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE, ID_TWO], null, new Set(['jdoe@company.example']));
+  });
+
+  it.each([
+    ['unconfirmed', { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'unavailable', companyEmailsReason: 'unconfirmed' }],
+    ['failed', { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' }],
+  ])('shows no record address when the key contacts read fails, answering %s', async (_label, result) => {
+    getOrgKeyContacts.mockRejectedValue(new Error('upstream down'));
+    getCompanyEmailsByKeyContacts.mockResolvedValue(result);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getCompanyEmailsByKeyContacts(keyContactReq({ ids: ID_ONE }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getCompanyEmailsByKeyContacts).toHaveBeenCalledWith(expect.anything(), ORG_UID, [ID_ONE], null, new Set());
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'get_org_lens_people_company_emails_by_key_contact', expect.any(String), {
+      org_uid: ORG_UID,
+      key_contact_count: 1,
+      err: expect.any(Error),
+    });
+    expect(res.json).toHaveBeenCalledWith(result);
+  });
+});
+
+describe('OrgLensPeopleController All Employees company email status', () => {
+  const controller = new OrgLensPeopleController();
+  const row = (personKey: string, lfUsername: string | null) => ({ personKey, lfUsername });
+  const roster = {
+    ...EMPTY_ROSTER,
+    rows: [
+      row('person-has', null),
+      // A stored row is read by person key only, so a username in the keys does not make it `has`.
+      row('person-username-only', 'Known'),
+      row('person-none', 'nobody'),
+      row('cdp:member-has-username', 'known'),
+      row('cdp:member-unconfirmed', null),
+      row('live-has', 'known'),
+      // The username names one roster person with no address: the drawer answers "No … email on file".
+      row('live-known-empty', 'EmptyUser'),
+      row('live-unconfirmed', 'stranger'),
+      row('live-no-username', null),
+    ],
+  };
+  const statuses = (res: Response): Record<string, string | undefined> =>
+    Object.fromEntries(
+      ((res.json as ReturnType<typeof vi.fn>).mock.calls[0][0] as { rows: { personKey: string; companyEmailStatus?: string }[] }).rows.map((r) => [
+        r.personKey,
+        r.companyEmailStatus,
+      ])
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getLive.mockResolvedValue(roster);
+    getFormerEmployees.mockResolvedValue(roster);
+    getCompanyEmailKeys.mockResolvedValue({ personKeys: ['person-has', 'cdp:member-unconfirmed'], usernames: ['known'], noneUsernames: ['emptyuser'] });
+  });
+
+  it.each([
+    ['the live roster', (res: Response) => controller.getAllEmployees(buildRosterReq({ live: 'true', range: '90d' }), res, vi.fn())],
+    ['the former roster', (res: Response) => controller.getFormerEmployees(buildRosterReq({ range: '90d' }), res, vi.fn())],
+  ])('stamps every row of %s from one keys read', async (_label, read) => {
+    const res = buildRes();
+
+    await read(res);
+
+    expect(getCompanyEmailKeys).toHaveBeenCalledTimes(1);
+    expect(statuses(res)).toEqual({
+      'person-has': 'has',
+      'person-username-only': 'none',
+      'person-none': 'none',
+      // The drawer answers a cdp: row without any lookup, so neither its key nor its username in the keys counts.
+      'cdp:member-has-username': 'unconfirmed',
+      'cdp:member-unconfirmed': 'unconfirmed',
+      'live-has': 'has',
+      'live-known-empty': 'none',
+      'live-unconfirmed': 'unconfirmed',
+      'live-no-username': 'unconfirmed',
+    });
+  });
+
+  it('serves the roster without statuses when the keys read failed', async () => {
+    getCompanyEmailKeys.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getAllEmployees(buildRosterReq({ live: 'true', range: '90d' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(Object.values(statuses(res)).every((status) => status === undefined)).toBe(true);
   });
 });
 
@@ -627,5 +875,65 @@ describe('OrgLensPeopleController organization scope (lfx-self-serve-ops#1219)',
     expect(getContributors).not.toHaveBeenCalled();
     expect(getEmployeeDetail).not.toHaveBeenCalled();
     expect(getEmployeeDetailByUsername).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensPeopleController Trainees outside-learner keys (lfx-self-serve#4287)', () => {
+  const controller = new OrgLensPeopleController();
+  // The opaque per-response key the Trainees response gives a learner outside the people list.
+  const outsideReq = (): Request =>
+    ({ params: { orgUid: ORG_UID, personKey: `${ORG_TRAINEE_OUTSIDE_KEY_PREFIX}1` }, query: {}, path: '/test' }) as unknown as Request;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects the opaque key with a 400 on the detail, company-email and key-contact endpoints before any read', async () => {
+    const next = vi.fn();
+    await controller.getEmployeeDetail(outsideReq(), buildRes(), next);
+    await controller.getCompanyEmails(outsideReq(), buildRes(), next);
+    await controller.getPersonKeyContacts(outsideReq(), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(3);
+    for (const [error] of next.mock.calls) {
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error).toMatchObject({ statusCode: 400 });
+    }
+    expect(getEmployeeDetail).not.toHaveBeenCalled();
+    expect(getCompanyEmails).not.toHaveBeenCalled();
+    expect(resolveUsernameByPersonKey).not.toHaveBeenCalled();
+    expect(getKeyContactsForPerson).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensPeopleController trainees access qualification', () => {
+  const controller = new OrgLensPeopleController();
+  const EMPTY_TRAINEES = { accountId: ORG_UID, timeRange: '730d', trainees: [], details: [], outsideLearners: [], asOf: null };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getTrainees.mockResolvedValue(EMPTY_TRAINEES);
+  });
+
+  it.each(['org-grant', 'auditor-entitlement'])('passes the %s read qualification to the service with the range', async (qualification) => {
+    assertOrgLensRead.mockResolvedValue(qualification);
+    const next = vi.fn();
+
+    await controller.getTrainees(buildRosterReq({ range: '90d' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(assertOrgLensRead).toHaveBeenCalledWith(expect.anything(), ORG_UID, 'get_org_lens_people_trainees');
+    expect(getTrainees).toHaveBeenCalledWith(ORG_UID, '90d', qualification);
+  });
+
+  it('reads nothing for a caller whose read access is denied', async () => {
+    const denied = new Error('forbidden');
+    assertOrgLensRead.mockRejectedValue(denied);
+    const next = vi.fn();
+
+    await controller.getTrainees(buildRosterReq({}), buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(denied);
+    expect(getTrainees).not.toHaveBeenCalled();
   });
 });

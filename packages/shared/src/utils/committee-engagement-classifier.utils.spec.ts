@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { COMMITTEE_ENGAGEMENT_MIN_INVITES } from '../constants/committee-engagement.constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums';
 import {
   classifyCommitteeEngagement,
@@ -81,7 +82,7 @@ describe('classifyCommitteeEngagement — decision table', () => {
   });
 
   it('does not broaden the None carve-out beyond staff — a non-staff member with no voting status still classifies on attendance/tenure normally', () => {
-    expect(classifyCommitteeEngagement({ attended: 0, invited: 0, votingStatus: NONE, role: undefined, joinedWithinWindow: true })).toBe('High');
+    expect(classifyCommitteeEngagement({ attended: 0, invited: 0, votingStatus: NONE, role: undefined, joinedWithinWindow: true })).toBe('New');
     expect(classifyCommitteeEngagement({ attended: 0, invited: 3, votingStatus: NONE, role: undefined, joinedWithinWindow: false })).toBe('Inactive');
   });
 
@@ -110,9 +111,35 @@ describe('classifyCommitteeEngagement — decision table', () => {
     expect(classifyCommitteeEngagement({ attended: 1, invited: 20, votingStatus: EMERITUS, role: LF_STAFF, joinedWithinWindow: false })).toBe('Emeritus');
   });
 
-  // Row 3: no invites yet, joined within window — "the Orlin case", but the invited=0 variant.
-  it('classifies High (not Inactive) for a member with zero invites who joined within the window', () => {
-    expect(classifyCommitteeEngagement({ attended: 0, invited: 0, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: true })).toBe('High');
+  // Row 3: joined within window with fewer than COMMITTEE_ENGAGEMENT_MIN_INVITES invites — too
+  // little history to score (lfx-self-serve-ops#1142: a first meeting attended read `High`).
+  it('classifies New (not High or Inactive) for a member with zero invites who joined within the window', () => {
+    expect(classifyCommitteeEngagement({ attended: 0, invited: 0, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: true })).toBe('New');
+  });
+
+  it('classifies New for a recent joiner whose only meeting so far was attended (1/1)', () => {
+    expect(classifyCommitteeEngagement({ attended: 1, invited: 1, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: true })).toBe('New');
+  });
+
+  it('classifies New for a recent joiner below the minimum invites, whatever they attended', () => {
+    expect(classifyCommitteeEngagement({ attended: 0, invited: 1, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: true })).toBe('New');
+  });
+
+  it('scores a recent joiner on rate once they reach the minimum invites', () => {
+    expect(
+      classifyCommitteeEngagement({
+        attended: 0,
+        invited: COMMITTEE_ENGAGEMENT_MIN_INVITES,
+        votingStatus: VOTING_REP,
+        role: undefined,
+        joinedWithinWindow: true,
+      })
+    ).toBe('Inactive');
+    expect(classifyCommitteeEngagement({ attended: 1, invited: 2, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: true })).toBe('Medium');
+  });
+
+  it('does not apply the minimum to a member who was on the roster the whole window', () => {
+    expect(classifyCommitteeEngagement({ attended: 1, invited: 1, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: false })).toBe('High');
   });
 
   // Row 4: no invites, been a member the whole window — unchanged from the original rule.
@@ -166,6 +193,10 @@ describe('classifyCommitteeEngagement — decision table', () => {
 describe('isCommitteeMemberAtRisk', () => {
   it('is false for a never-invited member who joined within the window (Inactive is unreachable there)', () => {
     expect(isCommitteeMemberAtRisk({ attended: 0, invited: 0, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: true })).toBe(false);
+  });
+
+  it('is false for a New member who missed their only meeting so far', () => {
+    expect(isCommitteeMemberAtRisk({ attended: 0, invited: 1, votingStatus: VOTING_REP, role: undefined, joinedWithinWindow: true })).toBe(false);
   });
 
   it('is false for a never-invited veteran member (Inactive with no signal)', () => {

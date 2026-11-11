@@ -13,7 +13,7 @@ import { UiToastRegionComponent } from './toast-region.component';
 
 /**
  * Puts short messages on screen in a stack at the bottom-right, newest on top; `dark` toasts, and any with `position: 'bottom-center'`,
- * stack at the bottom centre instead. Each toast dismisses itself (5s, 3s for `dark`, 8s with actions, never for errors) and waits while
+ * stack at the bottom centre instead. Each toast dismisses itself (5s, 3s for `dark`, 8s with actions; errors stay until closed) and waits while
  * the pointer or focus is on it. Each stack lives in its own CDK overlay that the service creates after its first render, a polite live
  * region that stays in place, so inject the service ahead of the first `show` for the first message to be announced reliably.
  * While the bottom-right stack holds toasts, the bottom-centre stack sits above it, so the two never overlap on a narrow window.
@@ -86,6 +86,7 @@ export class UiToastService {
     // shortcut: 1001 sits above the 1000 of every other CDK overlay, so a toast shows over an open modal. revisit: when the overlay container moves to --ui-z-* tokens, give toasts their own layer above CDK panes.
     overlayRef.hostElement.style.zIndex = '1001';
     const region = overlayRef.attach(new ComponentPortal(UiToastRegionComponent));
+    region.setInput('position', position);
     region.setInput(
       'source',
       computed(() => this.items().filter((item) => item.position === position))

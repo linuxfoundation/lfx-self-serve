@@ -108,6 +108,23 @@ export class OrgLensRoiController {
     }
   }
 
+  public async getValueDrivers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_org_lens_roi_value_drivers';
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+    try {
+      assertOrgUid(orgUid, operation);
+      const method = parseOrgLensRoiMethod(req.query['method'], operation);
+      await assertOrgLensRead(req, orgUid, operation);
+
+      const valueDrivers = await this.service.getValueDrivers(req, orgUid, method);
+      logger.success(req, operation, startTime, { org_uid: orgUid, method, rows: valueDrivers.rows.length });
+      this.send(res, valueDrivers);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   public async getProjectDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_org_lens_roi_project_detail';
     const orgUid = req.params['orgUid'];

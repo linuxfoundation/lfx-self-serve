@@ -51,11 +51,13 @@ import {
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
+  GroupLinkState,
   isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingDeleteTypeResult,
+  MeetingGroupLink,
   MeetingOccurrence,
   MeetingRsvp,
   MeetingRecurrence,
@@ -181,6 +183,10 @@ export class MeetingCardComponent implements OnInit {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
+  // Navigation state for the group links, so the group page returns to the list the card is on. Without it the page defaults to Groups.
+  public readonly groupLinkState = input<GroupLinkState | null>(null);
+  // The group whose page the card is already on (its own Meetings tab); that group shows as plain text instead of a link to itself.
+  public readonly currentGroupUid = input<string>('');
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
@@ -316,7 +322,11 @@ export class MeetingCardComponent implements OnInit {
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
-  public readonly groupNames: Signal<string[]> = this.initGroupNames();
+  public readonly groupLinks: Signal<MeetingGroupLink[]> = this.initGroupLinks();
+  public readonly groupQueryParams: Signal<{ project: string } | null> = computed(() => {
+    const slug = this.meeting().project_slug;
+    return slug ? { project: slug } : null;
+  });
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly hasTranscript: Signal<boolean> = this.initHasTranscript();
@@ -1256,9 +1266,22 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  /** Names of the groups (committees) the meeting belongs to; a group with no resolved name is left out rather than shown blank. */
-  private initGroupNames(): Signal<string[]> {
-    return computed(() => (this.meeting().committees ?? []).map((committee) => committee.name?.trim()).filter((name): name is string => !!name));
+  /**
+   * The groups (committees) the meeting belongs to, each with its group-details link; a group with no resolved name is
+   * left out rather than shown blank, and the group the card is already on gets no link.
+   */
+  private initGroupLinks(): Signal<MeetingGroupLink[]> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const currentGroupUid = this.currentGroupUid();
+      return (meeting.committees ?? []).flatMap((committee) => {
+        const name = committee.name?.trim();
+        if (!name) return [];
+        const uid = committee.uid?.trim();
+        const commands = uid && uid !== currentGroupUid ? (getEntityCommands('groups', uid, meeting.is_foundation) ?? ['/groups', uid]) : null;
+        return [{ uid: committee.uid, name, commands }];
+      });
+    });
   }
 
   private denyEdit(): void {

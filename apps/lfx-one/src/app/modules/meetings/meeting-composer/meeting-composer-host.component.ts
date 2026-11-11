@@ -16,6 +16,7 @@ import type {
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
 import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
+import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -70,6 +71,7 @@ export class MeetingComposerHostComponent {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly lensService = inject(LensService);
+  private readonly intercomService = inject(IntercomService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -261,7 +263,14 @@ export class MeetingComposerHostComponent {
       )
       .subscribe(() => this.lensService.clearContextLens());
 
-    // The sticky create toast sits above the drawer, so opening the composer retires it; only the newest survives.
+    // Intercom's launcher bubble floats over the drawer's footer and covers its actions, so it is hidden
+    // while the composer is open and restored when it closes or this host goes away.
+    toObservable(this.composer.isOpen)
+      .pipe(takeUntilDestroyed())
+      .subscribe((isOpen) => this.intercomService.setLauncherHidden(isOpen));
+    this.destroyRef.onDestroy(() => this.intercomService.setLauncherHidden(false));
+
+    // The create toast sits above the drawer, so opening the composer retires it; only the newest survives.
     toObservable(this.composer.isOpen)
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => this.createdToast?.dismiss());
@@ -505,11 +514,6 @@ export class MeetingComposerHostComponent {
       position: MEETING_COMPOSER_TOAST_POSITION,
       message: 'Meeting created',
       description: data.meetingTitle,
-      // Sticky, not timed. The toast carries the only two routes back to the meeting now that creating
-      // doesn't navigate, and a fixed lifetime put them out of reach of anyone who needs longer than a
-      // few seconds to read and target them.
-      duration: 0,
-      dismissible: true,
       actions: [
         { label: 'Edit meeting', run: () => this.onEditCreatedMeeting(data) },
         { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },

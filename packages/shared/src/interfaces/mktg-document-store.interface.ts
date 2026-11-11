@@ -53,15 +53,37 @@ export interface MktgRevisionAuthor {
   name: string | null;
 }
 
+/** The server's memory of a display name the directory returned for a subject, and when that lookup succeeded. */
+export interface MktgLastKnownAuthorName {
+  name: string;
+  resolvedAt: number;
+}
+
+/**
+ * What the report showed when the revision was approved, by stable key: the failed sources (their `source`, or the v1
+ * `name`), the missing assets (`asset`), the warnings (`code|text`), the gaps (their exact text) and the colour conflicts
+ * (`name`). Written by the server at approval; the Sources tab marks each listed item as accepted then.
+ */
+export interface MktgRevisionAccepted {
+  sources_failed: string[];
+  missing_assets: string[];
+  warnings: string[];
+  gaps: string[];
+  color_conflicts: string[];
+}
+
 /** Mutable approval annotation; never put in a revision's hashed bytes. */
 export interface MktgDocumentApprovalAnnotation {
   approvedAt: string;
   approvedBy: string | null;
+  /** Absent on approvals made before the snapshot existed; the view then derives what it can. */
+  accepted?: MktgRevisionAccepted;
 }
 
 export interface MktgRevisionApproval {
   approvedAt: string;
   approvedBy: MktgRevisionAuthor | null;
+  accepted?: MktgRevisionAccepted;
 }
 
 export interface MktgApprovedCurrent {

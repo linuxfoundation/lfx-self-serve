@@ -12,6 +12,8 @@ import type {
   MentorshipUpstreamProgramStatus,
 } from '../interfaces/mentorship.interface';
 import type {
+  MentorshipAdminDecisionOutcome,
+  MentorshipAdminDecisionRefusal,
   MentorshipAdminMenteeStatusFilter,
   MentorshipAdminMenteeTab,
   MentorshipAdminMentorAction,
@@ -20,17 +22,19 @@ import type {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
   MentorshipTermRowStatus,
+  MentorshipUpstreamReasonMessage,
 } from '../interfaces/mentorship-admin.interface';
 
 /**
- * Allowed program statuses. Ordered by lifecycle so a `.sort` on this array
- * yields the same order the admin filter dropdown renders.
+ * Allowed program statuses, in the order the admin filter dropdown renders them.
  */
-export const MENTORSHIP_PROGRAM_STATUSES = ['open', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
+export const MENTORSHIP_PROGRAM_STATUSES = ['accepting', 'in-progress', 'upcoming', 'pending-review', 'completed', 'rejected', 'hidden'] as const;
 
 /** Human-readable labels for each program status (used by badge + filter). */
 export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, string> = {
-  open: 'Open',
+  accepting: 'Accepting',
+  'in-progress': 'In Progress',
+  upcoming: 'Upcoming',
   'pending-review': 'Pending Review',
   completed: 'Completed',
   rejected: 'Rejected',
@@ -43,7 +47,9 @@ export const MENTORSHIP_PROGRAM_STATUS_LABELS: Record<MentorshipProgramStatus, s
  * future shared status-pill component can consume both maps unchanged.
  */
 export const MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipProgramStatus, string> = {
-  open: 'bg-emerald-100 text-emerald-700',
+  accepting: 'bg-emerald-100 text-emerald-700',
+  'in-progress': 'bg-blue-100 text-blue-700',
+  upcoming: 'bg-violet-100 text-violet-700',
   'pending-review': 'bg-amber-100 text-amber-700',
   completed: 'bg-gray-100 text-gray-600',
   rejected: 'bg-red-100 text-red-700',
@@ -70,6 +76,25 @@ export const MENTORSHIP_PROGRAM_PAGE_SIZE = 12;
 
 /** Most programs one `GET /api/mentorship/admin/programs` page may return; the BFF rejects a larger `limit`. */
 export const MENTORSHIP_PROGRAMS_MAX_LIMIT = 50;
+
+/** The Me lens Admin program list; a program's page is `/{programId}` under it and the enroll wizard is `/enroll`. */
+export const MENTORSHIP_ADMIN_PATH = '/mentorship/admin';
+
+/** The Project lens Mentorship Programs list (lfx-mentorship#398), laid out like {@link MENTORSHIP_ADMIN_PATH}. */
+export const MENTORSHIP_PROJECT_PROGRAMS_PATH = '/project/mentorship';
+
+/** The Foundation lens Mentorship Programs list: the foundation's programs and its sub-projects', laid out like the Project lens's. */
+export const MENTORSHIP_FOUNDATION_PROGRAMS_PATH = '/foundation/mentorship';
+
+export const MENTORSHIP_ADMIN_PROGRAMS_EMPTY_MESSAGE = 'Enroll a program to get started.';
+export const MENTORSHIP_PROJECT_PROGRAMS_TITLE = 'Mentorship Programs';
+export const MENTORSHIP_PROJECT_PROGRAMS_EMPTY_MESSAGE = 'This project has no mentorship programs yet.';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_EMPTY_MESSAGE = 'This foundation and its projects have no mentorship programs yet.';
+export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_TITLE = 'No access to this project’s programs';
+export const MENTORSHIP_PROJECT_PROGRAMS_NO_ACCESS_MESSAGE = 'You need Manage access on this project to see its mentorship programs.';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_TITLE = 'No access to this foundation’s programs';
+export const MENTORSHIP_FOUNDATION_PROGRAMS_NO_ACCESS_MESSAGE =
+  'You need Manage access on this foundation to see the mentorship programs of it and its projects.';
 
 /** The two mentee tabs of an admin program page; `type` on `GET /api/mentorship/admin/programs/:programId/mentees`. */
 export const MENTORSHIP_ADMIN_MENTEE_TABS = ['current', 'past'] as const;
@@ -108,8 +133,9 @@ export const MENTORSHIP_ATTENDANCE_TYPE_LABELS: Record<(typeof MENTORSHIP_ATTEND
 
 /** Shown when a decision hits a 409: the application moved on, so the list reloads. */
 export const MENTORSHIP_ADMIN_APPLICATION_CHANGED_MESSAGE = 'This application changed. The list has been refreshed.';
-/** Shown when an accept hits a 422: the application's term is no longer open. */
-export const MENTORSHIP_ADMIN_TERM_CLOSED_ACCEPT_MESSAGE = "This term is closed, so the application can't be accepted.";
+/** Shown when an accept hits a 422 whose reason `MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS` does not know. */
+export const MENTORSHIP_ADMIN_ACCEPT_REFUSED_MESSAGE =
+  "This application can't be accepted: the program is hidden, the term is closed, or the mentee is already accepted in another mentorship.";
 /** Graduate confirmation warning; `{count}` is the number of tasks not yet Submitted or Completed. */
 export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE = "{count} tasks aren't Submitted or Completed.";
 export const MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE = "{count} task isn't Submitted or Completed.";
@@ -123,14 +149,14 @@ export const MENTORSHIP_ADMIN_WITHDRAW_CONFIRM_MESSAGE = "Withdraw this applicat
 export const MENTORSHIP_ADMIN_GRADUATE_CONFIRM_MESSAGE = 'Graduate this mentee?';
 export const MENTORSHIP_ADMIN_UNDO_GRADUATION_CONFIRM_MESSAGE =
   'Undo this graduation? The mentee goes back to Accepted and no email is sent. Their graduation email has already gone out.';
-/** Shown when Undo graduation hits a 422: the mentee holds another accepted mentorship, or the term is no longer open. */
+/** Shown when Undo graduation hits a 422 whose reason `MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS` does not know. */
 export const MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE =
-  "This graduation can't be undone: the mentee is accepted in another mentorship, or this term is no longer open.";
+  "This graduation can't be undone: the program is hidden, the term is closed, or the mentee is already accepted in another mentorship.";
 export const MENTORSHIP_ADMIN_REOPEN_CONFIRM_MESSAGE = 'Re-open this application? It goes back to review, and no email is sent.';
 /** Shown when Re-open hits a 409: the application changed, or the mentee has since applied to the term again. */
 export const MENTORSHIP_ADMIN_REOPEN_CONFLICT_MESSAGE =
   "This application can't be re-opened: it changed, or the mentee has applied to this term again. The list has been refreshed.";
-/** Shown when Re-open hits a 422: the program is hidden, the term is closed, or the mentee is at the pending-application limit. */
+/** Shown when Re-open hits a 422 whose reason `MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS` does not know. */
 export const MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE =
   "This application can't be re-opened: the program is hidden, the term is closed, or the mentee already has three applications under review.";
 export const MENTORSHIP_ADMIN_DECLINE_BY_TERM_HEADER = 'Decline by Term';
@@ -152,6 +178,33 @@ export const MENTORSHIP_ADMIN_DECISION_DONE_MESSAGES = {
 } as const;
 export const MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE = "The change couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE = 'Another change is still being saved. Try again in a moment.';
+
+/**
+ * Why the mentorship service refused a decision with a 422, matched against its error text (`lfx-mentorship`
+ * `ApplicationRepository.Update`: the term-open and `checkMenteeAvailable` checks on an accept, the term-open and
+ * pending-limit checks on a re-open, and `checkApplicationProgramNotHidden` on any move to pending, accepted or
+ * graduated). One 422 status covers all of them, so the toast names the one upstream gave. The first entry whose
+ * `match` the text contains wins. "three" is upstream's `models.MaxPendingMenteeApplications`, also stated in
+ * `MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE` and the mentorship user docs: change them together.
+ */
+export const MENTORSHIP_ADMIN_DECISION_REFUSED_REASONS: readonly MentorshipUpstreamReasonMessage[] = [
+  { match: 'already holds an accepted mentorship', message: "the mentee is already accepted in another mentorship that hasn't ended." },
+  { match: 'not open for this term', message: 'the term is closed.' },
+  { match: 'program is hidden', message: 'the program is hidden. Unhide it, then try again.' },
+  { match: 'applications under review', message: 'the mentee already has three applications under review.' },
+];
+
+/**
+ * The decisions upstream can refuse with a 422, and how their toast reads. Decline and Withdraw are absent: upstream
+ * has no 422 for them, so any 422 there gets `MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE`. Graduate's only known 422 is
+ * a hidden program, so an unknown one keeps the generic copy.
+ */
+export const MENTORSHIP_ADMIN_DECISION_REFUSALS: Readonly<Partial<Record<MentorshipAdminDecisionOutcome, MentorshipAdminDecisionRefusal>>> = {
+  accepted: { lead: "This application can't be accepted:", fallback: MENTORSHIP_ADMIN_ACCEPT_REFUSED_MESSAGE },
+  graduated: { lead: "This mentee can't be graduated:", fallback: MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE },
+  ungraduated: { lead: "This graduation can't be undone:", fallback: MENTORSHIP_ADMIN_UNDO_GRADUATION_REFUSED_MESSAGE },
+  reopened: { lead: "This application can't be re-opened:", fallback: MENTORSHIP_ADMIN_REOPEN_REFUSED_MESSAGE },
+};
 
 /**
  * Download by Status on Current and Past Mentees: one CSV of the tab's applications (open terms for Current, closed
@@ -322,8 +375,11 @@ export const MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE = 'Term deleted.';
 export const MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE = "The term couldn't be saved. Please try again.";
 export const MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE = 'Another term change is still being saved.';
 
-/** Statuses a program admin may hide: both are upstream `published`. A `hidden` program may be unhidden. */
-export const MENTORSHIP_PROGRAM_HIDEABLE_STATUSES: readonly MentorshipProgramStatus[] = ['open', 'completed'];
+/** Statuses of a program upstream holds as `published`: the ones its public page shows. */
+export const MENTORSHIP_PROGRAM_PUBLISHED_STATUSES: readonly MentorshipProgramStatus[] = ['accepting', 'in-progress', 'upcoming', 'completed'];
+
+/** Statuses a program admin may hide: every published one. A `hidden` program may be unhidden. */
+export const MENTORSHIP_PROGRAM_HIDEABLE_STATUSES: readonly MentorshipProgramStatus[] = MENTORSHIP_PROGRAM_PUBLISHED_STATUSES;
 export const MENTORSHIP_PROGRAM_HIDE_DESCRIPTION = 'Hide this program from public view. Mentees can no longer find it or apply.';
 export const MENTORSHIP_PROGRAM_UNHIDE_DESCRIPTION = 'Make this program publicly visible again so mentees can find it and apply.';
 export const MENTORSHIP_PROGRAM_HIDE_CONFIRM =
@@ -410,6 +466,17 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF 
 /** Shown when a full-email search finds no one: that address has no LF account. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
   'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
+
+/**
+ * Invite 422 reasons, matched against the mentorship service's error text (`ProgramMemberService.userByLFID`), other
+ * than the LF account being missing: a 422 no entry matches keeps `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE`.
+ */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS: readonly MentorshipUpstreamReasonMessage[] = [
+  {
+    match: 'belongs to another mentorship user',
+    message: "This person's LF email address is already used by another Mentorship account, so they can't be invited.",
+  },
+];
 
 /**
  * Shown when any other search finds no one. It can be a name or an LF username, so it does not say the account is
@@ -690,34 +757,39 @@ export const MENTORSHIP_TERM_REOPEN_CONFIRM = 'Are you sure you want to re-open 
  */
 export const MENTORSHIP_UPSTREAM_PROGRAM_STATUSES = ['pending', 'published', 'rejected', 'hidden'] as const;
 
-/** Program-review page copy for a program's current upstream status. */
+/** Program-review page status badge copy for a program's current upstream status. */
 export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS: Record<MentorshipUpstreamProgramStatus, string> = {
-  pending: 'Awaiting review',
+  pending: 'Pending review',
   published: 'Approved',
   rejected: 'Rejected',
   hidden: 'Hidden',
 };
 
+/** Tailwind classes for the program-review page status badge. */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_BADGE_CLASSES: Record<MentorshipUpstreamProgramStatus, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  published: 'bg-emerald-100 text-emerald-800',
+  rejected: 'bg-red-100 text-red-800',
+  hidden: 'bg-gray-100 text-gray-700',
+};
+
+/** Tailwind classes for the dot inside the program-review page status badge. */
+export const MENTORSHIP_UPSTREAM_PROGRAM_STATUS_DOT_CLASSES: Record<MentorshipUpstreamProgramStatus, string> = {
+  pending: 'bg-amber-600',
+  published: 'bg-emerald-600',
+  rejected: 'bg-red-600',
+  hidden: 'bg-gray-500',
+};
+
 /**
  * Accepted `?decision=` values on the approve/reject email link:
- * `/mentorship/program-review/<program id>?decision=approve|reject`.
+ * `/mentorship/program-review/<program id>?decision=approve|reject`. The parameter is optional:
+ * `reject` opens the page on the reject step, and `approve` or none opens it on the choice.
  */
 export const MENTORSHIP_PROGRAM_REVIEW_DECISIONS = ['approve', 'reject'] as const;
 
 /** The upstream status each review decision moves a `pending` program to. */
 export const MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS: Record<MentorshipProgramReviewDecision, MentorshipProgramDecisionStatus> = {
   approve: 'published',
-  reject: 'rejected',
-};
-
-/** Verb shown on the program-review confirm card and its button. */
-export const MENTORSHIP_PROGRAM_REVIEW_DECISION_LABELS: Record<MentorshipProgramReviewDecision, string> = {
-  approve: 'Approve',
-  reject: 'Reject',
-};
-
-/** Past-tense verb shown once a review decision has been recorded. */
-export const MENTORSHIP_PROGRAM_REVIEW_DECISION_DONE_LABELS: Record<MentorshipProgramReviewDecision, string> = {
-  approve: 'approved',
   reject: 'rejected',
 };

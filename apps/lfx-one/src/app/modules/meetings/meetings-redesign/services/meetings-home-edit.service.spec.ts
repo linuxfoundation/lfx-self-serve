@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -158,7 +159,9 @@ describe('MeetingsHomeEditService', () => {
 
       service.edit(row(SERIES, SECOND));
 
-      expect(modalOpen).toHaveBeenCalledWith(MeetingEditScopeModalComponent, { data: { row: row(SERIES, SECOND), meeting: SERIES, occurrence: SECOND } });
+      expect(modalOpen).toHaveBeenCalledWith(MeetingEditScopeModalComponent, {
+        data: { row: row(SERIES, SECOND), meeting: SERIES, occurrence: SECOND, origin: 'page' },
+      });
     });
 
     it('opens the composer on the picked date', () => {
@@ -184,6 +187,53 @@ describe('MeetingsHomeEditService', () => {
       expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'synthetic-meeting', projectUid: 'synthetic-project-uid' });
     });
 
+    it('asks the scope of a recurring meeting before landing on the requested section', () => {
+      setup(true, of(SERIES));
+      service.edit(row(SERIES, SECOND), 'agenda-resources');
+
+      expect(modalOpen).toHaveBeenCalledWith(MeetingEditScopeModalComponent, {
+        data: { row: row(SERIES, SECOND), meeting: SERIES, occurrence: SECOND, origin: 'page' },
+      });
+      expect(composerOpen).not.toHaveBeenCalled();
+
+      scopeResult.next({ scope: 'occurrence', proceed: true });
+
+      expect(composerOpen).toHaveBeenCalledWith({
+        mode: 'edit',
+        meetingUid: 'synthetic-meeting',
+        projectUid: 'synthetic-project-uid',
+        occurrenceId: SECOND.occurrence_id,
+        section: 'agenda-resources',
+      });
+    });
+
+    it('lands the series editor on the requested section', () => {
+      setup(true, of(SERIES));
+      service.edit(row(SERIES, SECOND), 'agenda-resources');
+
+      scopeResult.next({ scope: 'series', proceed: true });
+
+      expect(composerOpen).toHaveBeenCalledWith({
+        mode: 'edit',
+        meetingUid: 'synthetic-meeting',
+        projectUid: 'synthetic-project-uid',
+        section: 'agenda-resources',
+      });
+    });
+
+    it('lands a one-time meeting on the requested section without asking', () => {
+      setup(true, of(ONE_OFF));
+      service.edit(row(ONE_OFF), 'agenda-resources');
+
+      expect(modalOpen).not.toHaveBeenCalled();
+      expect(composerOpen).toHaveBeenCalledWith({
+        mode: 'edit',
+        meetingUid: 'synthetic-meeting',
+        projectUid: 'synthetic-project-uid',
+        section: 'agenda-resources',
+      });
+    });
+
     it('opens nothing when the scope dialog is cancelled', () => {
       setup(true, of(SERIES));
       service.edit(row(SERIES, SECOND));
@@ -192,6 +242,76 @@ describe('MeetingsHomeEditService', () => {
 
       expect(composerOpen).not.toHaveBeenCalled();
       expect(navigate).not.toHaveBeenCalled();
+    });
+
+    describe('from the details drawer', () => {
+      let drawerClosed: Subject<void>;
+      let drawer: DialogRef;
+
+      beforeEach(() => {
+        drawerClosed = new Subject();
+        drawer = { closed: drawerClosed, close: vi.fn() } as unknown as DialogRef;
+      });
+
+      it('asks the scope over the open drawer and leaves it open on cancel', () => {
+        setup(true, of(SERIES));
+        service.edit(row(SERIES, SECOND), 'agenda-resources', drawer);
+
+        expect(modalOpen).toHaveBeenCalledWith(MeetingEditScopeModalComponent, { data: expect.objectContaining({ origin: 'drawer' }) });
+        expect(drawer.close).not.toHaveBeenCalled();
+
+        scopeResult.next(undefined);
+
+        expect(drawer.close).not.toHaveBeenCalled();
+        expect(composerOpen).not.toHaveBeenCalled();
+      });
+
+      it('closes the drawer on continue and opens the composer once it has closed', () => {
+        setup(true, of(SERIES));
+        service.edit(row(SERIES, SECOND), 'agenda-resources', drawer);
+
+        scopeResult.next({ scope: 'series', proceed: true });
+
+        expect(drawer.close).toHaveBeenCalled();
+        expect(composerOpen).not.toHaveBeenCalled();
+        drawerClosed.next();
+        expect(composerOpen).toHaveBeenCalledWith(expect.objectContaining({ meetingUid: 'synthetic-meeting', section: 'agenda-resources' }));
+      });
+
+      it('drops the edit when the drawer closes during the permission check', () => {
+        const detail = new Subject<Meeting>();
+        setup(true, detail);
+        service.edit(row(SERIES, SECOND), 'agenda-resources', drawer);
+
+        drawerClosed.next();
+        detail.next(SERIES);
+
+        expect(modalOpen).not.toHaveBeenCalled();
+        expect(service.isChecking(SERIES.id)).toBe(false);
+      });
+
+      it('opens a series-only edit on the series without asking the scope', () => {
+        setup(true, of(SERIES));
+        service.edit(row(SERIES, SECOND), 'agenda-resources', drawer, true);
+
+        expect(modalOpen).not.toHaveBeenCalled();
+        drawerClosed.next();
+        expect(composerOpen).toHaveBeenCalledWith({
+          mode: 'edit',
+          meetingUid: 'synthetic-meeting',
+          projectUid: 'synthetic-project-uid',
+          section: 'agenda-resources',
+        });
+      });
+
+      it('closes the drawer before opening a one-time meeting', () => {
+        setup(true, of(ONE_OFF));
+        service.edit(row(ONE_OFF), 'agenda-resources', drawer);
+
+        expect(drawer.close).toHaveBeenCalled();
+        drawerClosed.next();
+        expect(composerOpen).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

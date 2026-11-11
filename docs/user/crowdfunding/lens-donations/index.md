@@ -4,34 +4,38 @@ description: View the crowdfunding donations made on behalf of an organization i
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, organization, lens]
-last_updated: 2026-10-30
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
-When someone donates to a crowdfunding initiative on behalf of a company, LFX matches the donation to the company's organization by its domain. LFX Self Serve lists those donations under the organization's **Org** lens, so the people who can view the organization can see who donated in its name.
+When someone donates to a crowdfunding initiative on behalf of a company, LFX matches the donation to the company's organization by its domain. LFX Self Serve lists those donations under the organization in the **Organization** lens, so the people who can view the organization can see who donated in its name.
 
 ## Who sees it
 
-Anyone who can view the selected organization in the **Org** lens.
+Anyone who can view the selected organization in the **Organization** lens.
 
 ## Navigation
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Switch to the **Org** lens and select the organization.
+2. Switch to the **Organization** lens and select the organization.
 3. Select **Crowdfunding Donations** from the left navigation sidebar.
 
 ## What the page shows
 
 The page header reads **Donations**, with the description "Donations on LFX Crowdfunding made on behalf of" followed by the organization name. Each row shows:
 
-- **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation
+- **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made
-- **Donor** and **Email** — the person who donated
+- **Donor** and **Email** — the person who donated. When the donor chose to hide their name, **Donor** shows **Anonymous** and **Email** shows a dash; the donation and its amount are still listed
 - **Amount** — in USD; a recurring donation shows its amount per charge
 
 The newest donations come first. Select **Load more** to see older ones.
 
 Only donations matched to the organization by its domain appear. If a donor named the company with a different domain, or didn't name a company, the donation isn't listed.
+
+## Empty state
+
+**No donations yet** — no donations have been matched to the organization by its domain.
 
 ## Error states
 

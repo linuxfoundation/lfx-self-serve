@@ -1,0 +1,107 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  The two errors, announced. Always mounted while the panel is, and only their text changes, as in
+  the targeting panel: a live region inserted with its text already present is not reliably announced.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-exclusions-live">
+  {{ demographicsError() ?? '' }} {{ excludedGeosError() ?? '' }}
+</div>
+
+<div class="flex flex-col gap-4" data-testid="implementation-google-exclusions-panel">
+  @if (showDemographics()) {
+    <fieldset
+      class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+      [attr.aria-describedby]="demographicsDescribedBy()"
+      data-testid="implementation-google-demographics">
+      <legend class="float-left mb-1 text-xs font-medium text-gray-700">Demographic exclusions</legend>
+      <p id="google-demographics-hint" class="text-xs text-gray-500">
+        Tick an age range or gender to stop the campaign serving to it. With nothing ticked the campaign serves to everyone. Unknown is the people Google could
+        not classify.
+      </p>
+      <fieldset class="flex flex-col gap-2" data-testid="implementation-google-age-ranges">
+        <legend class="mb-1 text-xs text-gray-700">Exclude age ranges</legend>
+        <div class="flex flex-wrap gap-x-4 gap-y-2">
+          @for (row of ageRangeRows(); track row.value) {
+            <lfx-ui-checkbox
+              [label]="row.label"
+              [checked]="row.checked"
+              (checkedChange)="onAgeRange(row.value, $event)"
+              [attr.data-testid]="'implementation-google-age-range-' + row.value" />
+          }
+        </div>
+      </fieldset>
+      <fieldset class="flex flex-col gap-2" data-testid="implementation-google-genders">
+        <legend class="mb-1 text-xs text-gray-700">Exclude genders</legend>
+        <div class="flex flex-wrap gap-x-4 gap-y-2">
+          @for (row of genderRows(); track row.value) {
+            <lfx-ui-checkbox
+              [label]="row.label"
+              [checked]="row.checked"
+              (checkedChange)="onGender(row.value, $event)"
+              [attr.data-testid]="'implementation-google-gender-' + row.value" />
+          }
+        </div>
+      </fieldset>
+      @if (demographicsError(); as message) {
+        <p id="google-demographics-error" class="text-xs text-red-600" data-testid="implementation-google-demographics-error">{{ message }}</p>
+      }
+    </fieldset>
+  }
+
+  @if (showExcludedGeos()) {
+    <fieldset
+      class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5"
+      [attr.aria-describedby]="excludedGeosDescribedBy()"
+      data-testid="implementation-google-excluded-geos">
+      <legend class="float-left mb-1 text-xs font-medium text-gray-700">Excluded locations ({{ excludedGeoTargets().length }}/{{ maxExcludedGeos }})</legend>
+      <p id="google-excluded-geos-hint" class="text-xs text-gray-500">
+        The campaign does not serve in these places. Pick countries from the list, or add a city, region, metro or postal code by its numeric Google geo target
+        id. A place cannot be both targeted and excluded.
+      </p>
+      <div class="flex flex-wrap items-end gap-2">
+        <lfx-ui-multi-select
+          class="w-48"
+          label="Countries"
+          size="small"
+          [values]="excludedCountries()"
+          (valuesChange)="onExcludedCountries($event)"
+          data-testid="implementation-google-excluded-geo-countries">
+          @for (code of countryOptions; track code) {
+            <lfx-ui-option [value]="code" [label]="code" />
+          }
+        </lfx-ui-multi-select>
+        <lfx-ui-input
+          #geoIdInput
+          class="w-48"
+          label="Geo target id"
+          size="small"
+          inputmode="numeric"
+          placeholder="e.g. 1023191"
+          [value]="geoIdDraft()"
+          (valueChange)="geoIdDraft.set($event)"
+          data-testid="implementation-google-excluded-geo-id" />
+        <lfx-button
+          label="Exclude"
+          icon="fa-light fa-plus"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="geoIdDraftBlank()"
+          (onClick)="addGeoId()"
+          data-testid="implementation-google-excluded-geo-add" />
+      </div>
+      @if (excludedGeoTargets().length > 0) {
+        <lfx-ui-chip-group ariaLabel="Excluded locations" [fallbackFocus]="geoIdFocus" data-testid="implementation-google-excluded-geo-chips">
+          @for (entry of excludedGeoTargets(); track entry) {
+            <lfx-ui-chip [label]="entry" (dismissed)="removeExcludedGeo(entry)" [attr.data-testid]="'implementation-google-excluded-geo-chip-' + entry" />
+          }
+        </lfx-ui-chip-group>
+      }
+      @if (excludedGeosError(); as message) {
+        <p id="google-excluded-geos-error" class="text-xs text-red-600" data-testid="implementation-google-excluded-geos-error">{{ message }}</p>
+      }
+    </fieldset>
+  }
+</div>

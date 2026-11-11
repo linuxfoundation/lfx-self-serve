@@ -6,7 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_RUN_ANSWERED, VISIBILITY_POLL_WAKE_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentRunProgress, MktgRevisionSummary, MktgRevisionResponse, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
@@ -137,6 +137,48 @@ describe('MktgRunProgressComponent', () => {
     revisionRead.mockReturnValue(of(view));
     await fixture.whenStable();
     expect(revisionRead).toHaveBeenCalledExactlyOnceWith(run.project, run.agentKey, run.documentId, produced.id, true);
+  });
+
+  it('changes body/metadata mode on the next poll without an immediate duplicate request', async () => {
+    await setup();
+    const row: MktgRevisionSummary = {
+      id: '000001-' + '1'.repeat(64),
+      number: 1,
+      createdAt: run.startedAt,
+      origin: 'generated',
+      restoredFromNumber: null,
+      intakeMode: 'form',
+      status: '',
+      contentSha256: '1'.repeat(64),
+      format: 'markdown',
+      commentCount: 0,
+      latest: true,
+      approval: null,
+    };
+    const metadata = { ...detail([]), revisions: [row] };
+    read.mockReturnValue(of(metadata));
+    revisionRead.mockReturnValue(of({ ...metadata, revision: row, markdown: '# Kept body', sidecar: null, approval: null }));
+    fixture.componentRef.setInput('runPage', false);
+    fixture.componentRef.setInput('runId', '');
+    fixture.componentRef.setInput('continuous', true);
+    fixture.componentRef.setInput('loadRevision', true);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(revisionRead).toHaveBeenCalledTimes(1);
+    fixture.componentRef.setInput('loadRevision', false);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(revisionRead).toHaveBeenCalledTimes(1);
+    fixture.componentRef.setInput('loadRevision', true);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(revisionRead).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a dedicated questions receiver out of the public-card answer controls', async () => {
@@ -673,7 +715,9 @@ describe('MktgRunProgressComponent', () => {
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
     expect(read).toHaveBeenCalledTimes(count);
     visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
     window.dispatchEvent(new Event('focus'));
+    await vi.advanceTimersByTimeAsync(VISIBILITY_POLL_WAKE_DEBOUNCE_MS);
     await fixture.whenStable();
     expect(read).toHaveBeenCalledTimes(count + 1);
     visibility.mockRestore();

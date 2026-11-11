@@ -1,13 +1,43 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — what the lens is and what you can do in it, how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Organization Profile page shows and who can edit it, where to see the organization's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
 tags:
-  [organization, faq, switch-organization, org-overview, dashboard, memberships, projects, workspaces, easycla, cla, ccla, cla-manager, access, remove, invite]
-last_updated: 2026-11-04
+  [
+    organization,
+    faq,
+    org-lens,
+    overview,
+    switch-organization,
+    org-overview,
+    dashboard,
+    memberships,
+    projects,
+    workspaces,
+    events,
+    training,
+    meetings,
+    groups,
+    profile,
+    easycla,
+    cla,
+    ccla,
+    cla-manager,
+    access,
+    remove,
+    invite,
+    involvement,
+    leaderboard,
+    crowdfunding,
+  ]
+last_updated: 2026-11-09
 intercom_collection: Organization
 ---
+
+## What is the Organization lens, and what can I do in it?
+
+The Organization lens in LFX Self Serve shows one organization at a time: how it takes part in Linux Foundation foundations and projects, its foundation memberships, its projects, its people and their activity, its profile, and its corporate CLAs (Contributor License Agreements). You can open an organization there when you hold a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. An admin or viewer sees **Dashboard**, **Memberships**, **Projects**, **Crowdfunding Initiatives** (only for an Admin granted directly on that organization), **Crowdfunding Donations**, the **Organization Engagement** pages (**People**, **Code Contributions**, **Events**, **Training & Certification**, **Meetings** and **Groups**), **EasyCLA** and **Organization Profile**. A CLA Manager, or an initial CLA Manager designee, with no other role on that organization sees only **EasyCLA**. See [What can I do in the Organization lens?](../#what-can-i-do-in-the-organization-lens).
 
 ## How do I switch to a different organization?
 
@@ -15,7 +45,11 @@ You switch organizations from the organization switcher at the top of the sideba
 
 ## What does the Org Overview dashboard show?
 
-The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees and speakers, certified employees and training enrollments. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. Return on investment (ROI) figures are on a separate page for Linux Foundation staff. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
+The Org Overview, the **Dashboard** of the Organization lens, summarizes how the selected organization takes part in Linux Foundation foundations and projects. Its **Involvement** cards count the organization's active contributors, maintainer roles, event attendees (registered or attended, counted by **Employee match**: a company email address on record or an LF account on the company roster) and speakers, and its people's training: people with training activity, certified people and courses taken. Selecting one of the three **Education** cards opens **Training & Certification**. Its **Foundations and Projects** section totals the foundations it is a member of, its projects, governance roles and this week's meetings, then lists each foundation with the organization's role, voting status and meeting participation. Selecting a foundation row, other than **Outside LF**, opens **Memberships**, and selecting an LF project opens that project's page. See [What is the Org Overview?](../org-overview/#what-is-the-org-overview).
+
+## Where do I see my organization's involvement in one foundation?
+
+You see an organization's involvement in one foundation on the Foundation overview, in the **Foundation** lens. Board members and executive directors see a section headed with the organization's name, such as **Acme's Involvement**, for the foundation they selected. It has a **Membership Tier** card and six cards for **Active Contributors**, **Maintainers**, **Event Attendees**, **Event Speakers**, **Certified Employees** and **Training Enrollments**. Selecting one of those six opens a panel with a chart over time and, for most, a breakdown by project or program. The Org Overview in the Organization lens totals the same kinds of figures across all foundations instead. See [Organization involvement in a foundation](../../dashboards/organization-involvement/).
 
 ## What does the Memberships page show?
 
@@ -29,13 +63,49 @@ The Projects page lists the open source projects in the selected organization's 
 
 Add it to a workspace with **Add Project**. You must be able to edit the organization, for example as an Admin. In the **Organization** lens, open **Projects**, pick the workspace in the workspace menu, select **Add Project**, search in **Search and select projects**, select one or more projects, then select **Add project(s)**. Workspaces are shared, so everyone who can open the organization sees the change. If you can only view the organization, **Add Project** is unavailable and says **You have view-only access to this organization**. See [How do I add a project to a workspace?](../projects/#how-do-i-add-a-project-to-a-workspace).
 
+## What does a leaderboard score breakdown show?
+
+A leaderboard score breakdown shows how one organization earned its influence score on a project. On a project's detail page, open **Leaderboards**, keep **Calculated Influence** selected, and select a row. The panel gives the organization's band, score and rank, then each category's points and share of the score, the **Total score**, and **How this score is calculated**. In another organization's breakdown, **Meeting Attendance**, **Event Attendance**, **Meetup Attendance** and **Certified Individuals** are locked, because they come from participation records LFX does not publish; they still count in its total score. **Activity Count** rows do not open a breakdown. See [What does a leaderboard score breakdown show?](../projects/#what-does-a-leaderboard-score-breakdown-show).
+
+## What do the People and Code Contributions pages show?
+
+The People page lists the selected organization's employees and how each one takes part in the Linux Foundation, and the Code Contributions page shows their code contributions to open source projects. People has the tabs **All Employees**, **Board**, **Committee**, **Key Contacts**, **Contributors**, **Event Attendees**, **Trainees** and **Org Lens Access**. Code Contributions counts the organization's **Projects with Activity**, **Repositories** and code contributions, and lists them on a **Repositories** tab and a **Commits** tab. Both pages are under **Organization Engagement** in the Organization lens sidebar. A CLA Manager or initial CLA Manager designee with no other role on the organization sees **EasyCLA** instead. See [What is the People page?](../people/#what-is-the-people-page) and [What is the Code Contributions page?](../code-contributions/#what-is-the-code-contributions-page).
+
+## Does the time range carry between People and Code Contributions?
+
+Yes. The time range you pick on People or Code Contributions carries to the other page when you open it from the sidebar, and so do **Organization scope** and **Team members**. Project type, the code count, the foundation, and the employee and employment choices do not carry. On People, the time range applies to **All Employees**, **Contributors**, **Event Attendees** and **Trainees**, and switching tabs keeps it. **Clear filters** on Code Contributions, **All Employees** or **Contributors** puts the time range back to **Past 2 years**, the default. See [Does the time range carry from People to Code Contributions?](../people/#does-the-time-range-carry-from-people-to-code-contributions).
+
+## What does the Events page show?
+
+The Events page in the Organization lens lists the foundation events where the selected organization has registrants, a submitted speaker or a sponsorship, on an **Upcoming** tab and a **Past** tab. Three tiles count **Upcoming Events**, **Past Events** and **Total Events**. By default the page counts everyone who registered or attended (**All**), credits people by **Employee match** (a company email address on record, or an LF account that matches someone on the company roster), and on the **Past** tab covers the last 2 years. **Show** set to **All foundation events** also lists events with no activity from the organization. Select an attendee or speaker count to open the people behind it. The page is under **Organization Engagement** in the Organization lens sidebar. See [Events page](../org-events/#events-page).
+
+## What does the Training & Certification page show?
+
+The Training & Certification page shows the Linux Foundation training courses and certifications the selected organization's people enrolled in or completed over a time range. Ten cards count its learners and courses, such as **Courses taken**, **Certifications** and **Completion rate**, and a table on the **Certifications** and **Trainings** tabs groups them by course, foundation, project, level or format. The time range defaults to **Past 2 years**. **Clear all** resets only the five filters under **More filters**, and keeps the time range, **Group by** and the search. Select a **Certified**, **Completed** or **In progress** number to see the current employees behind it. The sidebar item is **Training & Certification**, under **Organization Engagement**, and the page heading reads **Training & Certifications —** followed by the organization's name. See [What is the Training & Certification page?](../training/#what-is-the-training-amp-certification-page).
+
+## What does the Organization lens Meetings page show?
+
+The Organization lens Meetings page shows how the selected organization's employees take part in Linux Foundation project meetings over a time range, as totals for the organization, without listing people or individual meetings. Four cards count **Employees Active**, **Meetings Attended**, **Projects Supported** and **Foundations Supported**, each compared with the prior period. **Where your people spend time** splits the organization's attendance by foundation, project, meeting type and role, and **How attendance impacts project influence** shows, for each project with a published Ecosystem Influence Score, how much of the influence shown for it comes from meeting attendance, leaving out the membership-tier part of the score. The time range defaults to **Past 365 days**. Only meetings scheduled in LFX are counted. Your own meetings are a different page. See [What is the Organization lens Meetings page?](../meetings/#what-is-the-organization-lens-meetings-page).
+
+## What does the Groups page show?
+
+The Groups page lists the working groups, committees and other groups across Linux Foundation projects where the selected organization's employees hold seats, with how many of its people sit on each one. Tiles count **Total Groups**, **Total Seats** and each group type. Groups in the **Board** category are not listed: those seats are on **Memberships**. You can search the list, filter it by foundation and type, select a seat count to see who holds the seats, and select **Export to CSV** to download it. The page has no time range: it shows the seats held now. See [What is the Groups page?](../groups/#what-is-the-groups-page).
+
+## What does the Organization Profile page show, and who can edit it?
+
+The Organization Profile page shows the selected organization's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the organization in the Organization lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the organization, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The organization name and the addresses cannot be changed on this page. Changes save to the organization's record, so everyone who can open the organization sees them. See [Who can edit the organization profile?](../org-profile/#who-can-edit-the-organization-profile).
+
+## Why don't I see Crowdfunding Initiatives in the Organization lens?
+
+You see **Crowdfunding Initiatives** in the Organization lens only if you are an Admin granted directly on that organization. It appears in the sidebar, below **Projects**, only for an **Admin** (Org Admin – Editor) added on the organization's own **Org Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related organization. To get it, ask one of the organization's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
+
 ## Why can't I edit this corporate CLA?
 
 You can change a corporate CLA (CCLA) only when you are a CLA Manager named on that agreement, and a role added or removed in the last 30 minutes may not have taken effect yet. An organization admin or a viewer can read every corporate CLA of the company and still be unable to edit one they are not named on. A signed corporate CLA that does not name you is marked **View only** on its card and at the top of its page. The name on the list has to match your LF username exactly, including capitalization. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
 ## Why can't I see my company in the Organization lens?
 
-You see EasyCLA for an organization you can open in the Organization lens. If you are a CLA Manager for a company that does not appear there, manage that company's agreements in the [Corporate CLA Console](https://corporate.lfcla.com). Membership does not by itself hide a company: Linux Foundation staff can open organizations that are not members. A CLA Manager, or an initial CLA Manager designee, with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+Your company appears in the Organization lens only when you have a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. If you have an admin or viewer role on any organization, the organization switcher lists only the organizations where you have that role, and leaves out companies where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. A CLA Manager, or an initial CLA Manager designee, with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Why is an organization missing from the switcher?](../choose-an-organization/#why-is-an-organization-missing-from-the-switcher) and [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
 ## What does "View only" mean on a corporate CLA?
 

@@ -18,7 +18,12 @@ export const DEFAULT_ORG_EVENTS_TAB_ID: OrgEventsTabId = 'upcoming';
 export const VALID_ORG_EVENTS_TAB_IDS: ReadonlySet<OrgEventsTabId> = new Set(ORG_EVENTS_TABS.map((t) => t.id));
 
 /** Empty response sentinel for the Org Events list. */
-export const EMPTY_ORG_EVENTS_RESPONSE: OrgEventsResponse = { data: [], total: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE, offset: 0 };
+export const EMPTY_ORG_EVENTS_RESPONSE: OrgEventsResponse = {
+  data: [],
+  total: 0,
+  pageSize: DEFAULT_EVENTS_PAGE_SIZE,
+  offset: 0,
+};
 
 /** Status filter options for the Org Events filter bar. */
 export const ORG_EVENTS_STATUS_OPTIONS: FilterOption[] = [

@@ -268,6 +268,7 @@ export * from './mktg-document-comments.interface';
 export * from './mktg-document-redraft.interface';
 export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
+export * from './mktg-portrait-print.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';
 
@@ -326,6 +327,7 @@ export * from './project-participating-orgs.internal.interface';
 
 // Org Events interfaces
 export * from './org-events.interface';
+export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
@@ -405,6 +407,8 @@ export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './boilerplates.interface';
+export * from './brand-kit-icons.interface';
+export * from './brand-kit-portrait.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
@@ -452,8 +456,11 @@ export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
 export * from './member-360.interface';
 export * from './mktg-family-export.interface';
+export * from './mktg-family-print.interface';
 export * from './aeo-geo.interface';
 export * from './mktg-last-intake.interface';
 export * from './mktg-project-roles.interface';
 export * from './uikit.interface';
 export * from './social-share.interface';
+export * from './org-training-view.interface';
+export * from './formation-pipeline.interface';

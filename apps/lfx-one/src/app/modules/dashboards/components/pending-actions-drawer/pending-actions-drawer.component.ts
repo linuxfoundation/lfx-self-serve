@@ -11,6 +11,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
+  PENDING_ACTION_BULK_DISMISS_SECTIONS,
   PENDING_ACTION_BUTTON_ICON,
   PENDING_ACTION_FADE_OUT_MS,
   PENDING_ACTION_LABEL,
@@ -23,7 +24,8 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { filter, timer } from 'rxjs';
@@ -41,6 +43,7 @@ import type {
 @Component({
   selector: 'lfx-pending-actions-drawer',
   imports: [
+    ConfirmDialogModule,
     DrawerModule,
     SkeletonModule,
     ButtonComponent,
@@ -53,12 +56,14 @@ import type {
   ],
   templateUrl: './pending-actions-drawer.component.html',
   styleUrl: './pending-actions-drawer.component.scss',
+  providers: [ConfirmationService],
 })
 export class PendingActionsDrawerComponent {
   private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly meetingService = inject(MeetingService);
   private readonly invitationService = inject(InvitationService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
 
@@ -146,6 +151,40 @@ export class PendingActionsDrawerComponent {
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, true);
+  }
+
+  // Dismissals are permanent cookies with no undo, so confirm before dismissing a whole section.
+  protected handleDismissAll(group: DrawerActionSection): void {
+    const rows = group.dismissibleRows;
+    if (rows.length === 0) return;
+    const noun = rows.length === 1 ? 'item' : 'items';
+    this.confirmationService.confirm({
+      header: `Dismiss all in ${group.label}`,
+      message: `Dismiss ${rows.length} ${noun} from ${group.label}? They will no longer appear in your pending actions.`,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Dismiss all',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm',
+      accept: () => {
+        // The confirm can sit open while the feed refreshes or a row is dismissed on its own: dismiss only the rows the user
+        // confirmed that are still dismissible now, so none is dismissed twice and the toast counts what actually happened.
+        const confirmedKeys = new Set(rows.map((row) => row.rowKey));
+        const liveRows = (this.sectionedRows().find((section) => section.section === group.section)?.dismissibleRows ?? []).filter((row) =>
+          confirmedKeys.has(row.rowKey)
+        );
+        if (liveRows.length === 0) return;
+        for (const row of liveRows) {
+          this.hiddenActionsService.dismissAction(row);
+          this.startCompletion(row, true);
+        }
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Actions dismissed',
+          detail: `Dismissed ${liveRows.length} ${liveRows.length === 1 ? 'item' : 'items'} from ${group.label}.`,
+        });
+      },
+    });
   }
 
   // Delegate invitation Accept/Decline to the parent (it owns the optimistic markResolved, toasts, and deferred undo).
@@ -286,11 +325,19 @@ export class PendingActionsDrawerComponent {
       return PENDING_ACTION_SECTION_ORDER.reduce<DrawerActionSection[]>((sections, section) => {
         const rows = rowsBySection.get(section);
         if (rows) {
-          sections.push({ section, label: PENDING_ACTION_SECTION_LABEL[section], rows });
+          const dismissibleRows = PENDING_ACTION_BULK_DISMISS_SECTIONS.includes(section) ? rows.filter((row) => this.isBulkDismissible(row)) : [];
+          sections.push({ section, label: PENDING_ACTION_SECTION_LABEL[section], rows, dismissibleRows });
         }
         return sections;
       }, []);
     });
+  }
+
+  // Mirrors the per-row Dismiss control: skip rows without one, rows already fading out, and RSVPs still loading their meeting.
+  private isBulkDismissible(row: DrawerActionRow): boolean {
+    if (row.isInvitation || row.isFormationItem || row.type === 'JoinApplication') return false;
+    if (this.completingRowKeys().has(row.rowKey)) return false;
+    return !(row.isRsvpInline && (row.isMeetingLoading || !row.meeting));
   }
 
   private initVisibleRows(): Signal<DrawerActionRow[]> {

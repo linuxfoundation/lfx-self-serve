@@ -7,6 +7,7 @@
   ariaLabel="More actions"
   iconOnly
   [menu]="actionsMenu"
+  menuAlign="end"
   [loading]="resending() || removing() || checkingEdit()"
   data-testid="meetings-home-row-actions-trigger" />
 
@@ -38,32 +39,18 @@
 <ng-template #removeDialog let-ref="dialogRef">
   <lfx-ui-modal heading="Remove Yourself" data-testid="meetings-home-row-actions-remove-dialog">
     <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
-    <div
-      class="flex flex-col gap-[4px] rounded-[12px] bg-gray-50 px-[14px] py-[12px] ring-1 ring-inset ring-gray-200"
-      data-testid="meetings-home-row-actions-remove-info">
-      @if (project(); as project) {
-        <span class="flex min-w-0 items-start gap-[6px] text-[12px] text-gray-600" data-testid="meetings-home-row-actions-remove-project">
-          <lfx-ui-avatar class="mt-px" shape="rounded" [size]="16" [name]="project.name" [initials]="project.initial" [src]="project.logo" decorative />
-          <span class="min-w-0 break-words">{{ project.name }}</span>
-        </span>
+    <lfx-meeting-dialog-context [row]="row()" data-testid="meetings-home-row-actions-remove-info" />
+    <!-- Below the meeting, per the design; the subtitle id makes question and notes the alertdialog's description. -->
+    <div [id]="ref.id + '-subtitle'" class="flex flex-col gap-[8px]" data-testid="meetings-home-row-actions-remove-description">
+      <p class="text-[14px] leading-[1.6] text-gray-700" data-testid="meetings-home-row-actions-remove-message">{{ removalQuestion() }}</p>
+      @if (removalNotes().length) {
+        <ul class="flex list-disc flex-col gap-[4px] pl-[20px] text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-row-actions-remove-notes">
+          @for (note of removalNotes(); track note) {
+            <li>{{ note }}</li>
+          }
+        </ul>
       }
-      <span class="text-[14px] font-medium leading-[20px] text-gray-900">{{ row().title }}</span>
-      <span class="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[12px] text-gray-500">
-        <span>{{ when() }}</span>
-        @if (meetingType(); as type) {
-          <span aria-hidden="true">·</span>
-          <span class="inline-flex items-center gap-[5px]"><i class="text-[11px]" [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</span>
-        }
-        @if (recurring()) {
-          <span aria-hidden="true">·</span>
-          <span class="inline-flex items-center gap-[5px]"><i class="fa-light fa-arrows-rotate text-[11px]" aria-hidden="true"></i>Recurring</span>
-        }
-      </span>
     </div>
-    <!-- Below the meeting, per the design; the subtitle id keeps it as the alertdialog's description. -->
-    <p [id]="ref.id + '-subtitle'" class="text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-row-actions-remove-message">
-      {{ removalMessage() }}
-    </p>
     <ng-container modalActions>
       <lfx-ui-button data-autofocus variant="secondary" [disabled]="removing()" (click)="ref.close()" data-testid="meetings-home-row-actions-remove-cancel"
         >Cancel</lfx-ui-button

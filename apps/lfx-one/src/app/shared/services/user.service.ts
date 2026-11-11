@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
-import { USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
+import { CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS, USER_MEETINGS_INCLUDE_ATTENDANCE, USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
   ChangePasswordRequest,
@@ -37,7 +37,14 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { buildDisplayName, isRsvpSupersededBy, resolveRsvpOccurrenceId, retainConfirmedRsvp, selectApplicableRsvp } from '@lfx-one/shared/utils';
+import {
+  buildDisplayName,
+  currentEmployerFromWorkExperiences,
+  isRsvpSupersededBy,
+  resolveRsvpOccurrenceId,
+  retainConfirmedRsvp,
+  selectApplicableRsvp,
+} from '@lfx-one/shared/utils';
 import {
   BehaviorSubject,
   catchError,
@@ -56,6 +63,7 @@ import {
   takeUntil,
   tap,
   throwError,
+  timeout,
 } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
@@ -140,10 +148,11 @@ export class UserService {
   private userPastMeetingsDestroy$ = new Subject<void>();
   private userLatestPastMeetingsDestroy$ = new Subject<void>();
   private userMeetings$: Observable<Meeting[]> | null = null;
+  private userMeetingsWithAttendance$: Observable<Meeting[]> | null = null;
   private userMeetingsDirty = false;
   private userMeetingsSubject: string | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
-  private userPastMeetingsWithArtifacts$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsWithDetails$: Observable<PastMeeting[]> | null = null;
   private userPastMeetingsSubject: string | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
   private userLatestPastMeetingsSubject: string | null = null;
@@ -172,9 +181,10 @@ export class UserService {
         this.userLatestPastMeetingsDestroy$.next();
         this.userLatestPastMeetingsDestroy$ = new Subject<void>();
         this.userMeetings$ = null;
+        this.userMeetingsWithAttendance$ = null;
         this.userMeetingsDirty = false;
         this.userPastMeetings$ = null;
-        this.userPastMeetingsWithArtifacts$ = null;
+        this.userPastMeetingsWithDetails$ = null;
         this.userLatestPastMeetings$ = null;
         this.userIdentities$ = null;
       });
@@ -457,31 +467,43 @@ export class UserService {
    * Returns a shared, cached observable. Call refreshUserMeetings() after
    * mutations to push fresh data to subscribers, or pass false outside the Me
    * lens to invalidate the replay and fetch when a personal consumer returns.
+   * @param options - `includeAttendance` adds `rsvp_summary` to the dates of meetings the viewer organizes, cached apart from the plain feed
    */
-  public getUserMeetings(): Observable<Meeting[]> {
+  public getUserMeetings(options?: { includeAttendance?: boolean }): Observable<Meeting[]> {
+    const includeAttendance = options?.includeAttendance === true;
     const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
-    if (this.userMeetingsDirty || (this.userMeetings$ && this.userMeetingsSubject !== subject)) {
+    if (this.userMeetingsDirty || ((this.userMeetings$ || this.userMeetingsWithAttendance$) && this.userMeetingsSubject !== subject)) {
       this.userMeetingsDestroy$.next();
       this.userMeetingsDestroy$ = new Subject<void>();
       this.userMeetings$ = null;
+      this.userMeetingsWithAttendance$ = null;
       this.userMeetingsDirty = false;
     }
-    if (!this.userMeetings$) {
+    const cached = includeAttendance ? this.userMeetingsWithAttendance$ : this.userMeetings$;
+    if (!cached) {
       // Capture the current destroy$ at build time — when the user changes, we swap the field
       // to a new Subject after firing .next() on this one, so the old chain completes cleanly.
+      // Both caches share it, so a viewer change or invalidation tears down either chain.
       const destroy$ = this.userMeetingsDestroy$;
       this.userMeetingsSubject = subject;
+      const params = includeAttendance ? { include: USER_MEETINGS_INCLUDE_ATTENDANCE } : undefined;
+      const setCache = (value: Observable<Meeting[]> | null): void => {
+        if (includeAttendance) this.userMeetingsWithAttendance$ = value;
+        else this.userMeetings$ = value;
+      };
       const dropIfCurrent = (): void => {
         // Guarded so a stale response can't drop a newer chain (e.g. a user/identity change
         // that already rebuilt it while this one was still erroring out).
-        if (this.userMeetings$ === meetings$) {
-          this.userMeetings$ = null;
+        if ((includeAttendance ? this.userMeetingsWithAttendance$ : this.userMeetings$) === meetings$) {
+          setCache(null);
         }
       };
       const meetings$: Observable<Meeting[]> = combineLatest([
         this.userMeetingsRefresh$.pipe(
           startWith(undefined),
-          switchMap(() => this.http.get<Meeting[]>('/api/user/meetings').pipe(tap((meetings) => this.reconcileMeetingRegistrations(meetings, subject))))
+          switchMap(() =>
+            this.http.get<Meeting[]>('/api/user/meetings', { params }).pipe(tap((meetings) => this.reconcileMeetingRegistrations(meetings, subject)))
+          )
         ),
         this.confirmedMeetingRsvps$,
       ]).pipe(
@@ -497,35 +519,37 @@ export class UserService {
         }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
-      this.userMeetings$ = meetings$;
+      setCache(meetings$);
+      return meetings$;
     }
-    return this.userMeetings$;
+    return cached;
   }
 
   /**
    * Gets past meetings for the current authenticated user.
    * Call refreshUserPastMeetings() to re-fetch.
-   * @param options - `includeArtifacts` adds `has_recording` / `has_ai_summary`, cached apart from the plain feed
+   * @param options - `includeArtifactsAndAttendance` adds `has_recording` / `recording_share_url` / `has_ai_summary`, and
+   *   `attendance_summary` on meetings the viewer organizes, cached apart from the plain feed
    */
-  public getUserPastMeetings(options?: { includeArtifacts?: boolean }): Observable<PastMeeting[]> {
-    const includeArtifacts = options?.includeArtifacts === true;
+  public getUserPastMeetings(options?: { includeArtifactsAndAttendance?: boolean }): Observable<PastMeeting[]> {
+    const includeDetails = options?.includeArtifactsAndAttendance === true;
     const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
     // Rebuilt for a new viewer here too, so a read before the identity effect runs never replays the previous viewer's rows.
     if (this.userPastMeetingsSubject !== subject) {
       this.userPastMeetingsDestroy$.next();
       this.userPastMeetingsDestroy$ = new Subject<void>();
       this.userPastMeetings$ = null;
-      this.userPastMeetingsWithArtifacts$ = null;
+      this.userPastMeetingsWithDetails$ = null;
       this.userPastMeetingsSubject = subject;
     }
-    const cached = includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$;
+    const cached = includeDetails ? this.userPastMeetingsWithDetails$ : this.userPastMeetings$;
     if (cached) return cached;
 
     // Both caches share the destroy signal, so a viewer change tears down either chain.
     const destroy$ = this.userPastMeetingsDestroy$;
-    const params = includeArtifacts ? { include: USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } : undefined;
+    const params = includeDetails ? { include: `${USER_PAST_MEETINGS_INCLUDE_ARTIFACTS},${USER_MEETINGS_INCLUDE_ATTENDANCE}` } : undefined;
     const setCache = (value: Observable<PastMeeting[]> | null): void => {
-      if (includeArtifacts) this.userPastMeetingsWithArtifacts$ = value;
+      if (includeDetails) this.userPastMeetingsWithDetails$ = value;
       else this.userPastMeetings$ = value;
     };
     const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
@@ -534,7 +558,7 @@ export class UserService {
       takeUntil(destroy$),
       // Never cache a failure — see getUserMeetings() for why.
       catchError((error: unknown) => {
-        if ((includeArtifacts ? this.userPastMeetingsWithArtifacts$ : this.userPastMeetings$) === pastMeetings$) setCache(null);
+        if ((includeDetails ? this.userPastMeetingsWithDetails$ : this.userPastMeetings$) === pastMeetings$) setCache(null);
         return throwError(() => error);
       }),
       shareReplay({ bufferSize: 1, refCount: false })
@@ -618,6 +642,25 @@ export class UserService {
    */
   public getWorkExperience(): Observable<WorkExperience[]> {
     return this.http.get<WorkExperience[]>('/api/profile/work-experience').pipe(catchError(() => of([])));
+  }
+
+  /**
+   * The name of the signed-in user's current employer, for prefilling a form. A quiet read: it is
+   * bounded by {@link CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS} and every failure (error, timeout, no history)
+   * is a null, never a toast, so a convenience lookup cannot interrupt the form it serves. Not
+   * {@link getWorkExperiences}, which toasts on failure.
+   */
+  public getCurrentEmployerName(): Observable<string | null> {
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
+      take(1),
+      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      // Only a job with no end date: the helper's fallback to the latest past job would prefill a company the user has left.
+      map((experiences) => currentEmployerFromWorkExperiences(experiences.filter((experience) => !experience.endDate))?.name ?? null),
+      catchError((error) => {
+        console.warn('[UserService] getCurrentEmployerName failed; leaving the organization blank', error);
+        return of(null);
+      })
+    );
   }
 
   /**

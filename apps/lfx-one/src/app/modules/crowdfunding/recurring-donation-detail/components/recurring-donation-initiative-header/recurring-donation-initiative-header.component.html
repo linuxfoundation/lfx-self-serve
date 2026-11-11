@@ -27,8 +27,8 @@
       <h1 class="text-base font-bold text-gray-900 leading-snug" data-testid="initiative-title">{{ donation().name }}</h1>
 
       <!-- Description -->
-      @if (donation().description) {
-        <p class="text-sm text-gray-500" data-testid="initiative-description">{{ donation().description }}</p>
+      @if (description()) {
+        <p class="text-sm text-gray-500" data-testid="initiative-description">{{ description() }}</p>
       }
 
       <!-- Tags -->

@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UiButtonComponent } from '../button/button.component';
 import { UiDrawerComponent } from './drawer.component';
+import { UiDrawerContext } from './drawer.context';
 import { UiDrawerService } from './drawer.service';
 
 const HOST_TEMPLATE = `
@@ -55,6 +56,27 @@ class TestClosingContentComponent {
   }
 }
 
+@Component({
+  selector: 'lfx-ui-test-bare-content',
+  imports: [UiDrawerComponent],
+  template: '<lfx-ui-drawer heading="Details" bare><button id="own-close" type="button" (click)="context.requestClose()">Close</button></lfx-ui-drawer>',
+})
+class TestBareContentComponent {
+  public readonly context = inject(UiDrawerContext);
+}
+
+// Inert at both ends, like the meeting details drawer's hidden compact header and inactive tab panel.
+const INERT_TEMPLATE = `
+  <lfx-ui-drawer heading="Details">
+    <div inert><a id="hidden-first" href="#first">Compact header</a></div>
+    <button id="live" type="button">Live</button>
+    <div inert><button id="hidden-last" type="button">Inactive tab</button></div>
+  </lfx-ui-drawer>
+`;
+
+@Component({ selector: 'lfx-ui-test-inert-content', template: '' })
+class TestInertContentComponent {}
+
 // True when the CDK scroll dispatcher tracks the element, so overlays anchored inside it follow its scrolling.
 const registered = (el: Element): boolean => [...TestBed.inject(ScrollDispatcher).scrollContainers.keys()].some((s) => s.getElementRef().nativeElement === el);
 
@@ -87,6 +109,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     TestBed.configureTestingModule({ imports: [TestHostComponent] });
     // Set here because an inline template this long trips component-max-inline-declarations.
     TestBed.overrideComponent(TestHostComponent, { set: { imports: [UiDrawerComponent, UiButtonComponent], template: HOST_TEMPLATE } });
+    TestBed.overrideComponent(TestInertContentComponent, { set: { imports: [UiDrawerComponent], template: INERT_TEMPLATE } });
     fixture = TestBed.createComponent(TestHostComponent);
     document.body.appendChild(fixture.nativeElement);
     container = TestBed.inject(OverlayContainer).getContainerElement();
@@ -125,35 +148,55 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(container.querySelector('.cdk-overlay-backdrop')?.className).toContain('bg-ui-overlay');
   });
 
-  it('anchors to the right at 600px, full height, with the large radius on the inner edge only', async () => {
+  it('floats 8px inside the right edge at 560px with the medium radius and the library title style', async () => {
     await open();
 
-    expect(drawer()?.style.width).toBe('600px');
-    expect(drawer()?.className).toContain('rounded-l-ui-lg');
-    expect(drawer()?.className).not.toContain('rounded-r-ui-lg');
-    expect(drawer()?.className).toContain('shadow-modal');
+    expect(drawer()?.style.getPropertyValue('--drawer-w')).toBe('560px');
+    expect(drawer()?.className).toContain('w-[min(var(--drawer-w),calc(100vw-16px))]');
+    expect(drawer()?.className).toContain('rounded-ui-md');
     expect(drawer()?.className).toContain('is-right');
+    expect(drawer()?.className).not.toContain('min-w-[');
+    const pane = container.querySelector('.cdk-overlay-pane') as HTMLElement;
     expect((container.querySelector('.cdk-global-overlay-wrapper') as HTMLElement).style.justifyContent).toBe('flex-end');
-    expect((container.querySelector('.cdk-overlay-pane') as HTMLElement).style.height).toBe('100%');
+    expect(pane.style.marginTop).toBe('8px');
+    expect(pane.style.marginRight).toBe('8px');
+    expect(pane.style.height).toBe('calc(100% - 16px)');
+    expect(pane.style.maxWidth).toBe('calc(100vw - 16px)');
+    expect(testId('ui-drawer-title').className).toContain('text-[20px] leading-[28px]');
+    expect(testId('ui-drawer-subtitle').className).toContain('copy-13');
   });
 
-  it('anchors to the left with a given width', async () => {
+  it('floats 8px inside the left edge with a custom width', async () => {
     await open((host) => (host.config = { side: 'left', width: 480 }));
 
-    expect(drawer()?.style.width).toBe('480px');
-    expect(drawer()?.className).toContain('rounded-r-ui-lg');
-    expect(drawer()?.className).not.toContain('rounded-l-ui-lg');
+    expect(drawer()?.style.getPropertyValue('--drawer-w')).toBe('480px');
     expect(drawer()?.className).toContain('is-left');
     expect((container.querySelector('.cdk-global-overlay-wrapper') as HTMLElement).style.justifyContent).toBe('flex-start');
+    expect((container.querySelector('.cdk-overlay-pane') as HTMLElement).style.marginLeft).toBe('8px');
   });
 
-  it('fills the window at 640px and narrower, and never exceeds it', async () => {
+  it('is 75vw and at least 560px when wide', async () => {
+    await open((host) => (host.config = { size: 'wide', width: 480 }));
+
+    expect(drawer()?.style.getPropertyValue('--drawer-w')).toBe('75vw');
+    expect(drawer()?.className).toContain('min-w-[min(560px,calc(100vw-16px))]');
+  });
+
+  it('right-aligns the footer actions, and moves only the first one left when split', async () => {
     await open();
-    expect(drawer()?.className).toContain('max-[640px]:!w-screen');
-    expect(drawer()?.className).toContain('max-[640px]:rounded-none');
-    expect(drawer()?.className).toContain('max-w-[100vw]');
-    // The footer clears the home indicator on a phone-width sheet.
-    expect(testId('ui-drawer-footer').className).toContain('max-[640px]:pb-[calc(16px+env(safe-area-inset-bottom))]');
+    const footer = testId('ui-drawer-footer');
+    expect(footer.className).toContain('justify-end');
+    expect(footer.className).not.toContain('[&>:first-child]:mr-auto');
+    // The footer clears the home indicator on a phone-width window.
+    expect(footer.className).toContain('max-[640px]:pb-[calc(16px+env(safe-area-inset-bottom))]');
+
+    const bare = TestBed.createComponent(UiDrawerComponent);
+    bare.componentRef.setInput('heading', 'Split');
+    bare.componentRef.setInput('splitFooter', true);
+    await bare.whenStable();
+    const split = (bare.nativeElement as HTMLElement).querySelector('[data-testid="ui-drawer-footer"]') as HTMLElement;
+    expect(split.className).toContain('justify-end');
+    expect(split.className).toContain('[&>:first-child]:mr-auto');
   });
 
   it('is always a dialog, even when a modal config with another role is passed', async () => {
@@ -171,6 +214,38 @@ describe('UiDrawerComponent and UiDrawerService', () => {
 
     expect(document.activeElement).toBe(byId('name'));
     expect(container.querySelectorAll('.cdk-focus-trap-anchor').length).toBe(2);
+  });
+
+  describe('with inert content at either end', () => {
+    const anchors = () => [...container.querySelectorAll<HTMLElement>('.cdk-focus-trap-anchor')];
+    const openInert = async (config: UiDrawerConfig) => {
+      // jsdom lays nothing out, and the CDK skips elements without a size.
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1);
+      opener.focus();
+      TestBed.inject(UiDrawerService).open(TestInertContentComponent, config);
+      await settle();
+    };
+
+    it('bare: moves focus past the inert header and wraps Tab within the live content', async () => {
+      await openInert({ bare: true });
+      expect(document.activeElement).toBe(byId('live'));
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(byId('live'));
+    });
+
+    it('with a header: moves focus to the first live control and wraps Tab past the inert panel', async () => {
+      await openInert({});
+      const close = testId('ui-drawer-close').querySelector('button');
+      expect(document.activeElement).toBe(close);
+
+      anchors()[0].focus();
+      expect(document.activeElement).toBe(byId('live'));
+      anchors()[1].focus();
+      expect(document.activeElement).toBe(close);
+    });
   });
 
   it('closes on Escape and gives focus back to the opener', async () => {
@@ -508,6 +583,58 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     }
   });
 
+  describe('bare', () => {
+    it('drops the header and footer, keeps the title for screen readers and makes the unpadded body the only scroller', async () => {
+      await open((host) => (host.config = { bare: true, describedBy: true }));
+
+      expect(testId('ui-drawer-header')).toBeNull();
+      expect(testId('ui-drawer-footer')).toBeNull();
+      expect(testId('ui-drawer-close')).toBeNull();
+      expect(byId('edit')).toBeNull();
+      expect(byId('done')).toBeNull();
+      expect(testId('ui-drawer-title').className).toBe('sr-only');
+      expect(testId('ui-drawer-title').textContent).toBe('Weekly Sync');
+      expect(dialog()?.getAttribute('aria-labelledby')).toBe(testId('ui-drawer-title').id);
+      expect(dialog()?.getAttribute('aria-describedby')).toBe(testId('ui-drawer-subtitle').id);
+      expect(testId('ui-drawer-subtitle').className).toBe('sr-only');
+      const body = testId('ui-drawer-body');
+      expect(body.querySelector('#name')).not.toBeNull();
+      expect(body.className).toContain('overflow-y-auto');
+      expect(body.className).not.toMatch(/\b(px|py|gap)-\[/);
+      expect(registered(body)).toBe(true);
+    });
+
+    it('is set by the input as well as the config', async () => {
+      const layout = TestBed.createComponent(UiDrawerComponent);
+      layout.componentRef.setInput('heading', 'Details');
+      layout.componentRef.setInput('bare', true);
+      await layout.whenStable();
+      const el = layout.nativeElement as HTMLElement;
+
+      expect(el.querySelector('[data-testid="ui-drawer-header"]')).toBeNull();
+      expect(el.querySelector('[data-testid="ui-drawer-footer"]')).toBeNull();
+      expect(el.querySelector('[data-testid="ui-drawer-title"]')?.className).toBe('sr-only');
+    });
+
+    it('closes from the content through UiDrawerContext.requestClose, asking canClose first', async () => {
+      const canClose = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+      const ref = TestBed.inject(UiDrawerService).open(TestBareContentComponent, { canClose });
+      await settle();
+      const closed = vi.fn();
+      ref.closed.subscribe(closed);
+
+      byId('own-close').click();
+      await settle();
+      expect(canClose).toHaveBeenCalledTimes(1);
+      expect(drawer()).not.toBeNull();
+
+      byId('own-close').click();
+      await settle();
+      expect(canClose).toHaveBeenCalledTimes(2);
+      expect(closed).toHaveBeenCalled();
+    });
+  });
+
   it('hides the footer when nothing is projected into it, and renders without a service as an inert layout', async () => {
     const bare = TestBed.createComponent(UiDrawerComponent);
     bare.componentRef.setInput('heading', 'Bare');
@@ -516,7 +643,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
 
     expect(el.querySelector('[data-testid="ui-drawer-footer"]')?.matches(':empty')).toBe(true);
     expect(el.querySelector('[data-testid="ui-drawer-leading"]')?.matches(':empty')).toBe(true);
-    expect(el.style.width).toBe('600px');
+    expect(el.style.getPropertyValue('--drawer-w')).toBe('560px');
     expect(el.getAttribute('role')).toBeNull();
     expect(() => (el.querySelector('[data-testid="ui-drawer-close"] button') as HTMLElement).click()).not.toThrow();
   });

@@ -6,7 +6,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { PLATFORM_ID, provideZonelessChangeDetection } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { By } from '@angular/platform-browser';
+import { provideRouter, RouterLink } from '@angular/router';
 import { SurveyStatus } from '@lfx-one/shared';
 import { Survey, SurveyCommittee } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -213,6 +214,64 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
     expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
     expect(action('delete', 'draft')).toBeNull();
   });
+  describe('group link', () => {
+    const groupLink = (uid: string): HTMLAnchorElement | null => fixture.nativeElement.querySelector(`[data-testid="surveys-group-link-${uid}"]`);
+
+    it.each([
+      { is_foundation: true, path: '/foundation/groups/primary' },
+      { is_foundation: false, path: '/project/groups/primary' },
+      { is_foundation: undefined, path: '/groups/primary' },
+    ])('links the group name to the group details page for the survey owning tier ($is_foundation)', ({ is_foundation: isFoundation, path }) => {
+      render([survey('s1', ['primary', 'secondary'], { is_foundation: isFoundation })]);
+
+      const link = groupLink('s1');
+      expect(link?.getAttribute('href')).toBe(`${path}?project=synthetic-project`);
+      expect(link?.textContent?.trim()).toBe('Synthetic primary');
+    });
+
+    it('carries Me-lens navigation state so the group page restores Me on back', () => {
+      render([survey('s1', ['primary'])], { isMeLens: true });
+
+      const link = fixture.debugElement.query(By.css('[data-testid="surveys-group-link-s1"]')).injector.get(RouterLink);
+      expect(link.state).toEqual({ backLabel: 'Surveys', backPath: '/surveys', fromMeLens: true });
+    });
+
+    it('still returns to Surveys, without switching lens, outside the Me lens', () => {
+      render([survey('s1', ['primary'])], { isMeLens: false });
+
+      const link = fixture.debugElement.query(By.css('[data-testid="surveys-group-link-s1"]')).injector.get(RouterLink);
+      expect(link.state).toEqual({ backLabel: 'Surveys', backPath: '/surveys', fromMeLens: false });
+    });
+
+    it('lists surveys without a group as "No group" in the Group filter', () => {
+      render([survey('s1', []), survey('s2', ['primary'])]);
+
+      const labels = (fixture.componentInstance['groupOptions']() as { label: string }[]).map((option) => option.label);
+      expect(labels).toContain('No group (1)');
+      expect(labels).not.toContain('Unknown (1)');
+    });
+
+    it('renders a dash as plain text, without a link or chip, when the survey has no committee', () => {
+      render([survey('s1', [])]);
+
+      expect(groupLink('s1')).toBeNull();
+      const text = fixture.nativeElement.querySelector('[data-testid="surveys-group-text-s1"]') as HTMLElement | null;
+      expect(text?.textContent?.trim()).toBe('-');
+      expect(fixture.nativeElement.textContent).not.toContain('Unknown');
+    });
+
+    it('renders a named group without a uid as plain text, without a link or chip', () => {
+      const noUid = survey('s1', ['primary']);
+      noUid.committees[0].committee_uid = '';
+      render([noUid]);
+
+      expect(groupLink('s1')).toBeNull();
+      const text = fixture.nativeElement.querySelector('[data-testid="surveys-group-text-s1"]') as HTMLElement | null;
+      expect(text?.textContent?.trim()).toBe('Synthetic primary');
+      expect(text?.className).not.toContain('border');
+    });
+  });
+
   describe('status tab counts', () => {
     const tabLabels = (): string[] =>
       Array.from(fixture.nativeElement.querySelectorAll('[data-testid="surveys-status-tabs"] [data-testid^="filter-pill-"]') as NodeListOf<HTMLElement>).map(

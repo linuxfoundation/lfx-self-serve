@@ -63,6 +63,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   deriveEventSlug,
+  briefDispatchEventName,
   fromBriefResponse,
   isCampaignServiceJobId,
   multiCampaignPlatforms,
@@ -74,6 +75,7 @@ const req = {} as unknown as Request;
 function briefWithSlug(slug: string): CampaignBriefOutput {
   return {
     eventDetails: {
+      sourceText: '',
       name: 'KubeCon EU 2026',
       dates: '2026-03-23 to 2026-03-26',
       city: 'Amsterdam',
@@ -1227,6 +1229,24 @@ function storedBrief(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+describe('briefDispatchEventName', () => {
+  it.each([
+    ['eventName before name', { event_details: { name: 'UI name', eventName: ' Stored ' } }, 'Stored'],
+    ['name when eventName is blank', { event_details: { eventName: ' ', name: ' UI name ' } }, 'UI name'],
+    ['event_details before copy', { event_details: { name: 'Details' }, copy: { eventName: 'Copy' } }, 'Details'],
+    ['copy when event_details has none', { event_details: { city: 'Paris' }, copy: { eventName: 'Copy' } }, 'Copy'],
+    ['a key in other capitals, the later one winning', { event_details: { eventName: 'First', EVENTNAME: 'Second' } }, 'Second'],
+    ['nothing from a blob Go cannot decode', { event_details: { name: 'Details', hsToken: 7 }, copy: { name: 'Copy' } }, 'Copy'],
+    ['nothing from a blob that is not an object', { event_details: ['Details'], copy: { name: 'Copy' } }, 'Copy'],
+    // Go's quirk: the raw whitespace name blocks copy's eventName, then copy's absent name replaces it.
+    ["a whitespace name, which keeps copy's eventName out", { event_details: { name: '  ' }, copy: { eventName: 'Copy' } }, ''],
+    ['a whitespace name raw when nothing follows', { event_details: { name: '  ' } }, '  '],
+    ['a whitespace name raw past a copy Go cannot decode', { event_details: { name: '  ' }, copy: ['Copy'] }, '  '],
+  ])('reads %s', (_label, found, expected) => {
+    expect(briefDispatchEventName(found)).toBe(expected);
+  });
+});
+
 describe('fromBriefResponse', () => {
   // The one property that matters most: what a save writes, a load must give back. Anything
   // this drops is work the user did in the Planning tab and would have to redo, without ever
@@ -1862,6 +1882,7 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email')).resolves.toMatchObject({
       status: 'loaded',
       briefId: 'b-1',
+      storedEventName: 'KubeCon EU 2026',
     });
   });
 
@@ -2013,6 +2034,7 @@ describe('CampaignServiceClient.loadBriefById', () => {
     expect(result.status).toBe('loaded');
     expect(result.briefId).toBe('b-1');
     expect(result.etag).toBe('"3"');
+    expect(result.storedEventName).toBe('KubeCon EU 2026');
     // No query at all: an id is exact identity upstream, so there is nothing to disambiguate.
     expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'GET');
   });
@@ -6112,6 +6134,110 @@ describe('CampaignServiceClient.listGoogleAdsAccounts', () => {
   });
 });
 
+describe('CampaignServiceClient.listGoogleAdsConversionActions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's conversion-action read with no query or body", async () => {
+    const actions = { account_id: '1234567890', conversion_actions: [], conversion_action_count: 0 };
+    proxyRequest.mockResolvedValueOnce(actions);
+
+    const result = await new CampaignServiceClient().listGoogleAdsConversionActions(req, 'lf/ai');
+
+    expect(result).toBe(actions);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/conversion-actions', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsConversionActions(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsConversionActions(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listGoogleAdsUserLists', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's user-list read with no query or body", async () => {
+    const lists = { account_id: '1234567890', user_lists: [], user_list_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(lists);
+
+    const result = await new CampaignServiceClient().listGoogleAdsUserLists(req, 'lf/ai');
+
+    expect(result).toBe(lists);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/user-lists', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsUserLists(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsUserLists(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's Audience resources, type=audience, with the project encoded", async () => {
+    const audiences = { account_id: '1234567890', type: 'audience', audiences: [], audience_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    const result = await new CampaignServiceClient().listGoogleAdsAudiences(req, 'lf/ai');
+
+    expect(result).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/audiences', 'GET', { type: 'audience' });
+  });
+
+  it('GETs another type with q when given (#5262)', async () => {
+    proxyRequest.mockResolvedValueOnce({ account_id: '1', type: 'user_interest', audiences: [], audience_count: 0, truncated: false });
+
+    await new CampaignServiceClient().listGoogleAdsAudiences(req, 'cncf', 'user_interest', 'cloud');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/audiences', 'GET', {
+      type: 'user_interest',
+      q: 'cloud',
+    });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsAudiences(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
 describe('CampaignServiceClient.suggestGoogleAdsGeoTargets', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -6559,6 +6685,100 @@ describe('CampaignServiceClient creative-asset library reads', () => {
       expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
       expect(proxyRequest).not.toHaveBeenCalled();
     });
+  });
+});
+
+/**
+ * The Survey & Report surface: a stored survey brief must come back AS a survey brief, under its
+ * own stage, or the planner's restore and the series' own lookups address a row that never matches.
+ */
+describe('CampaignServiceClient survey briefs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('opens a stored survey brief for a survey caller asking for its stage', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'survey', stage: 'Survey Closing' }), { etag: '"4"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'survey', 'Survey Closing');
+
+    expect(result.status).toBe('loaded');
+    expect(result.brief?.deliveryType).toBe('survey');
+    expect(result.brief?.emailStage).toBe('Survey Closing');
+  });
+
+  it('does not hand a survey brief to a paid caller', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'survey', stage: 'Survey Promo' }), { etag: '"4"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing')).resolves.toMatchObject({ status: 'none' });
+  });
+});
+
+describe('CampaignServiceClient.createSendWorkflow', () => {
+  const wire = {
+    flow_id: '1841',
+    name: 'Cloud Survey - Workflow',
+    edit_url: 'https://app.hubspot.com/workflows/8112310/platform/flow/1841/edit',
+    source_flow_id: '1700',
+    source_flow_name: 'Survey sequence',
+    is_enabled: false,
+    send_email_steps: 3,
+    dated_steps: 3,
+    enrollment_list_ids: ['31027', '31028'],
+    suppression_list_ids: ['201', '202'],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('posts the request wrapped in `input`, omitting an unnamed source workflow and absent dates', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', { sourceWorkflowUrl: '  ', name: 'Cloud Survey - Workflow', briefIds: ['a', 'b'] });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/send-workflows', 'POST', undefined, {
+      input: { name: 'Cloud Survey - Workflow', brief_ids: ['a', 'b'] },
+    });
+  });
+
+  it('sends the dates and a named source workflow when given', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', {
+      sourceWorkflowUrl: ' 1700 ',
+      name: 'w',
+      briefIds: ['a', 'b'],
+      sendDates: ['2026-11-02', '2026-11-09'],
+    });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({
+      input: { source_workflow_url: '1700', name: 'w', brief_ids: ['a', 'b'], send_dates: ['2026-11-02', '2026-11-09'] },
+    });
+  });
+
+  it('maps the snake_case result, list ids included', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).resolves.toEqual({
+      flowId: '1841',
+      name: 'Cloud Survey - Workflow',
+      editUrl: wire.edit_url,
+      sourceFlowId: '1700',
+      sourceFlowName: 'Survey sequence',
+      isEnabled: false,
+      sendEmailSteps: 3,
+      datedSteps: 3,
+      enrollmentListIds: ['31027', '31028'],
+      suppressionListIds: ['201', '202'],
+    });
+  });
+
+  it('treats a create with no workflow link as a failure, not a success', async () => {
+    proxyRequest.mockResolvedValueOnce({ ...wire, edit_url: '' });
+
+    await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).rejects.toThrow(/no usable workflow link/);
   });
 });
 

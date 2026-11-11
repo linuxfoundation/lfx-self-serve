@@ -23,6 +23,8 @@ export interface VisibilityPollOptions<T> {
   backoffBaseMs: number;
   /** Ceiling for the retry delay. */
   backoffMaxMs: number;
+  /** Optional visible/focus burst coalescing; initial reads and hidden-tab cancellation stay immediate. */
+  wakeDebounceMs?: number;
   /** Returning false after a successful poll stops the loop until the tab next becomes visible. */
   shouldContinue?: (value: T) => boolean;
 }

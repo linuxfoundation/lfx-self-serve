@@ -96,7 +96,9 @@
     <div class="flex-grow px-5 md:px-8 py-6">
       <router-outlet />
     </div>
-    <!-- Footer Component -->
-    <lfx-app-footer class="block mt-auto px-5 md:ml-8 md:px-8" data-testid="main-layout-footer"></lfx-app-footer>
+    <!-- Footer Component; skipped while the page renders its own -->
+    @if (!pageOwnsFooter()) {
+      <lfx-app-footer class="block mt-auto px-5 md:ml-8 md:px-8" data-testid="main-layout-footer"></lfx-app-footer>
+    }
   </main>
 </div>

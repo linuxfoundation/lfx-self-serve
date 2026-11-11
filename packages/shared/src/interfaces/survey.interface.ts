@@ -135,6 +135,12 @@ export interface Survey {
   survey_link?: string;
   /** survey_response UID — present only in the Me lens; identifies the specific response record this row was built from (one row per survey × committee) */
   response_uid?: string;
+  /** Subject of the email sent to recipients, with template placeholders (detail API only) */
+  email_subject?: string;
+  /** HTML body of the email sent to recipients, with template placeholders such as `{{.FirstName}}` (detail API only) */
+  email_body?: string;
+  /** Plain-text body of the email sent to recipients (detail API only) */
+  email_body_text?: string;
 }
 
 /**
@@ -150,6 +156,12 @@ export type SurveyTableRow = Survey & {
   editCommands: string[];
   /** Edit-link query params: the row's own project slug + committee scope */
   editQueryParams: Record<string, string>;
+  /** Display name of the primary committee, or null when the survey has none */
+  groupName: string | null;
+  /** Canonical group details commands for the primary committee; null when the survey has no committee uid */
+  groupCommands: string[] | null;
+  /** Group-link query params: the row's own project slug, so the group opens in its project context */
+  groupQueryParams: Record<string, string> | null;
 };
 
 /**
@@ -396,16 +408,71 @@ export interface SurveyParticipationStats {
 }
 
 /**
- * Detailed survey results for the results drawer
- * @description Extended survey data including NPS results and comments for display in results drawer
+ * Recipient engagement counts and rates for a survey
+ * @description Aggregated from every per-recipient response row. Rates are whole
+ * percentages (0-100): delivery over recipients, open and click over delivered,
+ * comment over responded.
  */
-export interface SurveyResultsDetail extends Survey {
-  /** NPS score (-100 to +100) - only for NPS surveys */
-  nps_score?: number;
-  /** NPS response breakdown - only for NPS surveys */
-  nps_breakdown?: NpsBreakdown;
-  /** Additional comments from participants */
-  additional_comments?: SurveyComment[];
+export interface SurveyEngagementRates {
+  recipients: number;
+  delivered: number;
+  opened: number;
+  clicked: number;
+  responded: number;
+  commented: number;
+  deliveryRate: number;
+  openRate: number;
+  clickRate: number;
+  commentRate: number;
+}
+
+/**
+ * Which invitation-email stages one recipient reached
+ * @description Derived from SES flags and the delivery status; a later stage implies the earlier ones.
+ */
+export interface SurveyEmailStages {
+  delivered: boolean;
+  opened: boolean;
+  clicked: boolean;
+}
+
+/**
+ * Project-level values substituted into a sent survey email
+ * @description Values the survey row does not carry: staff names come from project settings.
+ */
+export interface SurveyEmailRenderContext {
+  projectName?: string;
+  executiveDirectorName?: string;
+  programManagerName?: string;
+  projectLogo?: string;
+}
+
+/**
+ * A survey email rendered for one recipient
+ */
+export interface RenderedSurveyEmail {
+  /** Plain-text subject */
+  subject: string;
+  /** HTML body with recipient values HTML-escaped */
+  html: string;
+}
+
+/**
+ * Email bodies sent to the survey service when creating a survey
+ */
+export interface SurveyEmailBodies {
+  /** HTML body with Go template placeholders */
+  html: string;
+  /** Plain-text body with Go template placeholders */
+  text: string;
+}
+
+/**
+ * Data handed to the sent-email dialog
+ */
+export interface SurveySentEmailDialogData {
+  survey: Survey;
+  response: SurveyResponseItem;
 }
 
 /**
@@ -558,6 +625,71 @@ export interface SurveyReviewFormValue {
 }
 
 /**
+ * SurveyMonkey survey template
+ * @description Upstream `GET /surveys/templates` item (lfx-v2-survey-service, proxied from ITX)
+ */
+export interface SurveyTemplate {
+  /** SurveyMonkey survey ID, sent as `survey_monkey_id` on create */
+  id: string;
+  /** Template title */
+  title: string;
+  /** SurveyMonkey nickname (may be empty) */
+  nickname?: string;
+  /** SurveyMonkey API link (may be empty) */
+  href?: string;
+}
+
+/**
+ * Survey template dropdown option
+ * @description A {@link SurveyTemplate} mapped for the NPS Survey Template select
+ */
+export interface SurveyTemplateOption {
+  /** Template title */
+  label: string;
+  /** SurveyMonkey survey ID */
+  value: string;
+}
+
+/**
+ * Survey wizard template-list state
+ * @description Load status plus title-sorted options for the template picker and review step
+ */
+export interface SurveyTemplatesState {
+  /** Fetch status */
+  status: 'loading' | 'ready' | 'error';
+  /** Options sorted by title; empty unless `status` is `ready` */
+  options: SurveyTemplateOption[];
+}
+
+/**
+ * Survey wizard template-list authorization target
+ * @description Query scope for `GET /api/surveys/templates`; upstream admits a project writer or a committee writer
+ */
+export interface SurveyTemplateAccessTarget {
+  /** Project UID (v2) the survey belongs to */
+  projectUid: string;
+  /** Committee UID (v2) for a committee writer, when the wizard has one */
+  committeeUid: string | null;
+}
+
+/**
+ * Survey email audience
+ * @description Which default email draft a template gets. ITX templates carry no category, so it is derived from the template title.
+ */
+export type SurveyEmailAudience = 'general' | 'maintainer';
+
+/**
+ * Survey email draft
+ * @description Default subject and body the wizard's Email Draft step starts from
+ */
+export interface SurveyEmailDraft {
+  /** Email subject line */
+  subject: string;
+  /** Plain-text email body with template variables */
+  body: string;
+}
+
+/**
  * Survey review data for display
  * @description Formatted data for the review step
  */
@@ -585,3 +717,79 @@ export interface SurveyReviewData {
  * @description Represents the combined state of survey status and response status
  */
 export type CombinedSurveyStatus = 'open' | 'submitted' | 'closed';
+
+/**
+ * Request body for `POST /api/surveys/:uid/reminders`
+ * @description `recipient_ids` are response row ids (`SurveyResponseItem.id`), as upstream `bulk_resend` expects.
+ */
+export interface SendSurveyRemindersRequest {
+  recipient_ids: string[];
+}
+
+/**
+ * Result of a reminder send
+ */
+export interface SendSurveyRemindersResult {
+  recipient_count: number;
+}
+
+/**
+ * A committee member who would receive the survey on a resync
+ * @description Mirrors `ITXPreviewRecipient` from lfx-v2-survey-service.
+ */
+export interface SurveyResyncRecipient {
+  user_id: string;
+  email: string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  role?: string;
+}
+
+/**
+ * A committee a resync would send to
+ * @description Mirrors `ExcludedCommittee` from lfx-v2-survey-service.
+ */
+export interface SurveyResyncCommittee {
+  project_uid?: string;
+  project_name?: string;
+  committee_uid?: string;
+  committee_name?: string;
+  committee_category?: string;
+}
+
+/**
+ * Who a resync would add, from upstream `preview_send`
+ */
+export interface SurveyResyncPreview {
+  affected_recipients: SurveyResyncRecipient[];
+  affected_committees: SurveyResyncCommittee[];
+}
+
+/**
+ * Data handed to the survey reminder dialog
+ */
+export interface SurveyReminderDialogData {
+  survey: Survey;
+  /** Non-respondents offered for a reminder; all start selected */
+  recipients: SurveyResponseItem[];
+}
+
+/**
+ * Data handed to the resync recipients dialog
+ */
+export interface SurveyResyncDialogData {
+  survey: Survey;
+  /** The active project's committees on this survey; each is previewed and resynced on its own */
+  committeeUids: string[];
+}
+
+/**
+ * Which committees a resync from the active project may touch
+ * @description Always explicit: the drawer's survey detail is project-filtered, so it can't prove it
+ * holds every committee on the survey, and a whole-survey resync is never sent from the UI.
+ */
+export interface SurveyResyncScope {
+  committeeUids: string[];
+}

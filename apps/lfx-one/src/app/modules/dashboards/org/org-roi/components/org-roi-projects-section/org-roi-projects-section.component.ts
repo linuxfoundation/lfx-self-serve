@@ -23,8 +23,9 @@ import { OrgRoiProjectsBarComponent } from '../org-roi-projects-bar/org-roi-proj
 import { OrgRoiProjectsBubbleComponent } from '../org-roi-projects-bubble/org-roi-projects-bubble.component';
 import { OrgRoiProjectsSankeyComponent } from '../org-roi-projects-sankey/org-roi-projects-sankey.component';
 import { OrgRoiProjectsTableComponent } from '../org-roi-projects-table/org-roi-projects-table.component';
+import { OrgRoiValueDriversComponent } from '../org-roi-value-drivers/org-roi-value-drivers.component';
 
-/** Four complementary views of the same project set, over one shared selection. */
+/** Complementary views of the same project set, three over one shared selection, plus the portfolio-wide value drivers. */
 @Component({
   selector: 'lfx-org-roi-projects-section',
   imports: [
@@ -34,6 +35,7 @@ import { OrgRoiProjectsTableComponent } from '../org-roi-projects-table/org-roi-
     OrgRoiProjectsBubbleComponent,
     OrgRoiProjectsSankeyComponent,
     OrgRoiProjectsTableComponent,
+    OrgRoiValueDriversComponent,
     SkeletonModule,
   ],
   templateUrl: './org-roi-projects-section.component.html',
@@ -47,7 +49,7 @@ export class OrgRoiProjectsSectionComponent {
   protected readonly views = ORG_LENS_ROI_PROJECT_VIEWS;
   protected readonly viewLabels = ORG_LENS_ROI_PROJECT_VIEW_LABELS;
 
-  protected readonly view = signal<OrgLensRoiProjectView>('bar');
+  protected readonly view = signal<OrgLensRoiProjectView>('table');
 
   protected readonly loading = signal(true);
   /** How the last request ended (spec 053 FR-014/FR-015); emptiness is judged on the rows in hand, below. */

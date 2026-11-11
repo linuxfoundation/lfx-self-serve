@@ -22,6 +22,7 @@ function donation(): OrgDonation {
     initiativeName: 'Synthetic Fund',
     donorName: 'Synthetic Donor',
     donorEmail: 'donor@example.com',
+    anonymous: false,
     amountCents: 2500,
     date: Date.UTC(2026, 9, 1),
   };
@@ -69,6 +70,37 @@ describe('OrgDonationsComponent (#415)', () => {
     accountContext.selectedAccount.set({ accountId: 'x', accountName: 'Synthetic Org Inc', uid: ORG_UID });
     await fixture.whenStable();
     expect(service.getOrgDonations).toHaveBeenCalledTimes(1);
+  });
+
+  it('links the initiative to its crowdfunding page when CF sends its slug', async () => {
+    rows = [
+      { ...donation(), initiativeSlug: 'synthetic-fund' },
+      { ...donation(), id: 'synthetic-donation-2' },
+    ];
+    accountContext.selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
+    await fixture.whenStable();
+
+    const link = root().querySelector<HTMLAnchorElement>('[data-testid="org-donation-initiative-link-synthetic-donation-1"]');
+    expect(link?.textContent?.trim()).toBe('Synthetic Fund');
+    expect(link?.getAttribute('href')).toMatch(/[^/]\/initiatives\/synthetic-fund$/);
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+
+    // No slug: plain name.
+    expect(root().querySelector('[data-testid="org-donation-initiative-link-synthetic-donation-2"]')).toBeNull();
+    expect(root().querySelector('[data-testid="org-donation-row-synthetic-donation-2"]')?.textContent).toContain('Synthetic Fund');
+  });
+
+  it('shows an anonymous donor as Anonymous with no email (lfx-crowdfunding#466)', async () => {
+    rows = [{ ...donation(), anonymous: true, donorName: 'Anonymous', donorEmail: '' }];
+    accountContext.selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
+    await fixture.whenStable();
+
+    const row = root().querySelector<HTMLElement>('[data-testid="org-donation-row-synthetic-donation-1"]');
+    expect(row?.querySelector('[data-testid="org-donation-anonymous-synthetic-donation-1"]')?.textContent?.trim()).toBe('Anonymous');
+    expect(row?.textContent).not.toContain('@');
+    expect(row?.textContent).toContain('No email');
+    expect(row?.textContent).toContain('$25.00');
   });
 
   it('notes that only matched donations appear when the list is empty', async () => {

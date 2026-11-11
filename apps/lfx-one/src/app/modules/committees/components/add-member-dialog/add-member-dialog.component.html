@@ -235,6 +235,22 @@
         data-testid="add-member-role"></lfx-select>
     </div>
 
+    @if (showVotingStatusField()) {
+      <div class="flex flex-col gap-2">
+        <label class="block text-sm font-medium text-gray-700">Voting status <span class="text-gray-400 font-normal">(optional)</span></label>
+        <lfx-select
+          [form]="form"
+          control="voting_status"
+          [options]="votingStatusOptions"
+          placeholder="Select voting status"
+          size="small"
+          [showClear]="true"
+          styleClass="w-full"
+          appendTo="body"
+          data-testid="add-member-voting-status"></lfx-select>
+      </div>
+    }
+
     @if (isDirectAdd()) {
       <lfx-checkbox [form]="form" control="send_notification" label="Send notification email" data-testid="add-member-send-notification"></lfx-checkbox>
     }

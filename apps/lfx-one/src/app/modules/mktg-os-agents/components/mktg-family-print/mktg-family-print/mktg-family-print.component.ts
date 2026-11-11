@@ -1,0 +1,266 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, computed, input, Signal } from '@angular/core';
+import {
+  BRAND_KIT_BACK_COVER_NOTICE,
+  MKTG_FAMILY_EXPORT_KINDS,
+  MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
+  MKTG_FAMILY_PRINT_COPY,
+  MKTG_FAMILY_PRINT_BOOK_CLASS,
+  MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT,
+  MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
+  MKTG_FAMILY_PRINT_HEAD_KIND,
+  MKTG_FAMILY_PRINT_LABELS,
+  MKTG_FAMILY_PRINT_SEP,
+  MKTG_PORTRAIT_COVER_STRIP,
+  MKTG_PORTRAIT_PAGE,
+  MKTG_PORTRAIT_PRINT_CLASS,
+} from '@lfx-one/shared/constants';
+import {
+  MktgFamilyExportKind,
+  MktgFamilyPrintContentsLayout,
+  MktgFamilyPrintCoverTile,
+  MktgFamilyPrintFaqPlanGroup,
+  MktgFamilyPrintFrame,
+  MktgFamilyPrintPlan,
+  MktgFamilyPrintPlanMember,
+  MktgFamilyPrintView,
+  MktgPortraitBook,
+  MktgPortraitCoverStrip,
+  MktgPortraitLook,
+  MktgPortraitPlanPage,
+} from '@lfx-one/shared/interfaces';
+import {
+  brandKitPortraitPlan,
+  frameworkPortraitPlan,
+  mktgFamilyPrintContentsLayout,
+  mktgFamilyPrintCoverStrip,
+  mktgFamilyPrintCutNote,
+  mktgFamilyPrintDate,
+  mktgFamilyPrintFaqGroups,
+  mktgFamilyPrintFill,
+  mktgFamilyPrintHeadTight,
+  mktgFamilyPrintPageRange,
+  mktgFamilyPrintPlan,
+  mktgPortraitDocumentName,
+  mktgPortraitFootLeft,
+  mktgPortraitLook,
+  mktgPortraitPlatePadding,
+  mktgPortraitSectionLabel,
+} from '@lfx-one/shared/utils';
+import { MktgBrandKitPrintComponent } from '../../../mktg-brand-kit-print/mktg-brand-kit-print.component';
+import { MktgFrameworkPrintComponent } from '../../../mktg-framework-print/mktg-framework-print.component';
+import { MktgPortraitBackCoverComponent } from '../../mktg-portrait/mktg-portrait-back-cover/mktg-portrait-back-cover.component';
+import { MktgPortraitOpenerComponent } from '../../mktg-portrait/mktg-portrait-opener/mktg-portrait-opener.component';
+import { MktgPortraitPageComponent } from '../../mktg-portrait/mktg-portrait-page/mktg-portrait-page.component';
+import { MktgPortraitPlateDirective } from '../../mktg-portrait/mktg-portrait-plate.directive';
+import { MKTG_PORTRAIT_BLOCK_HOST } from '../../mktg-portrait/mktg-portrait-host';
+import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rect.directive';
+import { MktgFamilyPrintBoilerplatesPageComponent } from '../mktg-family-print-boilerplates-page/mktg-family-print-boilerplates-page.component';
+import { MktgFamilyPrintFaqPageComponent } from '../mktg-family-print-faq-page/mktg-family-print-faq-page.component';
+import { MktgFamilyPrintSourcesPageComponent } from '../mktg-family-print-sources-page/mktg-family-print-sources-page.component';
+
+/**
+ * The family's Download PDF as a portrait book: the plan's frames in order
+ * (cover, contents, an opener and its pages per member document, the
+ * Sources page, the back cover), each a page of the portrait grammar
+ * (`lfx-mktg-portrait-page`), numbered by one plan over the view. The
+ * framework and the brand kit print their own portrait pages in their
+ * chapters' place, on the family's book and the kit's look, each counted by
+ * its own portrait plan.
+ */
+@Component({
+  selector: 'lfx-mktg-family-print',
+  imports: [
+    MktgPortraitPageComponent,
+    MktgPortraitPlateDirective,
+    MktgPortraitOpenerComponent,
+    MktgPortraitBackCoverComponent,
+    MktgPortraitRectDirective,
+    MktgFamilyPrintBoilerplatesPageComponent,
+    MktgFamilyPrintFaqPageComponent,
+    MktgFamilyPrintSourcesPageComponent,
+    MktgFrameworkPrintComponent,
+    MktgBrandKitPrintComponent,
+  ],
+  templateUrl: './mktg-family-print.component.html',
+  styleUrl: './mktg-family-print.component.scss',
+  styles: [MKTG_PORTRAIT_BLOCK_HOST],
+  // The portrait grammar's root: a plain block of frames; the print service picks the page setup by its class. The
+  // family's own class carries the one rule it lays over every running head in its book (styles/mktg-family-print.scss).
+  host: { '[class]': 'hostClass()', 'data-testid': 'family-print-book' },
+})
+export class MktgFamilyPrintComponent {
+  public readonly view = input.required<MktgFamilyPrintView>();
+  /** The family's name, the book's title: `Positioning & brand`. */
+  public readonly familyName = input.required<string>();
+
+  public readonly labels = MKTG_FAMILY_PRINT_LABELS;
+  public readonly geometry = MKTG_PORTRAIT_PAGE;
+  public readonly contentsLayout = MKTG_FAMILY_PRINT_CONTENTS_LAYOUT;
+  /** The cover's and the back cover's inset column: x 72, 672 wide. */
+  public readonly inset: readonly [number, number] = [MKTG_PORTRAIT_PAGE.coverInset, MKTG_PORTRAIT_PAGE.width - 2 * MKTG_PORTRAIT_PAGE.coverInset];
+  /** The content column: x 56, 704 wide. */
+  public readonly column: readonly [number, number] = [MKTG_PORTRAIT_PAGE.margin, MKTG_PORTRAIT_PAGE.contentWidth];
+  /** The cover lockup's drawn height (`.fpc-logo`) and the outer height of the white plate under it, half the drawn height of padding each side (the grammar's directive draws it). */
+  public readonly lockupHeight = MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT;
+  public readonly plateHeight = this.lockupHeight + 2 * mktgPortraitPlatePadding(this.lockupHeight);
+
+  /** The FAQ as the book prints it: the answered questions the plan paginates and the FAQ pages print, one index space. */
+  public readonly faqGroups: Signal<MktgFamilyPrintFaqPlanGroup[]> = computed(() => mktgFamilyPrintFaqGroups(this.view().faq?.groups ?? []));
+  /** The inner prints' portrait plans as they mount in the family (their page titles for the contents, their sections for the heads). */
+  public readonly innerPlans: Signal<{ framework: MktgPortraitPlanPage[]; kit: MktgPortraitPlanPage[] }> = this.initInnerPlans();
+  public readonly plan: Signal<MktgFamilyPrintPlan> = this.initPlan();
+  public readonly frames: Signal<MktgFamilyPrintFrame[]> = this.initFrames();
+  public readonly coverTiles: Signal<MktgFamilyPrintCoverTile[]> = this.initCoverTiles();
+  public readonly look: Signal<MktgPortraitLook> = this.initLook();
+  public readonly book: Signal<MktgPortraitBook> = this.initBook();
+  /**
+   * Every section label a running head in the book prints on its left: the family's own pages' (`03 Boilerplates`,
+   * `Contents`) and the mounted prints' (`Brand kit · Logo`, `Messaging framework · Message house`), for the head's measure.
+   */
+  public readonly headSections: Signal<string[]> = this.initHeadSections();
+  /** The book's classes: the grammar's root, the family's, and the tight-head modifier when the running head measures too wide. */
+  public readonly hostClass: Signal<string> = computed(() => {
+    const tight = mktgFamilyPrintHeadTight(this.headSections(), this.book().headRight, this.look().fontStack);
+    return ['block', MKTG_PORTRAIT_PRINT_CLASS, MKTG_FAMILY_PRINT_BOOK_CLASS, tight ? MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS : ''].filter(Boolean).join(' ');
+  });
+
+  public readonly printedLabel: Signal<string> = this.initPrintedLabel();
+  public readonly coverFootRight: Signal<string> = this.initCoverFootRight();
+  /**
+   * The cover strip's halves on one line: as written when the family's measure of the face's capitals fits them
+   * (mktgFamilyPrintCoverStrip), else as the grammar fits them (mktgPortraitCoverStrip, as the kit's cover does): the
+   * project line drops its LF suffix before a long name, then words go with an ellipsis; only when one word each still
+   * does not fit does the strip wrap, moved up one line so it ends where the one line did.
+   */
+  public readonly coverStrip: Signal<MktgPortraitCoverStrip> = computed(() =>
+    mktgFamilyPrintCoverStrip(this.book().footLeft, this.coverFootRight(), this.inset[1], this.look().fontStack)
+  );
+  public readonly coverStripRect: Signal<readonly [number, number, number]> = computed(() => [
+    this.inset[0],
+    MKTG_PORTRAIT_COVER_STRIP.top - (this.coverStrip().wraps ? MKTG_PORTRAIT_COVER_STRIP.size * MKTG_PORTRAIT_COVER_STRIP.lineHeight : 0),
+    this.inset[1],
+  ]);
+  public readonly coverPurpose: Signal<string> = this.initCoverPurpose();
+  public readonly contentsIntro: Signal<string> = this.initContentsIntro();
+  public readonly contentsNote: Signal<string> = this.initContentsNote();
+  /** The contents page's two columns, filled by height (a chapter continues under a repeated row; a cut is counted, never clipped). */
+  public readonly contents: Signal<MktgFamilyPrintContentsLayout> = computed(() => mktgFamilyPrintContentsLayout(this.plan().chapters));
+  /** The note under the last contents block when the page could not hold every entry: `+3 more in LFX One`; '' when all fit. */
+  public readonly contentsCutNote: Signal<string> = computed(() => mktgFamilyPrintCutNote(this.contents().cut));
+  public readonly backCoverNotice: Signal<string> = this.initBackCoverNotice();
+
+  private initInnerPlans(): Signal<{ framework: MktgPortraitPlanPage[]; kit: MktgPortraitPlanPage[] }> {
+    return computed(() => {
+      const view = this.view();
+      return {
+        framework: view.framework ? frameworkPortraitPlan(view.framework, { inFamily: true }) : [],
+        kit: view.kit ? brandKitPortraitPlan(view.kit, { inFamily: true }) : [],
+      };
+    });
+  }
+
+  private initHeadSections(): Signal<string[]> {
+    return computed(() => {
+      const inner = this.innerPlans();
+      const own = this.plan().pages.map((page) => page.section);
+      // A mounted print labels its pages `Document · Section` inside the family (mktgPortraitSectionLabel), by its document's title.
+      const mountedPages: Partial<Record<MktgFamilyExportKind, MktgPortraitPlanPage[]>> = { framework: inner.framework, kit: inner.kit };
+      const mounted = this.view().documents.flatMap((document) =>
+        (mountedPages[MKTG_FAMILY_EXPORT_KINDS[document.agentKey]] ?? []).map((page) => mktgPortraitSectionLabel(page.section, true, document.title))
+      );
+      return [...own, ...mounted];
+    });
+  }
+
+  private initPlan(): Signal<MktgFamilyPrintPlan> {
+    return computed(() => {
+      const view = this.view();
+      const inner = this.innerPlans();
+      const members: MktgFamilyPrintPlanMember[] = view.documents.map((document) => {
+        switch (MKTG_FAMILY_EXPORT_KINDS[document.agentKey]) {
+          case 'framework':
+            return { document, innerPageTitles: inner.framework.map((page) => page.title) };
+          case 'kit':
+            return { document, innerPageTitles: inner.kit.map((page) => page.title) };
+          case 'boilerplates':
+            return { document, boilerplateCount: view.boilerplates?.lengths.filter((row) => row.text.trim()).length ?? 0 };
+          case 'faq':
+            return { document, faqGroups: this.faqGroups() };
+        }
+      });
+      return mktgFamilyPrintPlan(members);
+    });
+  }
+
+  private initFrames(): Signal<MktgFamilyPrintFrame[]> {
+    return computed(() => {
+      const plan = this.plan();
+      const book = this.book();
+      return plan.pages.map((page) => {
+        const chapter = plan.chapters.find((entry) => entry.document.agentKey === page.agentKey) ?? null;
+        return {
+          page,
+          chapter,
+          range: chapter ? mktgFamilyPrintPageRange(chapter.first, chapter.last) : '',
+          innerBook: { ...book, firstPage: chapter?.first ?? book.firstPage },
+          faqPage: page.kind === 'faq' ? (plan.faqPages[page.index] ?? null) : null,
+        };
+      });
+    });
+  }
+
+  private initCoverTiles(): Signal<MktgFamilyPrintCoverTile[]> {
+    return computed(() =>
+      this.plan().chapters.map((chapter) => ({
+        document: chapter.document,
+        meta: [chapter.document.versionLabel, chapter.document.approvedLabel].filter(Boolean).join(MKTG_FAMILY_PRINT_SEP),
+      }))
+    );
+  }
+
+  private initLook(): Signal<MktgPortraitLook> {
+    return computed(() => mktgPortraitLook(this.view().brand, this.view().kit?.spark ?? null));
+  }
+
+  private initBook(): Signal<MktgPortraitBook> {
+    return computed(() => ({
+      inFamily: true,
+      // The running head names the family as the grammar names a document, by the grammar's own kind for it.
+      headRight: mktgPortraitDocumentName(this.view().projectName, MKTG_FAMILY_PRINT_HEAD_KIND),
+      footLeft: mktgPortraitFootLeft(this.view().projectName),
+      firstPage: 1,
+    }));
+  }
+
+  private initPrintedLabel(): Signal<string> {
+    return computed(() => mktgFamilyPrintDate(this.view().printedAt));
+  }
+
+  private initCoverFootRight(): Signal<string> {
+    // The strip is one line with the grammar's left half (mktgPortraitFootLeft), and the grammar splits both halves on its own
+    // separator to shorten them: this half keeps the grammar's dot, not the family's padded one.
+    return computed(() => [this.view().websiteLabel, this.printedLabel()].filter(Boolean).join(MKTG_PORTRAIT_COVER_STRIP.separator));
+  }
+
+  private initCoverPurpose(): Signal<string> {
+    return computed(() => mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.coverPurpose, { Project: this.view().projectName }));
+  }
+
+  private initContentsIntro(): Signal<string> {
+    return computed(() => {
+      const plan = this.plan();
+      return mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.contentsIntro, { Documents: plan.chapters.length, Pages: plan.total });
+    });
+  }
+
+  private initContentsNote(): Signal<string> {
+    return computed(() => mktgFamilyPrintFill(MKTG_FAMILY_PRINT_COPY.contentsNote, { Date: this.printedLabel() }));
+  }
+
+  private initBackCoverNotice(): Signal<string> {
+    return computed(() => `${BRAND_KIT_BACK_COVER_NOTICE.split('[Project]').join(this.view().projectName)} ${MKTG_FAMILY_PRINT_COPY.backCoverProvenance}`);
+  }
+}

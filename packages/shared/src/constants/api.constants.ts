@@ -71,6 +71,12 @@ export const ACCESS_CHECK_BATCH_SIZE = 100;
 export const ORG_SEARCH_TIMEOUT_MS = 10000;
 
 /**
+ * How long the propose-a-project form waits for the submitter's current employer before leaving the
+ * organization blank (#5251). Short on purpose: the prefill is a convenience and must never hold the form.
+ */
+export const CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS = 2000;
+
+/**
  * Ceiling (ms) for a single CDP organization lookup (by name or by domain) inside
  * `searchOrganizationsWithCdp`.
  * @description CDP token generation and the lookup request each carry their own independent

@@ -44,6 +44,12 @@
             <span aria-hidden="true">·</span>
             <span data-testid="project-application-drawer-updated">Updated {{ app.updated_at | date: 'mediumDate' }}</span>
           }
+          @if (startedFrom(); as foundation) {
+            <span aria-hidden="true">·</span>
+            <span data-testid="project-application-drawer-started-from"
+              >{{ startedFromLabel }}: <span class="text-gray-700">{{ foundation.name }}</span></span
+            >
+          }
         </div>
       </div>
     }
@@ -53,6 +59,7 @@
     <div class="flex flex-col gap-6 pb-6" data-testid="project-application-drawer-body">
       @if (editing()) {
         <lfx-project-application-form
+          mode="revise"
           layout="drawer"
           [initialAnswers]="app.application"
           [submitting]="busyAction() === 'revise'"

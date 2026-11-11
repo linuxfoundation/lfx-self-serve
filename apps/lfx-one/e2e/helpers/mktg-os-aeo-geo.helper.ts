@@ -1,18 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-  LENS_COOKIE_KEY,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_OS_AGENTS_ENABLED_FLAG,
-  PERSONA_COOKIE_KEY,
-  SELECTED_PROJECT_COOKIE_KEY,
-} from '@lfx-one/shared/constants';
+import { LENS_COOKIE_KEY, MKTG_DOCUMENT_TYPES, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type { AeoGeoAnswersBody, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
+import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { aeoGeoEnvelopeFixture, aeoGeoQuestionsFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { aeoGeoRunQuestions } from '@lfx-one/shared/utils/aeo-geo.utils';
 
@@ -68,13 +62,20 @@ export function auditDocument(documentId: string, keyPagesNamed = 2, typed = fal
     response.sidecar = { ...recorded };
     revision.contentSha256 = recorded.content_sha256;
     revision.id = `000001-${recorded.content_sha256}`;
+    // The recorded typed report quotes with ', the live agent with Markdown backticks: the print and web specs read a code span.
+    const report = recorded.report && {
+      ...recorded.report,
+      findings: recorded.report.findings.map((finding, index) =>
+        index === 0 ? { ...finding, detail: finding.detail.replace("'User-agent: *'", '`User-agent: *`') } : finding
+      ),
+    };
     response.aeoGeoReport = {
       domain: recorded.domain,
       report_filename: recorded.report_filename,
       overall_score: recorded.overall_score,
       verdict: recorded.verdict,
       scores: recorded.scores,
-      report: recorded.report,
+      report,
       auditCounts: { keyPagesNamed: recorded.inputs.key_pages_count ?? 0, pagesAudited: recorded.inputs.pages_audited.length },
     };
   }
@@ -216,10 +217,7 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
     }
     return route.fulfill({ status: 404, json: { error: 'Synthetic document not stored' } });
   });
-  await page.addInitScript(([key, flag]) => localStorage.setItem(key, JSON.stringify({ [flag]: true })), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    MKTG_OS_AGENTS_ENABLED_FLAG,
-  ] as const);
+  await pinMktgOsFlags(page);
   const cookies = async () =>
     page.context().addCookies([
       {

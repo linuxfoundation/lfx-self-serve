@@ -1,0 +1,124 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Primary row: the host page's search (projected), range and group-by stay visible; the other filters sit behind the toggle, as on Code Contributions. -->
+<div class="flex flex-col gap-3" data-testid="org-training-filter-bar">
+  <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4" data-testid="org-training-filter-primary">
+    <ng-content />
+    <div class="w-full md:w-44">
+      <lfx-select
+        [form]="form"
+        control="range"
+        size="small"
+        [options]="rangeOptions"
+        styleClass="w-full"
+        ariaLabel="Filter by time range"
+        dataTest="org-training-filter-range" />
+    </div>
+    @if (showGroupBy()) {
+      <div class="w-full md:w-44">
+        <lfx-select
+          [form]="form"
+          control="groupBy"
+          size="small"
+          [options]="groupByOptions"
+          styleClass="w-full"
+          ariaLabel="Group by"
+          dataTest="org-training-filter-group-by" />
+      </div>
+    }
+    <lfx-more-filters-toggle
+      [(expanded)]="moreFiltersExpanded"
+      [count]="hiddenFilterCount()"
+      controls="org-training-more-filters"
+      dataTest="org-training-more-filters-toggle" />
+    <lfx-button
+      label="Clear all"
+      icon="fa-light fa-filter-slash"
+      severity="secondary"
+      [text]="true"
+      size="small"
+      [disabled]="!hasFilter()"
+      (onClick)="clearAll()"
+      data-testid="org-training-filter-clear-all" />
+  </div>
+  @if (optionsFailed()) {
+    <div class="flex flex-wrap items-center gap-3 text-sm text-gray-700" role="alert" data-testid="org-training-filter-options-error">
+      <i class="fa-light fa-triangle-exclamation text-amber-500" aria-hidden="true"></i>
+      <span>Couldn't load the filter options. Your selections still apply.</span>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-arrow-rotate-left"
+        severity="secondary"
+        size="small"
+        (onClick)="retryOptions()"
+        data-testid="org-training-filter-options-retry" />
+    </div>
+  }
+  <!-- Secondary filters, behind the toggle: foundation, project, course, level, format -->
+  <div
+    id="org-training-more-filters"
+    class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-4"
+    [class.hidden]="!moreFiltersExpanded()"
+    data-testid="org-training-more-filters">
+    <div class="w-full md:w-48">
+      <lfx-select
+        [form]="form"
+        control="foundation"
+        size="small"
+        [filter]="true"
+        filterPlaceholder="Search foundations"
+        emptyFilterMessage="No foundations match."
+        [options]="foundationOptions()"
+        styleClass="w-full"
+        ariaLabel="Filter by foundation"
+        dataTest="org-training-filter-foundation" />
+    </div>
+    <div class="w-full md:w-48">
+      <lfx-select
+        [form]="form"
+        control="project"
+        size="small"
+        [filter]="true"
+        filterPlaceholder="Search projects"
+        emptyFilterMessage="No projects match."
+        [options]="projectOptions()"
+        styleClass="w-full"
+        ariaLabel="Filter by project"
+        dataTest="org-training-filter-project" />
+    </div>
+    <div class="w-full md:w-56">
+      <lfx-select
+        [form]="form"
+        control="course"
+        size="small"
+        [filter]="true"
+        filterPlaceholder="Search courses"
+        emptyFilterMessage="No courses match."
+        [options]="courseOptions()"
+        styleClass="w-full"
+        ariaLabel="Filter by course"
+        dataTest="org-training-filter-course" />
+    </div>
+    <div class="w-full md:w-40">
+      <lfx-select
+        [form]="form"
+        control="level"
+        size="small"
+        [options]="levelOptions()"
+        styleClass="w-full"
+        ariaLabel="Filter by course level"
+        dataTest="org-training-filter-level" />
+    </div>
+    <div class="w-full md:w-40">
+      <lfx-select
+        [form]="form"
+        control="format"
+        size="small"
+        [options]="formatOptions()"
+        styleClass="w-full"
+        ariaLabel="Filter by course format"
+        dataTest="org-training-filter-format" />
+    </div>
+  </div>
+</div>

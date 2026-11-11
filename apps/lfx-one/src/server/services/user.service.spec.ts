@@ -660,7 +660,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
     // The project-name and access-check steps run after the RSVP enrichment under test; both
     // services are module-mocked, so pass the meetings straight through.
     Object.assign(service, {
-      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
       accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
     });
 
@@ -692,7 +692,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
     });
     const service = new UserService();
     Object.assign(service, {
-      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
       accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
     });
 
@@ -720,7 +720,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
       });
       const service = new UserService();
       Object.assign(service, {
-        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
         accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
       });
 
@@ -783,7 +783,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
       });
       const service = new UserService();
       Object.assign(service, {
-        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
         accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
       });
 
@@ -817,7 +817,7 @@ describe('UserService.getUserMeetings my_rsvp enrichment', () => {
 
     const service = new UserService();
     Object.assign(service, {
-      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items },
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
       accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
     });
 
@@ -1684,7 +1684,10 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     getUsernameFromAuth.mockReset().mockResolvedValue(null);
     service = new UserService();
     Object.assign(service, {
-      meetingService: { getMeetingProjectName: async (_req: Request, items: PastMeeting[]) => items },
+      meetingService: {
+        getMeetingProjectName: async (_req: Request, items: PastMeeting[]) => items,
+        getCommitteeNameMap: async () => new Map<string, string>(),
+      },
       accessCheckService: { addAccessToResources: async (_req: Request, items: PastMeeting[]) => items },
     });
   });
@@ -1698,7 +1701,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     });
   }
 
-  it('flags recordings with a share URL and visible summaries with content', async () => {
+  it('flags recordings with a share URL, returns that URL, and flags visible summaries with content', async () => {
     mockIndexes(
       [pastMeeting('m1:1'), pastMeeting('m2:1'), pastMeeting('m3:1')],
       [recording('m1:1', 'https://zoom.example/rec/1'), recording('m2:1')],
@@ -1707,11 +1710,12 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
 
     const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
-    expect(result.map((m) => [m.id, m.has_recording, m.has_ai_summary])).toEqual([
-      ['m1:1', true, true],
-      ['m2:1', false, false],
-      ['m3:1', false, false],
+    expect(result.map((m) => [m.id, m.has_recording, m.recording_share_url, m.has_ai_summary])).toEqual([
+      ['m1:1', true, 'https://zoom.example/rec/1', true],
+      ['m2:1', false, undefined, false],
+      ['m3:1', false, undefined, false],
     ]);
+    expect(result.map((m) => m.ai_summary_awaiting_approval)).toEqual([false, undefined, undefined]);
     for (const type of ['v1_past_meeting_recording', 'v1_past_meeting_summary']) {
       expect(proxyRequest).toHaveBeenCalledWith(
         req,
@@ -1727,7 +1731,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     mockIndexes(
       [pastMeeting('invited:1'), pastMeeting('organized:1')],
       [],
-      [summary('invited:1', { approved: false }), summary('organized:1', { approved: false })]
+      [summary('invited:1', { approved: false, uid: 'sum-invited' }), summary('organized:1', { approved: false, uid: 'sum-organized' })]
     );
     Object.assign(service, {
       accessCheckService: {
@@ -1738,6 +1742,8 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
     expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'invited:1': false, 'organized:1': true });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.ai_summary_awaiting_approval]))).toEqual({ 'invited:1': undefined, 'organized:1': true });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.ai_summary_uid]))).toEqual({ 'invited:1': undefined, 'organized:1': 'sum-organized' });
   });
 
   it('does not flag a whitespace-only summary', async () => {
@@ -1754,6 +1760,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     const [result] = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
 
     expect(result.has_recording).toBeUndefined();
+    expect(result.recording_share_url).toBeUndefined();
     expect(result.has_ai_summary).toBe(true);
   });
 
@@ -1766,6 +1773,7 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     expect(types).not.toContain('v1_past_meeting_recording');
     expect(types).not.toContain('v1_past_meeting_summary');
     expect(result).not.toHaveProperty('has_recording');
+    expect(result).not.toHaveProperty('recording_share_url');
     expect(result).not.toHaveProperty('has_ai_summary');
   });
 
@@ -1778,5 +1786,69 @@ describe('UserService.getUserPastMeetings artifact flags', () => {
     const recordingCalls = proxyRequest.mock.calls.filter(([, , , , params]) => params?.type === 'v1_past_meeting_recording');
     expect(recordingCalls.map(([, , , , params]) => params.tags.length)).toEqual([100, 50]);
     expect(result.every((m) => m.has_recording === false)).toBe(true);
+  });
+});
+
+describe('UserService meeting feeds committee names', () => {
+  const req = {} as unknown as Request;
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const getCommitteeNameMap = vi.fn();
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getCommitteeNameMap.mockReset().mockResolvedValue(new Map([['c1', 'Board']]));
+    getUsernameFromAuth.mockReset().mockResolvedValue(null);
+    getEffectiveEmail.mockReset().mockReturnValue('');
+    service = new UserService();
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+  });
+
+  function mockFeed(type: string, rows: Partial<PastMeeting>[]): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      queryPage(params?.type === type ? rows : [])
+    );
+  }
+
+  it('names upcoming meeting committees and keeps the uid of a committee the lookup missed', async () => {
+    mockFeed('v1_meeting', [
+      { id: 'm1', start_time: tomorrow, duration: 60, committees: [{ uid: 'c1' }, { uid: 'gone' }] },
+      { id: 'm2', start_time: tomorrow, duration: 60 },
+    ]);
+
+    const meetings = await service.getUserMeetings(req);
+
+    expect(getCommitteeNameMap).toHaveBeenCalledTimes(1);
+    expect(meetings.find((m) => m.id === 'm1')?.committees).toEqual([{ uid: 'c1', name: 'Board' }, { uid: 'gone' }]);
+    expect(meetings.find((m) => m.id === 'm2')?.committees).toBeUndefined();
+  });
+
+  it('names past meeting committees', async () => {
+    mockFeed('v1_past_meeting', [{ meeting_and_occurrence_id: 'p1:1', start_time: yesterday, scheduled_end_time: yesterday, committees: [{ uid: 'c1' }] }]);
+
+    const [meeting] = await service.getUserPastMeetings(req, '');
+
+    expect(meeting.committees).toEqual([{ uid: 'c1', name: 'Board' }]);
+  });
+
+  it('names latest past meeting committees', async () => {
+    mockFeed('v1_past_meeting', [{ meeting_and_occurrence_id: 'p1:1', start_time: yesterday, scheduled_end_time: yesterday, committees: [{ uid: 'c1' }] }]);
+
+    const [meeting] = await service.getUserLatestPastMeetings(req);
+
+    expect(meeting.committees).toEqual([{ uid: 'c1', name: 'Board' }]);
+  });
+
+  it('returns the feed with uid-only committees when the lookup finds nothing', async () => {
+    getCommitteeNameMap.mockResolvedValue(new Map());
+    mockFeed('v1_meeting', [{ id: 'm1', start_time: tomorrow, duration: 60, committees: [{ uid: 'c1' }] }]);
+
+    const [meeting] = await service.getUserMeetings(req);
+
+    expect(meeting.committees).toEqual([{ uid: 'c1' }]);
   });
 });

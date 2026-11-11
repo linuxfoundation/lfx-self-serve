@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
 import { MKTG_LAST_INTAKE_API } from '@lfx-one/shared/constants/mktg-last-intake.constants';
@@ -26,6 +26,83 @@ test.describe('Marketing OS current revisions', () => {
   });
   test.afterEach(async ({ page }, testInfo) => {
     await page.screenshot({ path: testInfo.outputPath('final-state.png'), fullPage: true });
+  });
+
+  async function setupApprovedCurrent(page: Page, highest = 3) {
+    await setupDocuments(page, { currentRevisionNumber: 3 });
+    const approval = { approvedAt: '2026-11-02T16:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    let metadata = documentFixture(3, 3);
+    const revisions = metadata.revisions.map((row) => {
+      const number = row.number + highest - 3;
+      return { ...row, number, id: `${String(number).padStart(6, '0')}-${row.contentSha256}`, approval };
+    });
+    metadata = {
+      ...metadata,
+      revisions,
+      current: { revisionId: revisions[0].id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: revisions[0].id, number: highest },
+    };
+    let polls = 0;
+    const path = `/api/mktg-agents/documents/${DOCUMENT_TYPE.agentKey}/living`;
+    const move = (number: number) => {
+      const selected = metadata.revisions.find((row) => row.number === number);
+      if (!selected) throw new Error('Missing synthetic approved current');
+      metadata = {
+        ...metadata,
+        revisions: metadata.revisions.map((row) => ({ ...row, latest: row.id === selected.id })),
+        current: { revisionId: selected.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+        approvedCurrent: { revisionId: selected.id, number },
+      };
+    };
+    await page.route(
+      (url) => url.pathname === path || url.pathname.startsWith(`${path}/revisions/`),
+      async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === path) {
+          if (url.searchParams.get('poll') === '1') polls++;
+          await fulfillDocumentJson(route, metadata);
+          return;
+        }
+        const id = decodeURIComponent(url.pathname.slice(`${path}/revisions/`.length).split('/')[0]);
+        const selected = metadata.revisions.find((row) => row.id === id);
+        if (!selected) {
+          await route.fallback();
+          return;
+        }
+        if (route.request().method() === 'POST' && url.pathname.endsWith('/restore')) move(selected.number);
+        else if (route.request().method() !== 'GET' || url.pathname !== `${path}/revisions/${id}`) {
+          await route.fallback();
+          return;
+        }
+        const revision = metadata.revisions.find((row) => row.id === id) ?? selected;
+        await fulfillDocumentJson(route, { ...metadata, revision, approval: revision.approval, markdown: `# Revision ${revision.number}`, sidecar: null });
+      }
+    );
+    return { move, polls: () => polls, revisionId: (number: number) => metadata.revisions.find((row) => row.number === number)?.id ?? '' };
+  }
+
+  test('opening an older revision shows only the Current pill for the approved current, and its Open link leads there', async ({ page }) => {
+    const state = await setupApprovedCurrent(page);
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
+    await expect(page.getByTestId('mktg-document-view-current-3')).toHaveText('Current');
+    await expect(page.getByTestId('mktg-document-view-page')).not.toContainText('is now the current version');
+    await expect(page.getByTestId('mktg-document-view-page')).not.toContainText('Keep reading');
+    const open = page.getByTestId('mktg-document-view-open-3');
+    await expect(open).toHaveAttribute('href', new RegExp(`revision=${state.revisionId(3)}`));
+    await open.click();
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
+  });
+
+  test('the viewed non-current row keeps Make current beside here', async ({ page }) => {
+    const state = await setupApprovedCurrent(page);
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
+    const row = page.getByTestId('mktg-document-view-revision-1');
+    await expect(row).toContainText('here');
+    await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveText('Make current');
+    await row.getByTestId('mktg-document-view-viewed-make-current').click();
+    await expect(page.getByTestId('mktg-document-view-current-1')).toBeVisible();
+    await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
   });
 
   for (const [state, text] of [
@@ -295,8 +372,8 @@ test.describe('Marketing OS current revisions', () => {
   test('Make current adds no revision and opening another revision clears success', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture().revisions[2].id}`);
-    await page.getByTestId('mktg-document-view-history-bar-make-current').click();
-    await expect(page.getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
+    await page.getByTestId('mktg-document-view-viewed-make-current').click();
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
     await expect(page.getByTestId('mktg-document-view-notice')).toContainText('No revision was added');
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 1 of 3');
     await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('Current');
@@ -353,55 +430,7 @@ test.describe('Marketing OS current revisions', () => {
     await page.getByTestId('mktg-document-view-open-3').click();
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
     await expect(list.locator('ol > li')).toHaveCount(9);
-    await expect(page.getByTestId('mktg-document-view-restore-current')).toHaveCount(0);
-  });
-
-  test('the subtle bar goes back to current and makes the open revision current', async ({ page }) => {
-    await setupDocuments(page, { revisionCount: 9, currentRevisionNumber: 9 });
-    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 9).revisions[2].id}`);
-    await expect(page.getByTestId('mktg-document-view-history-bar-summary')).toHaveText("You're viewing v7 · 13 Oct · The writer · v9 is current");
-    await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toHaveAccessibleName('Make v7 current');
-    await expect(page.getByTestId('mktg-document-view-history-bar-back')).toHaveAccessibleName('Back to v9');
-    await expect(page.getByTestId('mktg-document-view-history-bar-back')).not.toHaveAttribute('aria-disabled', 'true');
-    await page.getByTestId('mktg-document-view-history-bar-back').click();
-    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 9');
-    await expect(page.getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
-    await page.getByTestId('mktg-document-view-open-7').click();
-    await page.getByTestId('mktg-document-view-history-bar-make-current').click();
-    await expect(page.getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 7 of 9');
-    await expect(page.getByTestId('mktg-document-view-revision-7')).toContainText('Current');
-  });
-
-  test('keyboard focus reveals the complete clipped history summary', async ({ page }) => {
-    const name = 'The writer responsible for the synthetic document revision and its detailed review notes';
-    await setupDocuments(page, { revisionCount: 9, currentRevisionNumber: 9, revisionAuthorName: name });
-    await page.setViewportSize({ width: 1280, height: 1000 });
-    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 9).revisions[2].id}`);
-    const summary = page.getByTestId('mktg-document-view-history-bar-summary');
-    await expect(summary).toBeVisible();
-    expect(await summary.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-    await page.getByTestId('mktg-document-view-run-again').focus();
-    await page.keyboard.press('Tab');
-    await expect(summary).toBeFocused();
-    await expect(page.getByRole('tooltip')).toHaveText(`You're viewing v7 · 13 Oct · ${name} · v9 is current`);
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('tooltip')).toHaveCount(0);
-    await page.getByTestId('mktg-document-view-history-bar-back').click();
-    await expect(page.getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 9');
-  });
-
-  test('the phone bar uses the short copy without losing Make current', async ({ page }) => {
-    await setupDocuments(page, { revisionCount: 9, currentRevisionNumber: 9 });
-    await page.setViewportSize({ width: 390, height: 1000 });
-    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 9).revisions[2].id}`);
-    await expect(page.getByTestId('mktg-document-view-history-bar-mobile-summary')).toHaveText('Viewing v7');
-    await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toHaveAccessibleName('Make current');
-    await expect(page.getByTestId('mktg-document-view-history-bar-back')).toHaveAccessibleName('Back');
-    await page.getByTestId('mktg-document-view-history-bar-make-current').click();
-    await expect(page.getByTestId('mktg-document-view-history-bar')).toHaveCount(0);
-    await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 7 of 9');
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeVisible();
   });
 
   test('opens older revisions rather than making them current from the table', async ({ page }) => {
@@ -412,7 +441,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-run-again-' + DOCUMENT_TYPE.agentKey)).toHaveText('Create a new version');
     await expect(page.getByTestId('mktg-documents-view-latest').getByRole('link')).toHaveAccessibleName('Open');
     await page.getByTestId('mktg-documents-view-1').click();
-    await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeVisible();
   });
 
   test('empty documents follow their family header without starting a live session', async ({ page }) => {
@@ -444,10 +473,10 @@ test.describe('Marketing OS current revisions', () => {
     test(`Make current failure ${writeStatus} preserves the open body`, async ({ page }) => {
       await setupDocuments(page, { writeStatus });
       await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture().revisions[2].id}`);
-      await page.getByTestId('mktg-document-view-history-bar-make-current').click();
+      await page.getByTestId('mktg-document-view-viewed-make-current').click();
       await expect(page.getByTestId('mktg-document-view-error')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
-      await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toBeEnabled();
+      await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeEnabled();
     });
   }
 });

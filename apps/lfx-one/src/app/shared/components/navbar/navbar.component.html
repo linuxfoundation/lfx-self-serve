@@ -562,6 +562,9 @@
         <span class="lfxn-account-menu__identity">
           <span class="lfxn-account-menu__name" [lfxNavTooltip]="user()?.name ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.name }}</span>
           <span class="lfxn-account-menu__email" [lfxNavTooltip]="user()?.email ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.email }}</span>
+          @if (lfid(); as id) {
+            <span class="lfxn-account-menu__lfid" data-testid="account-menu-lfid">LFID: {{ id }}</span>
+          }
         </span>
       </div>
 

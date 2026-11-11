@@ -23,13 +23,17 @@ import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset
 import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  BRAND_KIT_CONFLICT_KEPT_WORD,
+  BRAND_KIT_MISSING_FIX_PREFIX,
   BRAND_KIT_MODE_LABELS,
   BRAND_KIT_PRINT_BODY_CLASS,
   BRAND_KIT_PRINT_ONLY_CLASS,
+  BRAND_KIT_SOURCES_EMPTY_LINES,
+  BRAND_KIT_SOURCES_GROUP_TITLES,
   BRAND_KIT_WEB_VIEW_TABS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
-  MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
+  MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitBookView,
@@ -41,7 +45,18 @@ import {
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { brandKitChapterSummaries, buildBrandKitBookView, describeMktgAcceptedGaps, mktgAssetHeaderFallback, mktgPrintBrand } from '@lfx-one/shared/utils';
+import {
+  brandKitChapterBasisLabel,
+  brandKitChapterRuleBases,
+  brandKitChapterSummaries,
+  brandKitReportRules,
+  brandKitSourcesView,
+  buildBrandKitBookView,
+  describeMktgAcceptedGaps,
+  mktgAssetHeaderFallback,
+  mktgPrintBrand,
+  mktgPrintDocumentTitle,
+} from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -49,6 +64,7 @@ import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgBrandKitPrintComponent } from '../mktg-brand-kit-print/mktg-brand-kit-print.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
+import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
 
 // The Brand Kit on screen, as an app page in the Messaging Framework view's
 // look (hand test, 18 Oct: "more like a website — a proper app — not a
@@ -75,6 +91,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgBrandKitPrintComponent,
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
+    MktgBrandKitIconSamplesComponent,
   ],
   templateUrl: './brand-kit-web-view.component.html',
 })
@@ -107,6 +124,10 @@ export class BrandKitWebViewComponent {
   public readonly viewingDraft = input(false);
   public readonly approvedKit = input<BrandKitRevision | null>(null);
   public readonly approvedVersion = input<number | null>(null);
+  /** The approved revision's own approval record (who, when, what it accepted): the PDF's approval line and Sources box read it, whatever revision the page shows. */
+  public readonly approvedApproval = input<MktgRevisionApproval | null>(null);
+  /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
+  public readonly approvedCreatedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');
 
@@ -121,26 +142,51 @@ export class BrandKitWebViewComponent {
   /** Existing screen sample model, also used as data by the native portrait print. */
   protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit(), this.versionNumber()));
   protected readonly chapters: Signal<BrandKitChapterSummary[]> = computed(() => brandKitChapterSummaries(this.kit()));
+  /**
+   * Beside each chapter's number on the overview: where its rules come from,
+   * in plain words (the project, the LF reference, or how many of them the
+   * reference supplied). Empty for a v1 report, which says nothing about it.
+   */
+  protected readonly chapterBasisLabels: Signal<ReadonlyMap<string, string>> = computed(
+    () =>
+      new Map(
+        brandKitChapterRuleBases(brandKitReportRules(this.kit().report)).map((chapter): [string, string] => [chapter.id, brandKitChapterBasisLabel(chapter)])
+      )
+  );
   protected readonly title = computed(() => `${this.kit().projectName} Brand Kit`);
   protected readonly header = computed(
     () => this.headerMetadata() ?? mktgAssetHeaderFallback('brand-kit', this.versionNumber(), this.kit().generatedAt, this.approval())
   );
   protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
-  protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
-  /** Under an approved revision's gaps: accepted at that approval, still open. */
-  protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.kit().report, this.approval(), this.versionNumber()));
+  protected readonly sourcesTitles = BRAND_KIT_SOURCES_GROUP_TITLES;
+  protected readonly sourcesEmpty = BRAND_KIT_SOURCES_EMPTY_LINES;
+  protected readonly keptWord = BRAND_KIT_CONFLICT_KEPT_WORD;
+  protected readonly fixPrefix = BRAND_KIT_MISSING_FIX_PREFIX;
+  /** The Sources tab's groups, in the agent's words, each item marked when this approval's snapshot accepted it. */
+  protected readonly sourcesView = computed(() => brandKitSourcesView(this.kit().report, this.approval(), this.versionNumber(), this.kit().kit.dark));
+  /** Under an approved revision's gaps when the approval predates the snapshot: accepted at that approval, still open. */
+  protected readonly acceptedGapsNote = computed(() =>
+    this.sourcesView().legacyApproval ? describeMktgAcceptedGaps(this.kit().report, this.approval(), this.versionNumber()) : null
+  );
   protected readonly printView = computed(() => {
     const kit = this.approvedKit();
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
   protected readonly printBrand = computed(() => mktgPrintBrand(this.approvedKit()));
+  /**
+   * The printed (approved) revision's approval, from its own record (`approvedApproval`); a host that passes none gets
+   * this page's only when the revision it shows is the one that prints. Else none, and the PDF leaves the line out.
+   */
+  protected readonly printApproval = computed(
+    () => this.approvedApproval() ?? (this.approvedVersion() !== null && this.versionNumber() === this.approvedVersion() ? this.approval() : null)
+  );
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
   /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
-  /** What the reviewer should look at: the gaps and the sources that could not be read. */
-  protected readonly gapCount = computed(() => this.kit().report.gaps.length + this.kit().report.sources_failed.length);
+  /** What the reviewer should look at: the gaps and the sources that failed (the findings' list when the report has one). */
+  protected readonly gapCount = computed(() => this.sourcesView().gaps.length + this.sourcesView().failed.length);
   /** The report's notes as lines. */
   protected readonly reportNotes = computed(() =>
     this.kit()
@@ -239,11 +285,18 @@ export class BrandKitWebViewComponent {
 
   /**
    * Prints the native portrait chapters inside the click, with the approved
-   * kit's typeface prepared ahead. The service guards SSR.
+   * kit's typeface prepared ahead. The service guards SSR. The frame's title
+   * names the saved PDF like the deck: the project, the asset, the approved
+   * revision and that revision's date.
    */
   protected onDownloadPdf(): void {
-    if (!this.printView()) return;
-    this.printService.printNow(BRAND_KIT_PRINT_BODY_CLASS);
+    const kit = this.approvedKit();
+    if (!kit || !this.printView()) return;
+    const label = MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS['brand-kit'];
+    this.printService.printNow(
+      BRAND_KIT_PRINT_BODY_CLASS,
+      mktgPrintDocumentTitle(this.projectName(), label, this.approvedVersion() ?? kit.version, this.approvedCreatedAt())
+    );
   }
 
   // === Private initializers ===

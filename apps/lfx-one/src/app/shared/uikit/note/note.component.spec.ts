@@ -81,6 +81,36 @@ describe('UiNoteComponent', () => {
     expect((host.querySelector('[data-testid="ui-note-icon"]') as HTMLElement).className).toContain('text-[14px]');
   });
 
+  it('is 24px tall with 12px text and a centred 12px icon when tiny', async () => {
+    await set('size', 'tiny');
+
+    expect(host.className).toContain('min-h-[24px]');
+    expect(host.className).toContain('px-[8px]');
+    expect(host.className).toContain('label-12');
+    expect(host.className).toContain('rounded-[8px]');
+    const wrapper = (host.querySelector('[data-testid="ui-note-icon"]') as HTMLElement).className;
+    expect(wrapper).toContain('text-[12px]');
+    expect(wrapper).toContain('h-[16px]');
+    expect(wrapper).not.toContain('pt-[2px]');
+  });
+
+  it('drops the edge, fill and padding when plain and keeps the colour and size', async () => {
+    await set('variant', 'error');
+    await set('fill', true);
+    await set('size', 'small');
+    await set('plain', true);
+
+    expect(host.className).toContain('text-ui-danger-700');
+    expect(host.className).toContain('copy-13');
+    expect(host.className).toContain('gap-[6px]');
+    for (const boxed of ['ring-1', 'bg-ui-danger-50', 'px-[10px]', 'min-h-[32px]', 'rounded-ui-sm']) {
+      expect(host.className).not.toContain(boxed);
+    }
+    const wrapper = (host.querySelector('[data-testid="ui-note-icon"]') as HTMLElement).className;
+    expect(wrapper).toContain('h-[18px]');
+    expect(wrapper).toContain('items-center');
+  });
+
   it('prefixes a medium-weight label only when given', async () => {
     expect(host.querySelector('[data-testid="ui-note-label"]')).toBeNull();
 

@@ -103,6 +103,23 @@ The CTE is performed by the **lfx-v2-auth-service** via NATS request-reply on su
 
 `exchangeToken()` classifies those lookup-shaped strings as HTTP 404 `TARGET_USER_NOT_FOUND` with user-facing copy. Other `success: false` errors stay 400 `CTE_EXCHANGE_FAILED` with a generic message. Raw upstream text is kept on `errorBody.upstreamError` for logs (`getLogContext`). `toResponse()` does not forward that key, so it never becomes `upstreamCode`. The impersonation dialog maps `TARGET_USER_NOT_FOUND` to the locate copy and never renders the upstream string.
 
+### User Search via NATS
+
+The impersonation picker finds people through **lfx-v2-auth-service** on `lfx.auth-service.user.search` (`NatsSubjects.USER_SEARCH`), which searches Auth0 users by username (LFID), email or name, prefix-matched. This reaches every user with an LFID, not only committee members.
+
+```typescript
+// NATS request payload
+{ subject_token: "<the admin's own access token>", query: "jane doe", limit: 10 }
+
+// NATS response (success): email is present only when the identity provider has verified it
+{ success: true, users: [{ user_id: "auth0|abc", username: "jdoe", name: "Jane Doe", email: "jane.doe@example.com" }] }
+
+// NATS response (failure)
+{ success: false, error: "user search is unavailable" }
+```
+
+The auth-service verifies `subject_token` itself (signature, issuer, expiry, audience and the `can_impersonate` claim) before it queries Auth0, and the search runs with the service's own credentials, so the token must be the **admin's own** and never a token for the user being impersonated. `searchUsers()` classifies the plain-text errors (`classifyImpersonationSearchFailure`) into 403 `IMPERSONATION_SEARCH_FORBIDDEN`, 400 `IMPERSONATION_SEARCH_INVALID`, 503 `IMPERSONATION_SEARCH_UNAVAILABLE` or 502 `IMPERSONATION_SEARCH_FAILED` with fixed public copy; the raw text stays on `errorBody.upstreamError` for logs. The query is free text that can hold a person's name or email, so it is never logged, and the route is a POST so the text travels in the body: a query string would be recorded by the request log (`reqSerializer` logs the URL), by the error handler's warn/error lines, by browser analytics (Datadog RUM resource URLs) and by traces. The service's own debug step logs only the query's length. The subject must be deployed in auth-service before the picker can list anyone beyond the recents. Until then the request fails and the dialog falls back to the recents alone.
+
 Profile enrichment (fetching the target user's name and picture) also uses NATS via the `lfx.auth-service.user_metadata.read` subject — no direct Auth0 Management API calls are made from the UI server.
 
 ## Implementation Layers
@@ -114,6 +131,7 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 - `ImpersonationUser` — target user identity (`sub`, `email`, `username`, `name?`, `picture?`)
 - `Impersonator` — real user identity (`sub`, `email`, `name`)
 - `ImpersonationStartRequest`, `ImpersonationStartResponse`, `ImpersonationStatusResponse`
+- `ImpersonationSuggestion` — a person the picker offers; `ImpersonationUserSearchResult` — one user in the auth-service search reply; `ImpersonationUserSearchResponse` — the `GET /api/impersonate/users` body
 
 **`packages/shared/src/interfaces/auth.interface.ts`** — `AuthContext` has additional fields:
 
@@ -128,6 +146,7 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 | Method                                                    | Purpose                                                          |
 | --------------------------------------------------------- | ---------------------------------------------------------------- |
 | `exchangeToken(req, targetUser, subjectToken?)`           | Performs CTE via NATS to `lfx-v2-auth-service`                   |
+| `searchUsers(req, query, subjectToken, limit)`            | Searches users for the picker via NATS `user.search`             |
 | `fetchTargetUserProfile(req, userId)`                     | Fetches target user's name/picture via NATS `user_metadata.read` |
 | `startImpersonation(req, tokenResponse, claims, profile)` | Stores impersonation state in `appSession`                       |
 | `stopImpersonation(req)`                                  | Clears impersonation state from `appSession`                     |
@@ -138,13 +157,14 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 
 **`apps/lfx-one/src/server/routes/impersonation.route.ts`** — mounted at `/api/impersonate`
 
-| Endpoint                  | Method | Purpose                                                           |
-| ------------------------- | ------ | ----------------------------------------------------------------- |
-| `/api/impersonate`        | POST   | Start impersonation (body: `{ targetUser: "email-or-username" }`) |
-| `/api/impersonate/stop`   | POST   | Stop impersonation, clear session                                 |
-| `/api/impersonate/status` | GET    | Check current impersonation state                                 |
+| Endpoint                        | Method | Purpose                                                              |
+| ------------------------------- | ------ | -------------------------------------------------------------------- |
+| `/api/impersonate`              | POST   | Start impersonation (body: `{ targetUser: "email-or-username" }`)    |
+| `/api/impersonate/stop`         | POST   | Stop impersonation, clear session                                    |
+| `/api/impersonate/status`       | GET    | Check current impersonation state                                    |
+| `/api/impersonate/users/search` | POST   | Search users to impersonate (body: `{ q }`); needs `can_impersonate` |
 
-**Switching users:** `POST /api/impersonate` is also accepted while a session is already active, which replaces the target without a stop in between (the banner's **Switch User** button). The controller resolves the impersonator's own token with `resolveRealAccessToken` and uses it both for the `can_impersonate` check and as the CTE `subject_token`. `req.bearerToken` is the current target's token at that point, so it must not be the subject. If the real token cannot be resolved the request fails with 403, and the new session never chains one target's token into another. The impersonation dialog's single search field (start and switch alike) uses `GET /api/search/users/impersonator`, which runs the normal user search with the same real token (`resolveImpersonatorToken`, shared with the controller above) instead of the target's, so choosing who to impersonate is not limited to what the current target can see. It requires the `can_impersonate` claim and drops the rows belonging to the signed-in admin and to the current `impersonationUser`, matched by username or email; the dialog is its only caller, and every other search stays in the target's context. A switch naming the user already being impersonated is refused with 409 `ALREADY_IMPERSONATING_TARGET`, decided after the exchange by comparing `sub` claims.
+**Switching users:** `POST /api/impersonate` is also accepted while a session is already active, which replaces the target without a stop in between (the banner's **Switch User** button). The controller resolves the impersonator's own token with `resolveRealAccessToken` and uses it both for the `can_impersonate` check and as the CTE `subject_token`. `req.bearerToken` is the current target's token at that point, so it must not be the subject. If the real token cannot be resolved the request fails with 403, and the new session never chains one target's token into another. The impersonation dialog's single search field (start and switch alike) uses `POST /api/impersonate/users/search` with `{ q }`, which searches through auth-service (see User Search via NATS above) with the same real token (`resolveImpersonatorToken`, shared with the controller above) as the `subject_token`, never the target's, so choosing who to impersonate is not limited to what the current target can see and works the same before and during an impersonation. It requires the `can_impersonate` claim, is limited per admin (`impersonationSearchRateLimiter`, keyed on the real admin's `sub`, 60 per minute per pod, answering 429 `RATE_LIMITED`), refuses a missing, non-string or over-long `q` with a validation error, and drops the people belonging to the signed-in admin and to the current `impersonationUser`, matched by username or email, as well as anyone without a username; the dialog is its only caller, and every other search stays in the target's context. A switch naming the user already being impersonated is refused with 409 `ALREADY_IMPERSONATING_TARGET`, decided after the exchange by comparing `sub` claims.
 
 ### 4. Auth Middleware Override
 
@@ -226,6 +246,10 @@ These restrictions apply only while actively impersonating another user, not to 
 - During impersonation, `my-response` returns only invitation identifiers, participation status and removal state, never indexed answers, abstention, comments or submission times. Named content is available through the privacy-checked `my-ballot` endpoint.
 - My Votes Review, the vote page and the Pending Actions inline ballot explain the privacy/read-only restriction instead of showing an editable empty ballot. Normal self-voting, including seeing one's own pseudo-anonymous ballot, is unaffected.
 
+### Newsletter writes in Admin Mode
+
+Creating, updating, deleting, sending, scheduling and test-sending a newsletter, cancelling a schedule, and deleting an opt-out all use `blockDuringImpersonation`, and return **403 `IMPERSONATION_READ_ONLY`** (#4358).
+
 ### 6. SSR Handler
 
 **`apps/lfx-one/src/server/server.ts`**
@@ -249,7 +273,7 @@ Note that persona detection (step 2) resolves the **target** user's persona even
 - **Impersonation banner** (`shared/components/impersonation-banner/`, mounted in `main-layout` and `meeting-join`) — fixed yellow bar at the top showing who is being impersonated, with a "Switch User" button (reopens the impersonation dialog to swap targets in one request) and a "Stop Impersonating" button. The bar is a fixed 36px single line because the layouts offset content by exactly that height (`top-[36px]` / `pt-[36px]`, and `IMPERSONATION_BANNER_HEIGHT_PX` for computed offsets); on narrow screens lower-priority text hides, the email truncates and the button labels shorten instead of wrapping
 - **Loading state** — starting, switching and stopping each end in a page reload. `ImpersonationService.transition` is set when the request begins and cleared only if it fails, so the banner replaces "Viewing as …" with a spinner and "Switching user..." / "Stopping impersonation..." (buttons disabled) until the reloaded page renders the new identity. The impersonation dialog likewise stays open under its own overlay through the reload, which covers starting from the navbar, where there is no banner. Clearing the state on success would drop the loading UI for the whole reload.
 - **Impersonation trigger** (`navbar.component.html`) — user-secret icon in the navbar footer (visible only when `canImpersonate` is true), opens a dialog to enter a target email/username
-- **Impersonation dialog** (`impersonation-dialog.component`) — one search field for a name, email or username. Matching recents (the browser's recent impersonations) lead the list, followed by directory people from `SearchService.searchUsers` on the `committee_member` corpus through the impersonator route above; a result with no LFID `username` is left out because it cannot be exchanged. The typed text goes to the directory as typed, since its exact-email lookup is case-sensitive. A pick shows the person's name in the field (falling back to their username, then email) with their username and email listed beneath it for context, and submits the username; editing or clearing the name drops the pick. Start is never disabled except while a request is running: with no pick, the trimmed text read from the field is sent as entered for the exchange to resolve as an exact email or username, so an admin can reach someone the directory does not list (it only covers committee members with an LF account), and an unknown user fails with the locate copy. Typed text matching the real admin's own username or email is refused in the dialog; while switching only the admin's email can be matched (the impersonator carries no username), and the current target is sent on for the server's 409. An empty field gets an inline message and no request. Enter starts only a pick, so a half-typed name is left to the suggestion list. `POST /api/impersonate` is unchanged — it still receives one string
+- **Impersonation dialog** (`impersonation-dialog.component`) — one search field for a name, email or username. Matching recents (the browser's recent impersonations) lead the list, followed by people the search finds, in the order auth-service ranked them (an exact username or email first), from `ImpersonationService.searchUsers` through the route above; a result with no LFID `username` is left out because it cannot be exchanged. The search starts at three characters, since auth-service ignores shorter terms; below that only the recents are filtered. The typed text is sent as typed. A pick shows the person's name in the field (falling back to their username, then email) with their username and email listed beneath it for context, and submits the username; editing or clearing the name drops the pick. Start is never disabled except while a request is running: with no pick, the trimmed text read from the field is sent as entered for the exchange to resolve as an exact email or username, so an admin can reach someone the search does not list (for example an account with no LFID, or text too short to search), and an unknown user fails with the locate copy. Typed text matching the real admin's own username or email is refused in the dialog; while switching only the admin's email can be matched (the impersonator carries no username), and the current target is sent on for the server's 409. An empty field gets an inline message and no request. Enter starts only a pick, so a half-typed name is left to the suggestion list. `POST /api/impersonate` is unchanged — it still receives one string
 
 **Services:**
 

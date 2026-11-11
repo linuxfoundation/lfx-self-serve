@@ -128,6 +128,14 @@ export interface ImportantLinkFormValue {
 /** Voting-status values accepted by the meeting API for committee associations */
 export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES)[number];
 
+/** One group a meeting belongs to, with its canonical group-details link for the meeting card. */
+export interface MeetingGroupLink {
+  uid: string;
+  name: string;
+  /** Group-details link commands from the meeting's own project tier; null when the group has no uid to open, or the card is already on that group's page. */
+  commands: string[] | null;
+}
+
 /**
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
@@ -390,6 +398,8 @@ export interface Meeting {
   participant_count?: number;
   /** Attended count for past meetings (response only) */
   attended_count?: number;
+  /** Guest responses for the date a row without an occurrence shows; organizers only, with `include=attendance`. */
+  rsvp_summary?: MeetingRsvpSummary;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
   /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
@@ -469,6 +479,8 @@ export interface MeetingOccurrence {
    * not compute the effective recurrence.
    */
   recurrence?: MeetingRecurrence | null;
+  /** Guest responses for this date; organizers only, with `include=attendance`. */
+  rsvp_summary?: MeetingRsvpSummary;
 }
 
 /**
@@ -1070,6 +1082,8 @@ export interface PastMeeting extends Meeting {
   occurrence_id: string;
   /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000"); used as the canonical id downstream */
   meeting_and_occurrence_id?: string;
+  /** Attendance tally; organizers only, with `include=attendance`. */
+  attendance_summary?: PastMeetingAttendanceSummary;
   /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
@@ -1078,8 +1092,14 @@ export interface PastMeeting extends Meeting {
   user_attended?: boolean;
   /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_recording?: boolean;
+  /** Share URL of the largest recording session when `has_recording` is true — /api/user/past-meetings?include=artifacts only */
+  recording_share_url?: string;
   /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
   has_ai_summary?: boolean;
+  /** Whether that summary still awaits the viewing organizer's approval — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_awaiting_approval?: boolean;
+  /** Uid of the summary those flags describe — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_uid?: string;
 }
 
 /** Angular router target for navigating to a specific meeting occurrence. */
@@ -1761,6 +1781,52 @@ export type RsvpResponse = 'accepted' | 'maybe' | 'declined';
  * @description Defines which occurrences of a recurring meeting the RSVP applies to
  */
 export type RsvpScope = 'single' | 'all' | 'this_and_following';
+
+/**
+ * Guest responses for one upcoming meeting date, as the meeting page counts them
+ * @description `invited` = `yes` + `maybe` + `no` + `no_response`.
+ */
+export interface MeetingRsvpSummary {
+  /** Registrants invited to the meeting */
+  invited: number;
+  /** Guests who answered Yes */
+  yes: number;
+  /** Guests who answered Maybe */
+  maybe: number;
+  /** Guests who answered No */
+  no: number;
+  /** Guests with no answer for this date */
+  no_response: number;
+}
+
+/** A meeting's RSVP summaries keyed by the home row's occurrence id, `''` for a row without one */
+export type MeetingRsvpSummaries = Record<string, MeetingRsvpSummary>;
+
+/**
+ * One meetings-home row of a meeting the viewer organizes, as the BFF tallies it
+ */
+export interface MeetingRsvpSummaryRow {
+  /** The row's occurrence id, `''` for a row without one */
+  key: string;
+  /** Whether the row shows an entry of `occurrences` (else the summary goes on the meeting) */
+  onOccurrence: boolean;
+}
+
+/**
+ * Per-viewer cache of attendance summaries keyed by meeting id
+ * @description Each entry keeps its own write time so entries expire independently.
+ */
+export type CachedMeetingAttendance<T> = Record<string, { at: number; value: T }>;
+
+/**
+ * Attendance of one past meeting, as the meeting page counts it
+ */
+export interface PastMeetingAttendanceSummary {
+  /** Participant records: invited guests plus anyone who joined uninvited */
+  invited: number;
+  /** Participants who joined */
+  attended: number;
+}
 
 /**
  * RSVP counts by response type

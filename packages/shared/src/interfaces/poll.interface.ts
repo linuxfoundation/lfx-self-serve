@@ -12,6 +12,7 @@ import type {
   VoteVoterStatus,
 } from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
+import type { TagSeverity } from './components.interface';
 import type { CommitteeReference } from './committee.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 
@@ -328,6 +329,12 @@ export interface VoteTableRow extends Vote {
   editCommands: string[];
   /** Per-row edit-link query params — `project` from the row's own project_slug, `committee_uid` from its committee. A table-level record can't express per-row projects (dashboard rows span projects). */
   editQueryParams: Record<string, string>;
+  /** Group name shown in the Group column; null when the vote has no named group. */
+  groupName: string | null;
+  /** Canonical group-details link commands from the vote's own project tier; null when there is no group uid, or the table is already showing that group. */
+  groupCommands: string[] | null;
+  /** `?project=` for the group link — present only when the vote carries a `project_slug`. */
+  groupQueryParams: { project: string } | null;
 }
 
 /** Vote shape as returned by the query service indexer; uses `vote_uid` (v2 PK) not `uid`. Normalize before passing downstream. */
@@ -699,6 +706,8 @@ export interface VoteSummaryRecipient {
   uid: string;
   /** Invitee's display name */
   user_name?: string;
+  /** Invitee's LFID username, used when the display name is unavailable */
+  username?: string;
   /** Invitee's email address */
   user_email?: string;
 }
@@ -713,17 +722,87 @@ export interface SendVoteSummaryResponse {
   skipped_count: number;
   /** Number of recipients whose send outcome is unknown (the request failed or timed out), so the email may already have been delivered */
   uncertain_count: number;
+  /**
+   * Per-voter outcome (#4830). One email goes to each unique address, so every voter sharing an
+   * address shares that address's outcome; voters with no email address are `skipped`.
+   */
+  recipients: VoteSummaryRecipientResult[];
 }
+
+/** Per-voter outcome of a vote summary send (#4830). */
+export type VoteSummaryRecipientOutcome = 'sent' | 'failed' | 'skipped' | 'uncertain';
+
+/** A summary recipient with the outcome of its address's send (#4830). */
+export interface VoteSummaryRecipientResult extends VoteSummaryRecipient {
+  /** Send outcome for this voter's email address */
+  outcome: VoteSummaryRecipientOutcome;
+}
+
+/** Summary recipients split by whether they can be emailed (#4830); shared by the preview and the send so both agree. */
+export interface VoteSummaryRecipientPartition {
+  /** Voters with an email address, in input order */
+  ready: VoteSummaryRecipient[];
+  /** Voters with no email address, in input order */
+  missingEmail: VoteSummaryRecipient[];
+  /** The first voter per lower-cased email address — one send each */
+  uniqueEmailRecipients: VoteSummaryRecipient[];
+  /** Number of ready voters whose lower-cased address is also used by another voter */
+  sharedEmailVoterCount: number;
+}
+
+/** Response for GET /api/votes/:uid/summary-recipients (#4830). Identity fields only. */
+export interface VoteSummaryPreviewResponse {
+  /** Voters who will receive the summary */
+  ready: VoteSummaryRecipient[];
+  /** Voters with no email address, who cannot receive the summary */
+  missing_email: VoteSummaryRecipient[];
+  /** Number of unique (case-insensitive) email addresses the summary will be sent to */
+  unique_email_count: number;
+  /** Number of ready voters whose address is also used by another voter */
+  shared_email_voter_count: number;
+}
+
+/** Tag label, severity and meaning shown for one summary send outcome (#4830). */
+export interface VoteSummaryOutcomeDisplay {
+  /** Tag label */
+  label: string;
+  /** Tag severity */
+  severity: TagSeverity;
+  /** What the outcome means for the voter */
+  description: string;
+}
+
+/** One outcome group in the send-summary results view (#4830). */
+export interface VoteSummaryResultGroup {
+  /** The shared outcome */
+  outcome: VoteSummaryRecipientOutcome;
+  /** How the outcome is labelled and explained */
+  display: VoteSummaryOutcomeDisplay;
+  /** Voters with this outcome */
+  recipients: VoteSummaryRecipientResult[];
+}
+
+/** In-memory summary attempt retained across in-app navigation for the effective user (#4830). */
+export interface VoteSummarySendAttempt {
+  /** The reviewed identities used when send-time recipient details are unavailable. */
+  preview: VoteSummaryPreviewResponse;
+  status: 'sending' | 'success' | 'error';
+  response?: SendVoteSummaryResponse;
+  error?: unknown;
+}
+
+/** Steps of the send-summary dialog (#4830). */
+export type VoteSummaryDialogPhase = 'review' | 'confirm' | 'sending' | 'results';
 
 /** How the client reports the outcome of a vote summary send (#4689). */
 export interface VoteSummarySendNotice {
-  /** Toast severity */
+  /** Presentation severity; the persistent results dialog uses only the heading and detail */
   severity: 'success' | 'info' | 'warn';
-  /** Toast heading */
+  /** Results-summary heading */
   summary: string;
-  /** Toast body describing the known sent, skipped, failed and uncertain outcomes */
+  /** Results-summary detail describing the known sent, skipped, failed and uncertain voter outcomes */
   detail: string;
-  /** Toast lifetime in milliseconds; omitted to keep the default */
+  /** Legacy toast lifetime hint in milliseconds; ignored by the persistent results dialog */
   life?: number;
 }
 
@@ -1108,7 +1187,7 @@ export interface PollCommentResult {
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
   paragraphs: string[];
-  /** Position in the rendered list — the prompt's full response list on the Comments tab, the preview list on the Overview. The Comments tab tracks text-only responses by it, a privacy-safe identity across pages; the Overview tracks by `previewKey`. */
+  /** Position in the rendered list — the prompt's response list on Comments or the Overview preview list. Text-only responses track by this privacy-safe identity; the Overview tracks by `previewKey`. */
   position: number;
   /** UI-only question text for answers flattened into the Overview preview. */
   promptText?: string;
@@ -1117,20 +1196,15 @@ export interface CommentResponseView extends PollCommentResponse {
 }
 
 /**
- * Results view model for one comment prompt's results page
- * @description PollCommentResult with `responses` decorated for display and sliced to the
- * current page; `totalResponses` and `first` keep the pre-slice count and page offset so the
- * paginator can render against the full list. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
+ * Results view model for one comment prompt's continuous response list
+ * @description PollCommentResult with all returned `responses` decorated for display.
+ * Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
-export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
-  /** Page-sliced responses with display-ready paragraph splits */
+export interface CommentResultView extends Omit<PollCommentResult, 'responses'> {
+  /** All returned responses with display-ready paragraph splits */
   responses: CommentResponseView[];
-  /** Post-BFF-cap response count before pagination slicing; the pre-cap total lives in `total_responses` */
+  /** Post-BFF-cap response count; the pre-cap total lives in `total_responses` */
   totalResponses: number;
-  /** Offset of the first visible response within the full responses list */
-  first: number;
-  /** Current page size (responses per page) */
-  rows: number;
 }
 
 /**

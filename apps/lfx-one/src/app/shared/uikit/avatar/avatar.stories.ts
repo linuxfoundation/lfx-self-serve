@@ -17,6 +17,7 @@ const meta: Meta<UiAvatarComponent> = {
     initials: '',
     icon: '',
     badgeIcon: '',
+    status: null,
     size: 32,
     tone: 'neutral',
     shape: 'circle',
@@ -56,6 +57,7 @@ export const Tints: Story = {
   }),
 };
 export const GitProvider: Story = { args: { name: 'octocat', badgeIcon: 'fa-brands fa-github', size: 48 } };
+export const Status: Story = { args: { status: { icon: 'fa-solid fa-check', tone: 'accent', label: 'RSVP: Yes' } } };
 export const Entity: Story = { args: { name: 'CNCF', icon: 'fa-light fa-cube', shape: 'rounded' } };
 export const Placeholder: Story = { args: { placeholder: true } };
 export const Decorative: Story = { args: { decorative: true } };

@@ -23,7 +23,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { UI_TOAST_PANE_CLASS } from '@lfx-one/shared/constants';
-import { UiPopoverContext, UiPopoverPadding } from '@lfx-one/shared/interfaces';
+import { UiPopoverAlign, UiPopoverContext, UiPopoverPadding } from '@lfx-one/shared/interfaces';
 import { fromEvent, take, takeUntil } from 'rxjs';
 
 import { UiPopoverPanelComponent } from './popover-panel.component';
@@ -40,7 +40,8 @@ import { UiPopoverPanelComponent } from './popover-panel.component';
  *
  * The panel uses the Menu material (16px radius, `shadow-menu`) with 16px of padding; `lfxUiPopoverPadding="none"` removes it for content that
  * runs edge to edge. It is as wide as its content, or `lfxUiPopoverWidth` px. The host gets `aria-haspopup="dialog"`, `aria-expanded` and `aria-controls`; the panel is a `role="dialog"` named by
- * `lfxUiPopoverLabel`, or by the host when none is given. It opens below the host, start-aligned, then above it, then end-aligned, and follows
+ * `lfxUiPopoverLabel`, or by the host when none is given. It opens below the host, start-aligned, then above it, then end-aligned
+ * (`lfxUiPopoverAlign="end"` tries the end-aligned pair first, for a host at the end of a row; `center` tries centered first), and follows
  * its host inside scrollable containers that carry `cdkScrollable`.
  *
  * Focus moves to the first tabbable element in the panel, or to the panel itself. Escape or a click outside closes it. Escape always returns focus
@@ -73,6 +74,8 @@ export class UiPopoverDirective {
   public readonly width = input<number | null>(null, { alias: 'lfxUiPopoverWidth' });
   /** `none` removes the panel's 16px padding for content that runs edge to edge. */
   public readonly padding = input<UiPopoverPadding>('default', { alias: 'lfxUiPopoverPadding' });
+  /** `end` lines the panel up with the host's end edge first, so it opens toward the start side; `center` centers it under the host. */
+  public readonly align = input<UiPopoverAlign>('start', { alias: 'lfxUiPopoverAlign' });
   /** Whether the panel is open. Supports two-way binding with `[(lfxUiPopoverOpen)]`. */
   public readonly open = model<boolean>(false, { alias: 'lfxUiPopoverOpen' });
   /* eslint-enable @angular-eslint/no-input-rename */
@@ -307,12 +310,13 @@ export class UiPopoverDirective {
   }
 
   private positions(): ConnectedPosition[] {
-    // Below the host, start-aligned, then above it, then the same two from the end edge.
-    return [
-      { originX: 'start', originY: 'bottom', overlayX: 'start', overlayY: 'top', offsetY: 4 },
-      { originX: 'start', originY: 'top', overlayX: 'start', overlayY: 'bottom', offsetY: -4 },
-      { originX: 'end', originY: 'bottom', overlayX: 'end', overlayY: 'top', offsetY: 4 },
-      { originX: 'end', originY: 'top', overlayX: 'end', overlayY: 'bottom', offsetY: -4 },
+    // Below the host, then above it, from the aligned edge first; center falls back to start, then end.
+    const pair = (x: 'start' | 'center' | 'end'): ConnectedPosition[] => [
+      { originX: x, originY: 'bottom', overlayX: x, overlayY: 'top', offsetY: 4 },
+      { originX: x, originY: 'top', overlayX: x, overlayY: 'bottom', offsetY: -4 },
     ];
+    const align = this.align();
+    if (align === 'center') return [...pair('center'), ...pair('start'), ...pair('end')];
+    return align === 'end' ? [...pair('end'), ...pair('start')] : [...pair('start'), ...pair('end')];
   }
 }

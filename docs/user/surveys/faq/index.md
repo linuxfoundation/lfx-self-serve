@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, sending, and responding 
 audience: [all]
 product_area: Surveys
 tags: [surveys, faq, nps, feedback, reminders, results]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Surveys
 ---
 
@@ -14,7 +14,7 @@ People who can manage surveys for the project or foundation, or who are a writer
 
 ## Can I write my own questions?
 
-No. Choose a template under **NPS Survey Template** and the questions come from it. You write the email that introduces the survey. See [Create a Survey](../create-survey/).
+No. Choose a template under **NPS Survey Templates** and the questions come from it. You write the email that introduces the survey. See [Create a Survey](../create-survey/).
 
 ## What is NPS and how does it work?
 
@@ -64,7 +64,7 @@ Use the **Open** and **Closed** tabs on the **Surveys** page. Draft and schedule
 
 ## Why didn't someone get the survey email?
 
-In **Results**, open the **Responses** tab and filter **Delivery Status** to **Failed** or **Pending**. Those invitations didn't reach the person, so follow up with them another way. Select **Load more responses** until the whole list is loaded first, because the filter only covers the responses already loaded. See [View Survey Results](../survey-results/).
+In **Results**, open the **Responses** tab and filter **Delivery Status** to **Failed** or **Pending**. Those invitations didn't reach the person, so follow up with them another way: from a row's **⋮** menu you can email them their personal link or copy it. See [View Survey Results](../survey-results/).
 
 ## What is the difference between Surveys and Votes?
 

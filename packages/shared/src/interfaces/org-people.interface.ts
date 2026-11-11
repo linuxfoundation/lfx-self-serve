@@ -166,6 +166,25 @@ export interface OrgAllEmployeeRow {
    * on every other row.
    */
   isUnclassified?: boolean;
+  /**
+   * What the person drawer's company-email lookup answers for this row, from the account's company-email keys:
+   * `has` an address on file; `none` on file (a person key the warehouse knows, with no address); `unconfirmed` (a
+   * `cdp:` or live-only row whose username has no address — the lookup cannot confirm either way). Absent when the
+   * keys could not be read; such rows are listed only under the filter's `all`.
+   */
+  companyEmailStatus?: OrgAllEmployeeCompanyEmailStatus;
+}
+
+/** A row's company-email status (see {@link OrgAllEmployeeRow.companyEmailStatus}). */
+export type OrgAllEmployeeCompanyEmailStatus = 'has' | 'none' | 'unconfirmed';
+
+/** The All Employees Company email filter: every row, or the rows with one status. */
+export type OrgAllEmployeeCompanyEmailFilter = 'all' | OrgAllEmployeeCompanyEmailStatus;
+
+/** Dropdown option for the Company email filter. */
+export interface OrgAllEmployeeCompanyEmailOption {
+  label: string;
+  value: OrgAllEmployeeCompanyEmailFilter;
 }
 
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */
@@ -198,6 +217,14 @@ export interface OrgAllEmployeesResponse {
   accountId: string;
   rows: OrgAllEmployeeRow[];
   stats: OrgAllEmployeeStats;
+  /**
+   * People who registered or attended foundation events in the request's range, credited by company email or as employees
+   * (lfx-self-serve#4598, #5158): the warehouse participation summary row the People -> Event Attendees tab shows as Attendees at its
+   * defaults, so the Event Attendees tile equals that number. Absent (`undefined`) for the Non-LF project scope and for the
+   * unranged roster read: events are LF constructs, and the tile then counts the listed employees. `null` when the summary could
+   * not be read: the tile says it is unavailable instead of switching to a different number.
+   */
+  eventAttendeesTotal?: number | null;
   foundations: OrgAllEmployeeFoundationOption[];
   /**
    * Off-roster read only (lfx-self-serve#4730): lowercased LF usernames of the people with code credited to this account
@@ -303,11 +330,19 @@ export interface OrgAllEmployeeDetail {
 export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
 
 /**
- * Response for the company-emails lookups, keyed on a person key or an LF username and never on an
- * address: an address key would let a caller enumerate a person's other addresses from an arbitrary input.
+ * Why a company-email lookup answered `unavailable`. `no_identity`: the opener supplied nothing to look up (set
+ * client-side; no request is made). `unlinked_identity`: a `cdp:` person key, an identity not linked to an LF account in
+ * the warehouse — not a claim that the person has no LF account. `unconfirmed`: a username or key-contact lookup finished
+ * without a qualifying address, and cannot tell a known person with none from an unknown one.
+ */
+export type OrgCompanyEmailsUnavailableReason = 'no_identity' | 'unlinked_identity' | 'unconfirmed';
+
+/**
+ * Response for the company-emails lookups, keyed on a person key, an LF username or key-contact record ids, and never
+ * on an address: an address key would let a caller enumerate a person's other addresses from an arbitrary input.
  */
 export interface OrgPersonCompanyEmailsResponse {
-  /** Addresses on the org's domains, primary-first. Uncapped; empty unless the status is `resolved`. */
+  /** Addresses on the org's domains, primary-first then alphabetical. Uncapped; empty unless the status is `resolved`. */
   companyEmails: string[];
   /**
    * The address flagged primary in the warehouse, when there is one — always also present in
@@ -316,13 +351,18 @@ export interface OrgPersonCompanyEmailsResponse {
    */
   primaryEmail?: string | null;
   /**
-   * `resolved`: the lookup succeeded; an empty list means none on record. A username that resolves to one
-   * roster person is looked up by that person's key, so it follows this rule too; only the fallback for
-   * other usernames is `resolved` solely with at least one address. `unavailable`: no usable identity, or a
-   * fallback username with no qualifying address or an ambiguous match. `failed`: the lookup errored. A
-   * missing status must be treated as `failed`, never as `unavailable` or an empty set.
+   * The subset of `companyEmails` known only from a corporate key-contact record (not from a verified LF-account
+   * address). Absent when there are none.
+   */
+  keyContactRecordEmails?: string[];
+  /**
+   * `resolved`: the lookup succeeded; for a person key (or a username that resolves to one person) an empty list means
+   * none on file. `unavailable`: see `companyEmailsReason`. `failed`: the lookup errored. A missing status must be
+   * treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
+  /** Only with `unavailable`; a missing reason reads as `unconfirmed`. */
+  companyEmailsReason?: OrgCompanyEmailsUnavailableReason;
 }
 
 /**

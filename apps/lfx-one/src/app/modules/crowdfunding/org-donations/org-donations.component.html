@@ -54,15 +54,35 @@
                     <tr class="hover:bg-gray-50 transition-colors" [attr.data-testid]="'org-donation-row-' + item.id">
                       <td class="px-4 py-3">
                         <div class="flex items-center gap-2">
-                          <span class="font-medium text-gray-900">{{ item.initiativeName }}</span>
+                          @if (item.initiativeUrl) {
+                            <a
+                              class="font-medium text-gray-900 hover:text-blue-600 hover:underline"
+                              [href]="item.initiativeUrl"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              [attr.data-testid]="'org-donation-initiative-link-' + item.id"
+                              >{{ item.initiativeName }}</a
+                            >
+                          } @else {
+                            <span class="font-medium text-gray-900">{{ item.initiativeName }}</span>
+                          }
                           @if (item.recurring) {
                             <lfx-tag value="Recurring" severity="info" [rounded]="true" />
                           }
                         </div>
                       </td>
                       <td class="px-4 py-3 text-gray-500 whitespace-nowrap">{{ item.date | date: 'MMM d, y' : 'UTC' }}</td>
-                      <td class="px-4 py-3 text-gray-900">{{ item.donorName }}</td>
-                      <td class="px-4 py-3 text-gray-500">{{ item.donorEmail }}</td>
+                      <!-- An anonymous donor (lfx-crowdfunding#466) arrives from CF as "Anonymous" with no email. -->
+                      @if (item.anonymous) {
+                        <td class="px-4 py-3 italic text-gray-500" [attr.data-testid]="'org-donation-anonymous-' + item.id">Anonymous</td>
+                      } @else {
+                        <td class="px-4 py-3 text-gray-900">{{ item.donorName }}</td>
+                      }
+                      @if (!item.anonymous && item.donorEmail) {
+                        <td class="px-4 py-3 text-gray-500">{{ item.donorEmail }}</td>
+                      } @else {
+                        <td class="px-4 py-3 text-gray-400"><span aria-hidden="true">—</span><span class="sr-only">No email</span></td>
+                      }
                       <td class="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">{{ item.amountCents / 100 | currency: 'USD' }}</td>
                     </tr>
                   }

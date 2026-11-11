@@ -30,9 +30,11 @@ import {
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_PRINT_KIT_READ_NOTES,
+  MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
 import {
-  BrandKitRevision,
   FoundationMessageAvoidRow,
   FoundationMessageGoalView,
   FoundationMessageNumberRow,
@@ -41,6 +43,7 @@ import {
   MktgFrameworkAsset,
   MktgFrameworkViewState,
   MktgFrameworkViewTab,
+  MktgPrintKitRead,
   MktgSlidesExportTarget,
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
@@ -52,6 +55,7 @@ import {
   foundationMessageAvoidRows,
   foundationMessageGoalViews,
   foundationMessageNumberRows,
+  mktgPrintDocumentTitle,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
@@ -117,8 +121,12 @@ export class MktgFrameworkViewComponent {
   public readonly showMetadata = input(true);
   public readonly titleActions = viewChild<TemplateRef<unknown>>('titleActions');
   public readonly approval = input<MktgRevisionApproval | null>(null);
-  /** The project's stored Brand Kit, which the print is set in; null for the LF look. */
-  public readonly kit = input<BrandKitRevision | null>(null);
+  /**
+   * The host's read of the project's stored Brand Kit, which the print is set in: the print root is built only once the read has
+   * settled with the kit or with none stored (the LF look); while it is open, or after it failed, Download PDF waits and says why,
+   * so no project with a kit is ever printed in the LF default. A host that passes none: no kit, the LF look.
+   */
+  public readonly kitRead = input<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE);
   /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed document for last-export lookup, independent of approved export bytes. */
@@ -127,6 +135,10 @@ export class MktgFrameworkViewComponent {
   public readonly viewingDraft = input(false);
   public readonly approvedAsset = input<MktgFrameworkAsset | null>(null);
   public readonly approvedVersion = input<number | null>(null);
+  /** When the approved revision was stored (ISO), as the page shows it: it dates the PDF's name. */
+  public readonly approvedCreatedAt = input<string | null>(null);
+  /** When the approved revision was approved (ISO): the print's cover and its Sources & gaps approval card date it. */
+  public readonly approvedAt = input<string | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');
 
@@ -178,13 +190,31 @@ export class MktgFrameworkViewComponent {
     const content = this.content();
     return content ? foundationMessageNumberRows(content) : [];
   });
-  /** The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists. */
+  /**
+   * The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists and the kit read
+   * has settled without failing (a print built before that would be the LF default for a project that has a kit).
+   */
   protected readonly printView: Signal<FoundationMessagePrintView | null> = computed(() => {
     const approved = this.approvedAsset();
-    return approved ? buildFoundationMessagePrintView(approved.content, this.projectName(), this.approvedVersion(), this.kit()) : null;
+    const read = this.kitRead();
+    return approved && read.settled && !read.failed
+      ? buildFoundationMessagePrintView(
+          approved.content,
+          this.projectName(),
+          this.approvedVersion(),
+          read.kit,
+          this.approvedAt(),
+          approved.report,
+          approved.dateRead ?? null
+        )
+      : null;
   });
-  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
-  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
+  /** Why Download PDF is disabled: no approved current yet, the kit read still open, or the kit read failed; empty once it can print. */
+  protected readonly pdfTooltip = computed(() => {
+    if (this.printView()) return '';
+    if (!this.approvedAsset()) return this.approvalRequiredNote;
+    return this.kitRead().failed ? MKTG_PRINT_KIT_READ_NOTES.failed : MKTG_PRINT_KIT_READ_NOTES.pending;
+  });
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>
@@ -265,13 +295,19 @@ export class MktgFrameworkViewComponent {
   /**
    * Prints the framework as one document — the cover, the framework and
    * the key numbers — through the browser's print dialog ("Save as PDF")
-   * inside the click; the typeface is prepared ahead.
+   * inside the click; the typeface is prepared ahead. The frame's title names
+   * the saved PDF like the deck: the project, the asset, the approved revision
+   * and that revision's date.
    */
   protected onDownloadPdf(): void {
     if (!this.printView()) {
       return;
     }
-    this.printService.printNow(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+    const label = MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS['foundation-message'];
+    this.printService.printNow(
+      FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+      mktgPrintDocumentTitle(this.projectName(), label, this.approvedVersion(), this.approvedCreatedAt())
+    );
   }
 
   // === Private initializers ===

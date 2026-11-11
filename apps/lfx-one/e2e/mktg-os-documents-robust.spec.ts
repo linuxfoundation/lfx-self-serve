@@ -90,7 +90,7 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(page.locator('main main')).toHaveCount(0);
     await expect(root.getByRole('region', { name: 'Document content' })).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-revisions').locator('ol > li')).toHaveCount(3);
-    await expect(page.getByTestId('mktg-document-view-restore-current')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
     await page.getByTestId('mktg-document-view-run-again').click();
     await expect(page.getByTestId('mktg-agent-run-form')).toHaveJSProperty('tagName', 'FORM');
     await expect(page.getByTestId('mktg-agent-run-page').locator('h1')).toHaveCount(1);
@@ -107,11 +107,11 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(open).toBeFocused();
     await open.press('Enter');
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
-    const back = page.getByTestId('mktg-document-view-history-bar-back');
-    await expect(back).not.toHaveAttribute('aria-disabled', 'true');
-    await back.focus();
-    await expect(back).toBeFocused();
-    await back.press('Enter');
+    const currentOpen = page.getByTestId('mktg-document-view-open-2');
+    await expect(currentOpen).not.toHaveAttribute('aria-disabled', 'true');
+    await currentOpen.focus();
+    await expect(currentOpen).toBeFocused();
+    await currentOpen.press('Enter');
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
   });
 
@@ -144,37 +144,6 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(page.getByTestId('mktg-documents-revisions').locator('th[scope="col"]')).toHaveCount(4);
     await expect(page.getByTestId('mktg-documents-page').locator('main, aside')).toHaveCount(0);
   });
-
-  for (const width of [390, 1280, 1440]) {
-    test(`the history bar stays slim and pinned above long content at ${width}px`, async ({ page }) => {
-      await setupDocuments(page, { revisionCount: 9, currentRevisionNumber: 9, longDocument: true });
-      await page.setViewportSize({ width, height: 1000 });
-      await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 9).revisions[2].id}`);
-      const bar = page.getByTestId('mktg-document-view-history-bar');
-      const article = page.getByTestId('mktg-document-view-document');
-      await expect(article.getByRole('heading', { level: 3 })).toHaveCount(24);
-      await expect(bar).toBeVisible();
-      const barBox = await bar.boundingBox();
-      const articleBox = await article.boundingBox();
-      if (!barBox || !articleBox) throw new Error('The bar and document must be rendered before measuring');
-      expect(barBox.height).toBeGreaterThanOrEqual(32);
-      expect(barBox.height).toBeLessThanOrEqual(36);
-      expect(articleBox.y).toBeGreaterThanOrEqual(barBox.y + barBox.height);
-      if (width === 390) {
-        await expect(page.getByTestId('mktg-document-view-history-bar-mobile-summary')).toBeVisible();
-        await expect(page.getByTestId('mktg-document-view-history-bar-summary')).toBeHidden();
-        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
-      } else {
-        await expect(page.getByTestId('mktg-document-view-history-bar-summary')).toBeVisible();
-      }
-      await bar.evaluate((element) => window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top + 200));
-      const expectedTop = width === 390 ? 57 : 0;
-      await expect.poll(async () => Math.round((await bar.boundingBox())?.y ?? -1)).toBe(expectedTop);
-      await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toBeInViewport();
-      await expect(page.getByTestId('mktg-document-view-history-bar-back')).toBeInViewport();
-      await expect(page.getByTestId('mktg-document-view-restore-current')).toHaveCount(0);
-    });
-  }
 
   for (const width of [390, 768, 1000, 1024, 1264, 1280, 1440]) {
     test(`revision actions and body remain visible at ${width}px`, async ({ page }) => {

@@ -87,6 +87,16 @@
           ariaLabel="Filter by employment"
           dataTest="org-people-all-employees-employment-select" />
       </div>
+      <div class="w-full md:w-56" data-testid="org-people-all-employees-company-email-filter">
+        <lfx-select
+          [form]="filterForm"
+          control="companyEmail"
+          size="small"
+          [options]="companyEmailOptions"
+          styleClass="w-full"
+          ariaLabel="Filter by company email"
+          dataTest="org-people-all-employees-company-email-select" />
+      </div>
       <div class="w-full md:w-52" data-testid="org-people-all-employees-metric-filter">
         <lfx-select
           [form]="filterForm"
@@ -180,7 +190,11 @@
           </div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-events">
-          <div class="text-2xl font-semibold leading-none text-gray-900">{{ stats().eventAttendees | number }}</div>
+          <div
+            class="text-2xl font-semibold leading-none text-gray-900"
+            [attr.title]="eventAttendeesUnavailable() ? 'The event attendee count could not be loaded' : null">
+            {{ eventAttendeesUnavailable() ? '—' : (stats().eventAttendees | number) }}
+          </div>
           <div class="mt-1 text-xs text-gray-500">Event Attendees</div>
         </div>
         <div class="rounded-lg border border-gray-200 bg-white p-4" data-testid="org-people-all-employees-stat-trainees">

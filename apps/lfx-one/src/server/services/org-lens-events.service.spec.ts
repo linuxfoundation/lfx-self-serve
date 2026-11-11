@@ -3,6 +3,7 @@
 
 import { createRequire } from 'node:module';
 
+import type { GetOrgEventsOptions } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,31 +14,34 @@ const { execute, cacheValues } = vi.hoisted(() => ({ execute: vi.fn(), cacheValu
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/date-time.utils')),
   ...(await import('../../../../../packages/shared/src/utils/url.utils')),
-  // Needed by the real valkey.service, which this spec now exercises rather than stubs.
+  // Needed by the real valkey.service, which this spec exercises rather than stubs.
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
-  // `isObjectRow` backs the `accept` predicates this service passes to the cache. Omitting it did
-  // not fail loudly: vitest throws "No export is defined on the mock" from INSIDE `getJson`'s try,
-  // which fails soft to a cache miss — so every read missed and the cache assertions here were
-  // asserting against a cache that never hit. `cache-hit-path` guards it.
+  // `isObjectRow` backs the `accept` predicates this service passes to the cache. Omitting it does not fail
+  // loudly: vitest throws from INSIDE `getJson`'s try, which fails soft to a cache miss, so every read would
+  // miss and the cache assertions here would assert against a cache that never hits.
   ...(await import('../../../../../packages/shared/src/utils/object.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-events-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
+  ...(await import('../../../../../packages/shared/src/constants/org-events-filters.constants')),
+  ...(await import('../../../../../packages/shared/src/constants/org-lens-time-range.constants')),
 }));
-
-vi.mock('./snowflake.service', async () => ({
-  SnowflakeService: {
-    getInstance: () => ({ execute }),
-    // The REAL predicate, not a stub: snowflake-error.helper.ts says it was extracted precisely so
-    // specs depend on it rather than a hand-copied regex that can drift.
-    isMissingObjectError: (await import('../helpers/snowflake-error.helper')).isMissingObjectError,
+// Only the query-string reader of the real helper is needed; the rest pulls barrels this environment cannot load.
+vi.mock('../helpers/validation.helper', () => ({
+  getStringQueryParam: (req: Request, name: string): string | undefined => {
+    const value = req.query[name];
+    return typeof value === 'string' ? value : undefined;
   },
 }));
+
+vi.mock('./snowflake.service', () => ({
+  SnowflakeService: { getInstance: () => ({ execute }) },
+}));
 /**
- * The REAL `withOrgCache` over a Map-backed Redis, as `org-lens-people.service.spec.ts` does. A stub
- * that always calls the fetcher cannot tell a cached read from an uncached one, so the assertion that
- * the unscoped fallback is never stored under the scoped key would pass even if the fallback were
- * moved inside the cached fetcher — which is the one refactor that would reintroduce the bug.
+ * The REAL `withOrgCache` over a Map-backed Redis, as `org-lens-people.service.spec.ts` does. A stub that
+ * always calls the fetcher cannot tell a cached read from an uncached one.
  */
 vi.mock('ioredis', () => ({
   default: class {
@@ -99,62 +103,145 @@ interface SqlDatabase {
 // node:sqlite needs Node >= 22.13; this app's Node typings predate the module, hence the local shape.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new (path: string) => SqlDatabase };
 
-const ACCOUNT = 'account-one';
-const EVENT = 'event-one';
+const ACCOUNT = 'acct-a';
+const OTHER_ACCOUNT = 'acct-b';
 const REQ = {} as Request;
 
-const LIST_OPTIONS = {
-  isPast: false,
-  searchQuery: undefined,
-  status: undefined,
-  pageSize: 25,
-  offset: 0,
-  sortField: 'EVENT_START_DATE',
-  sortOrder: 'ASC',
-} as unknown as Parameters<OrgLensEventsService['getOrgEvents']>[2];
+/** ISO date `days` from today (UTC) — fixtures stay valid whenever the suite runs. */
+function dayOffset(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function listOptions(overrides: Partial<GetOrgEventsOptions> = {}): GetOrgEventsOptions {
+  return {
+    isPast: false,
+    pageSize: 25,
+    offset: 0,
+    sortField: 'EVENT_START_DATE',
+    sortOrder: 'ASC',
+    participation: 'registered',
+    eventScope: 'activity',
+    foundation: '',
+    range: '730d',
+    ...overrides,
+  };
+}
+
+function insert(table: string, record: Record<string, string | number | null>): void {
+  const columns = Object.keys(record);
+  database.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`).run(...Object.values(record));
+}
+
+interface EventFixture {
+  eventId?: string;
+  name?: string;
+  isPast?: boolean;
+  /** Days from today of the event date (negative = past). */
+  daysFromToday?: number;
+  foundationId?: string;
+  foundationName?: string;
+  account?: string;
+  registered?: { verified?: number };
+  attended?: { verified?: number };
+  /** Distinct people who registered or attended; defaults to the larger of the registered and attended counts. */
+  registeredOrAttended?: { verified?: number };
+  footprint?: { verified?: boolean };
+}
+
+function addEvent(fixture: EventFixture = {}): string {
+  const eventId = fixture.eventId ?? 'event-one';
+  const daysFromToday = fixture.daysFromToday ?? (fixture.isPast ? -10 : 10);
+  const date = dayOffset(daysFromToday);
+  insert('ORG_EVENTS', {
+    ACCOUNT_ID: fixture.account ?? ACCOUNT,
+    EVENT_ID: eventId,
+    EVENT_NAME: fixture.name ?? 'Community Summit',
+    FOUNDATION_ID: fixture.foundationId ?? 'foundation-one',
+    FOUNDATION_NAME: fixture.foundationName ?? 'Foundation One',
+    EVENT_START_DATE: date,
+    EVENT_END_DATE: date,
+    EVENT_DATE: date,
+    IS_PAST_EVENT: daysFromToday < 0 ? 1 : 0,
+    EVENT_LOCATION: 'Austin Convention Center',
+    EVENT_CITY: 'Austin',
+    EVENT_COUNTRY: 'USA',
+    EVENT_URL: 'https://events.example.test/summit',
+    EVENT_REGISTRATION_URL: 'https://events.example.test/register',
+    EVENT_REGISTRATIONS_GOAL: 10000,
+    ORG_SPEAKER_ACCEPTED_COUNT: 0,
+    ORG_SPEAKER_SUBMITTED_COUNT: 0,
+    IS_ORG_SPONSOR: 0,
+    REGISTERED_COUNT_VERIFIED: fixture.registered?.verified ?? 0,
+    ATTENDED_COUNT_VERIFIED: fixture.attended?.verified ?? 0,
+    ALL_COUNT_VERIFIED: fixture.registeredOrAttended?.verified ?? Math.max(fixture.registered?.verified ?? 0, fixture.attended?.verified ?? 0),
+    HAS_FOOTPRINT_VERIFIED: fixture.footprint?.verified === false ? 0 : 1,
+  });
+  return eventId;
+}
+
+interface ParticipantFixture {
+  ref: number;
+  eventId?: string;
+  name?: string | null;
+  title?: string | null;
+  companyEmail?: boolean;
+  roster?: boolean;
+  registered?: boolean;
+  attended?: boolean;
+  /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the drawer must ignore it. */
+  listable?: boolean;
+}
+
+/** The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended). */
+function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; registered?: boolean; attended?: boolean }): Record<string, number> {
+  const registered = fixture.registered !== false;
+  const attended = fixture.attended === true;
+  const verified = fixture.companyEmail !== false || fixture.roster === true;
+  const credited = { VERIFIED: verified };
+  return Object.fromEntries(
+    Object.entries(credited).flatMap(([suffix, flag]) => [
+      [`IS_COUNTED_REGISTERED_${suffix}`, registered && flag ? 1 : 0],
+      [`IS_COUNTED_ATTENDED_${suffix}`, attended && flag ? 1 : 0],
+      [`IS_COUNTED_ALL_${suffix}`, (registered || attended) && flag ? 1 : 0],
+    ])
+  );
+}
+
+function addParticipant(fixture: ParticipantFixture): void {
+  insert('ORG_EVENT_PARTICIPATION', {
+    ACCOUNT_ID: ACCOUNT,
+    EVENT_ID: fixture.eventId ?? 'event-one',
+    PARTICIPANT_REF: fixture.ref,
+    DISPLAY_NAME: fixture.name === undefined ? `Person ${fixture.ref}` : fixture.name,
+    JOB_TITLE: fixture.title === undefined ? 'Engineer' : fixture.title,
+    ...countsFlags(fixture),
+    IS_LISTABLE: fixture.listable === false ? 0 : 1,
+  });
+}
+
+function addSpeaker(
+  speakerId: string,
+  first: string | null,
+  last: string | null,
+  email: string,
+  status: 'Accepted' | 'Submitted',
+  eventId = 'event-one'
+): void {
+  insert('EVENT_SPEAKERS', {
+    ACCOUNT_ID: ACCOUNT,
+    EVENT_ID: eventId,
+    SPEAKER_ID: speakerId,
+    SPEAKER_FIRST_NAME: first,
+    SPEAKER_LAST_NAME: last,
+    SPEAKER_EMAIL: email,
+    JOB_TITLE: 'Staff Engineer',
+    SPEAKER_STATUS: status,
+    EVENT_NAME: 'Community Summit',
+  });
+}
 
 let database: SqlDatabase;
 let service: OrgLensEventsService;
-
-/** One registration for `email`, attributed upstream to `account` regardless of the address used. */
-function addRegistration(email: string | null, fullName: string, account = ACCOUNT, eventId = EVENT, jobTitle = 'Engineer'): void {
-  database
-    .prepare('INSERT INTO EVENT_REGISTRATIONS VALUES (?, ?, ?, ?, ?, ?)')
-    .run(account, eventId, email, fullName, jobTitle, 'KubeCon + CloudNativeCon North America 2026');
-}
-
-/** An address the warehouse holds for the org — the employer ∩ employee intersection. */
-function addCompanyEmail(email: string | null, account = ACCOUNT): void {
-  database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(account, `person-${email}`, null, email, 1);
-}
-
-/** A roster profile, the source the drawer prefers over the registration's own name and title. */
-function addProfile(email: string, name: string, title: string, account = ACCOUNT): void {
-  database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?, ?)').run(account, email, name, title);
-}
-
-function addEvent(eventId = EVENT, precomputedCount = 99): void {
-  database
-    .prepare('INSERT INTO ORG_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(
-      ACCOUNT,
-      eventId,
-      'KubeCon + CloudNativeCon North America 2026',
-      'Cloud Native Computing Foundation (CNCF)',
-      '2026-11-09',
-      '2026-11-12',
-      'Salt Lake City, United States',
-      'Salt Lake City',
-      'United States',
-      'https://example.test/event',
-      'https://example.test/register',
-      precomputedCount,
-      10000,
-      0,
-      0,
-      0
-    );
-}
 
 beforeEach(() => {
   vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
@@ -163,40 +250,43 @@ beforeEach(() => {
   database = new DatabaseSync(':memory:');
   database.exec(
     `CREATE TABLE ORG_EVENTS (
-      ACCOUNT_ID TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, FOUNDATION_NAME TEXT,
-      EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT,
-      EVENT_URL TEXT, EVENT_REGISTRATION_URL TEXT, ORG_REGISTRATION_COUNT INTEGER, EVENT_REGISTRATIONS_GOAL INTEGER,
-      ORG_SPEAKER_ACCEPTED_COUNT INTEGER, ORG_SPEAKER_SUBMITTED_COUNT INTEGER, IS_ORG_SPONSOR INTEGER
+      ACCOUNT_ID TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
+      EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, IS_PAST_EVENT INTEGER,
+      EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT, EVENT_REGISTRATION_URL TEXT,
+      EVENT_REGISTRATIONS_GOAL INTEGER, ORG_SPEAKER_ACCEPTED_COUNT INTEGER, ORG_SPEAKER_SUBMITTED_COUNT INTEGER, IS_ORG_SPONSOR INTEGER,
+      REGISTERED_COUNT_VERIFIED INTEGER, ATTENDED_COUNT_VERIFIED INTEGER, ALL_COUNT_VERIFIED INTEGER, HAS_FOOTPRINT_VERIFIED INTEGER
     )`
   );
-  database.exec('CREATE TABLE EVENT_REGISTRATIONS (ACCOUNT_ID TEXT, EVENT_ID TEXT, EMAIL TEXT, FULL_NAME TEXT, JOB_TITLE TEXT, EVENT_NAME TEXT)');
-  database.exec('CREATE TABLE ORG_PEOPLE_ALL (ACCOUNT_ID TEXT, EMAIL TEXT, NAME TEXT, TITLE TEXT)');
-  database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+  database.exec(
+    `CREATE TABLE ORG_EVENT_PARTICIPATION (
+      ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
+      IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
+      IS_LISTABLE INTEGER
+    )`
+  );
+  database.exec(
+    `CREATE TABLE EVENT_SPEAKERS (
+      ACCOUNT_ID TEXT, EVENT_ID TEXT, SPEAKER_ID TEXT, SPEAKER_FIRST_NAME TEXT, SPEAKER_LAST_NAME TEXT,
+      SPEAKER_EMAIL TEXT, JOB_TITLE TEXT, SPEAKER_STATUS TEXT, EVENT_NAME TEXT
+    )`
+  );
 
-  // Run the service's real SQL against SQLite rather than asserting on query strings. IS_PAST_EVENT
-  // is a predicate here, not a column, so it is folded to a constant per the fixture's tense.
+  // Run the service's real SQL against SQLite rather than asserting on query strings; only the dialect is translated.
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const translated = query
       .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
       .replaceAll('ANALYTICS.SILVER_FACT.', '')
-      .replaceAll('oe.IS_PAST_EVENT = TRUE', '0')
-      .replaceAll('oe.IS_PAST_EVENT = FALSE', '1')
-      .replaceAll('ILIKE', 'LIKE')
-      // Snowflake spells it CHR (CHAR is also a type name there); SQLite spells it char.
-      .replaceAll(/\bCHR\(/g, 'char(');
-    try {
-      return { rows: database.prepare(translated).all(...binds) };
-    } catch (error) {
-      // The harness already translates dialect; it has to translate the ERROR SHAPE too, or the real
-      // isMissingObjectError predicate can never recognise a dropped fixture table and the
-      // missing-object branch goes untested.
-      const message = error instanceof Error ? error.message : String(error);
-      const missingTable = /no such table: (\w+)/i.exec(message);
-      if (missingTable) {
-        throw new Error(`SQL compilation error: Object '${missingTable[1]}' does not exist or not authorized.`);
-      }
-      throw error;
-    }
+      .replaceAll(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 day')")
+      .replaceAll('CURRENT_DATE()', "date('now')")
+      .replaceAll('ILIKE', 'LIKE');
+    // SQLite has no BOOLEAN: hand the service true/false for the flag columns, as Snowflake does.
+    const rows = database
+      .prepare(translated)
+      .all(...binds)
+      .map((row) =>
+        Object.fromEntries(Object.entries(row).map(([column, value]) => [column, /^(HAS|IS)_/.test(column) && typeof value === 'number' ? value === 1 : value]))
+      );
+    return { rows };
   });
 
   checkLFStaff.mockResolvedValue(false);
@@ -210,233 +300,334 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('OrgLensEventsService company-email scoping', () => {
-  it('lists only the registrant who used a company address', async () => {
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    // Distinct name: `contactId` is now a positional index, so only the name can say which
-    // registration survived the filter.
-    addRegistration('ada.personal@gmail.example', 'Ada Personal');
-
-    const response = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(response.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
-    expect(response.total).toBe(1);
+describe('OrgLensEventsService list — option columns', () => {
+  beforeEach(() => {
+    addEvent({
+      registered: { verified: 3 },
+      attended: { verified: 1 },
+      registeredOrAttended: { verified: 4 },
+      isPast: true,
+    });
   });
 
-  it('matches addresses regardless of case and surrounding whitespace on either side', async () => {
-    addCompanyEmail('  Ada@Company.Example ');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    // Present so the assertion cannot pass by the filter simply not running.
-    addRegistration('ada.personal@gmail.example', 'Ada Personal');
+  it.each([
+    ['registered', 3],
+    ['attended', 1],
+    ['all', 4],
+  ] as const)('serves the %s count on the Past tab', async (participation, expected) => {
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, participation }));
 
-    const response = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(response.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
+    expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([expected]);
   });
 
-  it('does not treat an address held for another account as this org company address', async () => {
-    // This org has coverage of its own, so the no-coverage fallback is not in play and the
-    // assertion is about cross-account isolation alone.
-    addCompanyEmail('ada@company.example');
-    addCompanyEmail('grace@other.example', 'other-account');
-    addRegistration('grace@other.example', 'Grace Hopper');
+  it('keeps one bind per placeholder in every query it builds', async () => {
+    await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, foundation: 'foundation-one', searchQuery: 'summit', status: 'registered' }));
+    await service.getOrgEventsSummary(REQ, ACCOUNT, {
+      participation: 'registered',
+      scope: 'all',
+      foundation: 'foundation-one',
+      range: '90d',
+    });
+    await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'activity' });
+    await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { participation: 'registered', searchQuery: 'ada' });
+    await service.getEventSpeakers(REQ, ACCOUNT, 'event-one', 'ada');
 
-    const response = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
+      expect(sql.match(/\?/g)?.length ?? 0).toBe(binds.length);
+    }
+  });
+});
 
-    expect(response.data).toEqual([]);
+describe('OrgLensEventsService list — upcoming and past', () => {
+  it('counts registrations on the Upcoming tab whatever participation is picked', async () => {
+    addEvent({ registered: { verified: 4 }, attended: { verified: 0 } });
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, participation: 'attended' }));
+
+    expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([4]);
   });
 
-  it('counts the row from the same filtered set as the drawer, not the precomputed platinum column', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addCompanyEmail('grace@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    addRegistration('grace@company.example', 'Grace Hopper');
-    addRegistration('someone@gmail.example', 'Someone Else');
+  it('counts registrations on the Upcoming tab when Count is All', async () => {
+    addEvent({ registered: { verified: 4 }, registeredOrAttended: { verified: 7 } });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, participation: 'all' }));
 
-    expect(list.data[0].orgAttendeeCount).toBe(2);
-    expect(list.data[0].orgAttendeeCount).toBe(drawer.total);
+    expect(list.data.map((event) => event.orgAttendeeCount)).toEqual([4]);
   });
 
-  it('falls back to the unfiltered set when the org has no company-address coverage at all', async () => {
-    addEvent(EVENT, 99);
-    addRegistration('someone@gmail.example', 'Someone Else');
-    addRegistration('another@gmail.example', 'Another Person');
+  it('ignores the range on the Upcoming tab', async () => {
+    addEvent({ eventId: 'far-future', daysFromToday: 900, registered: { verified: 1 } });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, range: '30d' }));
 
-    // Not 0: zero coverage is no basis for asserting nobody attended. The row and the drawer still agree.
-    expect(list.data[0].orgAttendeeCount).toBe(2);
-    expect(drawer.total).toBe(2);
+    expect(list.data.map((event) => event.eventId)).toEqual(['far-future']);
   });
 
-  it('does not fall back once the org has any coverage, even if nobody on this event qualifies', async () => {
-    addEvent(EVENT, 99);
-    // Coverage exists for the account, but matches no registrant on this event.
-    addCompanyEmail('someone.else@company.example');
-    addRegistration('personal@gmail.example', 'Someone Else');
+  it('windows the Past tab by the range and leaves all time open', async () => {
+    addEvent({ eventId: 'recent', daysFromToday: -10, registered: { verified: 1 } });
+    addEvent({ eventId: 'old', daysFromToday: -200, registered: { verified: 1 } });
+    addEvent({ eventId: 'ancient', daysFromToday: -900, registered: { verified: 1 } });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    const past = (range: GetOrgEventsOptions['range']): Promise<string[]> =>
+      service
+        .getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, range, sortField: 'EVENT_NAME' }))
+        .then((response) => response.data.map((event) => event.eventId).sort());
 
-    expect(list.data[0].orgAttendeeCount).toBe(0);
-    expect(drawer.total).toBe(0);
+    expect(await past('30d')).toEqual(['recent']);
+    expect(await past('365d')).toEqual(['old', 'recent']);
+    expect(await past('730d')).toEqual(['old', 'recent']);
+    expect(await past('all')).toEqual(['ancient', 'old', 'recent']);
   });
 
-  it('keeps another account coverage from suppressing this org fallback', async () => {
-    addEvent(EVENT, 99);
-    // Coverage belongs to a different account, so this org still has none of its own.
-    addCompanyEmail('someone@other.example', 'other-account');
-    addRegistration('personal@gmail.example', 'Someone Else');
+  it('lists only events with activity by default, and the involvement-only rows under eventScope=all', async () => {
+    addEvent({ eventId: 'mine', registered: { verified: 2 } });
+    addEvent({ eventId: 'others', footprint: { verified: false } });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const activity = await service.getOrgEvents(REQ, ACCOUNT, listOptions());
+    const all = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ eventScope: 'all', sortField: 'EVENT_NAME' }));
 
-    expect(list.data[0].orgAttendeeCount).toBe(1);
+    expect(activity.data.map((event) => event.eventId)).toEqual(['mine']);
+    expect(all.data.map((event) => event.eventId)).toEqual(['mine', 'others']);
   });
 
-  it('excludes an event from status=registered when no registrant used a company address', async () => {
-    addEvent(EVENT, 99);
-    // Coverage exists, so the filter applies rather than falling back.
-    addCompanyEmail('someone.else@company.example');
-    addRegistration('someone@gmail.example', 'Someone Else');
+  it('pages in a stable order when events share the sort value, so no event repeats or vanishes between pages', async () => {
+    for (const eventId of ['event-b', 'event-c', 'event-a']) addEvent({ eventId, daysFromToday: 10 });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, status: 'registered' });
+    const pages: string[] = [];
+    for (const offset of [0, 1, 2]) {
+      const page = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ pageSize: 1, offset, sortField: 'EVENT_START_DATE' }));
+      pages.push(...page.data.map((event) => event.eventId));
+    }
 
-    expect(list.data).toEqual([]);
+    expect(pages).toEqual(['event-a', 'event-b', 'event-c']);
+  });
+  it('narrows to a foundation', async () => {
+    addEvent({ eventId: 'one', foundationId: 'foundation-one' });
+    addEvent({ eventId: 'two', foundationId: 'foundation-two', foundationName: 'Foundation Two' });
+
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ foundation: 'foundation-two' }));
+
+    expect(list.data.map((event) => event.eventId)).toEqual(['two']);
   });
 
-  it('does not let a null or blank stored address count as coverage', async () => {
-    addEvent(EVENT, 99);
-    // Rows exist for the account, but none carries an address anything could match on.
-    addCompanyEmail(null);
-    addCompanyEmail('   ');
-    addRegistration('someone@gmail.example', 'Someone Else');
+  it('keeps status=registered on registrations whatever Count shows, so an event with no attendance is not hidden', async () => {
+    addEvent({ eventId: 'registered-only', isPast: true, registered: { verified: 2 }, attended: { verified: 0 } });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    const attendedView = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, status: 'registered', participation: 'attended' }));
 
-    // Treating these as coverage would switch the fallback off and zero the page while supplying
-    // nothing to filter by — the exact outcome the fallback exists to prevent.
-    expect(list.data[0].orgAttendeeCount).toBe(1);
-    expect(drawer.total).toBe(1);
+    expect(attendedView.data.map((event) => event.eventId)).toEqual(['registered-only']);
   });
 
-  it('excludes registrations with no address, including on the fallback path', async () => {
-    addEvent(EVENT, 99);
-    // No coverage, so the fallback is engaged — the path where a null address would slip through.
-    addRegistration('someone@gmail.example', 'Someone Else');
-    addRegistration(null, 'No Address');
-    addRegistration('   ', 'Blank Address');
+  it('keeps status=registered on registrations when Count is All', async () => {
+    addEvent({ eventId: 'attended-only', isPast: true, registered: { verified: 0 }, registeredOrAttended: { verified: 2 } });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    const allView = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, status: 'registered', participation: 'all' }));
 
-    expect(list.data[0].orgAttendeeCount).toBe(1);
-    // A null group would both disagree with the count and be rejected by `isContactRowArray`.
-    expect(drawer.total).toBe(1);
-    // The addressed registrant is the one that survives; both the null and the blank are dropped.
-    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Someone Else']);
+    expect(allView.data).toEqual([]);
   });
 
-  it('counts one person once across case and whitespace variants of their address', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    // The join matches both of these to the one company address, so they are one attendee.
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    addRegistration('  Ada@Company.Example  ', 'Ada Lovelace');
+  it("never reads another account's events", async () => {
+    addEvent({ account: OTHER_ACCOUNT, registered: { verified: 9 } });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    expect((await service.getOrgEvents(REQ, ACCOUNT, listOptions())).data).toEqual([]);
+  });
+});
 
-    expect(list.data[0].orgAttendeeCount).toBe(1);
-    expect(drawer.total).toBe(1);
-    expect(drawer.data[0].name).toBe('Ada Lovelace');
+describe('OrgLensEventsService summary tiles', () => {
+  const filters = { participation: 'registered', scope: 'activity', foundation: '', range: '730d' } as const;
+
+  beforeEach(() => {
+    addEvent({ eventId: 'upcoming', daysFromToday: 20 });
+    addEvent({ eventId: 'recent', daysFromToday: -10 });
+    addEvent({ eventId: 'old', daysFromToday: -200 });
+    addEvent({
+      eventId: 'involvement-only',
+      daysFromToday: -5,
+      footprint: { verified: false },
+      foundationId: 'foundation-two',
+      foundationName: 'Foundation Two',
+    });
   });
 
-  it('matches an address padded with tabs, newlines or non-breaking spaces', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addCompanyEmail('grace@company.example');
-    // Coverage exists, so a registrant this normalization fails to match is dropped outright. Each
-    // padding style belongs to a DIFFERENT person, so a style the set misses lowers the count —
-    // padding one person two ways would leave the assertion passing on the other one's row.
-    addRegistration('\tada@company.example\n', 'Ada Lovelace');
-    // Non-breaking space: what survives a paste out of a document or web form.
-    addRegistration('\u00a0grace@company.example\u00a0', 'Grace Hopper');
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(list.data[0].orgAttendeeCount).toBe(2);
-    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace', 'Grace Hopper']);
+  it('counts Past inside the range, Upcoming regardless of it, and Total as their sum', async () => {
+    expect(await service.getOrgEventsSummary(REQ, ACCOUNT, { ...filters, range: '30d' })).toMatchObject({ pastEvents: 1, upcomingEvents: 1, totalEvents: 2 });
+    expect(await service.getOrgEventsSummary(REQ, ACCOUNT, filters)).toMatchObject({ pastEvents: 2, upcomingEvents: 1, totalEvents: 3 });
   });
 
-  it('does not strip characters that merely appear in an escape sequence', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.test');
-    // `.test` ends in `t` (and is a reserved TLD). A character-set TRIM written as '\t\n\r ' eats
-    // that `t` under SQLite's non-escaping literals, which is why the normalization uses code points.
-    addRegistration('  ada@company.test  ', 'Ada Lovelace');
-    // A DIFFERENT person, whose address differs from Ada's only by a leading `t` — a character in the
-    // same bogus class. Correct normalization keeps them distinct, so this one matches no company
-    // address while coverage is non-zero and is filtered out. An over-strip eats the leading `t` and
-    // folds both rows into one group, where `MAX(NAME)` returns `Not Ada` and this fails. Without the
-    // decoy the assertion survives an over-strip, because the key is stripped on both sides of the
-    // join and the single surviving row still reads `Ada Lovelace`.
-    addRegistration('tada@company.test', 'Not Ada');
+  it('follows scope and foundation', async () => {
+    expect(await service.getOrgEventsSummary(REQ, ACCOUNT, { ...filters, scope: 'all' })).toMatchObject({ pastEvents: 3, upcomingEvents: 1, totalEvents: 4 });
+    expect(await service.getOrgEventsSummary(REQ, ACCOUNT, { ...filters, scope: 'all', foundation: 'foundation-two' })).toMatchObject({
+      pastEvents: 1,
+      upcomingEvents: 0,
+    });
+  });
 
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+  it('returns zero counts when the read fails', async () => {
+    execute.mockRejectedValueOnce(new Error('warehouse down'));
+
+    expect(await service.getOrgEventsSummary(REQ, 'acct-failing', filters)).toEqual({
+      totalEvents: 0,
+      pastEvents: 0,
+      upcomingEvents: 0,
+    });
+  });
+});
+
+describe('OrgLensEventsService foundations', () => {
+  it('lists the foundations that have events under the picked scope', async () => {
+    addEvent({ eventId: 'mine', foundationId: 'foundation-one', foundationName: 'Foundation One' });
+    addEvent({ eventId: 'others', foundationId: 'foundation-two', foundationName: 'Foundation Two', footprint: { verified: false } });
+
+    const activity = await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'activity' });
+    const all = await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'all' });
+
+    expect(activity.data).toEqual([{ id: 'foundation-one', name: 'Foundation One' }]);
+    expect(all.data).toEqual([
+      { id: 'foundation-one', name: 'Foundation One' },
+      { id: 'foundation-two', name: 'Foundation Two' },
+    ]);
+  });
+
+  it('lists one option per foundation when the name is stored padded or blank on some rows', async () => {
+    addEvent({ eventId: 'plain', foundationId: 'foundation-one', foundationName: 'Foundation One' });
+    addEvent({ eventId: 'padded', foundationId: 'foundation-one', foundationName: ' \tFoundation One\u00A0\n' });
+    addEvent({ eventId: 'blank', foundationId: 'foundation-blank', foundationName: ' \t\u00A0\n' });
+
+    const { data } = await service.getOrgEventFoundations(REQ, ACCOUNT, { scope: 'all' });
+
+    expect(data).toEqual([{ id: 'foundation-one', name: 'Foundation One' }]);
+  });
+});
+
+describe('OrgLensEventsService attendees drawer', () => {
+  const options = { participation: 'registered' } as const;
+
+  beforeEach(() => {
+    addEvent({ isPast: true, registered: { verified: 4 }, attended: { verified: 2 } });
+  });
+
+  it('lists everyone the option credits, whatever the legacy listable flag says, by name; titles only for roster employees (lfx-self-serve#5158)', async () => {
+    // The warehouse leaves JOB_TITLE NULL for everyone not on the roster; the fixtures mirror that.
+    addParticipant({ ref: 1, name: 'Ada Lovelace', title: null });
+    addParticipant({ ref: 2, name: 'Grace Hopper', title: null });
+    addParticipant({ ref: 4, name: 'Roster Employee', companyEmail: false, roster: true, listable: false });
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
+
+    expect(drawer.data.map((attendee) => [attendee.name, attendee.jobTitle])).toEqual([
+      ['Ada Lovelace', null],
+      ['Grace Hopper', null],
+      ['Roster Employee', 'Engineer'],
+    ]);
+    expect(drawer.total).toBe(3);
+    expect(drawer).not.toHaveProperty('notListedCount');
+    expect(drawer.eventName).toBe('Community Summit');
+  });
+
+  it('separates registered from attended, and rejected registrations never count', async () => {
+    addParticipant({ ref: 1, name: 'Attended', attended: true });
+    addParticipant({ ref: 2, name: 'Registered Only' });
+    addParticipant({ ref: 3, name: 'Rejected', registered: false });
+
+    const registered = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
+    const attended = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, participation: 'attended' });
+
+    expect(registered.data.map((attendee) => attendee.name).sort()).toEqual(['Attended', 'Registered Only']);
+    expect(attended.data.map((attendee) => attendee.name)).toEqual(['Attended']);
+  });
+
+  it('lists everyone who registered or attended when Count is All', async () => {
+    addParticipant({ ref: 1, name: 'Attended', attended: true });
+    addParticipant({ ref: 2, name: 'Registered Only' });
+    addParticipant({ ref: 3, name: 'Attended Unregistered', registered: false, attended: true });
+    addParticipant({ ref: 4, name: 'Rejected', registered: false });
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, participation: 'all' });
+
+    expect(drawer.data.map((attendee) => attendee.name).sort()).toEqual(['Attended', 'Attended Unregistered', 'Registered Only']);
+    expect(drawer.total).toBe(3);
+  });
+
+  it('lists registrants for an event that has not ended, whatever participation is picked', async () => {
+    addEvent({ eventId: 'future', registered: { verified: 2 }, attended: { verified: 0 } });
+    addParticipant({ ref: 1, eventId: 'future', name: 'Ada Lovelace' });
+
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'future', { ...options, participation: 'attended' });
 
     expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace']);
   });
 
-  it('enriches every address variant in a group from the same profile', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addProfile('ada@company.example', 'Ada Lovelace', 'Principal Engineer');
-    addRegistration('ada@company.example', 'Ada L');
-    // Same person, padded. BOTH its name and its title sort above the profile's, so if this row
-    // misses the profile join the MAX() below returns the registration fallback for each. Seeding a
-    // title that sorts BELOW the profile's would leave the title assertion passing either way.
-    addRegistration('  Ada@Company.Example  ', 'Zed Padded', ACCOUNT, EVENT, 'Zzz Registration Title');
+  it('labels a person with no name neutrally and returns no address in any field', async () => {
+    addParticipant({ ref: 1, name: null });
+    addParticipant({ ref: 2, name: 'ada@company.test', title: 'ada@company.test' });
+    addParticipant({ ref: 3, name: 'Grace Hopper', title: 'Admiral' });
 
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
 
-    expect(drawer.total).toBe(1);
-    expect(drawer.data[0].name).toBe('Ada Lovelace');
-    expect(drawer.data[0].jobTitle).toBe('Principal Engineer');
+    expect(drawer.data.map((attendee) => attendee.name).sort()).toEqual(['Grace Hopper', 'Registered attendee', 'Registered attendee']);
+    expect(JSON.stringify(drawer)).not.toContain('@');
+    expect(new Set(drawer.data.map((attendee) => attendee.contactId)).size).toBe(drawer.data.length);
   });
 
-  it('still requires an address on the fallback path', async () => {
-    addEvent(EVENT, 99);
-    addRegistration('someone@gmail.example', 'Someone Else');
-    // No address and no name: the pair that previously reached the drawer as contactId null and
-    // name null, which computePersonInitials then splits.
-    addRegistration(null, null as unknown as string);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+  it('searches names only', async () => {
+    addParticipant({ ref: 1, name: 'Ada Lovelace' });
+    addParticipant({ ref: 2, name: 'Grace Hopper' });
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    const drawer = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, searchQuery: 'hopper' });
 
-    expect(list.data[0].orgAttendeeCount).toBe(1);
-    expect(drawer.total).toBe(1);
-    expect(drawer.data.every((attendee) => !!attendee.contactId && !!attendee.name)).toBe(true);
-    // The surviving row has a name of its own; the dropped one is the nameless, addressless pair.
-    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Someone Else']);
+    expect(drawer.data.map((attendee) => attendee.name)).toEqual(['Grace Hopper']);
+  });
+
+  it('narrows only what is shown with a name search, never what is cached', async () => {
+    addParticipant({ ref: 1, name: 'Ada Lovelace' });
+    addParticipant({ ref: 2, name: 'Grace Hopper' });
+
+    const searched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, searchQuery: 'hopper' });
+    const unsearched = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', options);
+    const noMatch = await service.getEventAttendees(REQ, ACCOUNT, 'event-one', { ...options, searchQuery: 'nobody' });
+
+    expect(searched.data.map((attendee) => attendee.name)).toEqual(['Grace Hopper']);
+    expect(unsearched.data.map((attendee) => attendee.name)).toEqual(['Ada Lovelace', 'Grace Hopper']);
+    expect(noMatch.data).toEqual([]);
+  });
+
+  it('rejects, rather than returning zero counts, when the read fails', async () => {
+    execute.mockRejectedValue(new Error('warehouse down'));
+
+    await expect(service.getEventAttendees(REQ, 'acct-failing', 'event-one', options)).rejects.toThrow('warehouse down');
+  });
+});
+
+describe('OrgLensEventsService speakers drawer', () => {
+  beforeEach(() => {
+    addEvent({ isPast: true });
+  });
+
+  it('returns a neutral label rather than an address and never searches by address', async () => {
+    addSpeaker('speaker-1', 'Ada', 'Lovelace', 'ada@company.test', 'Accepted');
+    addSpeaker('speaker-2', null, null, 'nameless@company.test', 'Submitted');
+    addSpeaker('speaker-3', 'grace@company.test', '', 'grace@company.test', 'Submitted');
+
+    const drawer = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one');
+    const byAddress = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one', 'nameless@');
+    const byName = await service.getEventSpeakers(REQ, ACCOUNT, 'event-one', 'lovelace');
+
+    expect(drawer.data.map((speaker) => speaker.name).sort()).toEqual(['Ada Lovelace', 'Speaker', 'Speaker']);
+    expect(drawer.acceptedCount).toBe(1);
+    expect(drawer.submittedCount).toBe(3);
+    expect(JSON.stringify(drawer)).not.toContain('@');
+    expect(byAddress.data).toEqual([]);
+    expect(byName.data.map((speaker) => speaker.name)).toEqual(['Ada Lovelace']);
+  });
+});
+
+describe('OrgLensEventsService staff-only goal', () => {
+  beforeEach(() => {
+    addEvent({ registered: { verified: 3 } });
   });
 
   it('never serves the event registration goal to an external admin', async () => {
-    // The fixture carries a non-zero warehouse goal (10000), so this fails the moment it leaks.
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const list = await service.getOrgEvents(REQ, ACCOUNT, listOptions());
 
     // #4432 is about disclosure, not display: the key must be ABSENT, not present-and-null. The
     // serialized check also catches the number reappearing under some other field name.
@@ -446,532 +637,81 @@ describe('OrgLensEventsService company-email scoping', () => {
 
   it('serves the goal to LF staff', async () => {
     checkLFStaff.mockResolvedValue(true);
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-
-    expect(list.data[0].eventRegistrationsGoal).toBe(10000);
+    expect((await service.getOrgEvents(REQ, ACCOUNT, listOptions())).data[0].eventRegistrationsGoal).toBe(10000);
   });
 
   it('withholds the goal while an LF staff member is impersonating, whoever the target is', async () => {
-    // The reported bug: "view as" an Uber employee still showed `/ Goal`, because the staff check
-    // answers for the session's own identity. The member company's view has no goal in it.
     checkLFStaff.mockResolvedValue(true);
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
+    const impersonating = { impersonationActive: true } as unknown as Request;
 
-    const impersonating = {
-      impersonationActive: true,
-    } as unknown as Request;
-
-    const list = await service.getOrgEvents(impersonating, ACCOUNT, LIST_OPTIONS);
-
-    expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
-    // The staff check is not merely overridden after the fact — it is never consulted.
-    expect(checkLFStaff).not.toHaveBeenCalled();
-  });
-
-  it('still serves the goal to LF staff once impersonation ends', async () => {
-    checkLFStaff.mockResolvedValue(true);
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    const ended = { impersonationActive: false } as unknown as Request;
-
-    const list = await service.getOrgEvents(ended, ACCOUNT, LIST_OPTIONS);
-
-    expect(list.data[0].eventRegistrationsGoal).toBe(10000);
-  });
-
-  it('withholds the goal from a global auditor or org admin who is not LF staff', async () => {
-    addEvent(EVENT, 99);
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    // `RoleGrantsResponse.isStaff` is true for `lf-staff`, `global-org-auditors` AND
-    // `global_org_admin`, and its own comment says it "is never a read gate" — it drives the Org
-    // Lens search affordance. An earlier revision gated on it, which would have handed the internal
-    // goal to those two non-LF teams. The gate asks `lf-staff#member` alone, so they are external
-    // for this purpose however much else they can read.
-    checkLFStaff.mockResolvedValue(false);
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const list = await service.getOrgEvents(impersonating, ACCOUNT, listOptions());
 
     expect(list.data[0]).not.toHaveProperty('eventRegistrationsGoal');
     expect(JSON.stringify(list)).not.toContain('10000');
-    expect(checkLFStaff).toHaveBeenCalled();
   });
 
   it('does not leak a staff-populated cache entry to an external admin', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    // The Org Lens cache is keyed per ORG, not per user, so a staff read and an external read share
-    // one entry. Redaction therefore has to happen AFTER the cache, on every response path — if it
-    // moved into the cached fetcher, this is the test that would catch it.
+    // The Org Lens cache is keyed per ORG, not per user, so a staff read and an external read share one entry.
+    // Redaction therefore has to happen AFTER the cache, on every response path.
     checkLFStaff.mockResolvedValue(true);
-    expect((await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS)).data[0].eventRegistrationsGoal).toBe(10000);
+    expect((await service.getOrgEvents(REQ, ACCOUNT, listOptions())).data[0].eventRegistrationsGoal).toBe(10000);
 
     const fetchesBefore = execute.mock.calls.length;
     checkLFStaff.mockResolvedValue(false);
-    const external = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const external = await service.getOrgEvents(REQ, ACCOUNT, listOptions());
 
-    // The point of the test: the external read must be served from the entry the STAFF read wrote.
-    // Without this the test passes on a refetch, which redacts correctly for a different reason and
-    // would keep passing if redaction moved inside the cached fetcher — the regression it guards.
+    // The external read must be served from the entry the STAFF read wrote.
     expect(execute.mock.calls).toHaveLength(fetchesBefore);
     expect(external.data[0]).not.toHaveProperty('eventRegistrationsGoal');
     expect(JSON.stringify(external)).not.toContain('10000');
   });
+});
 
-  // Every cache assertion in this file rests on reads actually hitting. They did not: the shared
-  // `accept` predicates call `isObjectRow`, and a gap in the `@lfx-one/shared/utils` mock made that
-  // throw inside `getJson`, which fails soft to a miss. Nothing failed, the cache just never hit.
+describe('OrgLensEventsService caching', () => {
+  beforeEach(() => {
+    addEvent({ isPast: true, registered: { verified: 1 } });
+  });
+
   it('serves a repeated identical read from the cache', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    const first = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const first = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true }));
     const fetchesAfterFirst = execute.mock.calls.length;
-    const second = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
+    const second = await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true }));
 
     expect(execute.mock.calls).toHaveLength(fetchesAfterFirst);
     expect(second).toEqual(first);
   });
 
-  it('still lists events when registrations are unavailable', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    // Recomputing the count made this table load-bearing for the list, which it never was before.
-    database.exec('DROP TABLE EVENT_REGISTRATIONS');
+  it.each([
+    ['participation', { participation: 'attended' }],
+    ['eventScope', { eventScope: 'all' }],
+    ['foundation', { foundation: 'foundation-one' }],
+    ['range', { range: '30d' }],
+  ] as const)('does not serve a different %s from the same entry', async (_filter, change) => {
+    await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true }));
+    const fetchesAfterFirst = execute.mock.calls.length;
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
+    await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: true, ...change }));
 
-    // ORG_EVENTS still answers "what events does this org have"; the count falls back to the
-    // precomputed column. The drawer cannot degrade this far and is empty — a row count beside an
-    // empty drawer, which still beats telling the org it has no events.
-    expect(list.data).toHaveLength(1);
-    expect(list.data[0].orgAttendeeCount).toBe(99);
-    expect(drawer.data).toEqual([]);
-
-    // And neither surface retried a spelling that reads the missing table. Each pointless retry
-    // costs a breaker failure, and concurrent drawer opens during such an outage would spend one
-    // per request — enough to open the breaker and take the platinum list down with it.
-    const queries = (execute.mock.calls as [string][]).map(([query]) => query);
-    // Qualified: a bare `EVENT_REGISTRATIONS` substring would also match column names, so the
-    // filter names the table it means.
-    const registrationAttempts = queries.filter((query) => query.includes('SILVER_FACT.EVENT_REGISTRATIONS'));
-    expect(queries).toHaveLength(3); // list scoped, list platinum, drawer scoped
-    expect(registrationAttempts).toHaveLength(2); // the two scoped attempts only — neither retried
+    expect(execute.mock.calls.length).toBeGreaterThan(fetchesAfterFirst);
   });
 
-  it('does not drop the company-email filter when the scoped query fails for another reason', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    addRegistration('someone@gmail.example', 'Someone Else');
+  it('shares one entry across ranges on the Upcoming tab, which ignores the range', async () => {
+    await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, range: '30d' }));
+    const fetchesAfterFirst = execute.mock.calls.length;
 
-    // A timeout, a transient fault, anything that is not "the table isn't there". Falling back here
-    // would quietly show personal-email registrants with the address table perfectly healthy — the
-    // one outcome this whole rule exists to prevent.
-    const realExecute = execute.getMockImplementation()!;
-    execute.mockImplementation(async (query: string, binds: string[], options?: unknown) => {
-      if (query.includes('company_email_coverage')) {
-        throw new Error('JavaScript execution error: Operation timed out');
-      }
-      return realExecute(query, binds, options);
-    });
+    await service.getOrgEvents(REQ, ACCOUNT, listOptions({ isPast: false, range: 'all' }));
 
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(list.data).toEqual([]);
-    expect(drawer.data).toEqual([]);
-  });
-
-  it('reports a missing core table normally rather than as an expected rollout', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    database.exec('DROP TABLE EVENT_REGISTRATIONS');
-
-    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-
-    // A missing EVENT_REGISTRATIONS sends the list straight to platinum, so this is the platinum
-    // query alone — not the unscoped retry, which never runs on this path. Flagging it would suppress
-    // the error telemetry for a genuinely broken warehouse and spend its breaker failure.
-    const platinumCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
-    expect(platinumCalls).toHaveLength(1);
-    expect(platinumCalls[0][2]).toBeUndefined();
-  });
-
-  it('keeps a missing address table out of the shared circuit breaker', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    // The scoped spelling is the one that may legitimately find no table, and the fallback is
-    // uncached — so every request would re-run it. Without this flag those failures reach
-    // recordFailure() on the POD-WIDE breaker, and enough concurrent loads would fail every
-    // Snowflake surface, blocking the very retry this path exists to perform. It names the table
-    // rather than passing `true`, so a missing CORE table in the same statement is NOT exempted.
-    const calls = execute.mock.calls as [string, string[], unknown?][];
-    const scopedCalls = calls.filter(([query]) => query.includes('company_email_coverage'));
-    expect(scopedCalls).toHaveLength(2);
-    for (const [, , options] of scopedCalls) {
-      expect(options).toEqual({ expectMissingObject: 'ORG_PEOPLE_COMPANY_EMAILS' });
-    }
-
-    // Nothing is dropped here, so the scoped spellings are the ONLY calls — asserting that the
-    // others carry no option would iterate an empty array and prove nothing. The test below drops
-    // the address table so the unscoped retries actually run, and pins their options there.
-    expect(calls).toHaveLength(2);
-  });
-
-  it('does not flag the unscoped retries that run when the address table is missing', async () => {
-    addEvent(EVENT, 99);
-    addRegistration('someone@gmail.example', 'Someone Else');
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-
-    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    // Both surfaces retry unscoped here, and both retries read core tables only. Flagging one would let
-    // a missing core table take the exempt branch, which books no failure at all — the gap that naming the
-    // object in `expectMissingObject` closes, pinned at `execute` level in `snowflake.service.spec.ts`.
-    const unscopedCalls = (execute.mock.calls as [string, string[], unknown?][]).filter(([query]) => !query.includes('company_email_coverage'));
-    expect(unscopedCalls).toHaveLength(2);
-    for (const [, , options] of unscopedCalls) {
-      expect(options).toBeUndefined();
-    }
-  });
-
-  it('keeps serving events when the address table is unavailable', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    addRegistration('someone@gmail.example', 'Someone Else');
-    // Ungranted, mid-deploy, renamed — from this query's side they are the same failure.
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    // An org with events must not render as an org with none. The fallback drops the company-email
-    // scoping and nothing else: the count is still recomputed at the drawer's grain, so the row and
-    // the drawer it opens agree (2 and 2) rather than the row showing the stale precomputed 99.
-    expect(list.data).toHaveLength(1);
-    expect(list.data[0].orgAttendeeCount).toBe(2);
-    expect(drawer.total).toBe(2);
-  });
-
-  it('caches zero-coverage results rather than querying live on every load', async () => {
-    addEvent(EVENT, 99);
-    addRegistration('someone@gmail.example', 'Someone Else');
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    expect(list.data[0].orgAttendeeCount).toBe(1);
-
-    // Refusing the write would make every load for such an org run the account-wide aggregate live —
-    // a permanent cost on exactly the orgs the fallback exists for, to avoid a staleness window that
-    // opens once, when coverage first lands, and closes within one TTL.
-    expect([...cacheValues.keys()].filter((key) => key.includes('events:v2'))).toHaveLength(1);
-
-    // The stored value is the answer itself, so the write was not merely attempted and discarded.
-    const [storedKey] = [...cacheValues.keys()].filter((key) => key.includes('events:v2'));
-    expect(JSON.parse(cacheValues.get(storedKey)!)).toHaveLength(1);
-  });
-
-  it('does not cache the unscoped fallback, for either surface', async () => {
-    addEvent(EVENT, 99);
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-
-    await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    // Asserted against the cache itself, not inferred from a later read: nothing was written, so a
-    // refactor that moved the fallback inside the cached fetcher fails here rather than silently
-    // serving unfiltered counts for the rest of the TTL.
-    expect([...cacheValues.keys()]).toEqual([]);
-
-    // Restored: the table was briefly unavailable, not gone. The scoped answer must come back on the
-    // next read for both surfaces.
-    database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
-    addCompanyEmail('grace@company.example');
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(list.data[0].orgAttendeeCount).toBe(0);
-    expect(drawer.total).toBe(0);
-    // And the scoped answers ARE cached, so the assertion above is about the fallback specifically.
-    expect(cacheValues.size).toBe(2);
-  });
-
-  it('does not count an address made only of whitespace as coverage', async () => {
-    addEvent(EVENT, 99);
-    // Non-breaking space alone: blank once trimmed, so it cannot match anything and must not switch
-    // the fallback off.
-    addCompanyEmail('\u00a0');
-    addRegistration('someone@gmail.example', 'Someone Else');
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, LIST_OPTIONS);
-
-    expect(list.data[0].orgAttendeeCount).toBe(1);
-  });
-
-  /**
-   * SQLite accepts a correlated `EXISTS` under `OR`; Snowflake does not —
-   * https://docs.snowflake.com/en/sql-reference/operators-subquery: "Correlated EXISTS subqueries
-   * cannot appear as an argument to an OR operator." Every behavioural test above passed against a
-   * build that could not compile on Snowflake at all, where both paths catch and degrade to empty
-   * results: a silently blank page on each cache miss, not an error. This asserts the dialect rule
-   * directly, since no fixture can.
-   *
-   * Both arms tolerate the operand being parenthesised (`OR (EXISTS (…))`), which is how the same
-   * mistake is most naturally rewritten. The left-arm pattern is bounded rather than exact; it can
-   * in principle flag an unrelated `OR` that trails a subquery closely enough. That direction is
-   * the right one to err in — a false positive is a failing test somebody reads, a false negative
-   * is the blank page again.
-   */
-  function findsSubqueryUnderOr(sql: string): boolean {
-    const normalized = sql.replace(/\s+/g, ' ');
-    return (
-      // `EXISTS` is prefix, so it sits flush against the OR (modulo parens and NOT).
-      /\bOR\s*\(?\s*(NOT\s+)?EXISTS\s*\(\s*SELECT\b/i.test(normalized) ||
-      // `IN` / `ANY` / `ALL` are infix: an operand stands between the OR and the keyword, and in this
-      // service that operand is usually a call — every address comparison here is wrapped in
-      // `LOWER(TRIM(...))`. The operand therefore has to admit nested parens, two deep, or the most
-      // likely next spelling of the mistake slips through. Requiring SELECT after the keyword's paren
-      // is what keeps a legal value list (`x IN (1, 2)`) from being flagged.
-      /\bOR\s*\(?\s*(?:[^()]|\((?:[^()]|\([^()]*\))*\)){0,80}?\b(NOT\s+)?(IN|ANY|ALL)\s*\(\s*SELECT\b/i.test(normalized) ||
-      // The same two shapes with the subquery as the LEFT operand.
-      /\b(EXISTS|IN|ANY|ALL)\s*\(\s*SELECT\b[\s\S]{0,400}?\)\s*\)?\s*OR\b/i.test(normalized)
-    );
-  }
-
-  it('detects a subquery on either side of an OR, however it is spelled', () => {
-    // The guard below is only as good as this matcher, so the matcher is itself pinned. The
-    // parenthesised spellings are the ones the first version of this test missed.
-    for (const bad of [
-      'WHERE a OR EXISTS (SELECT 1 FROM t)',
-      'WHERE a OR (EXISTS (SELECT 1 FROM t))',
-      'WHERE a OR NOT EXISTS (SELECT 1 FROM t)',
-      'WHERE a OR (NOT EXISTS (SELECT 1 FROM t))',
-      'WHERE a OR x IN (SELECT 1 FROM t)',
-      'WHERE a OR LOWER(x) IN (SELECT 1 FROM t)',
-      // Two levels deep: the shape this service would actually produce.
-      'WHERE a OR LOWER(TRIM(er.EMAIL)) IN (SELECT 1 FROM t)',
-      'WHERE EXISTS (SELECT 1 FROM t) OR a',
-      'WHERE (EXISTS (SELECT 1 FROM t)) OR a',
-    ]) {
-      expect(findsSubqueryUnderOr(bad), bad).toBe(true);
-    }
-
-    for (const good of [
-      'WHERE a OR b',
-      'WHERE EXISTS (SELECT 1 FROM t) AND a',
-      'WHERE ce.EMAIL IS NOT NULL OR cov.COVERAGE_ROWS = 0',
-      'WHERE (UPPER(x) LIKE UPPER(?) OR UPPER(y) LIKE UPPER(?))',
-      // A value list is not a subquery and carries no such restriction, however it is spelled.
-      'WHERE a OR x IN (1, 2, 3)',
-      'WHERE a OR LOWER(TRIM(er.EMAIL)) IN (1, 2, 3)',
-    ]) {
-      expect(findsSubqueryUnderOr(good), good).toBe(false);
-    }
-  });
-
-  it('builds no query that puts a subquery on either side of an OR', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    // The search filter adds the only other `OR` these queries carry, so it is exercised here too.
-    await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, searchQuery: 'kube' });
-    await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada');
-
-    const queries = execute.mock.calls.map(([query]) => query as string);
-    expect(queries.length).toBeGreaterThan(0);
-    for (const query of queries) {
-      expect(findsSubqueryUnderOr(query), query).toBe(false);
-    }
-  });
-
-  it('passes one bind per placeholder in every query it builds', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-
-    await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, searchQuery: 'kube' });
-    await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada');
-
-    for (const [query, binds] of execute.mock.calls as [string, string[]][]) {
-      expect(binds).toHaveLength((query.match(/\?/g) ?? []).length);
-    }
-  });
-
-  it('keeps an event in status=registered when at least one registrant used a company address', async () => {
-    addEvent(EVENT, 99);
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    addRegistration('someone@gmail.example', 'Someone Else');
-
-    const list = await service.getOrgEvents(REQ, ACCOUNT, { ...LIST_OPTIONS, status: 'registered' });
-
-    expect(list.data).toHaveLength(1);
-    expect(list.data[0].orgAttendeeCount).toBe(1);
+    expect(execute.mock.calls).toHaveLength(fetchesAfterFirst);
   });
 });
 
-/**
- * The drawer must never hand the client a registration address — not as `contactId`, which used to
- * BE the normalized address, and not as `name`, which used to fall back to it for a registrant with
- * no resolved profile and no `FULL_NAME`. The second one was rendered, so it was a visible leak.
- *
- * Asserted on all three tiers, because the two degraded ones are where it mattered most: scoped
- * rows are company addresses by construction, while the zero-coverage and unscoped tiers return
- * every registration attributed to the account, personal addresses included.
- */
-describe('OrgLensEventsService attendee address redaction', () => {
-  /** A registrant the old `COALESCE(..., er.EMAIL)` would have displayed by their personal address. */
-  const addNamelessPersonalRegistrant = (): void => addRegistration('nameless@gmail.example', null as unknown as string);
+describe('OrgLensEventsService outage', () => {
+  it('returns an empty list when the read fails', async () => {
+    execute.mockRejectedValue(new Error('warehouse down'));
 
-  const expectNoAddress = (attendees: readonly { contactId: string; name: string }[]): void => {
-    expect(attendees.length).toBeGreaterThan(0);
-    for (const attendee of attendees) {
-      expect(attendee.contactId).not.toContain('@');
-      expect(attendee.name).not.toContain('@');
-    }
-  };
+    const list = await service.getOrgEvents(REQ, 'acct-failing', listOptions());
 
-  it('returns no address on the scoped tier', async () => {
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.total).toBe(1);
-    expectNoAddress(drawer.data);
-  });
-
-  it('returns no address on the zero-coverage tier', async () => {
-    // No ORG_PEOPLE_COMPANY_EMAILS rows for the account: every registrant falls through unfiltered.
-    addNamelessPersonalRegistrant();
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.total).toBe(1);
-    expectNoAddress(drawer.data);
-  });
-
-  it('returns no address on the unscoped tier', async () => {
-    addNamelessPersonalRegistrant();
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.total).toBe(1);
-    expectNoAddress(drawer.data);
-  });
-
-  it('labels a registrant who resolves to no name, rather than falling back to their address', async () => {
-    addNamelessPersonalRegistrant();
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.data[0].name).toBe('Registered attendee');
-  });
-
-  it('still prefers a real name when there is one', async () => {
-    addCompanyEmail('ada@company.example');
-    addProfile('ada@company.example', 'Ada Lovelace', 'Principal Engineer');
-    addRegistration('ada@company.example', 'Ada L');
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.data[0].name).toBe('Ada Lovelace');
-  });
-
-  it('gives each attendee in a response a distinct contactId', async () => {
-    addCompanyEmail('ada@company.example');
-    addCompanyEmail('grace@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-    addRegistration('grace@company.example', 'Grace Hopper');
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.data).toHaveLength(2);
-    expect(new Set(drawer.data.map((attendee) => attendee.contactId)).size).toBe(2);
-  });
-
-  it('treats an address typed into the name field as no name at all', async () => {
-    // `FULL_NAME` is free text off a registration form, so it can hold the very address the
-    // projection above is removing. Without the guard it is rendered as the attendee's name.
-    addRegistration('nameless@gmail.example', 'nameless@gmail.example');
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.data[0].name).toBe('Registered attendee');
-    expectNoAddress(drawer.data);
-  });
-
-  it('treats an address on the roster profile as no name either', async () => {
-    addCompanyEmail('ada@company.example');
-    // The profile wins the coalesce, so guarding only the registration side would miss this.
-    addProfile('ada@company.example', 'ada@company.example', 'Principal Engineer');
-    addRegistration('ada@company.example', null as unknown as string);
-
-    const drawer = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(drawer.data[0].name).toBe('Registered attendee');
-    expectNoAddress(drawer.data);
-  });
-
-  it('does not let the search term match an address held in a name field', async () => {
-    addRegistration('nameless@gmail.example', 'nameless@gmail.example');
-
-    const hit = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'nameless@gmail.example');
-
-    expect(hit.total).toBe(0);
-  });
-
-  it('does not let the search term match an address held on the roster profile', async () => {
-    // The profile side of the same guard. The projection test above never searches this row, so
-    // without this the `p.NAME` half of the search clause could be dropped and the suite would pass
-    // while the address-search oracle stayed open for roster names.
-    addCompanyEmail('ada@company.example');
-    addProfile('ada@company.example', 'ada@company.example', 'Principal Engineer');
-    addRegistration('ada@company.example', null as unknown as string);
-
-    const byAddress = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada@company.example');
-    const unsearched = await service.getEventAttendees(REQ, ACCOUNT, EVENT);
-
-    expect(byAddress.total).toBe(0);
-    // The row is there — so the miss above is the guard rejecting the term, not an empty result set.
-    expect(unsearched.total).toBe(1);
-    expect(unsearched.data[0].name).toBe('Registered attendee');
-  });
-
-  it('does not let the search term test whether an address registered', async () => {
-    addCompanyEmail('ada@company.example');
-    addRegistration('ada@company.example', 'Ada Lovelace');
-
-    // The address is in the row, and was matchable before this change. Searching it must now miss.
-    const byAddress = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'ada@company.example');
-    // The name still matches, so the miss above is the narrowed clause and not a broken query.
-    const byName = await service.getEventAttendees(REQ, ACCOUNT, EVENT, 'Lovelace');
-
-    expect(byAddress.total).toBe(0);
-    expect(byName.total).toBe(1);
+    expect(list).toEqual({ data: [], total: 0, pageSize: 25, offset: 0 });
   });
 });

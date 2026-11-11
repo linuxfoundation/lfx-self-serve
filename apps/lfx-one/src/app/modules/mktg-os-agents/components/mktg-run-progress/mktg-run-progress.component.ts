@@ -11,6 +11,7 @@ import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
   MKTG_DOCUMENT_PROGRESS_POLL,
+  VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
   MKTG_REVISION_ID_REGEX,
@@ -233,7 +234,6 @@ export class MktgRunProgressComponent {
       runId: this.runPage() ? this.runId() : '',
       subject: this.user.user()?.sub ?? '',
       polling: this.polling(),
-      loadRevision: this.loadRevision(),
       revisionId: this.revisionId(),
       continuous: this.continuous(),
       refresh: this.refreshKey(),
@@ -350,6 +350,8 @@ export class MktgRunProgressComponent {
             this.warning.set('Could not fully refresh. Showing the last loaded asset; retrying.');
           };
           const read = (poll: boolean) => {
+            // Switching body/metadata mode is not a new identity or an immediate extra read.
+            const loadRevision = this.loadRevision();
             // Stamp each actual read before exposing creator-only activity, not the long-lived scope.
             const readerSubject = this.user.user()?.sub ?? '';
             // A document handoff updates the selector without replacing its accepted observer.
@@ -385,7 +387,7 @@ export class MktgRunProgressComponent {
               })
             );
             const cycle$ =
-              request.loadRevision && request.revisionId && !this.runId() && !this.expectedPending()
+              loadRevision && request.revisionId && !this.runId() && !this.expectedPending()
                 ? this.store
                     .getRevision(request.project, request.agentKey, request.documentId, request.revisionId, poll)
                     .pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
@@ -405,7 +407,7 @@ export class MktgRunProgressComponent {
                         detail.current?.revisionId ||
                         detail.revisions.find((revision) => revision.latest)?.id ||
                         detail.revisions[0]?.id;
-                      if (!request.loadRevision || !revisionId) return of<MktgDocumentReadCycle>({ detail, view: null });
+                      if (!loadRevision || !revisionId) return of<MktgDocumentReadCycle>({ detail, view: null });
                       return this.store
                         .getRevision(request.project, request.agentKey, request.documentId, revisionId, true)
                         .pipe(map((view): MktgDocumentReadCycle => ({ detail, view })));
@@ -508,6 +510,7 @@ export class MktgRunProgressComponent {
             backoffBaseMs: MKTG_RUN_POLL.intervalMs,
             backoffMaxMs: MKTG_DOCUMENT_PROGRESS_POLL.maxBackoffMs,
             shouldContinue: () => false,
+            wakeDebounceMs: request.continuous ? VISIBILITY_POLL_WAKE_DEBOUNCE_MS : 0,
           });
         }),
         takeUntilDestroyed()

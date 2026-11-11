@@ -34,7 +34,7 @@ interface Harness {
   hasOrgSelectorAccess: WritableSignal<boolean>;
   /** Organizations `OrgClaOnlyAccessService.isClaOnly` answers true for. */
   claOnlyUids: WritableSignal<Set<string>>;
-  /** `OrgClaOnlyAccessService.lookupFailed` — the flag-gated CLA-manager scopes outage. */
+  /** `OrgClaOnlyAccessService.lookupFailed` — the CLA-manager scopes outage. */
   claLookupFailed: WritableSignal<boolean>;
   /** #4225 — the server established the caller works for an LF member org and holds no grant on it. */
   affiliatedToMember: WritableSignal<boolean>;

@@ -86,9 +86,9 @@ export class OrgRoleGrantsService {
   public readonly staffCheck: Signal<OrgLensStaffCheck> = this.staffCheckInternal.asReadonly();
   /** Spec 053 — support reference for the staff-check-failed state; null otherwise. */
   public readonly correlationId: Signal<string | null> = this.correlationIdInternal.asReadonly();
-  /** M3 — raw, flag-blind. Read it through `OrgClaOnlyAccessService`, which applies `org-lens-cla-m3-enabled`. */
+  /** M3 — read it through `OrgClaOnlyAccessService`. */
   public readonly claManagerOrgSet: Signal<Set<string>> = this.claManagerOrgSetInternal.asReadonly();
-  /** M3 — raw, flag-blind: the server could not read the caller's `cla-manager` scopes, so an empty `claManagerOrgSet` is unknown. */
+  /** M3 — the server could not read the caller's `cla-manager` scopes, so an empty `claManagerOrgSet` is unknown. */
   public readonly claManagerLookupFailed: Signal<boolean> = this.claManagerLookupFailedInternal.asReadonly();
   /**
    * #4225 — the caller works for an organization that IS an LF member, and holds no grant on it.

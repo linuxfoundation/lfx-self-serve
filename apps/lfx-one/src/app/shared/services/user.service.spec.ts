@@ -6,7 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { EnrichedIdentity, Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { defer, of, Subject, throwError } from 'rxjs';
+import { defer, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
@@ -260,7 +260,7 @@ describe('UserService', () => {
   it("never replays the previous viewer's past feeds before the identity effect runs", async () => {
     const feeds = [
       () => service.getUserPastMeetings(),
-      () => service.getUserPastMeetings({ includeArtifacts: true }),
+      () => service.getUserPastMeetings({ includeArtifactsAndAttendance: true }),
       () => service.getUserLatestPastMeetings(),
     ];
     httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-a-meeting' }] : { profile: {} }));
@@ -336,20 +336,36 @@ describe('UserService', () => {
       expect(rows).toEqual([{ id: 'synthetic-past-meeting' }]);
     });
 
-    it('getUserPastMeetings caches the artifacts feed apart from the plain feed', () => {
+    it('getUserMeetings caches the attendance feed apart from the plain feed', () => {
+      httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
+        url === '/api/user/meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as Meeting]) : of({ profile: {} })
+      );
+
+      let plain: string[] = [];
+      let withAttendance: string[] = [];
+      service.getUserMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
+      service.getUserMeetings({ includeAttendance: true }).subscribe((meetings) => (withAttendance = meetings.map((meeting) => meeting.id)));
+
+      expect(plain).toEqual(['plain']);
+      expect(withAttendance).toEqual(['attendance']);
+      expect(service.getUserMeetings({ includeAttendance: true })).toBe(service.getUserMeetings({ includeAttendance: true }));
+      expect(service.getUserMeetings()).not.toBe(service.getUserMeetings({ includeAttendance: true }));
+    });
+
+    it('getUserPastMeetings caches the artifacts and attendance feed apart from the plain feed', () => {
       httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
         url === '/api/user/past-meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as PastMeeting]) : of({ profile: {} })
       );
 
       let plain: string[] = [];
-      let withArtifacts: string[] = [];
+      let withDetails: string[] = [];
       service.getUserPastMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
-      service.getUserPastMeetings({ includeArtifacts: true }).subscribe((meetings) => (withArtifacts = meetings.map((meeting) => meeting.id)));
+      service.getUserPastMeetings({ includeArtifactsAndAttendance: true }).subscribe((meetings) => (withDetails = meetings.map((meeting) => meeting.id)));
 
       expect(plain).toEqual(['plain']);
-      expect(withArtifacts).toEqual(['artifacts']);
-      expect(service.getUserPastMeetings({ includeArtifacts: true })).toBe(service.getUserPastMeetings({ includeArtifacts: true }));
-      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifacts: true }));
+      expect(withDetails).toEqual(['artifacts,attendance']);
+      expect(service.getUserPastMeetings({ includeArtifactsAndAttendance: true })).toBe(service.getUserPastMeetings({ includeArtifactsAndAttendance: true }));
+      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifactsAndAttendance: true }));
     });
 
     it('getUserLatestPastMeetings does not cache a failed request', () => {
@@ -1011,6 +1027,79 @@ describe('UserService', () => {
       service.impersonator.set(null);
 
       expect(service.meetingJoinIdentity()).toBeNull();
+    });
+  });
+
+  describe('getCurrentEmployerName (#5251)', () => {
+    const lookup = (): { name: string | null; messages: ReturnType<typeof vi.fn> } => {
+      const result = { name: 'unset' as string | null, messages: vi.mocked(TestBed.inject(MessageService).add) };
+      service.getCurrentEmployerName().subscribe((value) => (result.name = value));
+      return result;
+    };
+
+    it('reads the work experiences from the profile endpoint', () => {
+      httpGet.mockReturnValue(of([]));
+
+      lookup();
+
+      expect(httpGet).toHaveBeenCalledWith('/api/profile/work-experiences');
+    });
+
+    it('returns the name of the current employer', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Old Co', organizationId: null, startDate: 'Jan 2015', endDate: 'Dec 2019' },
+          { organization: 'Acme Motors', organizationId: 'org-1', startDate: 'Jan 2020', endDate: null },
+        ])
+      );
+
+      expect(lookup().name).toBe('Acme Motors');
+    });
+
+    it('returns null for an empty history', () => {
+      httpGet.mockReturnValue(of([]));
+
+      expect(lookup().name).toBeNull();
+    });
+
+    it('returns null when every job has ended, rather than a company the user has left', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Old Co', organizationId: null, startDate: 'Jan 2015', endDate: 'Dec 2019' },
+          { organization: 'Older Co', organizationId: null, startDate: 'Jan 2010', endDate: 'Dec 2014' },
+        ])
+      );
+
+      expect(lookup().name).toBeNull();
+    });
+
+    it('returns null without raising a toast, and logs, when the request fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      httpGet.mockReturnValue(throwError(() => new Error('boom')));
+
+      const { name, messages } = lookup();
+
+      expect(name).toBeNull();
+      expect(messages).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it('returns null without raising a toast when the request does not answer within two seconds', () => {
+      vi.useFakeTimers();
+      try {
+        httpGet.mockReturnValue(NEVER);
+
+        const result = lookup();
+        expect(result.name).toBe('unset');
+
+        vi.advanceTimersByTime(2000);
+
+        expect(result.name).toBeNull();
+        expect(result.messages).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

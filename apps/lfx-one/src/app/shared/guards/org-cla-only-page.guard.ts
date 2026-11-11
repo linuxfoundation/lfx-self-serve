@@ -2,14 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { computed, inject, Injector, PLATFORM_ID } from '@angular/core';
+import { inject, Injector, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRouteSnapshot, CanActivateChildFn, NavigationStart, Router, UrlTree } from '@angular/router';
-import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_CLA_ONLY_GRANTS_WAIT_MS, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { filter, firstValueFrom, of, ReplaySubject, take, takeUntil, timeout } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
-import { FeatureFlagService } from '../services/feature-flag.service';
 import { OrgClaOnlyAccessService } from '../services/org-cla-only-access.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 
@@ -22,7 +21,7 @@ const CLA_PAGE = 'easycla';
  * every non-CLA page for this caller regardless.
  */
 export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
-  // Grants and LaunchDarkly are browser-only, so the browser run decides.
+  // Grants are browser-only, so the browser run decides.
   if (!isPlatformBrowser(inject(PLATFORM_ID))) {
     return true;
   }
@@ -33,7 +32,6 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
   }
 
   // Everything is injected before the first await: the injection context does not survive it.
-  const featureFlagService = inject(FeatureFlagService);
   const claOnlyAccess = inject(OrgClaOnlyAccessService);
   const router = inject(Router);
   const accountContext = inject(AccountContextService);
@@ -57,14 +55,11 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
     .subscribe(() => superseded.next());
 
   // A dependency that never answers must not hold the navigation: past its wait the page is admitted,
-  // and the redirect still happens if LaunchDarkly and the role grants answer before the next navigation
-  // starts. The router URL is not consulted: it may still name the previous page while this navigation
-  // is in flight. The page's data is refused server-side either way.
+  // and the redirect still happens if the role grants answer before the next navigation starts. The
+  // router URL is not consulted: it may still name the previous page while this navigation is in
+  // flight. The page's data is refused server-side either way.
   const admitAndRedirectLate = (): true => {
-    toObservable(
-      computed(() => featureFlagService.providerReady() && roleGrants.loaded()),
-      { injector }
-    )
+    toObservable(roleGrants.loaded, { injector })
       .pipe(filter(Boolean), take(1), takeUntil(superseded))
       .subscribe(() => {
         const target = claPage();
@@ -74,18 +69,6 @@ export const orgClaOnlyPageGuard: CanActivateChildFn = async (childRoute: Activa
       });
     return true;
   };
-
-  // On a cold deep link the flag still reads its `false` default until LaunchDarkly is ready, which
-  // would admit the page. A locally pinned value (non-production only) needs no provider.
-  if (featureFlagService.getFlagOverride(ORG_LENS_CLA_M3_ENABLED_FLAG) === undefined && !featureFlagService.providerReady()) {
-    const ready = await featureFlagService.waitForReady({ guard: 'orgClaOnlyPageGuard', flag: ORG_LENS_CLA_M3_ENABLED_FLAG });
-    if (!ready) {
-      return admitAndRedirectLate();
-    }
-  }
-  if (!claOnlyAccess.enabled()) {
-    return true;
-  }
 
   if (!roleGrants.loaded()) {
     const loaded = await firstValueFrom(

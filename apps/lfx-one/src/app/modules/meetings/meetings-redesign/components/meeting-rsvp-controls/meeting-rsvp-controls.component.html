@@ -3,19 +3,21 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 @if (visible()) {
-  <span class="inline-flex flex-none items-center gap-[6px]" [attr.aria-busy]="!!saving() || null" data-testid="meetings-home-rsvp">
+  <span [class]="layoutClass()" [attr.aria-busy]="!!saving() || null" data-testid="meetings-home-rsvp">
     @if (current(); as answer) {
       <!-- lfx-ui-badge has no trigger mode, so a plain button opens the menu through the CDK trigger, as lfx-ui-button does. -->
       <button
         #statusTrigger
         type="button"
         class="inline-flex rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:cursor-wait"
+        [class.w-full]="fullWidth()"
         [cdkMenuTriggerFor]="busy() ? null : rsvpMenu"
+        [cdkMenuPosition]="menuPositions()"
         [disabled]="busy()"
         [attr.aria-label]="'Your RSVP: ' + answer.label + '. Change'"
         data-testid="meetings-home-rsvp-status">
-        <!-- 112px wide per the design, so the chip keeps its size across answers; chevron at the right edge. -->
-        <lfx-ui-badge class="w-[112px]" [tone]="answer.tone">
+        <!-- Chevron at the right edge. -->
+        <lfx-ui-badge [class]="badgeClass()" [tone]="answer.tone">
           @if (saving()) {
             <lfx-ui-spinner tone="current" [size]="12" label="Saving RSVP" />
           } @else {
@@ -25,15 +27,13 @@
           <i class="fa-light fa-chevron-down ml-auto opacity-70" aria-hidden="true"></i>
         </lfx-ui-badge>
       </button>
-      @if (scopeLabel(); as scope) {
-        <span class="whitespace-nowrap text-[12px] text-gray-500" data-testid="meetings-home-rsvp-scope">{{ scope }}</span>
-      }
     } @else {
       @for (choice of choices; track choice.response) {
         <lfx-ui-button
           variant="secondary"
           [size]="size()"
-          [icon]="choice.icon + ' ' + iconColor[choice.response]"
+          [fullWidth]="fullWidth()"
+          [icon]="choice.buttonIcon + ' ' + iconColor[choice.response]"
           [ariaLabel]="'RSVP ' + choice.action + ' to ' + row().title"
           [loading]="saving() === choice.response"
           [disabled]="busy() && saving() !== choice.response"

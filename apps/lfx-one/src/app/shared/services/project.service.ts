@@ -4,8 +4,15 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { WRITER_SUMMARY_TIMEOUT_MS } from '@lfx-one/shared/constants';
-import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, timeout } from 'rxjs';
+import {
+  CreateProjectDocumentRequest,
+  PendingActionItem,
+  Project,
+  ProjectDocument,
+  UpdateFormationRecordRequest,
+  WriterSummary,
+} from '@lfx-one/shared/interfaces';
+import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, throwError, timeout } from 'rxjs';
 
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -21,6 +28,31 @@ export class ProjectService {
   private readonly strictProjectCache = new Map<string, Observable<Project>>();
   private readonly projectsCache = new Map<string, Observable<Project[]>>();
   private slugsCache$: Observable<string[] | null> | null = null;
+
+  /**
+   * Uncached read of a project's current record for the formation edit drawer (#5134) — it must
+   * show what is stored now, not a session-pinned copy, and errors surface to the caller.
+   */
+  public getProjectRecord(uid: string): Observable<Project> {
+    return this.http.get<Project>(`/api/projects/${encodeURIComponent(uid)}`).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch project record:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Changes a project's stage / legal-entity fields (#5134). Only the keys in `request` change
+   * upstream. Drops this service's cached copies of the project so the next read reflects the write.
+   */
+  public updateFormationRecord(uid: string, request: UpdateFormationRecordRequest): Observable<Project> {
+    return this.http.put<Project>(`/api/projects/${encodeURIComponent(uid)}/formation-record`, request).pipe(
+      tap(() => {
+        this.evictProjectCaches();
+      })
+    );
+  }
 
   public getProjects(params?: HttpParams): Observable<Project[]> {
     const cacheKey = params?.toString() || '';
@@ -336,5 +368,12 @@ export class ProjectService {
   /** Cache-key suffix for the role-check variants — a role-scoped entry never collides with the plain one. */
   private roleCheckCacheSuffix(options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): string {
     return `${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}${options?.strictWriter ? ':writer-strict' : ''}`;
+  }
+
+  // A formation-record write changes the project's stage, which role-check and slug lookups pin per session — drop them all.
+  private evictProjectCaches(): void {
+    this.projectCache.clear();
+    this.strictProjectCache.clear();
+    this.projectsCache.clear();
   }
 }

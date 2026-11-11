@@ -270,6 +270,7 @@ export async function mockFormationChecklistApis(
           items: [],
           can_write: opts.canWrite ?? true,
           can_set_status: true,
+          can_edit_record: true,
         }),
       })
     );

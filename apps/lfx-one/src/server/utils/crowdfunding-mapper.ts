@@ -94,6 +94,7 @@ export function mapToInitiativeBase(b: BackendInitiative): InitiativeBase {
       : undefined,
     initiativeStats: b.financials ? { supporters: b.financials.supporters } : undefined,
     attribution: mapAttribution(b.attribution),
+    creator: b.creator || undefined,
   };
 }
 
@@ -157,8 +158,10 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
     donorName: b.donor_name,
     donorType: b.donor_type,
     donorLogoUrl: b.donor_logo_url,
-    donorUsername: b.donor_username,
+    // CF already blanks this on anonymous rows; dropping it here too keeps the donor's LFID out of the response if it ever doesn't.
+    donorUsername: b.anonymous === true ? undefined : b.donor_username,
     initiativeId: b.initiative_id,
+    anonymous: b.anonymous === true,
   };
 }
 
@@ -184,18 +187,25 @@ export function mapMyTransactionToMyDonation(t: BackendMyTransaction): MyDonatio
     date: new Date(t.date).getTime(),
     initiativeName: t.initiative_name || undefined,
     recurring: t.recurring,
+    anonymous: t.anonymous === true,
+    donationId: t.donation_id || undefined,
+    subscriptionId: t.subscription_id || undefined,
   };
 }
 
 /** Maps a CF Org lens donation row (from GET /crowdfunding/organizations/{uid}/donations) to the OrgDonation wire shape. */
 export function mapOrgDonation(d: BackendOrgDonation): OrgDonation {
+  // CF already masks anonymous rows; masking here too keeps the donor's identity out of org viewers' browsers if it ever doesn't.
+  const anonymous = d.anonymous === true;
   return {
     id: d.id,
     recurring: d.type === 'recurring',
     initiativeId: d.initiative_id || undefined,
     initiativeName: d.initiative_name || undefined,
-    donorName: d.donor_name,
-    donorEmail: d.donor_email,
+    initiativeSlug: d.initiative_slug || undefined,
+    donorName: anonymous ? 'Anonymous' : d.donor_name,
+    donorEmail: anonymous ? '' : (d.donor_email ?? ''),
+    anonymous,
     amountCents: d.amount_cents,
     date: new Date(d.created_on).getTime(),
   };
@@ -237,5 +247,6 @@ export function mapSubscriptionToRecurringDonation(s: BackendSubscription): Recu
     description: s.initiative_description,
     tags: s.initiative_tags,
     initiativeUrl: s.initiative_url,
+    anonymous: s.anonymous === true,
   };
 }
