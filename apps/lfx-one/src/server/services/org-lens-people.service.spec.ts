@@ -574,6 +574,60 @@ describe('OrgLensPeopleService username company emails', () => {
     });
   });
 
+  it("answers a client-supplied username the org's live directory does not list as unconfirmed, without reading its LF account", async () => {
+    addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'Outsider')).toEqual(UNCONFIRMED);
+    expect((execute.mock.calls as [string][]).some(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'))).toBe(false);
+    expect(getLive.mock.calls.map(([, , range, filters, teamMembers]) => [range, (filters as OrgCommitFilters).projectScope, teamMembers])).toEqual([
+      ['30d', 'lf', 'include'],
+    ]);
+  });
+
+  it("resolves a client-supplied username once the org's live directory lists it", async () => {
+    addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: 'live-committee-outsider', lfUsername: ' Outsider ' }] });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'outsider')).toEqual({
+      companyEmails: ['outsider@company.example'],
+      primaryEmail: 'outsider@company.example',
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it('checks the directory before the cache, so a cached LF-account answer never reaches an unproven caller', async () => {
+    addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: 'live-committee-outsider', lfUsername: 'outsider' }] });
+    expect((await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'outsider')).companyEmailsStatus).toBe('resolved');
+
+    getLive.mockResolvedValue({ rows: [] });
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'outsider')).toEqual(UNCONFIRMED);
+  });
+
+  it('reads the directory only once for a live-only key and never for a key-contact username, both derived server-side', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+
+    expect((await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).companyEmails).toEqual(['first@company.example']);
+    expect(getLive).toHaveBeenCalledTimes(1);
+
+    getLive.mockClear();
+    getLive.mockResolvedValue({ rows: [] });
+    const viaKeyContacts = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ['a0F000000000001AAA'], 'mixeduser', new Set(), false);
+    expect(viaKeyContacts.companyEmails).toEqual(['first@company.example']);
+    expect(getLive).not.toHaveBeenCalled();
+  });
+
+  it('reads the LF-account views as an expected-missing object, so a pre-deploy view cannot trip the circuit breaker', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+
+    await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser');
+    await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['mixeduser', 'other']);
+
+    const reads = (execute.mock.calls as [string, unknown[], unknown][]).filter(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'));
+    expect(reads).toHaveLength(2);
+    expect(reads.every(([, , options]) => (options as { expectMissingObject?: unknown })?.expectMissingObject === true)).toBe(true);
+  });
+
   it('reports warehouse failures without claiming there are no addresses', async () => {
     execute.mockRejectedValue(new Error('warehouse unavailable'));
 
@@ -1056,6 +1110,10 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addLfUser('lf-none', 'noneuser', { 'other-account': ['elsewhere@other.example'] });
       addLfUser('lf-twice-a', 'twice', { [ACCOUNT]: ['a@company.example'] });
       addLfUser('lf-twice-b', 'twice');
+      // Live-only rows of the org's directory, as the filter's usernames are.
+      getLive.mockResolvedValue({
+        rows: ['hasuser', 'noneuser', 'unknown', 'twice'].map((lfUsername) => ({ personKey: `live-access-${lfUsername}`, lfUsername })),
+      });
 
       const statuses = await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['noneuser', 'hasuser', 'unknown', 'twice', 'hasuser']);
 
@@ -1228,6 +1286,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addExtendedEmail(ACCOUNT, { personKey: formerKey, email: 'left@company.example', source: 'lf_account', username: 'LeftUser', isPrimary: true });
       // Off the roster, the username reads the former employee's LF account, which holds the same qualifying address.
       addLfUser(formerKey, 'leftuser', { [ACCOUNT]: ['left@company.example'] });
+      // Still holding a seat, so the org's live directory lists the username.
+      getLive.mockResolvedValue({ rows: [{ personKey: 'live-board-leftuser', lfUsername: 'LeftUser' }] });
       const resolved = { companyEmails: ['left@company.example'], primaryEmail: 'left@company.example', companyEmailsStatus: 'resolved' };
 
       expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(resolved);

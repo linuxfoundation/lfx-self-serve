@@ -142,7 +142,8 @@ export function withCompanyEmailStatus(
 
 /**
  * The normalized LF usernames of the live-only rows the company-email keys answer neither way: people off the warehouse
- * roster, whom the drawer reads by their LF account. Only these are read for the filter, so it stays bounded to the page.
+ * roster, whom the drawer reads by their LF account. Only these are read for the filter, so the read is bounded to the
+ * uncovered live-only usernames in this roster response.
  */
 export function uncoveredLiveUsernames(response: OrgAllEmployeesResponse, keys: OrgCompanyEmailKeys): string[] {
   const covered = new Set([...keys.usernames, ...keys.noneUsernames]);

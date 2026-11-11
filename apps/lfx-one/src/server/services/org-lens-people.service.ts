@@ -27,6 +27,7 @@ import type {
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
+  OrgAllEmployeeRow,
   OrgAllEmployeeRowInternal,
   OrgAllEmployeeTraining,
   OrgAllEmployeeTrainingStatus,
@@ -416,7 +417,8 @@ export class OrgLensPeopleService {
   ): Promise<OrgPersonCompanyEmailsResponse> {
     if (personKey.startsWith('live-')) {
       const username = await this.resolveLiveOnlyUsername(req, accountId, personKey, directoryView);
-      return username ? this.getCompanyEmailsByUsername(req, accountId, username) : UNCONFIRMED_COMPANY_EMAILS;
+      // The username came from the org's own live directory, so the person is already proven to be in this org.
+      return username ? this.getCompanyEmailsByUsername(req, accountId, username, { subjectInOrg: true }) : UNCONFIRMED_COMPANY_EMAILS;
     }
     return this.getCompanyEmailsForPersonKey(req, accountId, personKey);
   }
@@ -430,8 +432,19 @@ export class OrgLensPeopleService {
    * the roster's engagement gate excludes (most key contacts) and people off the roster altogether: that account's
    * qualifying addresses at this organization, `resolved` and empty when it holds none. Only a username the warehouse
    * does not know, or one naming more than one account, is `unavailable` (`unconfirmed`). Failures are never cached.
+   *
+   * The LF-account read answers any LF user, so it runs only for a person proven to be in this org: `subjectInOrg` from
+   * callers that derived the username server-side from the org's own data (the live directory, the org's key-contact
+   * assignments); otherwise (a client-supplied username) a row of the org's live directory must carry the username, read
+   * as {@link resolveLiveOnlyUsername} reads it, before the cache. An unproven username answers `unconfirmed`, exactly
+   * as an unknown one does, so the read cannot be used to test whether an LF account exists.
    */
-  public async getCompanyEmailsByUsername(req: Request, accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
+  public async getCompanyEmailsByUsername(
+    req: Request,
+    accountId: string,
+    username: string,
+    options: { subjectInOrg?: boolean } = {}
+  ): Promise<OrgPersonCompanyEmailsResponse> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return UNCONFIRMED_COMPANY_EMAILS;
@@ -440,6 +453,12 @@ export class OrgLensPeopleService {
       const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
       if (personKey) {
         return await this.getCompanyEmailsForPersonKey(req, accountId, personKey);
+      }
+      if (!options.subjectInOrg) {
+        const listed = await this.findLiveDirectoryRow(req, accountId, null, (row) => row.lfUsername?.trim().toLowerCase() === normalizedUsername);
+        if (!listed) {
+          return UNCONFIRMED_COMPANY_EMAILS;
+        }
       }
       // `v3`: reads the username's LF account (any LF user), so a known account without an address is "none on file".
       return await withOrgCache(
@@ -514,7 +533,8 @@ export class OrgLensPeopleService {
   ): Promise<OrgPersonCompanyEmailsResponse> {
     const [records, byUsername] = await Promise.all([
       this.readKeyContactRecordEmails(req, accountId, keyContactIds),
-      username ? this.getCompanyEmailsByUsername(req, accountId, username) : null,
+      // Derived from the org's own key-contact assignments, so the person is already proven to be in this org.
+      username ? this.getCompanyEmailsByUsername(req, accountId, username, { subjectInOrg: true }) : null,
     ]);
     const currentRecordRows = responseRows(records).filter((row) => !!row.EMAIL && currentEmails.has(row.EMAIL.trim().toLowerCase()));
     const merged = toCompanyEmails([...responseRows(byUsername), ...currentRecordRows]);
@@ -664,13 +684,27 @@ export class OrgLensPeopleService {
     if (!personKey.startsWith('live-')) {
       return null;
     }
+    const row = await this.findLiveDirectoryRow(req, accountId, directoryView, (candidate) => candidate.personKey === personKey && !!candidate.lfUsername);
+    return row?.lfUsername ?? null;
+  }
+
+  /**
+   * The first row matching `matches` in the org's live directory: the view the drawer was opened from when given, then
+   * the `30d`/`lf` view, which lists every live-only person (see {@link resolveLiveOnlyUsername}). Everyone, team members
+   * included: this resolves a person already opened, whichever Team members pick listed them.
+   */
+  private async findLiveDirectoryRow(
+    req: Request,
+    accountId: string,
+    directoryView: OrgPeopleDirectoryView | null,
+    matches: (row: OrgAllEmployeeRow) => boolean
+  ): Promise<OrgAllEmployeeRow | null> {
     const views: OrgPeopleDirectoryView[] = [...(directoryView ? [directoryView] : []), { range: '30d', projectScope: 'lf' }];
     for (const { range, projectScope } of views) {
-      // Everyone, team members included: this resolves a person already opened, whichever Team members pick listed them.
       const { rows } = await this.getDirectoryService().getLive(req, accountId, range, { ...DEFAULT_ORG_COMMIT_FILTERS, projectScope }, 'include');
-      const username = rows.find((row) => row.personKey === personKey)?.lfUsername;
-      if (username) {
-        return username;
+      const row = rows.find(matches);
+      if (row) {
+        return row;
       }
     }
     return null;
@@ -1098,7 +1132,10 @@ export class OrgLensPeopleService {
       LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USER_COMPANY_EMAILS AS emails
         ON emails.PERSON_KEY = lf_account.PERSON_KEY AND emails.ACCOUNT_ID = ?
     `;
-    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow & { PERSON_KEY: string }>(query, [username, accountId]);
+    // A view missing before its dbt deploy rejects (`failed`) without counting toward the pod-wide circuit breaker.
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow & { PERSON_KEY: string }>(query, [username, accountId], {
+      expectMissingObject: true,
+    });
     if (result.rows.length === 0) {
       return UNCONFIRMED_COMPANY_EMAILS;
     }
@@ -1140,7 +1177,9 @@ export class OrgLensPeopleService {
             ON emails.PERSON_KEY = identities.PERSON_KEY AND emails.ACCOUNT_ID = ?
           GROUP BY identities.LF_USERNAME
         `,
-        [accountId, ...chunk, ...chunk, accountId]
+        [accountId, ...chunk, ...chunk, accountId],
+        // A view missing before its dbt deploy rejects (rows stay `unconfirmed`) without tripping the circuit breaker.
+        { expectMissingObject: true }
       );
       for (const row of rows) {
         (Number(row.EMAIL_COUNT) > 0 ? statuses.usernames : statuses.noneUsernames).push(row.LF_USERNAME);

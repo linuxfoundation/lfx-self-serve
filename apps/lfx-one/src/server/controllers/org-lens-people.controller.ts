@@ -110,6 +110,7 @@ export class OrgLensPeopleController {
         row_count: response.rows.length,
         foundation_count: response.foundations.length,
         active_in_oss: response.stats.activeInOss,
+        uncovered_usernames: uncovered.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');

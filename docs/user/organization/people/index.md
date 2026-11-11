@@ -4,7 +4,7 @@ description: How to read the People page for the selected organization — its A
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Organization
 ---
 
@@ -33,13 +33,13 @@ Select a person's name on any tab to open their details. On **Event Attendees**,
 
 Under the person's name, their details list the email addresses they have on one of the organization's own domains, the primary one first. Personal addresses and addresses at other employers are never shown. Former employees keep the addresses they had, and the **Former employee** badge still marks them. A key contact with no LF account shows the email on their key contact record, marked **from key contact record**. When no address is shown, the line says why:
 
-| Message                                                                   | What it means                                                                                                                                                                                 |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No verified company email associated with this LF profile**             | The person has an LF account, and it holds no verified address on the organization's domains                                                                                                  |
-| **This profile isn't linked to an LF profile - no company email on file** | The person has no LF account behind them (a contributor profile, or a key contact with no LF username on their record), so there is no address to check; it does not mean the person has none |
-| **We can't tell whether this person has an email at** _organization_      | The LF username could not be matched to one LF account, so we can't tell whether they have an address on the organization's domains; it does not mean they have none                          |
-| **Emails aren't shown on this page**                                      | The page you opened them from carries nothing to look their addresses up with                                                                                                                 |
-| **Couldn't load emails.**                                                 | The lookup failed. Select **Try again**                                                                                                                                                       |
+| Message                                                                   | What it means                                                                                                                                                        |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No verified company email associated with this LF profile**             | The person has an LF account, and it holds no verified address on the organization's domains                                                                         |
+| **This profile isn't linked to an LF profile - no company email on file** | This profile (a contributor profile, or a key contact with no LF username on their record) isn't linked to an LF profile, so there is no company email to show       |
+| **We can't tell whether this person has an email at** _organization_      | The LF username could not be matched to one LF account, so we can't tell whether they have an address on the organization's domains; it does not mean they have none |
+| **Emails aren't shown on this page**                                      | The page you opened them from carries nothing to look their addresses up with                                                                                        |
+| **Couldn't load emails.**                                                 | The lookup failed. Select **Try again**                                                                                                                              |
 
 ## How do I open People?
 
