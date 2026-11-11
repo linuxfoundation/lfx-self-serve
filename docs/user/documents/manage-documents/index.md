@@ -1,10 +1,10 @@
 ---
 title: Manage Documents
-description: How to browse, upload, and organize project documents in LFX Self Serve.
+description: How to browse, upload, delete, and organize project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
-tags: [documents, manage, browse, upload, folders, links]
-last_updated: 2026-10-28
+tags: [documents, manage, browse, upload, delete, folders, links]
+last_updated: 2026-11-11
 intercom_collection: Documents
 ---
 
@@ -47,7 +47,7 @@ Because of this, the **Upload Files**, **New Folder**, and **Add Link** buttons 
 
 ### Group documents
 
-Every group has its own **Documents** tab on its details page. Anyone who can view the group can see the tab, and its badge shows how many documents it holds. If you have write access to the group, you also get **Upload Files**, **New Folder**, and **Add Link** there, and they work the same way as on the project Documents page. See [Manage Committees](../../committees/manage-committees/).
+Every group has its own **Documents** tab on its details page. Anyone who can view the group can see the tab, and its badge shows how many documents it holds. If you have write access to the group, you also get **Upload Files**, **New Folder**, and **Add Link** there, and they work the same way as on the project Documents page, and you can [delete](#delete-documents) the group's own files, links, and folders. See [Manage Committees](../../committees/manage-committees/).
 
 Documents you add to a group also appear on the project Documents page, in the **Groups** tab, with the group's name in the **Group / Meeting** column. Folders you create in a group stay on that group's page. The project page lists the group's files and links on their own, without the folders.
 
@@ -103,6 +103,15 @@ The **Upload Files**, **New Folder**, and **Add Link** buttons appear above the 
 3. Confirm.
 
 If you open a folder first, the upload and link forms start with that folder selected.
+
+## Delete documents
+
+If you have write access, files, links, and folders that belong to the project, or to a group on its own **Documents** tab, have a **More actions** button (three dots) at the end of the row. Meeting, recording, transcript, summary, and mailing-list documents don't have it, because they are managed where they come from. On the project Documents page, the same goes for group documents: delete those from the group's own **Documents** tab.
+
+1. Select **More actions** on the row, then **Delete**.
+2. Confirm in the dialog. Deleting can't be undone.
+
+A folder can only be deleted when it's empty. If it still has files or links in it, LFX shows a message instead of deleting it, and nothing changes. Delete what's inside the folder first, then delete the folder.
 
 ## Switch project context
 

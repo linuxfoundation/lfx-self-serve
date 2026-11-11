@@ -4,7 +4,7 @@ description: Browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, files, governance, project]
-last_updated: 2026-11-09
+last_updated: 2026-11-11
 intercom_collection: Documents
 ---
 
@@ -18,7 +18,7 @@ The Documents section lets you browse and manage documents associated with your 
 - Filter documents by source and search by name, group, or meeting
 - Open folders and move between them with the breadcrumb
 - Download files, open links, play meeting recordings, and preview meeting summaries
-- With write access, upload files, create folders, and add links
+- With write access, upload files, create folders, add links, and delete a project's or group's own files, links, and empty folders
 
 ## Navigation
 
