@@ -303,7 +303,7 @@ export class FormationPipelineService {
     return new Map(batches.flat().map((settings) => [settings.uid, settings]));
   }
 
-  /** Uids that have a live `formation` checklist document. */
+  /** Uids that have a `formation` checklist document, whatever its lifecycle. */
   private async fetchChecklistUids(req: Request, uids: readonly string[]): Promise<Set<string>> {
     const batches = await Promise.all(
       chunkArray(uids, QUERY_SERVICE_FILTERS_OR_BATCH_SIZE).map((batch) =>
@@ -312,8 +312,8 @@ export class FormationPipelineService {
           (pageToken) =>
             this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
               type: 'formation',
+              // Any lifecycle counts (live, completed or frozen): a Disengaged project's checklist is frozen but still readable.
               tags: batch.map((uid) => `project_uid:${uid}`),
-              tags_all: ['lifecycle:live'],
               page_size: batch.length + 1,
               ...(pageToken && { page_token: pageToken }),
             }),

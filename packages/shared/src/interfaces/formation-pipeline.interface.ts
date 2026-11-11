@@ -40,7 +40,7 @@ export interface FormationPipelineRow {
   opportunity_owner: FormationPipelinePerson | null;
   created_at: string | null;
   updated_at: string | null;
-  /** True when a `formation` checklist document exists for the project. */
+  /** True when a `formation` checklist document exists for the project, in any lifecycle (a frozen one counts). */
   has_checklist: boolean;
 }
 

@@ -339,4 +339,15 @@ describe('FormationPipelineService.getPipeline', () => {
 
     expect(rows[0].parent).toBeNull();
   });
+
+  it('counts a checklist of any lifecycle (frozen included): the formation read has no lifecycle filter', async () => {
+    mockUpstream({ projects: [project({ uid: 'd', name: 'Disengaged One', stage: 'Formation - Disengaged' })], checklistUids: ['d'] });
+
+    const { rows } = await service.getPipeline(req, allStages);
+
+    const formationRead = proxyRequest.mock.calls.find((call) => call[4]?.type === 'formation')?.[4];
+    expect(formationRead.tags).toEqual(['project_uid:d']);
+    expect(formationRead).not.toHaveProperty('tags_all');
+    expect(rows[0].has_checklist).toBe(true);
+  });
 });

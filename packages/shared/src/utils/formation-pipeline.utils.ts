@@ -228,9 +228,13 @@ export function buildPipelineStatCards(
   }));
 }
 
-/** The formation checklist (keeping the foundation context) when the project has one; otherwise the project's own dashboard. */
-export function getPipelineRowLink(row: Pick<FormationPipelineRow, 'slug' | 'has_checklist'>): FormationPipelineRowLink {
-  return row.has_checklist
+/**
+ * The formation checklist (keeping the foundation context) when the project has one and it can be shown; otherwise the
+ * project's own dashboard. The checklist page renders a frozen checklist (Disengaged) read-only but blocks an Archived
+ * project, so an Archived row goes to its dashboard even when a checklist exists.
+ */
+export function getPipelineRowLink(row: Pick<FormationPipelineRow, 'slug' | 'has_checklist' | 'stage'>): FormationPipelineRowLink {
+  return row.has_checklist && row.stage !== 'archived'
     ? { commands: ['/foundation/formations', row.slug], queryParams: null }
     : { commands: ['/project/overview'], queryParams: { project: row.slug } };
 }

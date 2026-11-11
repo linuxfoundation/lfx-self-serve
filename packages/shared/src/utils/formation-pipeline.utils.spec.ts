@@ -225,9 +225,14 @@ describe('chunkArray', () => {
 });
 
 describe('row link and table row', () => {
-  it('links to the checklist only when one exists, otherwise to the project dashboard', () => {
-    expect(getPipelineRowLink({ slug: 'a', has_checklist: true })).toEqual({ commands: ['/foundation/formations', 'a'], queryParams: null });
-    expect(getPipelineRowLink({ slug: 'a', has_checklist: false })).toEqual({ commands: ['/project/overview'], queryParams: { project: 'a' } });
+  it('links to the checklist only when one exists and the stage can show it, otherwise to the project dashboard', () => {
+    const checklist = { commands: ['/foundation/formations', 'a'], queryParams: null };
+    const dashboard = { commands: ['/project/overview'], queryParams: { project: 'a' } };
+    expect(getPipelineRowLink({ slug: 'a', stage: 'engaged', has_checklist: true })).toEqual(checklist);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'disengaged', has_checklist: true })).toEqual(checklist);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'archived', has_checklist: true })).toEqual(dashboard);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'prospect', has_checklist: false })).toEqual(dashboard);
+    expect(getPipelineRowLink({ slug: 'a', stage: 'disengaged', has_checklist: false })).toEqual(dashboard);
   });
 
   it('resolves display strings', () => {

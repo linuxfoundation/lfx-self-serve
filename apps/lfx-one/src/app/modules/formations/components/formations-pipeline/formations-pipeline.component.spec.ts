@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import type { FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
 import { countPipelineRows } from '@lfx-one/shared/utils';
@@ -162,6 +162,29 @@ describe('FormationsPipelineComponent (#5475)', () => {
     expect(q('formations-pipeline-open-a')?.getAttribute('href')).toContain('/foundation/formations/alpha');
     expect(q('formations-pipeline-open-b')?.getAttribute('href')).toContain('/project/overview');
     expect(q('formations-pipeline-open-b')?.getAttribute('href')).toContain('project=bravo');
+  });
+
+  it('links a Disengaged row with a checklist to it, and an Archived row with one to its dashboard, on click and on the link', async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'dis', slug: 'dis-slug', name: 'Dis', stage: 'disengaged', has_checklist: true }),
+          row({ uid: 'arc', slug: 'arc-slug', name: 'Arc', stage: 'archived', has_checklist: true }),
+        ])
+      )
+    );
+    await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-all"]'));
+
+    expect(q('formations-pipeline-open-dis')?.getAttribute('href')).toContain('/foundation/formations/dis-slug');
+    expect(q('formations-pipeline-open-arc')?.getAttribute('href')).toContain('/project/overview');
+    expect(q('formations-pipeline-open-arc')?.getAttribute('href')).toContain('project=arc-slug');
+
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const rows = fixture.componentInstance['displayRows']();
+    fixture.componentInstance['onRowSelect']({ data: rows.find((r) => r.uid === 'dis')! });
+    fixture.componentInstance['onRowSelect']({ data: rows.find((r) => r.uid === 'arc')! });
+    expect(navigate).toHaveBeenNthCalledWith(1, ['/foundation/formations', 'dis-slug'], { queryParamsHandling: 'preserve' });
+    expect(navigate).toHaveBeenNthCalledWith(2, ['/project/overview'], { queryParams: { project: 'arc-slug' } });
   });
 
   it('shows the amber state only for a launch within 30 days', async () => {
