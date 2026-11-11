@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, QUERY_SERVICE_MAX_PAGES, RSVP_RESPONSES } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, QUERY_SERVICE_MAX_PAGES, RSVP_RESPONSES, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -69,7 +69,7 @@ import {
   UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
 } from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
-import { buildRollupScopedQuery, readRollupRootUid } from '../helpers/meeting-rollup.helper';
+import { buildRollupScopedQuery, isRollupScope, readRollupRootUid } from '../helpers/meeting-rollup.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
@@ -81,6 +81,7 @@ import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
 import { UserVerifiedEmailsService } from './user-verified-emails.service';
+import { withPerUserCache } from './valkey.service';
 
 /**
  * Service for handling meeting business logic with microservice proxy
@@ -2555,8 +2556,14 @@ export class MeetingService {
       return query;
     }
 
-    const scopeUids = await coalescePerUserOrgFetch('meeting-rollup-scope', getEffectiveUsername(req) ?? '', rootUid, () =>
-      this.projectService.getFoundationProjectUids(req, rootUid)
+    // Cached per user and root, so the paged calendar feeds and Load More neither re-walk the tree on
+    // every page nor replay a page cursor against a different scope. Both helpers fail closed (fetch
+    // directly, share nothing) for a blank or unsafe username, so one user's FGA-filtered tree is never
+    // served to another.
+    const { MEETING_ROLLUP_SCOPE_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
+    const username = getEffectiveUsername(req) ?? '';
+    const scopeUids = await coalescePerUserOrgFetch(namespace, username, rootUid, () =>
+      withPerUserCache(namespace, username, rootUid, ttlSeconds, () => this.projectService.getFoundationProjectUids(req, rootUid), isRollupScope)
     );
 
     logger.debug(req, operation, 'Scoped meetings query to project roll-up', { root_project_uid: rootUid, project_count: scopeUids.length });

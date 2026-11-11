@@ -20,7 +20,7 @@ export function readRollupRootUid(query: Record<string, unknown>, operation: str
     return undefined;
   }
   if (typeof value !== 'string' || !isFilterSafeIdentifier(value)) {
-    throw ServiceValidationError.forField('root_project_uid', 'root_project_uid must be a single project UID', { operation });
+    throw ServiceValidationError.forField('root_project_uid', 'root_project_uid must be a single project identifier', { operation });
   }
   return value;
 }
@@ -42,6 +42,11 @@ export function buildRollupScopedQuery(query: Record<string, unknown>, scopeUids
     ...(keptTags.length > 0 && { tags: keptTags }),
     filters_or: scopeUids.map((uid) => `project_uid:${uid}`),
   };
+}
+
+/** Accepts a cached roll-up scope only when it is still a list of project UIDs; anything else is refetched. */
+export function isRollupScope(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((uid) => typeof uid === 'string');
 }
 
 function toArray(value: unknown): string[] {

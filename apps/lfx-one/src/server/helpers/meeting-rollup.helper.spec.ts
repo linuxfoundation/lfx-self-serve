@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
-import { buildRollupScopedQuery, readRollupRootUid } from './meeting-rollup.helper';
+import { buildRollupScopedQuery, isRollupScope, readRollupRootUid } from './meeting-rollup.helper';
 
 const ROOT = '0a1b2c3d-1111-2222-3333-444455556666';
 
@@ -45,5 +45,15 @@ describe('buildRollupScopedQuery', () => {
     const result = buildRollupScopedQuery({ root_project_uid: ROOT, tags: 'project_uid:other' }, [ROOT]);
 
     expect(result).not.toHaveProperty('tags');
+  });
+});
+
+describe('isRollupScope', () => {
+  it('accepts a list of UIDs and refuses anything else from the cache', () => {
+    expect(isRollupScope(['a', 'b'])).toBe(true);
+    expect(isRollupScope([])).toBe(true);
+    expect(isRollupScope('a')).toBe(false);
+    expect(isRollupScope([1])).toBe(false);
+    expect(isRollupScope(null)).toBe(false);
   });
 });
