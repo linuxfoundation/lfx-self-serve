@@ -56,7 +56,7 @@ When you cannot open the organization, People is replaced by the same access mes
 
 ## What does the All Employees tab show?
 
-The **All Employees** tab shows the organization's people in one table, one row per person, with their board and committee seats, code contributions, events, training and Org Lens access. It lists people with recorded Linux Foundation activity in the time range, and also people who hold a board or committee seat, a key contact role, or Org Lens access. It is the tab People opens on.
+The **All Employees** tab shows the organization's people in one table, one row per person, with their board and committee seats, code contributions, events, training and Org Lens access. It lists people with recorded Linux Foundation activity in the time range, and also people who hold a board or committee seat, a key contact role on one of the organization's active memberships, or Org Lens access. A key contact role on a membership that has ended does not list anyone. It is the tab People opens on.
 
 Five cards at the top count **Employees Active in Open Source**, **In Governance**, **Code Contributors**, **Event Attendees** and **Trainees**. The table has these columns:
 
