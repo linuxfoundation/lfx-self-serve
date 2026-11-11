@@ -156,15 +156,14 @@ describe('FormationsPipelineComponent (#5475)', () => {
     expect(rowIds()).toEqual(['d', 'b', 'a', 'c']);
   });
 
-  it('links a row to its checklist only when it has one, otherwise to the project dashboard', async () => {
+  it('links a row to the formation page whether or not it has a checklist', async () => {
     await render();
 
     expect(q('formations-pipeline-open-a')?.getAttribute('href')).toContain('/foundation/formations/alpha');
-    expect(q('formations-pipeline-open-b')?.getAttribute('href')).toContain('/project/overview');
-    expect(q('formations-pipeline-open-b')?.getAttribute('href')).toContain('project=bravo');
+    expect(q('formations-pipeline-open-b')?.getAttribute('href')).toContain('/foundation/formations/bravo');
   });
 
-  it('links a Disengaged row with a checklist to it, and an Archived row with one to its dashboard, on click and on the link', async () => {
+  it('links a Disengaged row to the formation page, and an Archived row to its dashboard, on click and on the link', async () => {
     await render(
       of(
         response([

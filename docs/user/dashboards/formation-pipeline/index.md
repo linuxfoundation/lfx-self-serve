@@ -33,7 +33,7 @@ Each row is a project that has not become Active yet, or that has left the pipel
 
 Select a column heading to sort by it. Select it again to reverse the order. The list opens sorted by **Expected launch**: upcoming dates first, then past dates, then **Not set**.
 
-Select a project name to open it. A project that has a formation checklist opens its checklist. An Archived project, or one without a checklist, opens its project dashboard.
+Select a project name to open it. A project opens its formation page. If the project doesn't have a checklist yet, the page says so, and a checklist starts when the project moves into a formation stage. An Archived project opens its project dashboard.
 
 ## Stages and the stage pills
 
