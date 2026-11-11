@@ -403,7 +403,7 @@ test.describe('Org People → Board tab', () => {
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-0')).toHaveText(JORDAN_COMPANY_EMAIL);
 
-    // 2. Resolved EMPTY → "No … email on file"; only this state may make that claim.
+    // 2. Resolved EMPTY → "No verified company email associated with this LF profile"; only this state may make that claim.
     await stubCompanyEmails((route) => route.fulfill({ status: 200, contentType: 'application/json', body: resolved([]) }));
     await openDrawer();
     await expect(page.getByTestId('person-detail-drawer-email-none')).toBeVisible();

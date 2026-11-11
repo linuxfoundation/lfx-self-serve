@@ -566,12 +566,33 @@ describe('PlanningTabComponent brief read-back', () => {
         approved: true,
       };
 
+      it('mounts the review live region empty before the review step, then fills it, so the offer is announced', async () => {
+        campaignService.loadBrief.mockImplementation((slug: string) => of(slug === generated ? loadedUnderGenerated : none));
+        await typeEventUrl('https://events.example.com/kubecon-europe/');
+        fixture.detectChanges();
+        // Found before Generate: the region already exists, and says nothing yet.
+        const live = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]') as HTMLElement | null;
+        expect(live).not.toBeNull();
+        expect(live?.textContent?.trim()).toBe('');
+
+        finishGeneration(generated);
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        // The same element, its contents changed, which is what a screen reader announces.
+        expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]')).toBe(live);
+        expect(live?.textContent).toContain('A saved brief was found for');
+      });
+
       it('says the generated brief cannot be saved over it when someone else owns it', async () => {
         // The usual #5492 path: the year guess finds the stored edition before Generate is pressed.
         await foundBeforeGenerating(loadedUnderGenerated);
 
         const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
         expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+        const live = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]') as HTMLElement | null;
+        expect(live?.textContent).toContain('A saved brief was found for');
+        expect(live?.textContent).toContain("The generated brief can't be saved over it as it is.");
       });
 
       it('does not claim it blocks the save when this session owns it, as after a Proceed', async () => {
@@ -581,12 +602,16 @@ describe('PlanningTabComponent brief read-back', () => {
         const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
         expect(banner?.textContent).toContain('if you want it instead of this one');
         expect(banner?.textContent).not.toContain("can't be saved over it");
+        const live = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]') as HTMLElement | null;
+        expect(live?.textContent).toContain('A saved brief was found for');
+        expect(live?.textContent).not.toContain("can't be saved over it");
       });
 
       it('keeps the unreadable-brief warning on the review step when it is on the save slug', async () => {
         await foundBeforeGenerating({ status: 'unreadable', brief: null, briefId: 'brief-x', etag: 'W/"v1"', approved: false } as CampaignBriefLoadResult);
 
         expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')?.textContent).toContain('could not be opened');
+        expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]')?.textContent).toContain('could not be opened');
       });
     });
 
@@ -632,6 +657,8 @@ describe('PlanningTabComponent brief read-back', () => {
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-warning"]')).toBeNull();
+      // Nor read out to a screen reader: the live region says no more than the page shows (#5551).
+      expect(fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]')?.textContent?.trim()).toBe('');
     });
 
     it('makes no extra lookup when the generated slug is the one the url lookup already used', async () => {

@@ -4,7 +4,7 @@ description: How to read the People page for the selected organization — its A
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Organization
 ---
 
@@ -33,13 +33,13 @@ Select a person's name on any tab to open their details. On **Event Attendees**,
 
 Under the person's name, their details list the email addresses they have on one of the organization's own domains, the primary one first. Personal addresses and addresses at other employers are never shown. Former employees keep the addresses they had, and the **Former employee** badge still marks them. A key contact with no LF account shows the email on their key contact record, marked **from key contact record**. When no address is shown, the line says why:
 
-| Message                                                                               | What it means                                                                                                                                      |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No** _organization_ **email on file**                                               | The person was looked up and has no address on the organization's domains                                                                          |
-| **This profile isn't linked to an LF account, so we can't check for a company email** | The row is a contributor profile with no LF account behind it, so there are no addresses to check; it does not mean the person has none            |
-| **We can't tell whether this person has an email at** _organization_                  | The lookup finished but cannot tell a person with no address on the organization's domains from one we don't know; it does not mean they have none |
-| **Emails aren't shown on this page**                                                  | The page you opened them from carries nothing to look their addresses up with                                                                      |
-| **Couldn't load emails.**                                                             | The lookup failed. Select **Try again**                                                                                                            |
+| Message                                                                   | What it means                                                                                                                                                        |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No verified company email associated with this LF profile**             | The person has an LF account, and it holds no verified address on the organization's domains                                                                         |
+| **This profile isn't linked to an LF profile - no company email on file** | This profile (a contributor profile, or a key contact with no LF username on their record) isn't linked to an LF profile, so there is no company email to show       |
+| **We can't tell whether this person has an email at** _organization_      | The LF username could not be matched to one LF account, so we can't tell whether they have an address on the organization's domains; it does not mean they have none |
+| **Emails aren't shown on this page**                                      | The page you opened them from carries nothing to look their addresses up with                                                                                        |
+| **Couldn't load emails.**                                                 | The lookup failed. Select **Try again**                                                                                                                              |
 
 ## How do I open People?
 
@@ -177,7 +177,7 @@ You filter a People tab with the search box and menus above its table. Which men
 
 **Employment** offers **Current employees**, **Former employees** and **All employees** (the default). On **All Employees** under **Current employees**, the **Code Contributors** card leaves out people who have since left. With **All employees** it shows the same number as the **Contributors** tab's **Contributors** card for the same time range, project type, organization scope and team members choice.
 
-**Company email**, on **All Employees**, offers **All email statuses** (the default), **Has company email**, **No company email** and **Unlinked profile**. **No company email** means the person was looked up and has no address on the organization's domains. **Unlinked profile** means their emails could not be checked: mostly contributor profiles with no LF account behind them, plus people just added who are not in the organization data yet. These match the answer a person's details give (see [Which emails do a person's details show?](#which-emails-do-a-persons-details-show)). The filter is kept in the page address (`?companyEmail=`). The statuses are refreshed with the organization data, so a just-added address can take up to a day to count. When they cannot be read, everyone is listed under **All email statuses** only.
+**Company email**, on **All Employees**, offers **All email statuses** (the default), **Has company email**, **No verified company email** and **Unlinked profile**. **No verified company email** means the person has an LF account with no verified address on the organization's domains. **Unlinked profile** means their emails could not be checked: mostly contributor profiles with no LF account behind them, plus people whose LF username could not be matched to one LF account. These match the answer a person's details give (see [Which emails do a person's details show?](#which-emails-do-a-persons-details-show)). The filter is kept in the page address (`?companyEmail=`). The statuses are refreshed with the organization data, so a just-added address can take up to a day to count. When they cannot be read, everyone is listed under **All email statuses** only.
 
 The code count offers **All code contributions** (the default), **All commits** and **Only main branch commits**. It changes the code numbers, not who is listed, with one exception: when the **All Employees** activity filter is on **Code contributions** (or **Commits**), only people whose count under the chosen option is above zero are shown. Someone with reviews or comments but no commits drops out when you switch to **All commits**. What each option counts is in [What do All code contributions, All commits and Only main branch commits count?](../code-contributions/#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count).
 

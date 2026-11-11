@@ -367,7 +367,7 @@ export enum ServerFeatureFlag {
 
   /**
    * Offers an image UPLOAD in the LinkedIn section of the create flow, sent as
-   * `linkedInConfig.variants[].imageAssetId` (the same image on every variant).
+   * `linkedInConfig.variants[].imageAssetId` (each variant its own upload).
    *
    * A CAPABILITY flag of the Meta kind: no URL signing is involved, because LinkedIn's dispatch path
    * reads the stored bytes and uploads them once through LinkedIn's Images API, then uses the image
