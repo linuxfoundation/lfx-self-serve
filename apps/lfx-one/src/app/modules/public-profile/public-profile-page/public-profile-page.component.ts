@@ -72,6 +72,8 @@ export class PublicProfilePageComponent {
   protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image));
   protected readonly hasCertifications = computed(() => this.certifications().length > 0);
   protected readonly hasTrainings = computed(() => this.trainings().length > 0);
+  // False inside an iframe, where Transcend's consent manager cannot open; the button is hidden.
+  protected readonly cookieSettingsAvailable = this.transcendService.preferencesAvailable;
 
   public constructor() {
     // SEO sync — re-apply head tags when `profile()` resolves; `toObservable` + `takeUntilDestroyed`

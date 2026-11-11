@@ -54,13 +54,12 @@ export class PersonDetailDrawerComponent implements OnDestroy {
    */
   protected readonly copiedEmail: Signal<string | null> = computed(() => this.initCopiedEmail());
 
-  // Failed, unconfirmed, nothing-to-look-up and none-on-file are distinct states: "no company address on file" is a
-  // claim about a named person and is only made after a lookup that completed with a known identity.
+  // Failed, unlinked, unconfirmed, nothing-to-look-up and none-on-file are distinct states: "no company address on file" is
+  // a claim about a named person and is only made after a lookup that completed with a known identity. Unlinked (a `cdp:`
+  // profile with no LF account behind it) says why nothing could be checked; unconfirmed is a lookup that cannot tell.
   protected readonly companyEmailsFailed: Signal<boolean> = computed(() => this.drawer.emailError());
-  protected readonly companyEmailsUnconfirmed: Signal<boolean> = computed(() => {
-    const reason = this.drawer.companyEmailsUnavailableReason();
-    return reason === 'unlinked_identity' || reason === 'unconfirmed';
-  });
+  protected readonly companyEmailsUnlinked: Signal<boolean> = computed(() => this.drawer.companyEmailsUnavailableReason() === 'unlinked_identity');
+  protected readonly companyEmailsUnconfirmed: Signal<boolean> = computed(() => this.drawer.companyEmailsUnavailableReason() === 'unconfirmed');
   protected readonly companyEmailsNoIdentity: Signal<boolean> = computed(() => this.drawer.companyEmailsUnavailableReason() === 'no_identity');
   protected readonly companyEmailsNoneOnFile: Signal<boolean> = computed(() => this.drawer.companyEmailsResolved() && this.companyEmails().length === 0);
 

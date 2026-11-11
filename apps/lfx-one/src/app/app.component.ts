@@ -24,6 +24,7 @@ import { PersonaService } from './shared/services/persona.service';
 import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
+import { TranscendService } from './shared/services/transcend.service';
 import { UserService } from './shared/services/user.service';
 import { isBrowserCredentialUrlPath, isBrowserInviteLandingPath } from './shared/utils/invite-landing.util';
 import { identifiedIntercomBootOptions } from './shared/utils/intercom-boot.util';
@@ -52,6 +53,7 @@ export class AppComponent {
   private readonly intercomService = inject(IntercomService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly transcendService = inject(TranscendService);
   protected readonly meetingComposer = inject(MeetingComposerService);
   /**
    * Whether meetings v2 is enabled for this user.
@@ -111,8 +113,12 @@ export class AppComponent {
     const onInviteLanding = isBrowserInviteLandingPath();
     // Segment, Plausible and Intercom record the page URL, which carries the invite token here.
     const onCredentialUrl = isBrowserCredentialUrlPath();
+    // Inside a frame Transcend shows no notice and no Cookie settings, so analytics never start there:
+    // a visitor in an opt-out regime would be tracked with no way to say no (lfx-self-serve-ops#1438).
+    // Datadog RUM is gated the same way in provideDataDogRum.
+    const startAnalytics = !onCredentialUrl && this.transcendService.preferencesAvailable;
 
-    if (!onCredentialUrl) {
+    if (startAnalytics) {
       this.segmentService.initialize();
       this.plausibleService.initialize();
     }
@@ -155,7 +161,7 @@ export class AppComponent {
 
       const authedUser = this.auth.user;
 
-      if (!onCredentialUrl) {
+      if (startAnalytics) {
         this.segmentService.setImpersonating(isImpersonating);
         this.plausibleService.setImpersonating(isImpersonating);
         this.segmentService.identifyUser(authedUser);
