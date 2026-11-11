@@ -1077,14 +1077,44 @@ describe('OrgLensPeopleService person-key company emails', () => {
       }
     });
 
-    it('binds at most 500 usernames per read', async () => {
+    it('binds at most 500 usernames per read, one read at a time', async () => {
       const usernames = Array.from({ length: 1001 }, (_, index) => `user-${String(index).padStart(4, '0')}`);
       addLfUser('lf-last', usernames[1000], { [ACCOUNT]: ['last@company.example'] });
+      let running = 0;
+      let peak = 0;
+      const realExecute = execute.getMockImplementation()!;
+      execute.mockImplementation(async (...args: Parameters<typeof realExecute>) => {
+        peak = Math.max(peak, ++running);
+        await Promise.resolve();
+        try {
+          return await realExecute(...args);
+        } finally {
+          running -= 1;
+        }
+      });
 
       expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, usernames)).toEqual({ usernames: [usernames[1000]], noneUsernames: [] });
       const reads = (execute.mock.calls as [string, string[]][]).filter(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'));
-      expect(reads.map(([, binds]) => binds.length)).toEqual([501, 501, 2]);
-      expect(reads.every(([, binds]) => binds.at(-1) === ACCOUNT)).toBe(true);
+      // Each chunk binds the account, its usernames twice (roster check and LF-account lookup), and the account again.
+      expect(reads.map(([, binds]) => binds.length)).toEqual([1002, 1002, 4]);
+      expect(reads.every(([, binds]) => binds[0] === ACCOUNT && binds.at(-1) === ACCOUNT)).toBe(true);
+      expect(peak).toBe(1);
+    });
+
+    it('leaves a username naming one roster person to that person, as the drawer does', async () => {
+      // The drawer answers a username on the roster from the roster person (a `cdp:` key is unlinked), never the LF account.
+      addRosterRow(ACCOUNT, 'cdp:member-one', 'rosteruser');
+      addLfUser('lf-roster', 'rosteruser', { [ACCOUNT]: ['roster@company.example'] });
+      addLfUser('lf-off', 'offroster');
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['offroster', 'rosteruser'])).toEqual({
+        usernames: [],
+        noneUsernames: ['offroster'],
+      });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'rosteruser')).toMatchObject({
+        companyEmailsStatus: 'unavailable',
+        companyEmailsReason: 'unlinked_identity',
+      });
     });
 
     it('answers null and warns, storing nothing, when the LF-account read fails', async () => {

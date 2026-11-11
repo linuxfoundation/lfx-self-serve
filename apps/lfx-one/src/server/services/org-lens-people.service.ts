@@ -1107,38 +1107,44 @@ export class OrgLensPeopleService {
 
   /**
    * The batch form of {@link fetchCompanyEmailsByUsername} for the All Employees filter: per known username, whether its
-   * LF account holds a qualifying address here. Bound in chunks of {@link LF_USERNAME_BATCH_SIZE}; a username with no
-   * single account is absent from both lists. No address is returned.
+   * LF account holds a qualifying address here. Mirrors the drawer's order: a username naming exactly one roster person
+   * is answered by that person (the keys, or `unlinked_identity` for a `cdp:` key), so it is left out here rather than
+   * re-read by LF account. Chunks of {@link LF_USERNAME_BATCH_SIZE} run one at a time, so a large page never takes more
+   * than one pooled connection. A username with no single account is absent from both lists. No address is returned.
    */
   private async fetchLfUsernameCompanyEmailStatuses(accountId: string, usernames: readonly string[]): Promise<OrgLfUsernameCompanyEmailStatuses> {
-    const chunks: string[][] = [];
-    for (let start = 0; start < usernames.length; start += LF_USERNAME_BATCH_SIZE) {
-      chunks.push(usernames.slice(start, start + LF_USERNAME_BATCH_SIZE));
-    }
-    const results = await Promise.all(
-      chunks.map((chunk) =>
-        this.snowflakeService.execute<{ LF_USERNAME: string; EMAIL_COUNT: number | string }>(
-          `
-            WITH identities AS (
-              SELECT LF_USERNAME, MIN(PERSON_KEY) AS PERSON_KEY
-              FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES
-              WHERE LF_USERNAME IN (${chunk.map(() => '?').join(', ')})
-              GROUP BY LF_USERNAME
-              HAVING COUNT(DISTINCT PERSON_KEY) = 1
-            )
-            SELECT identities.LF_USERNAME, COUNT(NULLIF(TRIM(emails.EMAIL), '')) AS EMAIL_COUNT
-            FROM identities
-            LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USER_COMPANY_EMAILS AS emails
-              ON emails.PERSON_KEY = identities.PERSON_KEY AND emails.ACCOUNT_ID = ?
-            GROUP BY identities.LF_USERNAME
-          `,
-          [...chunk, accountId]
-        )
-      )
-    );
     const statuses: OrgLfUsernameCompanyEmailStatuses = { usernames: [], noneUsernames: [] };
-    for (const row of results.flatMap((result) => result.rows)) {
-      (Number(row.EMAIL_COUNT) > 0 ? statuses.usernames : statuses.noneUsernames).push(row.LF_USERNAME);
+    for (let start = 0; start < usernames.length; start += LF_USERNAME_BATCH_SIZE) {
+      const chunk = usernames.slice(start, start + LF_USERNAME_BATCH_SIZE);
+      const placeholders = chunk.map(() => '?').join(', ');
+      const { rows } = await this.snowflakeService.execute<{ LF_USERNAME: string; EMAIL_COUNT: number | string }>(
+        `
+          WITH roster_people AS (
+            SELECT LOWER(TRIM(LF_USERNAME)) AS LF_USERNAME
+            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+            WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) IN (${placeholders})
+            GROUP BY LOWER(TRIM(LF_USERNAME))
+            HAVING COUNT(DISTINCT PERSON_KEY) = 1
+          ),
+          identities AS (
+            SELECT LF_USERNAME, MIN(PERSON_KEY) AS PERSON_KEY
+            FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES
+            WHERE LF_USERNAME IN (${placeholders})
+              AND LF_USERNAME NOT IN (SELECT LF_USERNAME FROM roster_people)
+            GROUP BY LF_USERNAME
+            HAVING COUNT(DISTINCT PERSON_KEY) = 1
+          )
+          SELECT identities.LF_USERNAME, COUNT(NULLIF(TRIM(emails.EMAIL), '')) AS EMAIL_COUNT
+          FROM identities
+          LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USER_COMPANY_EMAILS AS emails
+            ON emails.PERSON_KEY = identities.PERSON_KEY AND emails.ACCOUNT_ID = ?
+          GROUP BY identities.LF_USERNAME
+        `,
+        [accountId, ...chunk, ...chunk, accountId]
+      );
+      for (const row of rows) {
+        (Number(row.EMAIL_COUNT) > 0 ? statuses.usernames : statuses.noneUsernames).push(row.LF_USERNAME);
+      }
     }
     return statuses;
   }
