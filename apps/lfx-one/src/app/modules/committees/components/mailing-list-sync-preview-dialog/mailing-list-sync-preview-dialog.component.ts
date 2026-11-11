@@ -143,10 +143,17 @@ export class MailingListSyncPreviewDialogComponent {
       this.directionForm.controls.direction.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadDiff());
 
       // Lock direction while a diff/apply job is in flight — switching mid-poll would leave a
-      // stale job running against the old direction. emitEvent: false so disable()/enable() don't
-      // themselves trigger the valueChanges subscription above.
+      // stale job running against the old direction. Also lock it permanently once any apply has
+      // been attempted (success, failure, or timeout): an attempted apply may already have changed
+      // committee/mailing-list membership, and re-running loadDiff() after a direction switch
+      // clears applyError/applyResult, which both drops the dismiss-lock (lockDynamicDialogWhile
+      // above) and overwrites loadedDirection — so a later close() can report the wrong
+      // isReverseSync() for the apply that actually ran. Forcing a close+reopen to change direction
+      // after an attempt avoids all of that (greptile-apps, cursor/Bugbot, copilot, #5578 review).
+      // emitEvent: false so disable()/enable() don't themselves trigger the valueChanges
+      // subscription above.
       effect(() => {
-        if (this.loadingDiff() || this.applying()) {
+        if (this.loadingDiff() || this.applying() || this.applyAttempted()) {
           this.directionForm.controls.direction.disable({ emitEvent: false });
         } else {
           this.directionForm.controls.direction.enable({ emitEvent: false });
