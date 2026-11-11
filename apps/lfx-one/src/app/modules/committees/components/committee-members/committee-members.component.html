@@ -226,9 +226,7 @@
                     } @else {
                       <lfx-tag value="Pending invitation" severity="warn" />
                     }
-                    @if (expiry?.label) {
-                      <span class="text-xs text-gray-500" data-testid="invite-expiry">{{ expiry?.expired ? 'Expired' : 'Expires' }} {{ expiry?.label }}</span>
-                    }
+                    <span class="text-xs text-gray-500" data-testid="invite-expiry">{{ expiry?.text }}</span>
                   </div>
                 }
               </td>

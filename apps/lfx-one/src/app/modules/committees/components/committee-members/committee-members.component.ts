@@ -217,7 +217,11 @@ export class CommitteeMembersComponent implements OnInit {
   public readonly inviteExpiryByUid = computed(() => {
     const now = this.now();
     return new Map(
-      this.invites().map((invite) => [invite.uid, { expired: isInviteExpired(invite.expires_at, now), label: formatInviteExpiry(invite.expires_at) }] as const)
+      this.invites().map((invite) => {
+        const expired = isInviteExpired(invite.expires_at, now);
+        const label = formatInviteExpiry(invite.expires_at);
+        return [invite.uid, { expired, label, text: label ? `${expired ? 'Expired' : 'Expires'} ${label}` : 'No expiration' }] as const;
+      })
     );
   });
   public readonly joinMode = computed(() => this.committee()?.join_mode as JoinMode | undefined);
