@@ -70,21 +70,21 @@ describe('UiAvatarComponent', () => {
       await fixture.whenStable();
     });
 
-    it('is a white 24px box with a neutral-200 border, 6px corners and 4px padding, whatever the tone', async () => {
+    it('is a white 24px box with a slate-200 border, 6px corners and 4px padding, whatever the tone or theme', async () => {
       fixture.componentRef.setInput('tone', 'accent');
       await fixture.whenStable();
 
       expect(host.style.width).toBe('24px');
-      for (const token of ['rounded-[6px]', 'border', 'border-ui-neutral-200', 'bg-ui-white', 'p-[4px]']) {
+      for (const token of ['rounded-[6px]', 'border', 'border-[color:var(--ui-slate-200)]', 'bg-ui-white', 'p-[4px]']) {
         expect(host.className).toContain(token);
       }
       expect(host.className).not.toContain('bg-ui-accent-600');
     });
 
-    it('falls back to the first letter at 10px semibold neutral-600', () => {
+    it('falls back to the first letter at 10px semibold slate-600, the same in both themes', () => {
       expect(initials()).toBe('A');
       expect(host.style.fontSize).toBe('10px');
-      expect(host.className).toContain('text-ui-neutral-600');
+      expect(host.className).toContain('text-[color:var(--ui-slate-600)]');
       expect(host.className).toContain('font-semibold');
     });
 

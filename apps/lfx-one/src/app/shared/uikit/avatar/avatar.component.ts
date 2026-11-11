@@ -49,7 +49,7 @@ export class UiAvatarComponent {
   public readonly tone = input<UiAvatarTone>('neutral');
   /**
    * `circle` is for people; `rounded` has 8px corners, for organizations and other entities. `logo` is the company logo box: white
-   * with a neutral-200 border, 6px corners and 4px padding, the image contained, and the first letter in neutral-600 without one.
+   * with a slate-200 border, 6px corners and 4px padding in both themes, the image contained, and the first letter in slate-600 without one.
    */
   public readonly shape = input<UiAvatarShape>('circle');
   /** Initials size in px, replacing the 38% scale, such as 11 on the 32px avatar of a dense table. */
@@ -176,8 +176,9 @@ export class UiAvatarComponent {
         warning: 'bg-ui-warning-600 text-ui-white',
         danger: 'bg-ui-danger-600 text-ui-white',
       };
-      // The logo box ignores tone: white in both themes (logos expect it), a 1px neutral-200 border and 4px padding (exact px, not rem).
-      const logo = 'border border-ui-neutral-200 bg-ui-white p-[4px] text-ui-neutral-600';
+      // The logo box ignores tone and theme: white (logos expect it) with the light theme's slate-200 border and slate-600 letter,
+      // read from the palette variables since neutral-* flips in the dark theme. Exact px, not rem.
+      const logo = 'border border-[color:var(--ui-slate-200)] bg-ui-white p-[4px] text-[color:var(--ui-slate-600)]';
       // The placeholder is a skeleton clipped to the avatar shape.
       let fill = isLogo ? logo : tints[this.tone()];
       if (this.placeholder()) fill = 'overflow-hidden';
