@@ -572,6 +572,9 @@ describe('PlanningTabComponent brief read-back', () => {
 
         const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
         expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+        const live = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]') as HTMLElement | null;
+        expect(live?.textContent).toContain('A saved brief was found for');
+        expect(live?.textContent).toContain("The generated brief can't be saved over it as it is.");
       });
 
       it('does not claim it blocks the save when this session owns it, as after a Proceed', async () => {
@@ -581,6 +584,9 @@ describe('PlanningTabComponent brief read-back', () => {
         const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
         expect(banner?.textContent).toContain('if you want it instead of this one');
         expect(banner?.textContent).not.toContain("can't be saved over it");
+        const live = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief-live"]') as HTMLElement | null;
+        expect(live?.textContent).toContain('A saved brief was found for');
+        expect(live?.textContent).not.toContain("can't be saved over it");
       });
 
       it('keeps the unreadable-brief warning on the review step when it is on the save slug', async () => {

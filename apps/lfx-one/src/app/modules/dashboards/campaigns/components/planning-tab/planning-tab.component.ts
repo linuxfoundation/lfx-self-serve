@@ -751,14 +751,16 @@ export class PlanningTabComponent implements OnInit {
     () => this.savedBrief() === null && this.savedBriefWarning() !== null && this.storedBriefBlocksSave()
   );
   /**
-   * The review step's announcement: what its banner shows, and no more. With a brief to offer that is
-   * the input step's announcement (the banner shows the offer and any warning). With none, the
-   * warning is shown only when the unreadable brief blocks the save (`savedBriefWarningBlocksSave`),
-   * so one stored under another edition is not announced either (#5551).
+   * The review step's announcement: what its banner says, no more and no less (#5551). With a brief
+   * to offer, the banner shows the offer, says the generated brief can't be saved over it when that
+   * blocks the save (`savedBriefBlocksSave`), and shows any warning. With none, it shows the warning
+   * only when the unreadable brief blocks the save (`savedBriefWarningBlocksSave`), so one stored
+   * under another edition is not announced either.
    */
   protected readonly reviewSavedBriefAnnouncement = computed(() => {
-    if (this.savedBrief() !== null) return this.savedBriefAnnouncement();
-    return this.savedBriefWarningBlocksSave() ? (this.savedBriefWarning() ?? '') : '';
+    if (this.savedBrief() === null) return this.savedBriefWarningBlocksSave() ? (this.savedBriefWarning() ?? '') : '';
+    const announcement = this.savedBriefAnnouncement();
+    return this.savedBriefBlocksSave() ? `${announcement} The generated brief can't be saved over it as it is.` : announcement;
   });
 
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
