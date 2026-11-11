@@ -8,7 +8,7 @@ last_updated: 2026-11-06
 intercom_collection: Organization
 ---
 
-These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer). Only someone who can edit the organization, such as an **Org Admin Editor**, can change the profile. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Organization Profile**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/). The page is about one organization, so it is not part of the **All Organizations Roll-Up**: while the combined view is selected, **Organization Profile** is not in the menu.
+These steps apply to anyone who can open an organization in the Organization lens, such as an organization admin (editor or viewer). Only someone who can edit the organization, such as an **Org Admin Editor**, can change the profile. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on an organization sees only its **EasyCLA** page, not **Organization Profile**. To pick the organization the page shows, see [Choose and switch an organization](../choose-an-organization/).
 
 ## What is the Organization Profile page?
 

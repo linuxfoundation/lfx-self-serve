@@ -45,7 +45,7 @@ The **Projects** lens (`/project/overview`) focuses on a single project. Select 
 
 ## Org lens
 
-The **Organization** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Organization" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your organization has granted you access. See [Who can access this](../#who-can-access-this). If you have access to more than one organization in the same corporate family, the lens can also show them together — see [What is an organization family roll-up?](../../organization/choose-an-organization/#what-is-an-organization-family-roll-up).
+The **Organization** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Organization" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your organization has granted you access. See [Who can access this](../#who-can-access-this).
 
 ## Switch project context
 

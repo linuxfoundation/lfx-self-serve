@@ -20,8 +20,6 @@ Anyone who can view the selected organization in the **Organization** lens.
 2. Switch to the **Organization** lens and select the organization.
 3. Select **Crowdfunding Donations** from the left navigation sidebar.
 
-The page is about one organization, so it is not part of the **All Organizations Roll-Up**: while the combined view is selected, **Crowdfunding Donations** is not in the sidebar. Select a single organization to open it.
-
 ## What the page shows
 
 The page header reads **Donations**, with the description "Donations on LFX Crowdfunding made on behalf of" followed by the organization name. Each row shows:

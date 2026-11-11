@@ -1,6 +1,6 @@
 ---
 title: Organization FAQ
-description: Short answers about the Organization lens — what the lens is and what you can do in it, how to switch organizations, how to see all of them at once, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Organization Profile page shows and who can edit it, where to see the organization's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
+description: Short answers about the Organization lens — what the lens is and what you can do in it, how to switch organizations, what the Org Overview dashboard shows, what the Memberships page shows, what the Projects page shows and how to add a project to it, what the People and Code Contributions pages show and how their time range carries between them, what the Events, Training & Certification, Meetings and Groups pages show, what the Organization Profile page shows and who can edit it, where to see the organization's involvement in one foundation, what a leaderboard score breakdown shows, who sees Crowdfunding Initiatives, adding and removing Org Lens access, and, for EasyCLA, who can edit a corporate CLA, what View only means, who can see a company, access after a CLA Manager change, and how a first CLA Manager is added.
 audience: [all]
 product_area: Organization
 tags:
@@ -10,7 +10,6 @@ tags:
     org-lens,
     overview,
     switch-organization,
-    all-organizations,
     org-overview,
     dashboard,
     memberships,
@@ -43,10 +42,6 @@ The Organization lens in LFX Self Serve shows one organization at a time: how it
 ## How do I switch to a different organization?
 
 You switch organizations from the organization switcher at the top of the sidebar in the Organization lens. Select it, then select another organization from the list. You stay on the same page, now showing the organization you picked, unless your only role on that organization is CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager), in which case you land on its **EasyCLA** page. The browser's Back button usually returns you to the previous one. If you can open only one organization, the switcher has no list to open. See [How do I switch to a different organization?](../choose-an-organization/#how-do-i-switch-to-a-different-organization).
-
-## Can I see all my organizations at once?
-
-Yes, one corporate family at a time, if you have access to two or more organizations in that family. The organization switcher then offers a roll-up for the family as its first entry, named after the family's top company (for example **All Acme Organizations**) and labelled **Combined view of related organizations** with the number of organizations it covers. If your organizations belong to two families, you get one roll-up per family; organizations from different families are never combined. Select a roll-up the way you would select an organization; to leave it, open the switcher and select a single organization. Organizations where your only role is CLA Manager or initial CLA Manager designee are not part of it. See [What is an organization family roll-up?](../choose-an-organization/#what-is-an-organization-family-roll-up).
 
 ## What does the Org Overview dashboard show?
 
@@ -98,7 +93,7 @@ The Groups page lists the working groups, committees and other groups across Lin
 
 ## What does the Organization Profile page show, and who can edit it?
 
-The Organization Profile page shows the selected organization's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the organization in the Organization lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the organization, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The organization name and the addresses cannot be changed on this page. Changes save to the organization's record, so everyone who can open the organization sees them. The page is about one organization, so it is not part of the **All Organizations Roll-Up**: while the combined view is selected, **Organization Profile** is not in the menu. Select a single organization to open it. See [Who can edit the organization profile?](../org-profile/#who-can-edit-the-organization-profile).
+The Organization Profile page shows the selected organization's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the organization in the Organization lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the organization, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The organization name and the addresses cannot be changed on this page. Changes save to the organization's record, so everyone who can open the organization sees them. See [Who can edit the organization profile?](../org-profile/#who-can-edit-the-organization-profile).
 
 ## Why don't I see Crowdfunding Initiatives in the Organization lens?
 
