@@ -1222,14 +1222,17 @@ describe('toHealthMetricsOverviewKpiStripLayout', () => {
     expect(toHealthMetricsOverviewKpiStripLayout(340, 2)).toBe('row');
   });
 
-  it('stacks a narrower strip in one column', () => {
-    expect(toHealthMetricsOverviewKpiStripLayout(339, 2)).toBe('stack');
-    expect(toHealthMetricsOverviewKpiStripLayout(500, 3)).toBe('stack');
+  it('goes two per row for any item count once an item would be narrower than 170px', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(339, 2)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(500, 3)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(600, 4)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(260, 5)).toBe('grid');
   });
 
-  it('makes four items a 2 × 2 grid while two columns still have 170px each, and stacks them below that', () => {
-    expect(toHealthMetricsOverviewKpiStripLayout(600, 4)).toBe('grid');
-    expect(toHealthMetricsOverviewKpiStripLayout(339, 4)).toBe('stack');
+  it('stacks once half the strip would be narrower than 130px', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(259, 2)).toBe('stack');
+    expect(toHealthMetricsOverviewKpiStripLayout(250, 3)).toBe('stack');
+    expect(toHealthMetricsOverviewKpiStripLayout(120, 1)).toBe('stack');
   });
 });
 
