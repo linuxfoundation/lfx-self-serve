@@ -14284,8 +14284,10 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
    * A refine re-saves the brief, and the save clears the brief id until it answers, so the carried
    * pending upload is parked on mount. When the save hands the same id back, the upload must be
    * resumed, holding Create, rather than left parked with Create free to send no image.
+   * This real-template round trip mounts Implementation twice and drains Angular between each
+   * phase; allow headroom beyond the default 5 seconds on shared CI runners.
    */
-  it("resumes a pending X upload once a refine's delayed save returns the same brief id", async () => {
+  it("resumes a pending X upload once a refine's delayed save returns the same brief id", { timeout: 15_000 }, async () => {
     listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
     const service = TestBed.inject(CampaignService);
     const upload = new Subject<typeof tweetAsset>();

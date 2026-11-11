@@ -6,7 +6,10 @@ import type { Committee, CommitteeInvite } from './committee.interface';
 import type { TagSeverity } from './components.interface';
 import type { CommitteeMember, CreateCommitteeMemberRequest } from './member.interface';
 
-/** A known, exact lowercase snake_case header of the member import CSV. */
+/**
+ * A canonical lowercase snake_case header of the member import CSV. A file header matches it when
+ * they are equal ignoring case, whitespace, hyphens and underscores (`First Name` → `first_name`).
+ */
 export type MemberImportColumn = (typeof MEMBER_IMPORT_COLUMNS)[number];
 
 /** Trimmed cell values of one CSV record, keyed by header. Absent headers are absent keys. */
@@ -59,12 +62,24 @@ export interface MemberImportRecord {
 
 /**
  * Result of reading a whole CSV. A non-empty `errors` means the file as a whole is unusable
- * (malformed quoting, unknown headers, too many rows…) and no record should be previewed.
+ * (malformed quoting, repeated or missing headers, too many rows…) and no record should be previewed.
  */
 export interface MemberImportParseResult {
   headers: MemberImportColumn[];
   records: MemberImportRecord[];
+  /**
+   * File columns the import does not use, by their original header text; a column without a header
+   * is listed as `Column N (no header)` only when a row has a value in it. Empty when `errors` is not.
+   */
+  ignoredColumns: string[];
   errors: string[];
+}
+
+/** Text of an uploaded import file and the encoding it was read with. */
+export interface MemberImportDecodedFile {
+  text: string;
+  /** `windows-1252` when the bytes were not valid UTF-8 (Excel's default "CSV (Comma delimited)"). */
+  encoding: 'utf-8' | 'windows-1252';
 }
 
 /** One previewed/imported row of the member import dialog. */
