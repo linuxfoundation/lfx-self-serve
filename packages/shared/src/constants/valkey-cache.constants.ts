@@ -71,6 +71,12 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for Flow C's (profile Auth0 Management API) CSRF state nonce, keyed by the nonce itself rather than by user or session — see #1938. Kept out of `req.appSession` because express-openid-connect blind-overwrites the whole session on every response; a concurrent request finishing after `/auth/start` silently drops the nonce it wrote. */
   AUTH_STATE_NAMESPACE: 'auth-state:v1',
 
+  /** Private callback support drafts, keyed by a digest of subject and random attempt handle. */
+  EMAIL_LINKED_SUPPORT_NAMESPACE: 'email-linked-support:v1',
+  EMAIL_LINKED_SUPPORT_TTL_SECONDS: 300,
+  /** Upper expiry sanity-check allowance between pods; never extends the Valkey TTL. */
+  EMAIL_LINKED_SUPPORT_CLOCK_SKEW_MS: 30000,
+
   /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
   MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',
 

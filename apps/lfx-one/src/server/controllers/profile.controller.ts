@@ -15,6 +15,7 @@ import {
   EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   EMAIL_REGEX,
   EMAIL_VERIFICATION_FAILED_ERROR,
   EMAIL_VERIFICATION_FAILED_MESSAGE,
@@ -75,6 +76,7 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { EnrollmentService } from '../services/enrollment.service';
 import { ForwardsService } from '../services/forwards.service';
 import { logger } from '../services/logger.service';
+import { linkedEmailSupportService } from '../services/linked-email-support.service';
 import { MeetingPreferenceService } from '../services/meeting-preference.service';
 import { ObjectStoreService } from '../services/object-store.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
@@ -1929,6 +1931,13 @@ export class ProfileController {
         return;
       }
 
+      // Only profile-layout returns consume support context; other allowed pages have no consumer.
+      const isProfileReturn = returnTo === ProfileController.profileDefaultReturnTo || returnTo.startsWith(`${ProfileController.profileDefaultReturnTo}/`);
+      const supportHandle =
+        emailStatus === EMAIL_CALLBACK_ALREADY_LINKED_STATUS && pending && isProfileReturn
+          ? await linkedEmailSupportService.issue(currentUserSub, pending.email)
+          : undefined;
+
       logger.success(req, 'profile_auth_callback', startTime, {
         user_sub: currentUserSub,
         token_type: tokenResponse.token_type,
@@ -1942,11 +1951,28 @@ export class ProfileController {
       // The email outcome rides alongside the authorization flag, which on its own proves only that
       // authorization succeeded. A newly linked address adds no marker (unchanged behavior).
       const emailStatusQuery = emailStatus ? `&${EMAIL_CALLBACK_STATUS_PARAM}=${emailStatus}` : '';
-      res.redirect(`${returnTo}?success=profile_token_obtained${emailStatusQuery}`);
+      const supportQuery = supportHandle ? `&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${supportHandle}` : '';
+      res.redirect(`${returnTo}?success=profile_token_obtained${emailStatusQuery}${supportQuery}`);
     } catch (err) {
       logger.error(req, 'profile_auth_callback', startTime, err, {});
       res.redirect(`${returnTo}?error=token_exchange_failed`);
     }
+  }
+
+  /** POST /api/profile/auth/email-support-context — consume only this user's private callback draft. */
+  public async consumeLinkedEmailSupportContext(req: Request, res: Response): Promise<void> {
+    res.set('Cache-Control', 'no-store');
+    const sub = req.oidc?.user?.['sub'];
+    if (isImpersonating(req) || typeof sub !== 'string' || !sub) {
+      // Preserve the deliberately empty defensive response; never log the subject or handle.
+      logger.warning(req, 'consume_linked_email_support_context', 'Rejected linked-email support context request');
+      res.status(403).json({});
+      return;
+    }
+    const startTime = logger.startOperation(req, 'consume_linked_email_support_context');
+    const email = await linkedEmailSupportService.consume(sub, req.body?.handle);
+    logger.success(req, 'consume_linked_email_support_context', startTime, { has_context: !!email });
+    res.json(email ? { email } : {});
   }
 
   /**

@@ -35,6 +35,36 @@ describe('UserService', () => {
     service = TestBed.inject(UserService);
   });
 
+  describe('consumeLinkedEmailSupportContext', () => {
+    it('posts the opaque handle and returns only the authenticated response', () => {
+      const post = vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(of({ email: 'linked@example.test' }));
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+      expect(post).toHaveBeenCalledExactlyOnceWith('/api/profile/auth/email-support-context', { handle: 'a'.repeat(64) });
+      expect(next).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+    });
+
+    it.each([undefined, null, '', 'not-a-handle', ['a'.repeat(64)]])('does not request missing or malformed context %j', (handle) => {
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext(handle).subscribe(next);
+      expect(TestBed.inject(HttpClient).post).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledExactlyOnceWith({});
+    });
+
+    it('logs a failed context request without sensitive error data and keeps the generic draft', () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('linked@example.test; handle=' + 'a'.repeat(64))));
+        const next = vi.fn();
+        service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+        expect(next).toHaveBeenCalledExactlyOnceWith({});
+        expect(log).toHaveBeenCalledExactlyOnceWith('Linked-email support context unavailable; using the generic support draft.');
+      } finally {
+        log.mockRestore();
+      }
+    });
+  });
+
   it('refreshes identities only after a successful primary-email change, without rewriting session claims', () => {
     const response$ = new Subject<{ message: string }>();
     const put = vi.mocked(TestBed.inject(HttpClient).put).mockReturnValue(response$);

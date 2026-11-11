@@ -268,7 +268,25 @@
                         }
                       </button>
                     }
-                    @if (showResendSupport()) {
+                    @if (linkedConflict()) {
+                      <div
+                        class="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3"
+                        role="alert"
+                        data-testid="linked-email-support-callout">
+                        <div class="flex flex-col gap-1">
+                          <p class="text-sm font-semibold text-amber-900">{{ linkedSupportTitle }}</p>
+                          <p class="text-xs text-amber-900">{{ linkedSupportDetail }}</p>
+                        </div>
+                        <lfx-button
+                          type="button"
+                          lfxOpenIntercom
+                          [intercomMessage]="linkedSupportMessage()"
+                          label="Contact support"
+                          severity="primary"
+                          size="small"
+                          data-testid="linked-email-support-button" />
+                      </div>
+                    } @else if (showResendSupport()) {
                       <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" role="status" data-testid="resend-support-callout">
                         <div class="flex flex-col gap-1">
                           <p class="text-sm font-semibold text-blue-900">{{ resendSupportTitle }}</p>
