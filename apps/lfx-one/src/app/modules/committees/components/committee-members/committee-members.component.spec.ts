@@ -479,11 +479,11 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(query('invite-expiry')?.textContent).toContain('Expired');
     });
 
-    it('shows no expiry for a legacy invite without expires_at', async () => {
+    it('says there is no expiration for a legacy invite without expires_at', async () => {
       await openPending([LEGACY]);
 
       expect(query('invite-expired-tag')).toBeNull();
-      expect(query('invite-expiry')).toBeNull();
+      expect(query('invite-expiry')?.textContent?.trim()).toBe('No expiration');
     });
 
     it('offers Resend invitation only for an expired invite', async () => {
