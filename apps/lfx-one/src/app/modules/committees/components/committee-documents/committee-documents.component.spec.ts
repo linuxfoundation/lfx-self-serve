@@ -130,6 +130,19 @@ describe('CommitteeDocumentsComponent', () => {
     expect(changed).toBe(0);
   });
 
+  it('keeps a deleted file hidden when the reload straight after still returns it', async () => {
+    // getCommitteeDocuments keeps answering with the deleted file, as the file index can for a moment after the delete.
+    await render();
+    expect(rowFor('committee_file:file-1')).toBeTruthy();
+
+    table().documentDelete.emit(rowFor('committee_file:file-1'));
+    await fixture.whenStable();
+
+    expect(getCommitteeDocuments).toHaveBeenCalledTimes(2);
+    expect(rowFor('committee_file:file-1')).toBeUndefined();
+    expect(rowFor('committee_link:link-1')).toBeTruthy();
+  });
+
   it('ignores a row the group cannot manage', async () => {
     await render();
 

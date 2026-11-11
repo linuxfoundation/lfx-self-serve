@@ -277,7 +277,7 @@
             </lfx-button>
           }
           @if (canManage() && doc.manageableType) {
-            <lfx-menu #manageMenu [model]="manageMenuItems" [popup]="true" appendTo="body" />
+            <lfx-menu #manageMenu [model]="manageMenus().get(doc.id)" [popup]="true" appendTo="body" />
             <lfx-button
               icon="fa-light fa-ellipsis-vertical"
               severity="secondary"
@@ -286,7 +286,7 @@
               [rounded]="true"
               ariaLabel="More actions"
               ariaHaspopup="menu"
-              (onClick)="toggleManageMenu($event, doc, manageMenu)"
+              (onClick)="toggleManageMenu($event, manageMenu)"
               [attr.data-testid]="testIdPrefix() + '-actions-' + doc.id">
             </lfx-button>
           }

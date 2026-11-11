@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -63,13 +63,11 @@ export class DocumentsTableComponent {
   /** Emitted after the user confirms deleting a manageable row. The page makes the API call and refreshes. */
   public readonly documentDelete = output<MyDocumentItem>();
 
-  /** The row whose actions menu is open. */
-  private readonly selectedDocument = signal<MyDocumentItem | null>(null);
-
   protected readonly colSpan = computed(() => (this.showFoundation() ? 7 : 6));
   protected readonly hasDocuments = computed(() => this.documents().length > 0);
   protected readonly rows: Signal<MyDocumentTableRow[]> = this.initRows();
-  protected readonly manageMenuItems: MenuItem[] = this.initManageMenuItems();
+  /** Each manageable row's own menu items, keyed by row id, so a menu can only ever act on the row it belongs to. */
+  protected readonly manageMenus: Signal<Map<string, MenuItem[]>> = this.initManageMenus();
   // Widen the Actions column (and narrow Name by the same amount) only when a row can show the extra menu button.
   protected readonly nameColumnClass = computed(() => {
     if (this.showFoundation()) return this.canManage() ? 'w-[24%]' : 'w-[28%]';
@@ -77,9 +75,9 @@ export class DocumentsTableComponent {
   });
   protected readonly actionsColumnClass = computed(() => (this.canManage() ? 'w-[9%]' : 'w-[5%]'));
 
-  protected toggleManageMenu(event: Event, doc: MyDocumentItem, menu: MenuComponent): void {
-    event.stopPropagation();
-    this.selectedDocument.set(doc);
+  // The click is left to bubble: PrimeNG closes an open popup from its document click listener, so stopping it here
+  // would leave another row's menu open when this one opens.
+  protected toggleManageMenu(event: Event, menu: MenuComponent): void {
     menu.toggle(event);
   }
 
@@ -135,19 +133,26 @@ export class DocumentsTableComponent {
     return computed(() => this.documents().map((doc) => ({ ...doc, sourceLink: getDocumentSourceLink(doc, this.currentGroupUid()) })));
   }
 
-  private initManageMenuItems(): MenuItem[] {
-    return [
-      {
-        label: 'Delete',
-        icon: 'fa-light fa-trash',
-        styleClass: 'text-red-600',
-        command: () => this.onDeleteClick(this.selectedDocument()),
-      },
-    ];
+  private initManageMenus(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const menus = new Map<string, MenuItem[]>();
+      for (const doc of this.documents()) {
+        if (!doc.manageableType) continue;
+        menus.set(doc.id, [
+          {
+            label: 'Delete',
+            icon: 'fa-light fa-trash',
+            styleClass: 'text-red-600',
+            command: () => this.onDeleteClick(doc),
+          },
+        ]);
+      }
+      return menus;
+    });
   }
 
-  private onDeleteClick(doc: MyDocumentItem | null): void {
-    if (!doc?.manageableType) return;
+  private onDeleteClick(doc: MyDocumentItem): void {
+    if (!doc.manageableType) return;
 
     // A folder with documents in it is never deleted: say what to do instead. The BFF enforces this too.
     if (doc.isFolder && (doc.childCount ?? 0) > 0) {

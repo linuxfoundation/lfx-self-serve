@@ -60,6 +60,8 @@ export class CommitteeDocumentsComponent {
   protected readonly loading = signal<boolean>(true);
   protected readonly relatedLoading = signal<boolean>(true);
   protected readonly refreshTrigger = signal<number>(0);
+  /** Uids of group documents deleted in this session, hidden from the list even if a reload still returns them. */
+  private readonly deletedDocumentUids = signal<ReadonlySet<string>>(new Set());
   /** Selected source pill: 'all' or a source bucket (link, file, meeting, mailing_list). */
   protected readonly sourceTab = signal<string>('all');
   /** UID of the folder the user has drilled into; null means the root view. */
@@ -77,6 +79,9 @@ export class CommitteeDocumentsComponent {
   // === Computed Signals ===
   protected readonly isLoading: Signal<boolean> = computed(() => this.loading() || this.relatedLoading());
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
+  /** The list as last fetched, including rows deleted in this session that the file index may still return. */
+  private readonly fetchedCommitteeDocuments: Signal<CommitteeDocument[]> = this.initFetchedCommitteeDocuments();
+  /** The group's own folders, links and files, leaving out rows deleted in this session. */
   protected readonly committeeDocuments: Signal<CommitteeDocument[]> = this.initCommitteeDocuments();
   /** Meeting and mailing list documents associated with the committee (committee links are excluded; they come from committeeDocuments). */
   protected readonly relatedDocuments: Signal<MyDocumentItem[]> = this.initRelatedDocuments();
@@ -176,6 +181,7 @@ export class CommitteeDocumentsComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${doc.name}" was deleted.` });
+          this.deletedDocumentUids.update((uids) => new Set(uids).add(documentUid));
           this.onDocumentsChanged();
         },
         error: (err: HttpErrorResponse) => {
@@ -368,7 +374,19 @@ export class CommitteeDocumentsComponent {
     return doc.source === 'mailing_list' ? 'mailing_list' : 'meeting';
   }
 
+  /**
+   * The fetched list without the rows deleted in this session. Files are read through an index that updates after the
+   * delete returns, so the refetch right after a delete can still contain the row; hiding it by id keeps it gone (and
+   * the folder's child count right) until the index catches up.
+   */
   private initCommitteeDocuments(): Signal<CommitteeDocument[]> {
+    return computed(() => {
+      const deleted = this.deletedDocumentUids();
+      return deleted.size === 0 ? this.fetchedCommitteeDocuments() : this.fetchedCommitteeDocuments().filter((doc) => !deleted.has(doc.uid));
+    });
+  }
+
+  private initFetchedCommitteeDocuments(): Signal<CommitteeDocument[]> {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.refreshTrigger)]).pipe(
         filter(([committee]) => !!committee?.uid),

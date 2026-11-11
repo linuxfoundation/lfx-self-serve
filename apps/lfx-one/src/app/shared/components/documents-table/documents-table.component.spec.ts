@@ -233,4 +233,51 @@ describe('DocumentsTableComponent row actions menu', () => {
     expect(messageService.add).not.toHaveBeenCalled();
     expect(deleted.map((row) => row.id)).toEqual(['doc-1']);
   });
+
+  describe('with two manageable rows', () => {
+    const rowButton = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="documents-actions-${id}"] button`);
+    const openMenus = (): HTMLElement[] => Array.from(body().querySelectorAll<HTMLElement>('.p-menu-overlay'));
+
+    async function renderTwoRows(): Promise<void> {
+      fixture.componentRef.setInput('documents', [
+        doc({ id: 'a', name: 'Alpha', manageableType: 'link', url: 'https://a.example' }),
+        doc({ id: 'b', name: 'Beta', manageableType: 'link', url: 'https://b.example' }),
+      ]);
+      fixture.componentRef.setInput('showFoundation', false);
+      fixture.componentRef.setInput('canManage', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    async function open(id: string): Promise<void> {
+      rowButton(id)?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    it('closes the first row’s menu when another row’s menu is opened', async () => {
+      await renderTwoRows();
+
+      await open('a');
+      expect(openMenus()).toHaveLength(1);
+
+      await open('b');
+      expect(openMenus()).toHaveLength(1);
+    });
+
+    it('asks about the row whose menu was opened, not the one opened before it', async () => {
+      await renderTwoRows();
+      await open('a');
+      await open('b');
+
+      Array.from(body().querySelectorAll<HTMLElement>('.p-menu-item-link, [role="menuitem"] a'))
+        .find((el) => el.textContent?.includes('Delete'))
+        ?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(body().textContent).toContain('Delete "Beta"?');
+      expect(body().textContent).not.toContain('Delete "Alpha"?');
+    });
+  });
 });

@@ -121,6 +121,8 @@ export class DocumentsDashboardComponent {
   protected readonly projectSourceTab = signal<string>('all');
   /** Bumped after a successful upload/folder/link create so the document list re-fetches. */
   protected readonly refreshTrigger = signal<number>(0);
+  /** Uids of project documents deleted in this session, hidden from the list even if a reload still returns them. */
+  private readonly deletedDocumentUids = signal<ReadonlySet<string>>(new Set());
   /** UID of the folder the user has drilled into; null means the root view (project mode only). */
   protected readonly currentFolderUid = signal<string | null>(null);
 
@@ -160,7 +162,9 @@ export class DocumentsDashboardComponent {
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   protected readonly meetingFilter: Signal<string | null> = this.initMeetingFilter();
   protected readonly mailingListFilter: Signal<string | null> = this.initMailingListFilter();
-  /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. */
+  /** The list as last fetched, including rows deleted in this session that the index may still return. */
+  private readonly fetchedProjectDocuments: Signal<ProjectDocument[]> = this.initFetchedProjectDocuments();
+  /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. Leaves out rows deleted in this session. */
   protected readonly rawProjectDocuments: Signal<ProjectDocument[]> = this.initRawProjectDocuments();
   /** Aggregator-fed documents, used only when no project context is selected. */
   protected readonly legacyDocuments: Signal<MyDocumentItem[]> = this.initLegacyDocuments();
@@ -248,6 +252,7 @@ export class DocumentsDashboardComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${doc.name}" was deleted.` });
+          this.deletedDocumentUids.update((uids) => new Set(uids).add(documentUid));
           this.refreshTrigger.update((v) => v + 1);
         },
         error: (err: HttpErrorResponse) => {
@@ -303,11 +308,23 @@ export class DocumentsDashboardComponent {
   }
 
   /**
+   * The fetched list without the rows deleted in this session. The list is read through an index that updates after
+   * the delete returns, so the refetch right after a delete can still contain the row; hiding it by id keeps it gone
+   * (and the folder's child count right) until the index catches up.
+   */
+  private initRawProjectDocuments(): Signal<ProjectDocument[]> {
+    return computed(() => {
+      const deleted = this.deletedDocumentUids();
+      return deleted.size === 0 ? this.fetchedProjectDocuments() : this.fetchedProjectDocuments().filter((doc) => !deleted.has(doc.uid));
+    });
+  }
+
+  /**
    * Fetches raw project documents (folders + links + files) from the project-service backend.
    * Only fires when in project mode — keeps the aggregator path free of unnecessary requests.
    * Reacts to refreshTrigger so create/upload/delete flows re-render without manual navigation.
    */
-  private initRawProjectDocuments(): Signal<ProjectDocument[]> {
+  private initFetchedProjectDocuments(): Signal<ProjectDocument[]> {
     return toSignal(
       combineLatest([toObservable(this.project), toObservable(this.useProjectSource), toObservable(this.refreshTrigger)]).pipe(
         switchMap(([project, useProjectSource]) => {

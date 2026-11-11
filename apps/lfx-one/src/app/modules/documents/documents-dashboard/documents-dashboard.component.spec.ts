@@ -360,6 +360,32 @@ describe('DocumentsDashboardComponent', () => {
       expect(getProjectDocuments).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps a deleted row hidden when the reload straight after still returns it', async () => {
+      // getProjectDocuments keeps answering with the deleted link, as the index can for a moment after the delete.
+      await render();
+      expect(visibleIds()).toContain('project_link:own-link');
+
+      tableInstance().documentDelete.emit(rowFor('project_link:own-link'));
+      await fixture.whenStable();
+
+      expect(getProjectDocuments).toHaveBeenCalledTimes(2);
+      expect(visibleIds()).not.toContain('project_link:own-link');
+    });
+
+    it('updates a folder’s count when its last document is deleted and the reload still returns it', async () => {
+      projectDocuments = [document('folder', '', { type: 'folder' }), document('inside', '2026-10-01', { parent_uid: 'folder' })];
+      await render();
+      expect(rowFor('project_folder:folder').childCount).toBe(1);
+
+      fixture.componentInstance['onFolderOpen'](rowFor('project_folder:folder'));
+      await fixture.whenStable();
+      tableInstance().documentDelete.emit(rowFor('project_link:inside'));
+      fixture.componentInstance['onBreadcrumbHome']();
+      await fixture.whenStable();
+
+      expect(rowFor('project_folder:folder')?.childCount).toBe(0);
+    });
+
     it('ignores a row the page cannot manage', async () => {
       await render();
 
