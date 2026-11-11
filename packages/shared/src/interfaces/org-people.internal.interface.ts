@@ -135,6 +135,13 @@ export interface OrgCompanyEmailKeys {
   noneUsernames: string[];
 }
 
+/**
+ * What the drawer's username lookup answers for LF usernames the company-email keys do not cover (live-only All Employees
+ * rows off the warehouse roster): `usernames` name an LF account holding a qualifying address at the account,
+ * `noneUsernames` one holding none. A username the warehouse does not know is in neither.
+ */
+export type OrgLfUsernameCompanyEmailStatuses = Pick<OrgCompanyEmailKeys, 'usernames' | 'noneUsernames'>;
+
 /** A person's employment at the account — current or former; the Employment filter's `all` is not a classification. */
 export type OrgPersonEmployment = Exclude<OrgEmploymentFilter, 'all'>;
 
