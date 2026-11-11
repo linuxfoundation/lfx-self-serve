@@ -85,6 +85,14 @@ If you can manage a group's members, you can add many people at once from a CSV 
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
 8. Select **Add _N_ members**. If the file has invalid rows, the button says how many are skipped, for example **Add 27 members (skip 3 invalid)**. Rows are added in batches, one batch at a time. While the import runs, each row shows **Not yet submitted**, **Adding…**, or **Waiting to resume** until it settles. A retry run preserves **Outcome unknown** for an unconfirmed earlier attempt until that row is sent again.
 
+### Fix and re-import downloaded rows
+
+The invalid-rows download keeps the group's template columns plus any other known columns supplied on invalid rows, including voting values that must be cleared for a non-voting group. The **errors** column describes the problems; it is ignored on re-import, and validation runs again against the corrected member values.
+
+Keep the **lfx_import_encoding** column and its **text-v1** values unchanged. To prevent spreadsheet formulas without changing member identities, formula-leading values and values already starting with **lfx-text:** have one **lfx-text:** safety prefix added. Keep that first prefix when editing the value after it. For example, **lfx-text:+person@example.com** is restored to **+person@example.com** on import, not to an address with an extra apostrophe. Other values, including literal apostrophes, are unchanged.
+
+Correct the member values, save as **CSV UTF-8 (comma delimited)**, and choose the downloaded file again. You do not need to remove **errors** or the encoding column. An unsupported or missing encoding value is rejected rather than guessing how to restore the values.
+
 ### Import while creating or editing a group
 
 1. When creating a group, select **Create Group** on the **Settings** step to reach **Add Members**. When editing, open **Edit Group** and go to the **Add Members** step.

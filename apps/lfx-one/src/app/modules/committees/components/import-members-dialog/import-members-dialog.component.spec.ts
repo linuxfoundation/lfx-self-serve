@@ -165,7 +165,7 @@ describe('ImportMembersDialogComponent', () => {
   }
 
   /** Clicks Download invalid rows and captures the CSV that downloadCsv hands to the browser download APIs. */
-  async function captureInvalidRowsDownload(): Promise<{ filename: string; rows: string[][] }> {
+  async function captureInvalidRowsDownload(): Promise<{ filename: string; rows: string[][]; csv: string }> {
     let blob: Blob | undefined;
     let filename: string | undefined;
     const originalCreateObjectURL = URL.createObjectURL;
@@ -188,9 +188,9 @@ describe('ImportMembersDialogComponent', () => {
     if (!blob || filename === undefined) {
       throw new Error('Download invalid rows did not trigger a download');
     }
-    // The exported values carry no commas or quotes, so a plain split keeps the columns aligned.
+    // Plain split is only for the comma-free download assertions; round-trip tests use raw CSV.
     const text = (await blob.text()).replace(new RegExp(String.fromCharCode(0xfeff)), '');
-    return { filename, rows: text.split('\r\n').map((line) => line.split(',')) };
+    return { filename, rows: text.split('\r\n').map((line) => line.split(',')), csv: text };
   }
 
   beforeEach(() => {
@@ -559,9 +559,32 @@ describe('ImportMembersDialogComponent', () => {
       expect(records).toHaveLength(2);
       expect(records.map((record) => record[header.indexOf('email')])).toEqual(['not-an-email', '']);
       expect(records[0][header.indexOf('errors')]).toBe('Email is not a valid address.');
-      // downloadCsv neutralizes formula prefixes, so a value starting with "=" is exported behind an apostrophe.
-      expect(records[1][header.indexOf('first_name')]).toBe("'=Formula");
+      // Recovery text is spreadsheet-inert and reversible, without an identity-changing apostrophe.
+      expect(records[1][header.indexOf('first_name')]).toBe('lfx-text:=Formula');
+      expect(records[1][header.indexOf('lfx_import_encoding')]).toBe('text-v1');
       expect(records[1][header.indexOf('errors')]).toBe('Email is required.');
+    });
+
+    it('re-uploads corrected downloaded rows with metadata and submits the exact recovered identities', async () => {
+      await upload("email,role\nready@example.com,Chair\n+person@example.com,unsupported\n'+literal@example.com,unsupported\nbad,Chair");
+      await render();
+      expect(component.invalidCount()).toBe(3);
+      const { csv } = await captureInvalidRowsDownload();
+      expect(csv).toContain('lfx_import_encoding');
+      expect(csv).toContain('lfx-text:+person@example.com');
+      expectNothingWritten();
+      const corrected = csv.replaceAll(',unsupported,', ',Chair,').replace('bad,', 'fixed@example.com,');
+      await upload(corrected, 'corrected-download.csv');
+      expect(component.fileErrors()).toEqual([]);
+      expect(component.readyCount()).toBe(3);
+      expect(component.invalidCount()).toBe(0);
+      expect(component.rows().map((row) => row.payload?.email)).toEqual(['+person@example.com', "'+literal@example.com", 'fixed@example.com']);
+      expect(component.rows().every((row) => !('errors' in row.cells) && !('lfx_import_encoding' in row.cells))).toBe(true);
+      query('import-members-submit-btn')?.querySelector('button')?.click();
+      expect(sentEmails(0)).toEqual(['+person@example.com', "'+literal@example.com", 'fixed@example.com']);
+      respond(0);
+      await render();
+      expect(component.addedCount()).toBe(3);
     });
 
     it('hides the download when no row is invalid', async () => {
@@ -640,6 +663,35 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.tableFirst()).toBe(0);
       expect(visibleRowNumbers()).toHaveLength(10);
       expect(visibleRowNumbers()[0]).toBe('15');
+    });
+
+    it.each([470, 20])('keeps live filtered page %i within bounds while preserving valid pages', async (first) => {
+      await upload(`email\n${emails(500)}`);
+      component.startImport();
+      await render();
+      expect(pending).toHaveLength(1);
+      await selectStatus('not_submitted');
+      expect(component.filteredRowViews()).toHaveLength(475);
+      if (first === 470) {
+        (fixture.nativeElement.querySelector('.p-paginator-last') as HTMLButtonElement).click();
+      } else {
+        (fixture.nativeElement.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+        await render();
+        (fixture.nativeElement.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+      }
+      await render();
+      expect(component.tableFirst()).toBe(first);
+      expect(visibleRowNumbers()).toHaveLength(first === 470 ? 5 : 10);
+
+      respond(0);
+      await render();
+      expect(pending).toHaveLength(2);
+      expect(component.activeStatusFilter()).toBe('not_submitted');
+      expect(component.filteredRowViews()).toHaveLength(450);
+      expect(query('filter-pill-not_submitted')?.textContent).toContain('Not yet submitted (450)');
+      expect(component.tableFirst()).toBe(first === 470 ? 440 : 20);
+      expect(visibleRowNumbers()).toHaveLength(10);
+      expect(visibleRowNumbers()[0]).toBe(first === 470 ? '492' : '72');
     });
 
     it('resets the filter when another file is chosen', async () => {

@@ -5,12 +5,16 @@ import { APPOINTED_BY_OPTIONS, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from 
 import {
   MEMBER_IMPORT_COLUMNS,
   MEMBER_IMPORT_EMAIL_PATTERN,
+  MEMBER_IMPORT_ENCODING_COLUMN,
+  MEMBER_IMPORT_ERRORS_COLUMN,
   MEMBER_IMPORT_FIELDS,
   MEMBER_IMPORT_HTTP_URL_PATTERN,
   MEMBER_IMPORT_MAX_RECORDS,
   MEMBER_IMPORT_PAUSE_DELAYS_MS,
+  MEMBER_IMPORT_RECOVERY_ENCODING,
   MEMBER_IMPORT_RETRY_AFTER_DEFAULT_MS,
   MEMBER_IMPORT_RETRY_AFTER_MIN_MS,
+  MEMBER_IMPORT_TEXT_PREFIX,
   MEMBER_IMPORT_VOTING_COLUMNS,
   MEMBER_IMPORT_VOTING_STATUS_LABELS,
 } from '../constants/member-import.constants';
@@ -52,19 +56,29 @@ export function getMemberImportTemplateHeaders(rules: MemberImportGroupRules): M
 }
 
 /**
- * Invalid rows as CSV records, so users can fix them and import them again: the group's template
- * header plus an `errors` column, then each invalid row's values exactly as written and its issues.
+ * Recovery CSV records: group template plus any supplied known columns, versioned text encoding
+ * and ignored diagnostics. Prefix formula-leading/literal prefix-looking values so spreadsheet
+ * protection remains reversible without changing ordinary CSVs or the generic serializer.
  */
 export function buildMemberImportInvalidRowsCsv(rows: MemberImportRow[], rules: MemberImportGroupRules): string[][] {
-  const headers = getMemberImportTemplateHeaders(rules);
-  const records = rows
-    .filter((row) => row.status === 'invalid')
-    .map((row) => [...headers.map((column) => row.cells[column] ?? ''), row.issues.map((issue) => issue.message).join(' ')]);
-  return [[...headers, 'errors'], ...records];
+  const invalidRows = rows.filter((row) => row.status === 'invalid');
+  const templateHeaders = new Set(getMemberImportTemplateHeaders(rules));
+  const headers = MEMBER_IMPORT_COLUMNS.filter((column) => templateHeaders.has(column) || invalidRows.some((row) => row.cells[column] !== undefined));
+  const records = invalidRows.map((row) => [
+    ...headers.map((column) => {
+      const value = row.cells[column] ?? '';
+      return /^[=+\-@\t\r]/.test(value) || value.startsWith(MEMBER_IMPORT_TEXT_PREFIX) ? `${MEMBER_IMPORT_TEXT_PREFIX}${value}` : value;
+    }),
+    MEMBER_IMPORT_RECOVERY_ENCODING,
+    row.issues.map((issue) => issue.message).join(' '),
+  ]);
+  return [[...headers, MEMBER_IMPORT_ENCODING_COLUMN, MEMBER_IMPORT_ERRORS_COLUMN], ...records];
 }
 
 /**
  * Strictly parses member import CSV text (comma delimiter, RFC 4180 quoting) and checks its header.
+ * Reserved recovery diagnostics are ignored. Only rows with the supported encoding marker decode
+ * one safety prefix; returned headers/cells contain member data only.
  *
  * Handles a UTF-8 BOM, CRLF/LF line endings, quoted commas/newlines and escaped `""` quotes, and
  * skips blank records while still counting them, so every `rowNumber` matches the source record
@@ -94,6 +108,7 @@ export function parseMemberImportCsv(text: string, rules: MemberImportGroupRules
   }
   const { columns, ignored } = headerResult;
   const headers = columns.filter((column): column is MemberImportColumn => column !== null);
+  const encodingColumn = header.cells.findIndex((column) => headerKey(column) === headerKey(MEMBER_IMPORT_ENCODING_COLUMN));
 
   const errors: string[] = [];
   const records: MemberImportRecord[] = [];
@@ -104,11 +119,16 @@ export function parseMemberImportCsv(text: string, rules: MemberImportGroupRules
       errors.push(`Row ${rowNumber} has ${cells.length} cells but the header has ${columns.length}. Put quotes around values that contain commas.`);
       return;
     }
+    if (encodingColumn !== -1 && cells[encodingColumn].trim() !== MEMBER_IMPORT_RECOVERY_ENCODING) {
+      errors.push(`Row ${rowNumber} has an unsupported recovery encoding. Keep the downloaded ${MEMBER_IMPORT_ENCODING_COLUMN} value unchanged.`);
+      return;
+    }
     const record: MemberImportCells = {};
     cells.forEach((cell, index) => {
       const column = columns[index];
       if (column) {
-        record[column] = cell.trim();
+        const value = cell.trim();
+        record[column] = encodingColumn !== -1 && value.startsWith(MEMBER_IMPORT_TEXT_PREFIX) ? value.slice(MEMBER_IMPORT_TEXT_PREFIX.length) : value;
       } else if (cell.trim()) {
         ignoredWithValues.add(index);
       }
@@ -486,23 +506,25 @@ function readHeaders(
   const errors: string[] = [];
   const columns: (MemberImportColumn | null)[] = [];
   const ignored: { index: number; label: string }[] = [];
-  const seen = new Set<MemberImportColumn>();
+  const seen = new Set<string>();
 
   headerCells.forEach((raw, index) => {
     const label = raw.trim();
-    const column = COLUMN_BY_HEADER_KEY.get(headerKey(label)) ?? null;
-    if (!column) {
+    const key = headerKey(label);
+    const column = COLUMN_BY_HEADER_KEY.get(key) ?? null;
+    const isMetadata = key === headerKey(MEMBER_IMPORT_ERRORS_COLUMN) || key === headerKey(MEMBER_IMPORT_ENCODING_COLUMN);
+    if (!column && !isMetadata) {
       ignored.push({ index, label });
-    } else if (seen.has(column)) {
-      errors.push(`The column "${column}" appears more than once.`);
+    } else if (seen.has(key)) {
+      errors.push(`The column "${column ?? label}" appears more than once.`);
     } else {
-      seen.add(column);
+      seen.add(key);
     }
     columns.push(column);
   });
 
   const missing = getMemberImportFieldGuide(rules)
-    .filter((field) => field.required && !seen.has(field.column))
+    .filter((field) => field.required && !seen.has(headerKey(field.column)))
     .map((field) => `"${field.column}"`);
   if (missing.length > 0) {
     const unrecognized = ignored.filter(({ label }) => label).map(({ label }) => `"${label}"`);

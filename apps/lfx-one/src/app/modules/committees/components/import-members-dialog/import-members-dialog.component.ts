@@ -4,7 +4,7 @@
 import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -20,6 +20,7 @@ import {
   MEMBER_IMPORT_MAX_FILE_BYTES,
   MEMBER_IMPORT_MAX_PAUSES,
   MEMBER_IMPORT_MAX_RECORDS,
+  MEMBER_IMPORT_PAGE_SIZE,
   MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
   MEMBER_IMPORT_STATUS_DISPLAY,
   MEMBER_IMPORT_TEMPLATE_FILENAME,
@@ -151,6 +152,7 @@ export class ImportMembersDialogComponent {
   /** Minimum server deadline, retained even if automatic recovery or a pause is stopped. */
   public retryNotBefore = signal(0);
   public readonly maxPauses = MEMBER_IMPORT_MAX_PAUSES;
+  public readonly tablePageSize = MEMBER_IMPORT_PAGE_SIZE;
   /** Status chosen in the table's filter pills; see activeStatusFilter for the one applied. */
   public statusFilter = signal<MemberImportStatusFilter>('all');
   /** Index of the first table row shown, so a filter change can return to page 1. */
@@ -192,6 +194,10 @@ export class ImportMembersDialogComponent {
   public readonly statusFilterOptions: Signal<FilterPillOption[]> = this.initStatusFilterOptions();
   public readonly filteredRowViews: Signal<MemberImportRowView[]> = this.initFilteredRowViews();
   public readonly statusMessage: Signal<string> = this.initStatusMessage();
+
+  public constructor() {
+    this.initTablePageBounds();
+  }
 
   public downloadTemplate(): void {
     if (!isPlatformBrowser(this.platformId)) {
@@ -389,6 +395,16 @@ export class ImportMembersDialogComponent {
       const filter = this.activeStatusFilter();
       return filter === 'all' ? this.rowViews() : this.rowViews().filter((view) => view.row.status === filter);
     });
+  }
+
+  /** Preserve valid pages, but keep live status-filter results within the current page bounds. */
+  private initTablePageBounds(): void {
+    toObservable(this.filteredRowViews)
+      .pipe(takeUntilDestroyed())
+      .subscribe((rows) => {
+        const lastPageFirst = Math.max(0, Math.ceil(rows.length / this.tablePageSize) - 1) * this.tablePageSize;
+        if (this.tableFirst() > lastPageFirst) this.tableFirst.set(lastPageFirst);
+      });
   }
 
   /** Problem statuses read red and added rows green; the rest keep the default pill style. */

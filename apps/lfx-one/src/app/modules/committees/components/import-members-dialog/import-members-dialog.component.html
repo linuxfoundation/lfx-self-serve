@@ -108,7 +108,7 @@
       @if (phase() === 'preview' && invalidCount() > 0) {
         <p class="text-sm text-red-700" data-testid="import-members-invalid-help">
           {{ invalidCount() }} invalid {{ invalidCount() === 1 ? 'row' : 'rows' }} will be skipped. Download them to fix and import them later, or remove them
-          below.
+          below. In downloads, keep the lfx_import_encoding column and any lfx-text: safety prefixes; they are restored automatically on import.
         </p>
       } @else if (phase() === 'preview' && readyCount() === 0) {
         <p class="text-sm text-gray-600" data-testid="import-members-nothing-help">
@@ -170,8 +170,8 @@
 
     <lfx-table
       [value]="filteredRowViews()"
-      [paginator]="filteredRowViews().length > 10"
-      [rows]="10"
+      [paginator]="filteredRowViews().length > tablePageSize"
+      [rows]="tablePageSize"
       [first]="tableFirst()"
       (onPage)="onTablePage($event)"
       styleClass="p-datatable-sm"
