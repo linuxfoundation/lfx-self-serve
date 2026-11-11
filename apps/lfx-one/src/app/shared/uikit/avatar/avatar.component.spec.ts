@@ -75,7 +75,7 @@ describe('UiAvatarComponent', () => {
       await fixture.whenStable();
 
       expect(host.style.width).toBe('24px');
-      for (const token of ['rounded-[6px]', 'border', 'border-ui-neutral-200', 'bg-ui-background-100', 'p-[4px]']) {
+      for (const token of ['rounded-[6px]', 'border', 'border-ui-neutral-200', 'bg-ui-white', 'p-[4px]']) {
         expect(host.className).toContain(token);
       }
       expect(host.className).not.toContain('bg-ui-accent-600');
@@ -95,6 +95,7 @@ describe('UiAvatarComponent', () => {
       const img = host.querySelector('[data-testid="ui-avatar-image"]') as HTMLElement;
       expect(img.className).toContain('object-contain');
       expect(img.className).not.toContain('object-cover');
+      expect(img.className).not.toContain('rounded-[inherit]');
       expect(img.getAttribute('alt')).toBe('');
     });
 

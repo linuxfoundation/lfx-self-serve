@@ -77,9 +77,9 @@ export class UiAvatarComponent {
   protected readonly text: Signal<string> = this.initText();
   protected readonly fontSize: Signal<number> = this.initFontSize();
   protected readonly classes: Signal<string> = this.initClasses();
-  // A logo is contained inside the padded box; a photo covers the circle.
+  // A logo is contained, square-cornered, inside the padded box so its artwork stays whole; a photo covers the shape.
   protected readonly imageClasses: Signal<string> = computed(
-    () => `h-full w-full rounded-[inherit] ${this.shape() === 'logo' ? 'object-contain' : 'object-cover'}`
+    () => `h-full w-full ${this.shape() === 'logo' ? 'object-contain' : 'rounded-[inherit] object-cover'}`
   );
   protected readonly fallbackIcon: Signal<string> = computed(() => (this.shape() === 'logo' ? 'fa-light fa-building' : 'fa-light fa-user'));
 
@@ -176,8 +176,8 @@ export class UiAvatarComponent {
         warning: 'bg-ui-warning-600 text-ui-white',
         danger: 'bg-ui-danger-600 text-ui-white',
       };
-      // The logo box ignores tone: white, a 1px neutral-200 border and 4px padding (exact px, not rem).
-      const logo = 'border border-ui-neutral-200 bg-ui-background-100 p-[4px] text-ui-neutral-600';
+      // The logo box ignores tone: white in both themes (logos expect it), a 1px neutral-200 border and 4px padding (exact px, not rem).
+      const logo = 'border border-ui-neutral-200 bg-ui-white p-[4px] text-ui-neutral-600';
       // The placeholder is a skeleton clipped to the avatar shape.
       let fill = isLogo ? logo : tints[this.tone()];
       if (this.placeholder()) fill = 'overflow-hidden';
