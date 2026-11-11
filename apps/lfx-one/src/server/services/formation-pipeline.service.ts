@@ -10,6 +10,7 @@ import {
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
 import type {
+  FormationPipelineParent,
   FormationPipelinePerson,
   FormationPipelineQuery,
   FormationPipelineResponse,
@@ -116,14 +117,16 @@ export class FormationPipelineService {
   }
 
   /**
-   * Parent projects by uid, one level of the hierarchy per round, each round batched (`filters_or=uid:…`, up to 100 uids
-   * per read) rather than read per row. With `foundationUid` the walk continues up the chain (a pipeline row's parent is
-   * often an Active project under the foundation) until it ends, reaches the root, or hits the depth cap. The `project`
-   * document carries only its direct parent, so there is no ancestor array to read instead.
+   * The ancestors the rows need, one level of the hierarchy per round, each round batched (`filters_or=uid:…`, up to 100
+   * uids per read) rather than read per row. A row's foundation is its nearest `is_foundation` ancestor, which is often
+   * not its direct parent (a pipeline project under an Active project under a foundation), so the walk climbs until
+   * every row has met one. With `foundationUid` it climbs until each row reaches that foundation (or the chain ends), so
+   * the subtree filter can see through intermediate projects. The `project` document carries only its direct parent, so
+   * there is no ancestor array to read instead. The depth cap bounds it.
    *
-   * A failed read fails the request. A parent query-service returns no document for is logged (a formation-team member
-   * holds `global_owner` on every project, so a missing parent is a data problem); its rows stay in "All foundations" with
-   * no name and drop out only when a foundation filter is on. Reaching the depth cap is logged too.
+   * A failed read fails the request. An ancestor query-service returns no document for is logged (a formation-team
+   * member holds `global_owner` on every project, so a missing one is a data problem); its rows stay in "All
+   * foundations" with no foundation and drop out only when a foundation filter is on. Reaching the depth cap is logged.
    */
   private async resolveParents(
     req: Request,
@@ -131,46 +134,86 @@ export class FormationPipelineService {
     rootUid: string | null,
     foundationUid?: string
   ): Promise<Map<string, UpstreamPipelineProject>> {
-    // Pipeline rows that are themselves parents are already in hand.
+    // Pipeline rows that are themselves ancestors are already in hand.
     const known = new Map<string, UpstreamPipelineProject>(projects.map((project) => [project.uid, project]));
     const missing = new Set<string>();
-    let frontier = new Set(
-      projects.map((project) => collapseRootParentUid(project.parent_uid || null, rootUid)).filter((uid): uid is string => !!uid && !known.has(uid))
-    );
-    let depth = 0;
+    let needed = this.unresolvedAncestors(projects, known, missing, rootUid, foundationUid);
 
-    while (frontier.size > 0) {
-      if (depth >= (foundationUid ? FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH : 1)) {
-        if (foundationUid) {
-          logger.warning(req, 'get_formation_pipeline', 'Parent walk stopped at the depth cap', {
-            parent_uids: [...frontier],
-            max_depth: FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH,
-          });
-        }
-        break;
-      }
-      const fetched = await this.fetchProjectsByUids(req, [...frontier]);
-      const next = new Set<string>();
-      for (const uid of frontier) {
-        const parent = fetched.get(uid) ?? known.get(uid);
-        if (!parent) {
+    for (let depth = 0; needed.size > 0 && depth < FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH; depth++) {
+      const fetched = await this.fetchProjectsByUids(req, [...needed]);
+      for (const uid of needed) {
+        const ancestor = fetched.get(uid);
+        if (ancestor) {
+          known.set(uid, ancestor);
+        } else {
           missing.add(uid);
-          continue;
-        }
-        known.set(uid, parent);
-        const grandparentUid = collapseRootParentUid(parent.parent_uid || null, rootUid);
-        if (foundationUid && grandparentUid && !known.has(grandparentUid) && !missing.has(grandparentUid)) {
-          next.add(grandparentUid);
         }
       }
-      frontier = next;
-      depth++;
+      needed = this.unresolvedAncestors(projects, known, missing, rootUid, foundationUid);
     }
 
+    if (needed.size > 0) {
+      logger.warning(req, 'get_formation_pipeline', 'Parent walk stopped at the depth cap', {
+        parent_uids: [...needed],
+        max_depth: FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH,
+      });
+    }
     for (const uid of missing) {
       logger.warning(req, 'get_formation_pipeline', 'Parent project not returned by query-service', { parent_uid: uid, foundation_scoped: !!foundationUid });
     }
     return known;
+  }
+
+  /** Ancestor uids still to fetch: each row's chain is followed until a stop (a foundation, or `foundationUid` when set) and the first unknown uid on it is collected. */
+  private unresolvedAncestors(
+    projects: readonly UpstreamPipelineProject[],
+    known: ReadonlyMap<string, UpstreamPipelineProject>,
+    missing: ReadonlySet<string>,
+    rootUid: string | null,
+    foundationUid?: string
+  ): Set<string> {
+    const needed = new Set<string>();
+    for (const project of projects) {
+      const seen = new Set<string>();
+      let uid = collapseRootParentUid(project.parent_uid || null, rootUid);
+      while (uid && !seen.has(uid)) {
+        seen.add(uid);
+        const node = known.get(uid);
+        if (!node) {
+          if (!missing.has(uid)) {
+            needed.add(uid);
+          }
+          break;
+        }
+        if (foundationUid ? uid === foundationUid : node.is_foundation) {
+          break;
+        }
+        uid = collapseRootParentUid(node.parent_uid || null, rootUid);
+      }
+    }
+    return needed;
+  }
+
+  /** The nearest `is_foundation` ancestor of a project (never the project itself), or `null` when its chain holds none. */
+  private nearestFoundation(
+    project: UpstreamPipelineProject,
+    known: ReadonlyMap<string, UpstreamPipelineProject>,
+    rootUid: string | null
+  ): FormationPipelineParent | null {
+    const seen = new Set<string>();
+    let uid = collapseRootParentUid(project.parent_uid || null, rootUid);
+    while (uid && !seen.has(uid)) {
+      seen.add(uid);
+      const node = known.get(uid);
+      if (!node) {
+        return null;
+      }
+      if (node.is_foundation) {
+        return { uid, name: node.name };
+      }
+      uid = collapseRootParentUid(node.parent_uid || null, rootUid);
+    }
+    return null;
   }
 
   /** `type=project` documents for the uids, in batches of the filters_or limit. Any failed read throws. */
@@ -220,13 +263,12 @@ export class FormationPipelineService {
   }
 
   private toRow(project: UpstreamPipelineProject, parents: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): FormationPipelineRow {
-    const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid);
     return {
       uid: project.uid,
       slug: project.slug,
       name: project.name,
       stage: getPipelineStageKey(project.stage) as FormationPipelineRow['stage'],
-      parent: parentUid ? { uid: parentUid, name: parents.get(parentUid)?.name ?? '' } : null,
+      parent: this.nearestFoundation(project, parents, rootUid),
       announcement_date: null,
       formation_date: project.formation_date || null,
       legal_entity_name: project.legal_entity_name || null,

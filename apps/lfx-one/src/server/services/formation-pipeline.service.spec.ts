@@ -50,7 +50,7 @@ interface Fixtures {
   projects?: UpstreamPipelineProject[];
   settings?: UpstreamPipelineSettings[];
   checklistUids?: string[];
-  parents?: Record<string, { uid: string; name: string; parent_uid?: string }>;
+  parents?: Record<string, { uid: string; name: string; parent_uid?: string; is_foundation?: boolean }>;
 }
 
 function mockUpstream({ projects = [], settings = [], checklistUids = [], parents = {} }: Fixtures): void {
@@ -192,7 +192,7 @@ describe('FormationPipelineService.getPipeline', () => {
     natsRequest.mockResolvedValue({ data: 'root-uid' });
     mockUpstream({
       projects: [project({ uid: 'a', name: 'A', parent_uid: 'f1' }), project({ uid: 'b', name: 'B', parent_uid: 'root-uid' })],
-      parents: { f1: { uid: 'f1', name: 'Foundation One' } },
+      parents: { f1: { uid: 'f1', name: 'Foundation One', is_foundation: true } },
     });
 
     const { rows } = await service.getPipeline(req, allStages);
@@ -210,7 +210,7 @@ describe('FormationPipelineService.getPipeline', () => {
       ],
       parents: {
         mid: { uid: 'mid', name: 'Mid', parent_uid: 'F' },
-        F: { uid: 'F', name: 'Foundation' },
+        F: { uid: 'F', name: 'Foundation', is_foundation: true },
         other: { uid: 'other', name: 'Other' },
       },
     });
@@ -234,7 +234,7 @@ describe('FormationPipelineService.getPipeline', () => {
 
   it('reads each level of parents in batches, not one read per row', async () => {
     const many = Array.from({ length: 150 }, (_, i) => project({ uid: `c${i}`, name: `N${String(i).padStart(3, '0')}`, parent_uid: `p${i}` }));
-    const parents = Object.fromEntries(many.map((_, i) => [`p${i}`, { uid: `p${i}`, name: `P${i}` }]));
+    const parents = Object.fromEntries(many.map((_, i) => [`p${i}`, { uid: `p${i}`, name: `P${i}`, is_foundation: true }]));
     mockUpstream({ projects: many, parents });
 
     await service.getPipeline(req, allStages);
@@ -262,7 +262,7 @@ describe('FormationPipelineService.getPipeline', () => {
 
     const all = await service.getPipeline(req, allStages);
     expect(all.rows.map((row) => row.uid)).toEqual(['a']);
-    expect(all.rows[0].parent).toEqual({ uid: 'ghost', name: '' });
+    expect(all.rows[0].parent).toBeNull();
     expect(logger.warning).toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.objectContaining({ parent_uid: 'ghost' }));
 
     const scoped = await service.getPipeline(req, { ...allStages, foundationUid: 'F' });
@@ -282,5 +282,61 @@ describe('FormationPipelineService.getPipeline', () => {
       'Parent walk stopped at the depth cap',
       expect.objectContaining({ parent_uids: ['x8'] })
     );
+  });
+
+  it('reports the nearest foundation ancestor, not the direct parent, for a project under an Active child of a foundation', async () => {
+    mockUpstream({
+      projects: [project({ uid: 'c', name: 'Nested', parent_uid: 'm' })],
+      parents: {
+        m: { uid: 'm', name: 'Active Mid', parent_uid: 'F' },
+        F: { uid: 'F', name: 'Top Foundation', is_foundation: true },
+      },
+    });
+
+    const { rows } = await service.getPipeline(req, allStages);
+
+    expect(rows[0].parent).toEqual({ uid: 'F', name: 'Top Foundation' });
+    const parentReads = proxyRequest.mock.calls.filter((call) => call[4]?.type === 'project' && call[4].filters_or[0].startsWith('uid:'));
+    expect(parentReads.map((call) => call[4].filters_or)).toEqual([['uid:m'], ['uid:F']]);
+  });
+
+  it('uses a direct foundation parent as is, and the nearest of two nested foundations', async () => {
+    mockUpstream({
+      projects: [project({ uid: 'a', name: 'A', parent_uid: 'sub' })],
+      parents: {
+        sub: { uid: 'sub', name: 'Sub Foundation', parent_uid: 'F', is_foundation: true },
+        F: { uid: 'F', name: 'Top Foundation', is_foundation: true },
+      },
+    });
+
+    const { rows } = await service.getPipeline(req, allStages);
+
+    expect(rows[0].parent).toEqual({ uid: 'sub', name: 'Sub Foundation' });
+  });
+
+  it('lets the foundation filter select a foundation whose only pipeline projects sit under an Active child', async () => {
+    mockUpstream({
+      projects: [project({ uid: 'c', name: 'Nested', parent_uid: 'm' })],
+      parents: {
+        m: { uid: 'm', name: 'Active Mid', parent_uid: 'F' },
+        F: { uid: 'F', name: 'Top Foundation', is_foundation: true },
+      },
+    });
+
+    const { rows } = await service.getPipeline(req, { ...allStages, foundationUid: 'F' });
+
+    expect(rows.map((row) => row.uid)).toEqual(['c']);
+    expect(rows[0].parent).toEqual({ uid: 'F', name: 'Top Foundation' });
+  });
+
+  it('gives no foundation for a project whose chain holds none', async () => {
+    mockUpstream({
+      projects: [project({ uid: 'c', parent_uid: 'm' })],
+      parents: { m: { uid: 'm', name: 'Plain Parent' } },
+    });
+
+    const { rows } = await service.getPipeline(req, allStages);
+
+    expect(rows[0].parent).toBeNull();
   });
 });

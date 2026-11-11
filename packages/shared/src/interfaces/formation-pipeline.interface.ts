@@ -17,7 +17,7 @@ export type FormationPipelineCounts = Record<FormationPipelineStage, number> & {
 /** A person as the pipeline serves them — only what query-service returned for this caller. */
 export type FormationPipelinePerson = Pick<UserInfo, 'name' | 'email' | 'username'>;
 
-/** Parent foundation of a pipeline row; `name` is empty when the parent could not be resolved. */
+/** The foundation a pipeline row belongs to: its nearest `is_foundation` ancestor, which need not be its direct parent. */
 export interface FormationPipelineParent {
   uid: string;
   name: string;
@@ -29,6 +29,7 @@ export interface FormationPipelineRow {
   slug: string;
   name: string;
   stage: FormationPipelineStage;
+  /** The nearest foundation ancestor, or `null` when the project has none (top-level, or an ancestor query-service did not return). */
   parent: FormationPipelineParent | null;
   announcement_date: string | null;
   formation_date: string | null;
@@ -85,6 +86,8 @@ export interface UpstreamPipelineProject {
   name: string;
   stage?: string;
   parent_uid?: string;
+  /** Set on a foundation; a row's foundation is its nearest ancestor with this flag. */
+  is_foundation?: boolean;
   formation_date?: string;
   legal_entity_name?: string;
   legal_entity_type?: string;
