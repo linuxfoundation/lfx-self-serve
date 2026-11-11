@@ -55,6 +55,7 @@ import {
   getUpcomingMeetingStartTime,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
+  isSameMinute,
   mapRecurrenceToFormValue,
   markMeetingFormForValidation,
   normalizeMeetingApiVotingStatuses,
@@ -155,6 +156,13 @@ export class MeetingManageComponent {
   // one inside the no-buffer window right after an occurrence ends, does not equal the pattern's
   // own next slot upstream compares against -- see prepareMeetingData()).
   private seriesOriginStartTime = signal<string | null>(null);
+  // The timezone the displayed next-occurrence default was computed in (edit mode only). The
+  // "untouched Start date" substitution must not apply once this no longer matches the form's
+  // current timezone -- otherwise a timezone-only change can leave the displayed local time
+  // looking unchanged (same UTC instant under the old zone) while the resent origin, computed
+  // under the *old* zone, is paired with the *new* one and means a different local time than the
+  // organizer picked.
+  private originalTimezone = signal<string | null>(null);
   // Owner hydrated from the loaded meeting (edit mode). prepareOwnerData() compares against this
   // to omit the owner key when the picker is untouched — upstream replaces owner as a whole
   // object, so re-sending an unchanged owner would silently drop its stored profile_picture.
@@ -636,13 +644,20 @@ export class MeetingManageComponent {
     // registrant. Comparing against originalStartTime (the same next-occurrence default actually
     // displayed), not seriesOriginStartTime itself, correctly treats a deliberate edit back to the
     // original date as a real, intentional change.
+    // The substitution must also stand down once the meeting stops being recurring (turning off
+    // "Recurring Meeting" makes this a one-time meeting on the displayed date, not the historical
+    // series) and once the timezone the organizer is saving under no longer matches the one the
+    // displayed default was computed in (otherwise the origin, computed under the old zone, could
+    // be paired with the new one and mean a different local time than what's shown on screen).
     const original = this.originalStartTime();
     const seriesOrigin = this.seriesOriginStartTime();
     const startUnchanged =
       this.isEditMode() &&
+      !!formValue.isRecurring &&
       !!combinedStartDateTime &&
       !!original &&
-      Math.abs(new Date(combinedStartDateTime).getTime() - new Date(original).getTime()) <= 60_000;
+      formValue.timezone === this.originalTimezone() &&
+      isSameMinute(combinedStartDateTime, original);
     const startDateTime = startUnchanged && seriesOrigin ? seriesOrigin : combinedStartDateTime;
 
     // Handle recurrence - use FormGroup value directly
@@ -1132,6 +1147,7 @@ export class MeetingManageComponent {
       const zonedDate = toZonedTime(utcDate, meetingTimezone);
       startDate = zonedDate;
       this.originalStartDate.set(zonedDate);
+      this.originalTimezone.set(meetingTimezone);
 
       // Convert to 12-hour format in the meeting's timezone for display
       startTime = formatTo12HourInTimezone(utcDate, meetingTimezone);

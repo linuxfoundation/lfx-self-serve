@@ -15,6 +15,7 @@ import {
   getLongTimezoneName,
   getTimezoneAbbreviation,
   isLocalDateOnlyString,
+  isSameMinute,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
@@ -453,6 +454,26 @@ describe('toZonedDateCarrier', () => {
     expect(carrier.getMonth()).toBe(instant.getMonth());
     expect(carrier.getDate()).toBe(instant.getDate());
     expect(carrier.getHours()).toBe(12);
+  });
+});
+
+/**
+ * Pins the exact boundary a `<= 60_000` millisecond tolerance gets wrong (GH-4944 review feedback):
+ * a genuine one-minute edit -- the smallest increment a time picker supports -- must count as a
+ * real change, not get folded into "unchanged" alongside round-tripping seconds/ms noise.
+ */
+describe('isSameMinute', () => {
+  it('treats sub-minute differences as the same minute (round-tripping noise)', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:45.000Z')).toBe(true);
+  });
+
+  it('treats an exact one-minute difference as a real change', () => {
+    // The exact boundary a `<= 60_000` ms tolerance let through.
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:01:00.000Z')).toBe(false);
+  });
+
+  it('treats identical instants as the same minute', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:00.000Z')).toBe(true);
   });
 });
 

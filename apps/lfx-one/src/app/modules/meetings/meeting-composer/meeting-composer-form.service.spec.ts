@@ -2839,4 +2839,56 @@ describe('MeetingComposerFormService — save payload on an untouched Start date
 
     expect(new Date(payload.start_time).toISOString()).toBe(new Date('2025-05-27T16:45:00Z').toISOString());
   });
+
+  it('sends a deliberate one-minute Start time edit, not the stale origin', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      timezone: 'America/New_York',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // The displayed time is 3:00 PM ET (20:00 UTC); move it one minute later, the time picker's
+    // smallest increment.
+    service.form().get('startTime')?.setValue('03:01 PM');
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:01:00Z').toISOString());
+  });
+
+  it('sends the displayed date, not the stale series origin, when recurrence is turned off', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      timezone: 'America/New_York',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // Start date/time are left exactly as hydrated (the next occurrence); only recurrence changes.
+    service.form().get('isRecurring')?.setValue(false);
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:00:00Z').toISOString());
+  });
+
+  it('sends the displayed date under the new timezone when only the timezone is changed', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z', // 3:00 PM America/New_York
+      timezone: 'America/New_York',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // Lima shares New York's November offset (both UTC-5), so the UTC instant for the same
+    // displayed wall time coincidentally matches -- the case the timezone guard exists for.
+    service.form().get('timezone')?.setValue('America/Lima');
+    const payload = (service as any).prepareMeetingData();
+
+    // Must reflect 3:00 PM in the NEW zone (America/Lima, UTC-5 year-round), not the stale 2025
+    // origin reinterpreted under it.
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:00:00Z').toISOString());
+  });
 });
