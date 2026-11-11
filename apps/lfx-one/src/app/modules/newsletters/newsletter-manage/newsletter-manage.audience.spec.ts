@@ -13,7 +13,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterManageComponent } from './newsletter-manage.component';
@@ -40,6 +40,10 @@ const audience = (patch: Partial<NewsletterAudience>): NewsletterAudience => ({
 });
 
 interface AudienceApi {
+  form: { patchValue: (v: Record<string, unknown>) => void };
+  saveDraft: (isManual?: boolean) => Observable<unknown>;
+  newsletterStatus: { set: (s: string) => void };
+  recipientsNewsletterUid: () => string | null;
   audience: () => NewsletterAudience | null;
   audienceReady: () => boolean;
   recipientCount: () => number | null;
@@ -49,6 +53,7 @@ interface AudienceApi {
 
 describe('NewsletterManageComponent audience snapshot (#4352)', () => {
   let newsletterService: {
+    createNewsletter: ReturnType<typeof vi.fn>;
     getNewsletter: ReturnType<typeof vi.fn>;
     getRecipientCount: ReturnType<typeof vi.fn>;
     resolveAudience: ReturnType<typeof vi.fn>;
@@ -57,8 +62,8 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
   };
   let messageAdd: ReturnType<typeof vi.fn>;
 
-  const openDraft = (): AudienceApi => {
-    const paramMap = convertToParamMap({ id: 'n-1', projectUid: 'p-1' });
+  const openDraft = (params: Record<string, string> = { id: 'n-1', projectUid: 'p-1' }): AudienceApi => {
+    const paramMap = convertToParamMap(params);
     TestBed.overrideProvider(ActivatedRoute, {
       useValue: { paramMap: of(paramMap), queryParamMap: of(convertToParamMap({})), snapshot: { paramMap, queryParamMap: convertToParamMap({}) }, parent: {} },
     });
@@ -71,6 +76,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     newsletterService = {
+      createNewsletter: vi.fn(() => of({ ...DRAFT, version: 1 })),
       getNewsletter: vi.fn(() => of(DRAFT)),
       getRecipientCount: vi.fn(() => of({ count: 1 })),
       resolveAudience: vi.fn(() => of(audience({ recipient_count: 1580 }))),
@@ -114,16 +120,15 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
       .mockReturnValueOnce(of(audience({ status: 'ready', recipient_count: 17064 })));
     const api = openDraft();
 
+    // The first status check runs straight away and still reads processing.
     expect(api.audienceReady()).toBe(false);
     expect(api.recipientCountLoading()).toBe(true);
-
-    vi.advanceTimersByTime(2000);
-    TestBed.tick();
-    expect(api.audienceReady()).toBe(false);
+    expect(api.recipientsNewsletterUid()).toBeNull();
 
     vi.advanceTimersByTime(2000);
     TestBed.tick();
     expect(api.audienceReady()).toBe(true);
+    expect(api.recipientsNewsletterUid()).toBe('n-1');
     expect(api.recipientCount()).toBe(17064);
     expect(api.recipientCountLoading()).toBe(false);
     expect(newsletterService.getAudience).toHaveBeenCalledTimes(2);
@@ -148,5 +153,51 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Preparing the recipient list' }));
     expect(newsletterService.resolveAudience).toHaveBeenCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: false });
     expect(newsletterService.getNewsletter).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves the audience of a draft created on this page', async () => {
+    const api = openDraft({});
+    newsletterService.resolveAudience.mockClear();
+    api.form.patchValue({ committeeUids: ['c-1'], subject: 'Weekly note', bodyHtml: '<p>Body</p>' });
+    TestBed.tick();
+
+    await firstValueFrom(api.saveDraft(true));
+    TestBed.tick();
+
+    expect(newsletterService.resolveAudience).toHaveBeenCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: false });
+    expect(api.audienceReady()).toBe(true);
+  });
+
+  it('resolves the audience again when a scheduled newsletter is back in drafts', () => {
+    newsletterService.getNewsletter.mockReturnValue(of({ ...DRAFT, status: 'scheduled' }));
+    const api = openDraft();
+    expect(newsletterService.resolveAudience).not.toHaveBeenCalled();
+
+    api.newsletterStatus.set('draft');
+    TestBed.tick();
+
+    expect(newsletterService.resolveAudience).toHaveBeenCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: false });
+    expect(api.audienceReady()).toBe(true);
+  });
+
+  it('reports an audience request that fails', () => {
+    newsletterService.resolveAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const api = openDraft();
+
+    expect(api.audienceReady()).toBe(false);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Could not build the recipient list' }));
+  });
+
+  it('reports an audience that is still processing when the checks run out', () => {
+    newsletterService.resolveAudience.mockReturnValue(of(audience({ status: 'processing' })));
+    newsletterService.getAudience.mockReturnValue(of(audience({ status: 'processing' })));
+    const api = openDraft();
+
+    vi.advanceTimersByTime(2000 * 300);
+    TestBed.tick();
+
+    expect(api.audienceReady()).toBe(false);
+    expect(api.recipientCountLoading()).toBe(false);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Still preparing the recipient list' }));
   });
 });

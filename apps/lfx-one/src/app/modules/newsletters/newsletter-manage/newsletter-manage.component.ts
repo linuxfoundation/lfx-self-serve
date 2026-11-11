@@ -10,6 +10,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  NEWSLETTER_AUDIENCE_POLL_MAX,
+  NEWSLETTER_AUDIENCE_POLL_MS,
   NEWSLETTER_COMMITTEE_CATEGORY,
   NEWSLETTER_ENHANCED_EDITOR_DEFAULT,
   NEWSLETTER_ENHANCED_EDITOR_FLAG,
@@ -32,6 +34,7 @@ import {
   NewsletterScheduleWindowError,
   NewsletterSendResult,
   NewsletterAudience,
+  NewsletterAudienceNotReadyStatus,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -68,6 +71,7 @@ import {
   combineLatest,
   concatMap,
   debounceTime,
+  defer,
   distinctUntilChanged,
   EMPTY,
   filter,
@@ -77,11 +81,12 @@ import {
   merge,
   of,
   Subject,
+  pairwise,
+  repeat,
   switchMap,
   take,
   takeWhile,
   tap,
-  timer,
 } from 'rxjs';
 
 import { NewsletterAudienceStepComponent } from '../components/newsletter-audience-step/newsletter-audience-step.component';
@@ -90,10 +95,6 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
 import { NewsletterPublicationPickerComponent } from '../components/newsletter-publication-picker/newsletter-publication-picker.component';
 import { NewsletterReviewComponent } from '../components/newsletter-review/newsletter-review.component';
 import { NewsletterSendStepComponent } from '../components/newsletter-send-step/newsletter-send-step.component';
-
-// How often the manage page polls a processing audience snapshot, and for how long (2s x 300 = 10 minutes).
-const AUDIENCE_POLL_MS = 2000;
-const AUDIENCE_POLL_MAX = 300;
 
 @Component({
   selector: 'lfx-newsletter-manage',
@@ -523,12 +524,15 @@ export class NewsletterManageComponent {
   // The editor-only release sends tests only, so a real send or schedule is locked for a layout draft.
   public readonly liveSendLocked = computed(() => isNewsletterLiveSendLocked(this.isBlocksMode()));
   // A saved draft sends from its audience snapshot, so it has to be ready for the committees on screen.
-  // A draft that is not saved yet can't be sent either way (runSend saves first).
+  // A draft with no id yet can't be sent anyway: runSend refuses it and asks the author to save first.
   public readonly audienceReady = computed(() => {
     if (!this.newsletterId()) return true;
     const audience = this.audience();
     return audience?.status === 'ready' && this.uidsEqual([...audience.committee_uids].sort(), [...this.committeeUidsValue()].sort());
   });
+  // The Recipients list reads the snapshot once it is ready, so it shows exactly who the send will reach and
+  // doesn't depend on the live committee read. Until then it reads the committees live, as before.
+  protected readonly recipientsNewsletterUid = computed(() => (this.audience()?.status === 'ready' && this.audienceReady() ? this.newsletterId() : null));
   public readonly canSend = computed(
     () =>
       !this.liveSendLocked() &&
@@ -625,6 +629,7 @@ export class NewsletterManageComponent {
     this.initSaveChannel();
     this.initAutosave();
     this.initRecipientCount();
+    this.initAudienceOnReturnToDraft();
     this.initAudienceNormalization();
     this.initScheduleClock();
     this.initSchedulePastGuard();
@@ -1079,6 +1084,22 @@ export class NewsletterManageComponent {
       });
   }
 
+  /**
+   * A newsletter that becomes a draft again, e.g. after its schedule is cancelled, needs its audience
+   * resolved: the schedule deleted the snapshot's members, and its committees haven't changed, so nothing else
+   * re-triggers the read. A newsletter's first status (on load or create) is skipped, as the save that sets it
+   * resolves the audience itself.
+   */
+  private initAudienceOnReturnToDraft(): void {
+    toObservable(this.newsletterStatus)
+      .pipe(
+        pairwise(),
+        filter(([was, now]) => was !== null && was !== 'draft' && now === 'draft'),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.fetchRecipientCountFor(this.committeeUidsValue()));
+  }
+
   private initRecipientCount(): void {
     merge(
       this.form.controls.committeeUids.valueChanges.pipe(
@@ -1145,23 +1166,40 @@ export class NewsletterManageComponent {
   }
 
   /**
-   * Starts (or reuses) the draft's audience snapshot and polls until the background read finishes. The count
-   * comes from the snapshot, and Send waits on audienceReady. A long committee can take a while, so the
-   * spinner stays up while it is processing.
+   * Starts (or reuses) the draft's audience snapshot and polls until the background read finishes, for up to
+   * NEWSLETTER_AUDIENCE_POLL_MAX status checks. The count comes from the snapshot, and Send waits on
+   * audienceReady. A long committee can take a while, so the spinner stays up while it is processing.
    */
   private resolveAudience$(id: string, uids: string[], refresh: boolean) {
     const projectUid = this.projectUid();
     this.recipientCountLoading.set(true);
+    let lastStatus: NewsletterAudience['status'] | null = null;
     return this.newsletterService.resolveAudience(projectUid, id, { committee_uids: uids, refresh }).pipe(
       switchMap((audience) =>
         audience.status === 'processing'
-          ? timer(AUDIENCE_POLL_MS, AUDIENCE_POLL_MS).pipe(
-              switchMap(() => this.newsletterService.getAudience(projectUid, id)),
-              takeWhile((polled) => polled.status === 'processing', true),
-              take(AUDIENCE_POLL_MAX)
+          ? // One status check at a time: the next starts NEWSLETTER_AUDIENCE_POLL_MS after the last answer,
+            // so a slow response is never cancelled, and the cap counts checks rather than answers.
+            defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
+              repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
+              takeWhile((polled) => polled.status === 'processing', true)
             )
           : of(audience)
       ),
+      tap({
+        next: (audience) => {
+          lastStatus = audience.status;
+        },
+        complete: () => {
+          if (lastStatus === 'processing' && this.uidsEqual(uids, this.committeeUidsValue())) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Still preparing the recipient list',
+              detail: 'This group is taking a while. Reload the page in a few minutes to check again.',
+              life: 8000,
+            });
+          }
+        },
+      }),
       tap((audience) => {
         // Ignore a result for a selection that changed while the read ran.
         if (!this.uidsEqual(uids, this.committeeUidsValue())) return;
@@ -1183,6 +1221,12 @@ export class NewsletterManageComponent {
         if (this.uidsEqual(uids, this.committeeUidsValue())) {
           this.audience.set(null);
           this.recipientCount.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Could not build the recipient list',
+            detail: 'Sending waits until the recipient list is ready. Reload the page to try again.',
+            life: 8000,
+          });
         }
         return EMPTY;
       })
@@ -1192,12 +1236,18 @@ export class NewsletterManageComponent {
   /** A send or schedule refused because the snapshot isn't ready: rebuild it and tell the author. */
   private handleAudienceNotReady(err: HttpErrorResponse): boolean {
     if (err?.status !== 409 || err?.error?.upstreamCode !== 'audience_not_ready') return false;
+    const status = err.error?.audienceStatus as NewsletterAudienceNotReadyStatus | undefined;
     this.audience.set(null);
+    // A POST starts the read when there is none, rebuilds a failed or stale one, and reports one already
+    // running, so the same call covers every reason; only the message differs.
     this.fetchRecipientCountFor(this.committeeUidsValue());
     this.messageService.add({
       severity: 'info',
       summary: 'Preparing the recipient list',
-      detail: 'The recipient list was not ready or the group changed. It is being rebuilt, so try again once the count shows.',
+      detail:
+        status === 'processing'
+          ? 'The recipient list is still being prepared. Try again once the count shows.'
+          : 'The recipient list was not ready or the group changed. It is being rebuilt, so try again once the count shows.',
       life: 8000,
     });
     return true;
@@ -1879,7 +1929,7 @@ export class NewsletterManageComponent {
       committeeUids,
       scheduledAt: draft.scheduled_at ? new Date(draft.scheduled_at).toISOString() : null,
     });
-    this.fetchRecipientCountFor(committeeUids);
+    // recordSavedSnapshot fetches the count (or resolves the audience) for these committees.
   }
 
   private initSaveChannel(): void {
@@ -2087,6 +2137,7 @@ export class NewsletterManageComponent {
         const savedUnder = draft.publication_uid ?? publicationUid;
         this.selectedPublication.set(publicationUid && savedUnder === publicationUid ? requestedPublication : null);
         this.newsletterId.set(draft.id);
+        this.newsletterStatus.set(draft.status ?? 'draft');
         this.version.set(draft.version);
         this.syncDerivedBodyHtml(draft);
         this.savedAt.set(new Date());
