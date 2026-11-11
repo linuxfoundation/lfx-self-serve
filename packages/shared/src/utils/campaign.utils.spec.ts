@@ -372,11 +372,12 @@ describe('describeCampaignDispatchFailure', () => {
 });
 
 describe('briefSlugYearCandidates (#5492)', () => {
-  it('gives the slug with this year and each of the next two, in order', () => {
+  it('gives the slug with this year and each of the next two, latest first', () => {
+    // Latest first: this year's edition has often already happened, and the first hit is offered.
     expect(briefSlugYearCandidates('kubecon-cloudnativecon-europe', 2026)).toEqual([
-      'kubecon-cloudnativecon-europe-2026',
-      'kubecon-cloudnativecon-europe-2027',
       'kubecon-cloudnativecon-europe-2028',
+      'kubecon-cloudnativecon-europe-2027',
+      'kubecon-cloudnativecon-europe-2026',
     ]);
   });
 
@@ -386,7 +387,7 @@ describe('briefSlugYearCandidates (#5492)', () => {
   });
 
   it('still guesses when a number in the slug is not a trailing four-digit year', () => {
-    expect(briefSlugYearCandidates('kubeday-26', 2026)).toEqual(['kubeday-26-2026', 'kubeday-26-2027', 'kubeday-26-2028']);
+    expect(briefSlugYearCandidates('kubeday-26', 2026)).toEqual(['kubeday-26-2028', 'kubeday-26-2027', 'kubeday-26-2026']);
   });
 });
 

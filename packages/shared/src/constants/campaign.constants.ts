@@ -4250,8 +4250,9 @@ export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Se
  * A brief is stored under the slug the generator writes (`eventDetails.slug`), which often adds the
  * event's year to the URL's last segment: the KubeCon Europe page `/kubecon-cloudnativecon-europe/`
  * is stored as `kubecon-cloudnativecon-europe-2027`. Before generating, the page knows only the
- * URL, so the lookup tries the bare segment, then the segment with this year and each of the next
- * `CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD` years. Events are planned up to about two years out.
+ * URL, so the lookup tries the bare segment, then the segment with each of the next
+ * `CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD` years and this one, latest first (`briefSlugYearCandidates`).
+ * Events are planned up to about two years out.
  */
 export const CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD = 2;
 

@@ -285,7 +285,12 @@ export function deriveSurveySlug(url: string, sourceText: string): string {
 /**
  * The year-suffixed slugs a saved-brief lookup tries after the bare one misses (#5492):
  * `<slug>-<year>` for `currentYear` and each of the next `CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD`
- * years, in that order.
+ * years, LATEST FIRST.
+ *
+ * The lookup offers the first one it finds, so the order decides which edition a yearly event page
+ * offers when several are stored. Latest first, because the current year's edition has often
+ * already happened (KubeCon Europe is in the spring), and restoring it would file the new campaign
+ * on last year's brief.
  *
  * Empty when the slug is empty or already ends in a four-digit year (`open-source-summit-europe-2027`):
  * the URL then names the edition itself, so the bare lookup is the only one that can be right.
@@ -294,7 +299,7 @@ export function briefSlugYearCandidates(slug: string, currentYear: number): stri
   if (slug === '' || /-\d{4}$/.test(slug)) {
     return [];
   }
-  return Array.from({ length: CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD + 1 }, (_, offset) => `${slug}-${currentYear + offset}`);
+  return Array.from({ length: CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD + 1 }, (_, index) => `${slug}-${currentYear + CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD - index}`);
 }
 
 /**

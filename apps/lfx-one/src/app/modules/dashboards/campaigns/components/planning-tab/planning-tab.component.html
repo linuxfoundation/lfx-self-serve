@@ -583,10 +583,12 @@
     </div>
 
     <!--
-      A saved brief found only after generation (#5492): the generator's slug, which the save is keyed
-      on, differed from the URL's and `lookUpGeneratedSlug` found a brief under it. The input step's
-      offer is gone with that step, so the same actions are offered here, before Proceed is refused.
-      The live region stays outside the @if, as on the input step, so the offer is announced.
+      The saved-brief offer on the review step (#5492). Either the input step's offer, which survives
+      generation, or a brief `lookUpGeneratedSlug` found under the generator's slug, which is the one the
+      save is keyed on. The input step's banner is gone with that step, so its actions are offered here
+      too. Only when the offer is stored under the generated slug (`savedBriefBlocksSave`) does it say
+      the generated brief can't be saved over it; any other offer would not stop the save.
+      The live region stays outside the @if, as on the input step, so a brief found here is announced.
     -->
     <div role="status" aria-live="polite" class="sr-only" data-testid="planning-review-saved-brief-live">
       {{ editingExistingBrief() ? '' : savedBriefAnnouncement() }}
@@ -597,11 +599,18 @@
         <div class="flex flex-col gap-2">
           <p class="text-xs text-blue-900">
             A brief was already saved for <span class="font-medium">{{ saved.eventDetails.name || saved.eventDetails.slug }}</span
-            >, so this one can't be saved over it as it is.
-            @if (isEmailLike()) {
-              Restore the saved brief instead.
+            >.
+            @if (!savedBriefBlocksSave()) {
+              @if (isEmailLike()) {
+                Restore it if you want it instead of this one.
+              } @else {
+                Open it to edit, or restore it as it is, if you want it instead of this one.
+              }
+            } @else if (isEmailLike()) {
+              This one can't be saved over it as it is, so restore the saved brief instead.
             } @else {
-              Open the saved brief to edit it, or restore it as it is. If you proceed with this one, you'll be asked whether to replace the saved brief.
+              This one can't be saved over it as it is. Open the saved brief to edit it, or restore it as it is. If you proceed with this one, you'll be asked
+              whether to replace the saved brief.
             }
           </p>
           @if (savedBriefWarning(); as warning) {

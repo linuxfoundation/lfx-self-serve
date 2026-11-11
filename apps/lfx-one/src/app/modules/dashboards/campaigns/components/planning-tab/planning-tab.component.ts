@@ -692,6 +692,17 @@ export class PlanningTabComponent implements OnInit {
     return warning ?? '';
   });
 
+  /**
+   * Whether the brief on offer is the one Proceed would be refused over: stored under the slug the
+   * planner's brief will be saved under (#5492). The review step says the generated brief cannot be
+   * saved over it only when this holds; an offer the URL lookup found under another slug (an earlier
+   * edition, say) does not block the save, and saying it does would be false.
+   */
+  protected readonly savedBriefBlocksSave = computed(() => {
+    const slug = this.eventDetails()?.slug ?? '';
+    return slug !== '' && this.savedBrief()?.eventDetails.slug === slug;
+  });
+
   /** The id of the brief `savedBrief` holds. Kept in step with it; see `applySavedBrief`. */
   private savedBriefId: string | null = null;
 
@@ -1622,6 +1633,9 @@ export class PlanningTabComponent implements OnInit {
           if (!this.generateIsCurrent(generation)) return;
           if (this.step() === 'generating') {
             this.step.set('review');
+            // A stream that ended without `done` reaches the review step here instead, and needs the
+            // same check `done` makes; `lookUpGeneratedSlug` skips a slug already offered.
+            this.lookUpGeneratedSlug();
           }
         },
       });
@@ -2369,8 +2383,10 @@ export class PlanningTabComponent implements OnInit {
    *
    * The save is keyed on the generated slug, so a brief the URL lookup could not find is still
    * found here, and offered on the review step before the user proceeds rather than only surfacing
-   * as the save's refusal. Skipped when an offer is already up, in existing-brief mode, and for a
-   * survey (see `findSavedBrief`).
+   * as the save's refusal. It runs even when the URL lookup already offered a brief under a
+   * DIFFERENT slug, since that one is not the brief the save collides with; a brief found here
+   * takes its place, being the one Proceed would be refused over. Skipped when the offer is
+   * already for the generated slug, in existing-brief mode, and for a survey (see `findSavedBrief`).
    *
    * Only a found or unreadable brief is applied. A miss or a failed request leaves the page as it
    * is: the save runs its own lookup on this slug and refuses an unowned brief either way, so a
@@ -2379,7 +2395,7 @@ export class PlanningTabComponent implements OnInit {
   private lookUpGeneratedSlug(): void {
     const generatedSlug = this.eventDetails()?.slug ?? '';
     const urlSlug = this.currentSlug;
-    if (this.isSurvey() || generatedSlug.trim() === '' || generatedSlug === urlSlug || this.savedBrief() !== null || this.editingExistingBrief()) {
+    if (this.isSurvey() || generatedSlug.trim() === '' || generatedSlug === urlSlug || this.offerIsFor(generatedSlug) || this.editingExistingBrief()) {
       return;
     }
     const project = this.activeFoundationSlug();
@@ -2395,9 +2411,9 @@ export class PlanningTabComponent implements OnInit {
       )
       .subscribe((result) => {
         // Dropped once the page has moved on (a new generation, another event, foundation or send),
-        // or once the URL lookup has put up an offer of its own in the meantime.
+        // or once an offer for this same slug has gone up in the meantime.
         const moved =
-          this.savedBrief() !== null ||
+          this.offerIsFor(generatedSlug) ||
           generation !== this.generateGeneration ||
           urlSlug !== this.currentSlug ||
           project !== this.activeFoundationSlug() ||
@@ -2408,6 +2424,11 @@ export class PlanningTabComponent implements OnInit {
         }
         this.applySavedBrief(result, token);
       });
+  }
+
+  /** Whether the brief on offer is the one stored under `slug` (the stored slug is the row's key). */
+  private offerIsFor(slug: string): boolean {
+    return this.savedBrief()?.eventDetails.slug === slug;
   }
 
   private extractEventName(url: string): string {

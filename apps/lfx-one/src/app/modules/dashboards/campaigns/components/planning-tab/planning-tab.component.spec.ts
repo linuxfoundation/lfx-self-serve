@@ -313,13 +313,23 @@ describe('PlanningTabComponent brief read-back', () => {
       return campaignService.loadBrief.mock.calls.map((call) => call[0] as string);
     }
 
-    it('retries a miss with this year and the next two, and offers the first one found', async () => {
+    it('prefers the latest edition when several years are stored', async () => {
+      // This year's edition has often already happened; offering it would file the new campaign on it.
+      const stored = new Set([`kubecon-cloudnativecon-europe-${year}`, `kubecon-cloudnativecon-europe-${year + 1}`]);
+      campaignService.loadBrief.mockImplementation((slug: string) => of(stored.has(slug) ? loaded(slug) : none));
+
+      await typeEventUrl('https://events.example.com/kubecon-cloudnativecon-europe/');
+
+      expect(savedBrief()?.eventDetails.slug).toBe(`kubecon-cloudnativecon-europe-${year + 1}`);
+    });
+
+    it('retries a miss with the next two years and this one, latest first, and offers the first one found', async () => {
       const stored = `kubecon-cloudnativecon-europe-${year + 1}`;
       campaignService.loadBrief.mockImplementation((slug: string) => of(slug === stored ? loaded(stored) : none));
 
       await typeEventUrl('https://events.example.com/kubecon-cloudnativecon-europe/');
 
-      expect(lookedUpSlugs()).toEqual(['kubecon-cloudnativecon-europe', `kubecon-cloudnativecon-europe-${year}`, stored]);
+      expect(lookedUpSlugs()).toEqual(['kubecon-cloudnativecon-europe', `kubecon-cloudnativecon-europe-${year + 2}`, stored]);
       expect(savedBrief()?.eventDetails.slug).toBe(stored);
 
       // Restorable from the URL that names the event, though the row is filed under the year slug.
@@ -405,7 +415,7 @@ describe('PlanningTabComponent brief read-back', () => {
       expect(campaignService.loadBrief).toHaveBeenLastCalledWith(generated, 'foundation-a', 'paid-marketing', '');
       expect(savedBrief()?.eventDetails.slug).toBe(generated);
       const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
-      expect(banner?.textContent).toContain("so this one can't be saved over it as it is");
+      expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
 
       // Open to edit acts on it from the review step.
       const component = fixture.componentInstance as unknown as Generating;
@@ -413,6 +423,71 @@ describe('PlanningTabComponent brief read-back', () => {
       component.openSavedBriefRequested.subscribe((v) => opened.push(v));
       component.openSavedBriefToEdit();
       expect(opened.map((o) => o.briefId)).toEqual(['brief-gen']);
+    });
+
+    it('replaces an offer found under another slug with the brief the save would collide with', async () => {
+      const generated = 'kubecon-europe-2031';
+      const briefFor = (slug: string, briefId: string): CampaignBriefLoadResult => ({
+        status: 'loaded',
+        brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } },
+        briefId,
+        etag: 'W/"v1"',
+        approved: true,
+      });
+      campaignService.loadBrief.mockImplementation((slug: string) => {
+        if (slug === 'kubecon-europe') return of(briefFor('kubecon-europe', 'brief-url'));
+        return of(slug === generated ? briefFor(generated, 'brief-gen') : none);
+      });
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      expect(savedBrief()?.eventDetails.slug).toBe('kubecon-europe');
+
+      finishGeneration(generated);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).toContain("This one can't be saved over it as it is.");
+    });
+
+    it('does not claim an offer under another slug blocks the save', async () => {
+      // The url lookup found an earlier edition; the save is keyed on the generated slug, where nothing is stored.
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === 'kubecon-europe'
+            ? { status: 'loaded', brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } }, briefId: 'brief-url', etag: 'W/"v1"', approved: true }
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+
+      finishGeneration('kubecon-europe-2031');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const banner = fixture.nativeElement.querySelector('[data-testid="planning-review-saved-brief"]') as HTMLElement | null;
+      expect(banner?.textContent).toContain('if you want it instead of this one');
+      expect(banner?.textContent).not.toContain("can't be saved over it");
+    });
+
+    it('also looks the generated slug up when the stream ends without a done event', async () => {
+      const generated = 'kubecon-europe-2031';
+      campaignService.loadBrief.mockImplementation((slug: string) =>
+        of(
+          slug === generated
+            ? { status: 'loaded', brief: { ...exampleBrief, eventDetails: { ...exampleBrief.eventDetails, slug } }, briefId: 'brief-gen', etag: 'W/"v1"', approved: true }
+            : none
+        )
+      );
+      await typeEventUrl('https://events.example.com/kubecon-europe/');
+      vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(
+        of({ type: 'event', data: { name: 'KubeCon Europe', slug: generated } } as unknown as SSEEvent<CampaignSSEEventType>)
+      );
+
+      (fixture.componentInstance as unknown as { generate(): void }).generate();
+      await fixture.whenStable();
+
+      expect(savedBrief()?.eventDetails.slug).toBe(generated);
     });
 
     it('makes no extra lookup when the generated slug is the one the url lookup already used', async () => {
