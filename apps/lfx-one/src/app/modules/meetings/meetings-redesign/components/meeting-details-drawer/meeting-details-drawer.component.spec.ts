@@ -99,7 +99,7 @@ describe('MeetingDetailsDrawerComponent', () => {
         { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence } },
       ],
     });
-    const data: MeetingDetailsDrawerData = { row: value, tab, injector: page };
+    const data: MeetingDetailsDrawerData = { row: value, tab, injector: page, open: vi.fn() };
     TestBed.overrideProvider(DIALOG_DATA, { useValue: data });
     fixture = TestBed.createComponent(MeetingDetailsDrawerComponent);
     await settle();

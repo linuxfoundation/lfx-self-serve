@@ -68,16 +68,10 @@
           (secondaryTriggered)="copyRecordingLink(recordingUrl)"
           data-testid="meeting-details-recording" />
       } @else {
-        <lfx-ui-button
-          variant="secondary"
-          size="large"
-          icon="fa-light fa-play"
-          ariaLabel="Recording unavailable"
-          fullWidth
-          disabled
-          data-testid="meeting-details-recording-unavailable"
-          >Recording</lfx-ui-button
-        >
+        <!-- A disabled button takes no pointer events, so the wrapper carries the tooltip. -->
+        <span class="flex w-full" tabindex="0" lfxUiTooltip="Recording unavailable" data-testid="meeting-details-recording-unavailable">
+          <lfx-ui-button class="w-full" variant="secondary" size="large" icon="fa-light fa-play" fullWidth disabled>Recording</lfx-ui-button>
+        </span>
       }
 
       @if (artifactsService.summaryContent() && artifactsService.summary(); as summary) {
@@ -91,9 +85,9 @@
           >AI Summary</lfx-ui-button
         >
       } @else {
-        <lfx-ui-button variant="secondary" size="large" icon="fa-light fa-sparkles" fullWidth disabled data-testid="meeting-details-summary-unavailable"
-          >AI Summary Not Available</lfx-ui-button
-        >
+        <span class="flex w-full" tabindex="0" lfxUiTooltip="AI Summary unavailable" data-testid="meeting-details-summary-unavailable">
+          <lfx-ui-button class="w-full" variant="secondary" size="large" icon="fa-light fa-sparkles" fullWidth disabled>AI Summary</lfx-ui-button>
+        </span>
       }
 
       @if (artifacts.transcriptUrl) {
@@ -107,9 +101,9 @@
           >View Transcript</lfx-ui-button
         >
       } @else {
-        <lfx-ui-button variant="secondary" size="large" icon="fa-light fa-file-lines" fullWidth disabled data-testid="meeting-details-transcript-unavailable"
-          >Transcript Unavailable</lfx-ui-button
-        >
+        <span class="flex w-full" tabindex="0" lfxUiTooltip="Transcript unavailable" data-testid="meeting-details-transcript-unavailable">
+          <lfx-ui-button class="w-full" variant="secondary" size="large" icon="fa-light fa-file-lines" fullWidth disabled>Transcript</lfx-ui-button>
+        </span>
       }
     } @else {
       <div class="flex flex-col gap-[8px]" aria-busy="true" data-testid="meeting-details-tools-loading">
