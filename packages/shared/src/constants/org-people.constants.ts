@@ -105,6 +105,9 @@ export const ORG_ALL_EMPLOYEE_COMPANY_EMAIL_OPTIONS: readonly OrgAllEmployeeComp
 /** Default Company email filter on All Employees; the URL drops `?companyEmail=` when it is active. */
 export const DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL: OrgAllEmployeeCompanyEmailFilter = 'all';
 
+/** Most LF usernames bound in one All Employees Company email filter read of the LF-account views. */
+export const ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE = 500;
+
 /** Most key-contact record ids one drawer company-email lookup takes (`by-key-contact/company-emails?ids=`). */
 export const ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS = 50;
 

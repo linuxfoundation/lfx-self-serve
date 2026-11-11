@@ -5,6 +5,7 @@ import {
   DEFAULT_ORG_COMMIT_FILTERS,
   ORG_PEOPLE_ALL_ROW_COLUMNS,
   ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
+  ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE,
   ORG_PEOPLE_UNKNOWN_MEMBER_NAME,
   ORG_PERSON_MAINTAINER_ROLES_DEFAULT_RANGE,
   DEFAULT_ORG_SCOPE,
@@ -147,9 +148,6 @@ const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [
 
 /** The extended view's ADDRESS_SOURCE for an address known only from a corporate key-contact record. */
 const KEY_CONTACT_RECORD_SOURCE = 'key_contact_record';
-
-/** Most LF usernames bound in one All Employees filter read of the LF-account views. */
-const LF_USERNAME_BATCH_SIZE = 500;
 
 /**
  * The two populations off the current roster that the former-employees read lists: former employees (lfx-self-serve#4311)
@@ -489,7 +487,8 @@ export class OrgLensPeopleService {
     accountId: string,
     usernames: readonly string[]
   ): Promise<OrgLfUsernameCompanyEmailStatuses | null> {
-    const sorted = [...new Set(usernames)].filter(Boolean).sort();
+    // Normalized here too, so a caller passing raw usernames cannot fragment the cache key or miss the views' keys.
+    const sorted = [...new Set(usernames.map((username) => username.trim().toLowerCase()).filter(Boolean))].sort();
     if (sorted.length === 0) {
       return { usernames: [], noneUsernames: [] };
     }
@@ -1146,13 +1145,13 @@ export class OrgLensPeopleService {
    * The batch form of {@link fetchCompanyEmailsByUsername} for the All Employees filter: per known username, whether its
    * LF account holds a qualifying address here. Mirrors the drawer's order: a username naming exactly one roster person
    * is answered by that person (the keys, or `unlinked_identity` for a `cdp:` key), so it is left out here rather than
-   * re-read by LF account. Chunks of {@link LF_USERNAME_BATCH_SIZE} run one at a time, so a large page never takes more
+   * re-read by LF account. Chunks of {@link ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE} run one at a time, so a large page never takes more
    * than one pooled connection. A username with no single account is absent from both lists. No address is returned.
    */
   private async fetchLfUsernameCompanyEmailStatuses(accountId: string, usernames: readonly string[]): Promise<OrgLfUsernameCompanyEmailStatuses> {
     const statuses: OrgLfUsernameCompanyEmailStatuses = { usernames: [], noneUsernames: [] };
-    for (let start = 0; start < usernames.length; start += LF_USERNAME_BATCH_SIZE) {
-      const chunk = usernames.slice(start, start + LF_USERNAME_BATCH_SIZE);
+    for (let start = 0; start < usernames.length; start += ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE) {
+      const chunk = usernames.slice(start, start + ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE);
       const placeholders = chunk.map(() => '?').join(', ');
       const { rows } = await this.snowflakeService.execute<{ LF_USERNAME: string; EMAIL_COUNT: number | string }>(
         `

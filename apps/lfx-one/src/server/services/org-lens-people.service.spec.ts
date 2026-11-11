@@ -91,6 +91,8 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
+import { ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE } from '@lfx-one/shared/constants';
+
 import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
 import { logger } from './logger.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
@@ -1135,9 +1137,10 @@ describe('OrgLensPeopleService person-key company emails', () => {
       }
     });
 
-    it('binds at most 500 usernames per read, one read at a time', async () => {
-      const usernames = Array.from({ length: 1001 }, (_, index) => `user-${String(index).padStart(4, '0')}`);
-      addLfUser('lf-last', usernames[1000], { [ACCOUNT]: ['last@company.example'] });
+    it('binds at most ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE usernames per read, one read at a time', async () => {
+      const size = ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE;
+      const usernames = Array.from({ length: 2 * size + 1 }, (_, index) => `user-${String(index).padStart(4, '0')}`);
+      addLfUser('lf-last', usernames[2 * size], { [ACCOUNT]: ['last@company.example'] });
       let running = 0;
       let peak = 0;
       const realExecute = execute.getMockImplementation()!;
@@ -1151,12 +1154,25 @@ describe('OrgLensPeopleService person-key company emails', () => {
         }
       });
 
-      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, usernames)).toEqual({ usernames: [usernames[1000]], noneUsernames: [] });
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, usernames)).toEqual({ usernames: [usernames[2 * size]], noneUsernames: [] });
       const reads = (execute.mock.calls as [string, string[]][]).filter(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'));
       // Each chunk binds the account, its usernames twice (roster check and LF-account lookup), and the account again.
-      expect(reads.map(([, binds]) => binds.length)).toEqual([1002, 1002, 4]);
+      expect(reads.map(([, binds]) => binds.length)).toEqual([2 * size + 2, 2 * size + 2, 4]);
       expect(reads.every(([, binds]) => binds[0] === ACCOUNT && binds.at(-1) === ACCOUNT)).toBe(true);
       expect(peak).toBe(1);
+    });
+
+    it('normalizes the usernames at entry, so raw and normalized sets share one read and one cache entry', async () => {
+      addLfUser('lf-has', 'hasuser', { [ACCOUNT]: ['has@company.example'] });
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, [' HasUser ', '\u00a0', 'NoneUser'])).toEqual({
+        usernames: ['hasuser'],
+        noneUsernames: [],
+      });
+      const reads = execute.mock.calls.length;
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['noneuser', 'hasuser'])).toEqual({ usernames: ['hasuser'], noneUsernames: [] });
+      expect(execute).toHaveBeenCalledTimes(reads);
+      expect([...cacheValues.keys()].filter((key) => key.includes('people-lf-username-email-statuses'))).toHaveLength(1);
     });
 
     it('leaves a username naming one roster person to that person, as the drawer does', async () => {

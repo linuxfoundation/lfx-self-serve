@@ -180,12 +180,18 @@ export class SnowflakeService {
             // A statement still running when the timeout fires is cancelled, so its complete
             // callback fires with an error and the connection goes back to the pool instead of
             // being held until Snowflake finishes. A timeout while still waiting for a pooled
-            // connection has no statement to cancel. `runningStatement` is cleared on completion,
-            // so a statement that finished is never cancelled.
+            // connection has no statement to cancel; `timedOut` makes the callback release that
+            // connection at once, without executing, when it finally arrives. `runningStatement`
+            // is cleared on completion, so a statement that finished is never cancelled.
+            let timedOut = false;
             let runningStatement: Pick<RowStatement, 'cancel'> | undefined;
             const executePromise = pool.use(
               (connection: Connection) =>
                 new Promise<SnowflakeQueryResult<T>>((resolve, reject) => {
+                  if (timedOut) {
+                    reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
+                    return;
+                  }
                   runningStatement = connection.execute({
                     sqlText,
                     binds: binds as any[],
@@ -209,6 +215,7 @@ export class SnowflakeService {
             let timeoutHandle: ReturnType<typeof setTimeout>;
             const timeoutPromise = new Promise<never>((_, reject) => {
               timeoutHandle = setTimeout(() => {
+                timedOut = true;
                 reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
                 this.cancelTimedOutStatement(runningStatement, queryHash, queryTimeoutMs);
               }, queryTimeoutMs);

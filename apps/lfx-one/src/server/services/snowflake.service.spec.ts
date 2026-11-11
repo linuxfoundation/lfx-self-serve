@@ -465,8 +465,14 @@ describe('SnowflakeService query timeout', () => {
   const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
   type Complete = (err: Error | undefined, stmt: unknown, rows: unknown[] | undefined) => void;
 
-  /** A pooled connection whose statement completes at once (`finishes`) or only once it is cancelled. */
-  const serviceWithStatement = (finishes: boolean) => {
+  /**
+   * A pool (through the SDK's `createPool`, as the pool-creation tests stub it) whose connection's statement completes at
+   * once (`finishes`) or only once it is cancelled. `connectionReady` holds the connection back, as an exhausted pool does.
+   */
+  const serviceWithStatement = (finishes: boolean, connectionReady: Promise<void> = Promise.resolve()) => {
+    for (const name of ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_ROLE', 'SNOWFLAKE_DATABASE', 'SNOWFLAKE_WAREHOUSE', 'SNOWFLAKE_API_KEY']) {
+      vi.stubEnv(name, 'test-value');
+    }
     vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
     let complete: Complete | undefined;
     const statement = {
@@ -485,16 +491,50 @@ describe('SnowflakeService query timeout', () => {
         return statement;
       }),
     };
-    const service = SnowflakeService.getInstance();
-    const internals = service as unknown as { pool: unknown };
-    internals.pool = { use: (fn: (c: typeof connection) => Promise<unknown>) => fn(connection), borrowed: 1, available: 0, pending: 0, size: 1 };
-    return { service, statement };
+    // What the pool.use callback settled with: generic-pool releases the connection once it settles.
+    const released: Promise<unknown>[] = [];
+    const pool = {
+      use: async (fn: (c: typeof connection) => Promise<unknown>) => {
+        await connectionReady;
+        const settled = fn(connection);
+        released.push(settled.catch((error: unknown) => error));
+        return settled;
+      },
+      borrowed: 1,
+      available: 0,
+      pending: 0,
+      size: 1,
+    };
+    vi.mocked(snowflakeSdk.createPool).mockReturnValue(pool as never);
+    return { service: SnowflakeService.getInstance(), statement, connection, released };
   };
 
   afterEach(() => {
     vi.useRealTimers();
     SnowflakeService.resetInstance();
+    vi.unstubAllEnvs();
     vi.clearAllMocks();
+  });
+
+  it('releases a connection that arrives after the timeout without executing the statement', async () => {
+    vi.useFakeTimers();
+    // Held back until handed over, as an exhausted pool does (the spec lib predates Promise.withResolvers).
+    let handOver: () => void = () => undefined;
+    const connectionReady = new Promise<void>((resolve) => {
+      handOver = resolve;
+    });
+    const { service, connection, released } = serviceWithStatement(true, connectionReady);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+
+    handOver();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(released).toHaveLength(1);
+    expect(await released[0]).toMatchObject({ message: 'Snowflake query timed out after 1000ms' });
   });
 
   it('cancels a statement still running when the timeout fires, rejecting with the timeout error', async () => {
