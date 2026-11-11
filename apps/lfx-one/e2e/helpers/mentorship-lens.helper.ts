@@ -48,6 +48,14 @@ export const LENS_SUB_PROJECT: MentorshipLensContext = {
 
 export const MENTORSHIP_LENS_PAGE_TIMEOUT = 30_000;
 
+/**
+ * The host the seeded cookies are scoped to: the same precedence `playwright.config.ts` uses for `baseURL`, so an `E2E_BASE_URL`
+ * override moves the cookies with the page under test (as `formation-checklist.helper.ts` does).
+ */
+function e2eCookieHost(): string {
+  return new URL(process.env['E2E_BASE_URL'] ?? `http://${process.env['E2E_HOST'] ?? 'localhost'}:${process.env['E2E_PORT'] ?? '4200'}`).hostname;
+}
+
 const json = (route: Route, body: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 /** The lens's own context: the foundation in the Foundation lens, the project in the Projects lens. */
@@ -92,7 +100,7 @@ function contextCookie(lens: MentorshipLensKind) {
   return {
     name: lens === 'foundation' ? SELECTED_FOUNDATION_COOKIE_KEY : SELECTED_PROJECT_COOKIE_KEY,
     value: encodeURIComponent(JSON.stringify(context)),
-    domain: 'localhost',
+    domain: e2eCookieHost(),
     path: '/',
     sameSite: 'Lax' as const,
   };
@@ -121,8 +129,8 @@ export async function stubMentorshipLens(page: Page, lens: MentorshipLensKind, o
   await page
     .context()
     .addCookies([
-      { name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(persona)), domain: 'localhost', path: '/', sameSite: 'Lax' },
-      { name: LENS_COOKIE_KEY, value: lens, domain: 'localhost', path: '/', sameSite: 'Lax' },
+      { name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(persona)), domain: e2eCookieHost(), path: '/', sameSite: 'Lax' },
+      { name: LENS_COOKIE_KEY, value: lens, domain: e2eCookieHost(), path: '/', sameSite: 'Lax' },
       contextCookie(lens),
     ]);
 
