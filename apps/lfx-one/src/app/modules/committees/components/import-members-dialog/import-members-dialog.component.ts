@@ -172,6 +172,8 @@ export class ImportMembersDialogComponent {
   public readonly notSubmittedCount = computed(() => this.countRows('not_submitted'));
   public readonly retryableCount = computed(() => this.rows().filter((row) => this.isRetryable(row)).length);
   public readonly paused = computed(() => this.resumeAt() !== null);
+  /** A stop was requested outside a pause; the in-flight batch settles before the run ends. */
+  public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.stopReason() !== null);
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
   public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0);
@@ -305,9 +307,12 @@ export class ImportMembersDialogComponent {
     this.submitRows(this.rows().filter((row) => this.isRetryable(row)));
   }
 
-  /** Ends a pause without losing unknown outcomes; genuinely unsent rows remain Not yet submitted. */
+  /**
+   * Ends the run after the in-flight batch settles, or ends a pause immediately, without losing
+   * unknown outcomes; genuinely unsent rows remain Not yet submitted.
+   */
   public stopImport(): void {
-    if (!this.paused()) {
+    if (this.phase() !== 'importing' || this.stopReason()) {
       return;
     }
     this.stopReason.set('You stopped the import.');
@@ -427,6 +432,9 @@ export class ImportMembersDialogComponent {
         case 'importing':
           if (this.paused()) {
             return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
+          }
+          if (this.stopping()) {
+            return `Stopping after the current batch: ${this.batchSettled()} of ${this.batchTotal()} done.`;
           }
           return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
         case 'results': {

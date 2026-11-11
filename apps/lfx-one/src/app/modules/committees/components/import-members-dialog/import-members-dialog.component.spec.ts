@@ -777,14 +777,97 @@ describe('ImportMembersDialogComponent', () => {
 
       component.close();
       component.removeRow(2);
-      component.stopImport();
       expect(dialogRef.close).not.toHaveBeenCalled();
       expect(component.stopReason()).toBeNull();
       expect(component.rows()).toHaveLength(2);
       expect(component.canChooseFile()).toBe(false);
       expect(component.form.controls.send_notification.disabled).toBe(true);
       expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('stops after the in-flight batch and leaves later rows unsent for Retry', async () => {
+      await upload(`email\n${emails(60)}`);
+      component.startImport();
+      await render();
+
+      const stopButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
+      expect(stopButton.textContent).toContain('Stop import');
+      expect(stopButton.disabled).toBe(false);
+      expect(query('import-members-submitting-btn')).not.toBeNull();
+      stopButton.click();
+      await render();
+
+      expect(component.stopping()).toBe(true);
+      expect(component.phase()).toBe('importing');
+      expect(component.statusMessage()).toBe('Stopping after the current batch: 0 of 60 done.');
+      expect(query('import-members-progress')?.textContent).toContain('Stopping after the current batch: 0 of 60 done…');
+      expect(query('import-members-stop-reason')).toBeNull();
+      const stoppingButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
+      expect(stoppingButton.textContent).toContain('Stopping…');
+      expect(stoppingButton.disabled).toBe(true);
+      expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      component.stopImport();
+      expect(component.stopReason()).toBe('You stopped the import.');
+
+      respond(0);
+      await render();
+
+      expect(pending).toHaveLength(1);
+      expect(component.phase()).toBe('results');
+      expect(component.stopping()).toBe(false);
+      expect(component.addedCount()).toBe(25);
+      expect(component.notSubmittedCount()).toBe(35);
+      expect(component.rows()[25].reason).toBe('Not sent: You stopped the import.');
+      expect(query('import-members-stop-reason')?.textContent).toContain('The import stopped: You stopped the import.');
       expect(query('import-members-stop-btn')).toBeNull();
+      expect(query('import-members-retry-btn')?.textContent).toContain('Retry 35');
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 25, conflicts: 0 });
+    });
+
+    it('keeps a lost in-flight response unknown when stopped mid-batch', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      component.stopImport();
+      failBulk(0, 0);
+      fixture.detectChanges();
+
+      expect(component.phase()).toBe('results');
+      expect(component.paused()).toBe(false);
+      expect(
+        component
+          .rows()
+          .slice(0, 25)
+          .every((row) => row.status === 'unknown' && row.uncertain)
+      ).toBe(true);
+      expect(component.rows()[0].reason).toContain('outcome of an earlier attempt is unknown');
+      expect(
+        component
+          .rows()
+          .slice(25)
+          .every((row) => row.status === 'not_submitted')
+      ).toBe(true);
+      vi.advanceTimersByTime(120_000);
+      expect(pending).toHaveLength(1);
+    });
+
+    it('does not start a pause when the in-flight batch is throttled after Stop', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      component.stopImport();
+      failBulk(0, 429, { 'Retry-After': '30' });
+      fixture.detectChanges();
+
+      expect(component.paused()).toBe(false);
+      expect(component.pauseCount()).toBe(0);
+      expect(query('import-members-paused-notice')).toBeNull();
+      expect(component.phase()).toBe('results');
+      expect(component.notSubmittedCount()).toBe(30);
+      expect(component.stopReason()).toBe('You stopped the import.');
+      vi.advanceTimersByTime(120_000);
+      expect(pending).toHaveLength(1);
     });
 
     it('records added, existing and invalid rows, and never retries invalid rows', async () => {
