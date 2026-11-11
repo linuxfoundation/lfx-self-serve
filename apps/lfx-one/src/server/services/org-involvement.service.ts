@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { createHash } from 'node:crypto';
+
 import {
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
@@ -14,14 +16,25 @@ import {
   DEFAULT_ORG_SCOPE,
   DEFAULT_ORG_TEAM_MEMBERS,
   ORG_CONTRIBUTORS_MONTHLY_EXCLUDING_COLUMN,
+  ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW,
   ORG_CONTRIBUTORS_MONTHLY_VIEW,
   ORG_EVENT_ATTENDANCE_METRIC_COLUMNS,
+  ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN,
   ORG_LENS_DEFAULT_TIME_RANGE,
+  ORG_LENS_FAMILY_ACCOUNT_ID_COLUMN,
+  ORG_LENS_TIME_RANGE_DAYS,
   ORG_MAINTAINER_ROLES_MONTHLY_EXCLUDING_COLUMN,
   ORG_OVERVIEW_MAINTAINER_ROLES_RANGE,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import type { OrgEventAttendanceMonthlyRow, OrgScopeFilter, OrgTeamMembersFilter } from '@lfx-one/shared/interfaces';
+import type {
+  OrgEventAttendanceMonthlyRow,
+  OrgFamilyEventAttendanceMonthlyRow,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
+  SnowflakeQueryOptions,
+} from '@lfx-one/shared/interfaces';
+import { orgRollUpRootUid } from '@lfx-one/shared/utils/org-lens-url.utils';
 
 import { orgContributorsActivityPredicate } from '../helpers/org-contributors-sql.helper';
 import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
@@ -33,6 +46,13 @@ import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
 const formatMonthLabel = (date: Date): string => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+// A family read filters on the warehouse's family column, which a model only carries once lf-dbt has built it: until
+// then Snowflake rejects it as an invalid identifier, an expected rollout error that must not trip the circuit breaker.
+const withFamilyColumnExpected = (options?: SnowflakeQueryOptions): SnowflakeQueryOptions => ({
+  ...options,
+  expectInvalidIdentifier: [ORG_LENS_FAMILY_ACCOUNT_ID_COLUMN, ...[options?.expectInvalidIdentifier ?? []].flat()],
+});
 
 interface FoundationCoverageRow {
   ACCOUNT_ID: string;
@@ -100,6 +120,37 @@ export class OrgInvolvementService {
     );
   }
 
+  public async getFamilyContributorsMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementContributorsMonthlyResponse> {
+    const companies = [...new Set(accountIds)].sort();
+    const familyAccountId = orgRollUpRootUid(rollUpKey);
+    if (companies.length === 0 || familyAccountId === null) {
+      return { accountId: rollUpKey, totalActiveContributors: 0, monthlyData: [], monthlyLabels: [] };
+    }
+    const scopes = await Promise.all(companies.map((accountId) => resolveOrgScope(this.snowflakeService, accountId, DEFAULT_ORG_SCOPE)));
+    const insightsCompanies = companies.filter((_accountId, index) => scopes[index] === 'insights');
+    const allCompanies = companies.filter((_accountId, index) => scopes[index] !== 'insights');
+    const digest = createHash('sha256')
+      .update(JSON.stringify([insightsCompanies, allCompanies]))
+      .digest('hex')
+      .slice(0, 16);
+    // `contributors-family:v3`: both reads keep only the rows of the warehouse's family, and the trend reads its per-person
+    // monthly rows. Set by the fetcher, read by `storable`: a card read while that view or the team-member flag is missing
+    // is served, never stored.
+    let degraded = false;
+    return withOrgCache(
+      rollUpKey,
+      `contributors-family:v3:${digest}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        const fetched = await this.fetchFamilyContributorsMonthly(rollUpKey, familyAccountId, companies, insightsCompanies, allCompanies);
+        degraded = fetched.trendMissing || fetched.teamMembersUnavailable;
+        return fetched.response;
+      },
+      OrgInvolvementService.hasAccountId,
+      () => !degraded
+    );
+  }
+
   public async getMaintainersMonthly(accountId: string): Promise<OrgInvolvementMaintainersMonthlyResponse> {
     // `maintainer-roles:v4`: the trend reads lf-dbt's ORG_MAINTAINER_ROLES_MONTHLY, now every project with team members'
     // roles left out (lf-dbt#3149). (`v3`: the headline counts all projects over the last 2 years, the Org Lens default
@@ -121,6 +172,29 @@ export class OrgInvolvementService {
     );
   }
 
+  public async getFamilyMaintainersMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementMaintainersMonthlyResponse> {
+    const companies = [...new Set(accountIds)].sort();
+    const familyAccountId = orgRollUpRootUid(rollUpKey);
+    if (companies.length === 0 || familyAccountId === null) {
+      return { accountId: rollUpKey, maintainerRoles: 0, monthlyData: [], monthlyLabels: [] };
+    }
+    const digest = createHash('sha256').update(JSON.stringify(companies)).digest('hex').slice(0, 16);
+    // `maintainer-roles-family:v3`: the roles table and the role-months view, over the warehouse's family only.
+    let degraded = false;
+    return withOrgCache(
+      rollUpKey,
+      `maintainer-roles-family:v3:${digest}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        const fetched = await this.fetchFamilyMaintainersMonthly(rollUpKey, familyAccountId, companies);
+        degraded = fetched.rolesMissing;
+        return fetched.response;
+      },
+      OrgInvolvementService.hasAccountId,
+      () => !degraded
+    );
+  }
+
   public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     return withOrgCache(
       accountId,
@@ -129,6 +203,32 @@ export class OrgInvolvementService {
       'events:v5',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendanceMonthly(accountId),
+      OrgInvolvementService.hasAccountId
+    );
+  }
+
+  public async getFamilyEventAttendanceMonthly(rollUpKey: string, accountIds: readonly string[]): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
+    const companies = [...new Set(accountIds)].sort();
+    const familyAccountId = orgRollUpRootUid(rollUpKey);
+    if (companies.length === 0 || familyAccountId === null) {
+      return {
+        accountId: rollUpKey,
+        accountName: '',
+        totalAttended: 0,
+        totalSpeakers: 0,
+        attendeesMonthlyData: [],
+        speakersMonthlyData: [],
+        monthlyLabels: [],
+      };
+    }
+    const digest = createHash('sha256').update(JSON.stringify(companies)).digest('hex').slice(0, 16);
+    // `events-family:v3`: the people are the participation rows of the warehouse's family only, the months are the
+    // companies' months in ORG_EVENT_PARTICIPATION_MONTHLY, and no per-company fallback count is served.
+    return withOrgCache(
+      rollUpKey,
+      `events-family:v3:${digest}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchFamilyEventAttendanceMonthly(rollUpKey, familyAccountId, companies),
       OrgInvolvementService.hasAccountId
     );
   }
@@ -237,6 +337,104 @@ export class OrgInvolvementService {
   }
 
   /**
+   * Overview Active Contributors card for a family, each company under its own organization scope. Both reads, and the
+   * trend's months, keep only the companies of the warehouse's family (FAMILY_ACCOUNT_ID) among the ones the viewer may
+   * see. The headline is
+   * counted live from the daily table with the single-company headline rule, over every company at once, so a person
+   * credited to two companies counts once. The trend is the warehouse's ORG_CONTRIBUTORS_MONTHLY_PEOPLE rows (one per company,
+   * person and month) counted distinct per month across the companies, over the months ORG_CONTRIBUTORS_MONTHLY lists
+   * for them, so a month without code reads 0 and a family without code in the window has no months. A missing
+   * per-person view answers an empty trend.
+   */
+  private async fetchFamilyContributorsMonthly(
+    rollUpKey: string,
+    familyAccountId: string,
+    companies: readonly string[],
+    insightsCompanies: readonly string[],
+    allCompanies: readonly string[]
+  ): Promise<{ response: OrgInvolvementContributorsMonthlyResponse; trendMissing: boolean; teamMembersUnavailable: boolean }> {
+    const placeholders = (values: readonly string[]): string => values.map(() => '?').join(', ');
+    // Every company under `all` keeps every row, so only a family with an Insights-scoped company gets a predicate.
+    const scopePredicate = (insightsRow: string): string => {
+      if (insightsCompanies.length === 0) return '';
+      const terms = [
+        `(account_id IN (${placeholders(insightsCompanies)}) AND ${insightsRow})`,
+        ...(allCompanies.length > 0 ? [`account_id IN (${placeholders(allCompanies)})`] : []),
+      ];
+      return `AND (${terms.join(' OR ')})`;
+    };
+    const scopeBinds = insightsCompanies.length > 0 ? [...insightsCompanies, ...allCompanies] : [];
+
+    const headlineQuery = (teamMembers: OrgTeamMembersFilter): string => `
+      SELECT COUNT(DISTINCT person_key) AS ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+      WHERE account_id IN (${placeholders(companies)})
+        ${orgContributorsActivityPredicate(ORG_LENS_DEFAULT_TIME_RANGE)}
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope)}
+        ${orgTeamMembersPredicate(teamMembers)}
+        ${scopePredicate('insights_daily_code_activities > 0')}
+        AND family_account_id = ?
+    `;
+    const trendQuery = `
+      WITH family_companies AS (
+        SELECT DISTINCT account_id
+        FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW}
+        WHERE account_id IN (${placeholders(companies)})
+          AND family_account_id = ?
+      ),
+      months AS (
+        SELECT DISTINCT MONTH_START_DATE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_VIEW}
+        WHERE ACCOUNT_ID IN (SELECT account_id FROM family_companies)
+      ),
+      people AS (
+        SELECT month_start_date, person_key
+        FROM ANALYTICS.PLATINUM_LFX_ONE.${ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW}
+        WHERE account_id IN (SELECT account_id FROM family_companies)
+          ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS)}
+          ${scopePredicate('is_insights_scope')}
+      )
+      SELECT m.MONTH_START_DATE, COUNT(DISTINCT p.person_key) AS UNIQUE_CONTRIBUTORS
+      FROM months AS m
+      LEFT JOIN people AS p ON p.month_start_date = m.MONTH_START_DATE
+      GROUP BY m.MONTH_START_DATE
+      ORDER BY m.MONTH_START_DATE ASC
+    `;
+
+    const [headline, trend] = await Promise.all([
+      readWithOrgTeamMembersFallback(DEFAULT_ORG_TEAM_MEMBERS, 'get_org_involvement_family_contributors', (teamMembers) =>
+        this.snowflakeService.execute<{ ACTIVE_CONTRIBUTORS: number | null }>(
+          headlineQuery(teamMembers),
+          [...companies, ...scopeBinds, familyAccountId],
+          withFamilyColumnExpected(orgTeamMembersQueryOptions(teamMembers))
+        )
+      ),
+      this.snowflakeService
+        .execute<ContributorsMonthlyRow>(
+          trendQuery,
+          [...companies, familyAccountId, ...scopeBinds],
+          withFamilyColumnExpected({ expectMissingObject: ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW })
+        )
+        .then((result) => result.rows)
+        .catch((error: unknown) => {
+          if (isMissingObjectError(error, ORG_CONTRIBUTORS_MONTHLY_PEOPLE_VIEW)) return null;
+          throw error;
+        }),
+    ]);
+
+    return {
+      response: {
+        accountId: rollUpKey,
+        totalActiveContributors: headline.value.rows[0]?.ACTIVE_CONTRIBUTORS ?? 0,
+        monthlyData: (trend ?? []).map((row) => row.UNIQUE_CONTRIBUTORS || 0),
+        monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+      },
+      trendMissing: trend === null,
+      teamMembersUnavailable: headline.teamMembersUnavailable,
+    };
+  }
+
+  /**
    * Overview Maintainers card. The headline counts roles overlapping the Org Lens default view (all projects, the last
    * 2 years to today) with the same rule as People -> Contributors, so the two default views agree; CDP team members'
    * roles are left out, as LFX Insights does (lfx-self-serve#4685). The trend is lf-dbt's ORG_MAINTAINER_ROLES_MONTHLY
@@ -299,6 +497,83 @@ export class OrgInvolvementService {
   }
 
   /**
+   * Overview Maintainers card for a family. A role is one CDP member record (MEMBER_ID, the same under every company) on
+   * one project (SEGMENT_ID), as the single-company card and LFX Insights count it, so a role credited to two companies
+   * of the family counts once. Both reads, and the trend's months, keep
+   * only the companies of the warehouse's family (FAMILY_ACCOUNT_ID) among the ones the viewer may see. The headline counts the roles
+   * table with the single-company headline's overlap rule (the last 2 years to today); the trend counts lf-dbt's
+   * ORG_MAINTAINER_ROLE_MONTHS rows, the same window and overlap rule ORG_MAINTAINER_ROLES_MONTHLY counts, over the months
+   * that view lists for the companies. CDP team members' roles are left out of both.
+   */
+  private async fetchFamilyMaintainersMonthly(
+    rollUpKey: string,
+    familyAccountId: string,
+    companies: readonly string[]
+  ): Promise<{ response: OrgInvolvementMaintainersMonthlyResponse; rolesMissing: boolean }> {
+    const accountList = companies.map(() => '?').join(', ');
+    const overlap = orgMaintainerRoleOverlap(ORG_OVERVIEW_MAINTAINER_ROLES_RANGE);
+    // IS_CDP_TEAM_MEMBER is already in both, so only the family column or the role-months view itself can be missing.
+    const headlineQuery = `
+      SELECT COUNT(DISTINCT MEMBER_ID, SEGMENT_ID) AS MAINTAINER_ROLES
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES
+      WHERE ACCOUNT_ID IN (${accountList})
+        AND ${overlap.sql}
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS, 'IS_CDP_TEAM_MEMBER')}
+        AND FAMILY_ACCOUNT_ID = ?
+    `;
+    const trendQuery = `
+      WITH family_companies AS (
+        SELECT DISTINCT ACCOUNT_ID
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS
+        WHERE ACCOUNT_ID IN (${accountList})
+          AND FAMILY_ACCOUNT_ID = ?
+      ),
+      months AS (
+        SELECT DISTINCT METRIC_MONTH
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES_MONTHLY
+        WHERE ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)
+      )
+      SELECT m.METRIC_MONTH, COUNT(DISTINCT r.MEMBER_ID, r.SEGMENT_ID) AS ACTIVE_ROLES
+      FROM months AS m
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLE_MONTHS AS r
+        ON r.METRIC_MONTH = m.METRIC_MONTH
+        AND r.ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM family_companies)
+        ${orgProjectScopePredicate(DEFAULT_ORG_COMMIT_FILTERS.projectScope, 'IS_LF_PROJECT')}
+        ${orgTeamMembersPredicate(DEFAULT_ORG_TEAM_MEMBERS, 'IS_CDP_TEAM_MEMBER')}
+      GROUP BY m.METRIC_MONTH
+      ORDER BY m.METRIC_MONTH ASC
+    `;
+
+    const [headline, trend] = await Promise.all([
+      readMaintainerRoles<OrgMaintainerRolesCountRow>(
+        this.snowflakeService,
+        'ORG_MAINTAINER_ROLES',
+        headlineQuery,
+        [...companies, ...overlap.binds, familyAccountId],
+        withFamilyColumnExpected()
+      ),
+      readMaintainerRoles<OrgMaintainerRolesMonthlyRow>(
+        this.snowflakeService,
+        'ORG_MAINTAINER_ROLE_MONTHS',
+        trendQuery,
+        [...companies, familyAccountId],
+        withFamilyColumnExpected()
+      ),
+    ]);
+
+    return {
+      response: {
+        accountId: rollUpKey,
+        maintainerRoles: headline === null ? null : (headline[0]?.MAINTAINER_ROLES ?? 0),
+        monthlyData: (trend ?? []).map((row) => row.ACTIVE_ROLES ?? 0),
+        monthlyLabels: (trend ?? []).map((row) => formatMonthLabel(row.METRIC_MONTH)),
+      },
+      rolesMissing: headline === null || trend === null,
+    };
+  }
+
+  /**
    * Overview Event Attendees / Event Speakers: pinned to the defaults (Employee match, registered or attended, 2 years). dbt
    * computes every number; this reads the default attribution's columns (`ATTENDEES_ALL_VERIFIED` for attendees: people who
    * registered or attended). The headline is the distinct-people total, not the sum of the monthly points.
@@ -339,6 +614,74 @@ export class OrgInvolvementService {
       attendeesMonthlyData: result.rows.map((row) => row.ATTENDEES_ALL_VERIFIED || 0),
       speakersMonthlyData: result.rows.map((row) => row.SPEAKERS_VERIFIED || 0),
       monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
+    };
+  }
+
+  /**
+   * Overview Event Attendees / Event Speakers for a family, with the single-company rule (Employee match, registered or
+   * attended, ended events in the last 2 years) over every company of the family at once. The months are the ones
+   * ORG_EVENT_PARTICIPATION_MONTHLY lists for those companies, so a family of one has that company's own series; the
+   * people are counted distinct per month and over the window from the person-level participation table through the
+   * participant number every company shares, so a person credited to two companies counts once. The months and the people
+   * come only from the companies of the warehouse's family (FAMILY_ACCOUNT_ID) among the ones the viewer may see. Until those columns
+   * are in the warehouse the read fails rather than serve per-company counts that would count such a person twice.
+   */
+  private async fetchFamilyEventAttendanceMonthly(
+    rollUpKey: string,
+    familyAccountId: string,
+    companies: readonly string[]
+  ): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
+    const accountList = companies.map(() => '?').join(', ');
+    const query = `
+      WITH family_companies AS (
+        SELECT DISTINCT account_id
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
+        WHERE account_id IN (${accountList})
+          AND family_account_id = ?
+      ),
+      months AS (
+        SELECT DISTINCT MONTH_START_DATE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_MONTHLY
+        WHERE ACCOUNT_ID IN (SELECT account_id FROM family_companies)
+      ),
+      participants AS (
+        SELECT
+          DATE_TRUNC('MONTH', event_date)::DATE AS MONTH_START_DATE,
+          ${ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN} AS PARTICIPANT,
+          is_counted_all_verified AS IS_ATTENDEE,
+          is_counted_speaker_verified AS IS_SPEAKER
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION
+        WHERE account_id IN (SELECT account_id FROM family_companies)
+          AND event_date < CURRENT_DATE()
+          AND event_date >= DATEADD(DAY, 0 - ?, CURRENT_DATE())
+      )
+      SELECT
+        m.MONTH_START_DATE,
+        COUNT(DISTINCT IFF(p.IS_ATTENDEE, p.PARTICIPANT, NULL)) AS ATTENDEES,
+        COUNT(DISTINCT IFF(p.IS_SPEAKER, p.PARTICIPANT, NULL)) AS SPEAKERS,
+        (SELECT COUNT(DISTINCT IFF(IS_ATTENDEE, PARTICIPANT, NULL)) FROM participants) AS TOTAL_ATTENDEES,
+        (SELECT COUNT(DISTINCT IFF(IS_SPEAKER, PARTICIPANT, NULL)) FROM participants) AS TOTAL_SPEAKERS
+      FROM months AS m
+      LEFT JOIN participants AS p ON p.MONTH_START_DATE = m.MONTH_START_DATE
+      GROUP BY m.MONTH_START_DATE
+      ORDER BY m.MONTH_START_DATE ASC
+    `;
+
+    // The columns are expected to be missing until they are built, so their absence does not count toward the circuit breaker.
+    const { rows } = await this.snowflakeService.execute<OrgFamilyEventAttendanceMonthlyRow>(
+      query,
+      [...companies, familyAccountId, ORG_LENS_TIME_RANGE_DAYS['730d']],
+      withFamilyColumnExpected({ expectInvalidIdentifier: ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN })
+    );
+
+    return {
+      accountId: rollUpKey,
+      accountName: '',
+      totalAttended: rows[0]?.TOTAL_ATTENDEES ?? 0,
+      totalSpeakers: rows[0]?.TOTAL_SPEAKERS ?? 0,
+      attendeesMonthlyData: rows.map((row) => row.ATTENDEES ?? 0),
+      speakersMonthlyData: rows.map((row) => row.SPEAKERS ?? 0),
+      monthlyLabels: rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
     };
   }
 }

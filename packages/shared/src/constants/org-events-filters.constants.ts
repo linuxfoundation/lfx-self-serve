@@ -101,5 +101,8 @@ export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMet
   'TOTAL_SPEAKERS_VERIFIED',
 ] as const;
 
+/** Column of `ORG_EVENT_PARTICIPATION` that numbers a participant the same in every company, so a family roll-up counts a person once. */
+export const ORG_EVENT_CROSS_ACCOUNT_PARTICIPANT_REF_COLUMN = 'CROSS_ACCOUNT_PARTICIPANT_REF';
+
 /** Longest foundation id the Events filters accept; ids are short opaque strings and the value is only ever bound, never inlined. */
 export const ORG_EVENTS_FOUNDATION_ID_MAX_LENGTH = 128;

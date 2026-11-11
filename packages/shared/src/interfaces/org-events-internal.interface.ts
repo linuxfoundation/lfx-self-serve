@@ -112,3 +112,12 @@ export type OrgEventAttendanceMonthlyRow = Record<OrgEventAttendanceMetricColumn
   ACCOUNT_NAME: string;
   MONTH_START_DATE: Date;
 };
+
+/** Row of the family roll-up read behind the same cards: distinct people per month across the family's companies, and over the window. */
+export interface OrgFamilyEventAttendanceMonthlyRow {
+  MONTH_START_DATE: Date;
+  ATTENDEES: number | null;
+  SPEAKERS: number | null;
+  TOTAL_ATTENDEES: number | null;
+  TOTAL_SPEAKERS: number | null;
+}
