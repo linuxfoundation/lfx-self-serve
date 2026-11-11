@@ -741,24 +741,15 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     expect(emailState('0')?.getAttribute('href')).toBe('mailto:first@example.org');
   });
 
-  it('says none on file, naming the organization, rather than nothing when the lookup resolves empty', async () => {
+  it('says no verified company email is associated with the LF profile, rather than nothing, when the lookup resolves empty', async () => {
     selectedAccount.set({ uid: 'org-1', accountName: 'Acme Corp' });
     drawer.open({ name: 'First person', personKey: 'first-person' });
     await render();
     reply(`${BY_PERSON_KEY}/company-emails`).next(emails());
     await render();
 
-    expect(emailState('none')?.textContent?.trim()).toBe('No Acme Corp email on file');
+    expect(emailState('none')?.textContent?.trim()).toBe('No verified company email associated with this LF profile');
     expect(emailState('0')).toBeNull();
-  });
-
-  it('falls back to "company" when the selected organization has no display name', async () => {
-    drawer.open({ name: 'First person', personKey: 'first-person' });
-    await render();
-    reply(`${BY_PERSON_KEY}/company-emails`).next(emails());
-    await render();
-
-    expect(emailState('none')?.textContent?.trim()).toBe('No company email on file');
   });
 
   it.each(['unconfirmed', undefined])('says it cannot tell, naming the organization, for an unavailable %s answer', async (reason) => {
@@ -785,7 +776,7 @@ describe('PersonDetailDrawerComponent activity and company email requests', () =
     });
     await render();
 
-    expect(emailState('unlinked')?.textContent?.trim()).toBe("This profile isn't linked to an LF account, so we can't check for a company email");
+    expect(emailState('unlinked')?.textContent?.trim()).toBe("This profile isn't linked to an LF profile - no company email on file");
     expect(emailState('unconfirmed')).toBeNull();
     expect(emailState('none')).toBeNull();
   });

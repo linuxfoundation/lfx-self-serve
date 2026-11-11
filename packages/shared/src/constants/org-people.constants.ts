@@ -98,7 +98,7 @@ export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter
 export const ORG_ALL_EMPLOYEE_COMPANY_EMAIL_OPTIONS: readonly OrgAllEmployeeCompanyEmailOption[] = [
   { label: 'All email statuses', value: 'all' },
   { label: 'Has company email', value: 'has' },
-  { label: 'No company email', value: 'none' },
+  { label: 'No verified company email', value: 'none' },
   { label: 'Unlinked profile', value: 'unconfirmed' },
 ] as const;
 

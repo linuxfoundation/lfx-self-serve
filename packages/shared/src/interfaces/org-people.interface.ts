@@ -332,8 +332,9 @@ export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
 /**
  * Why a company-email lookup answered `unavailable`. `no_identity`: the opener supplied nothing to look up (set
  * client-side; no request is made). `unlinked_identity`: a `cdp:` person key, an identity not linked to an LF account in
- * the warehouse — not a claim that the person has no LF account. `unconfirmed`: a username or key-contact lookup finished
- * without a qualifying address, and cannot tell a known person with none from an unknown one.
+ * the warehouse, or a key contact whose records name no LF username — not a claim that the person has no LF account.
+ * `unconfirmed`: a username the warehouse does not know (or that names more than one LF account), or a key-contact lookup
+ * without an agreed username, finished without a qualifying address.
  */
 export type OrgCompanyEmailsUnavailableReason = 'no_identity' | 'unlinked_identity' | 'unconfirmed';
 

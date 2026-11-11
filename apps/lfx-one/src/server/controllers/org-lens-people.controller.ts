@@ -40,7 +40,7 @@ import { OrgPeopleContributorsService } from '../services/org-people-contributor
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
-import { withCompanyEmailStatus } from '../services/org-people-wire.mapper';
+import { uncoveredLiveUsernames, withCompanyEmailStatus } from '../services/org-people-wire.mapper';
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
@@ -97,7 +97,11 @@ export class OrgLensPeopleController {
         this.readEventAttendeesTotal(req, orgUid, range, filters.projectScope),
         this.service.getCompanyEmailKeys(req, orgUid),
       ]);
-      const response = withCompanyEmailStatus(this.withEventAttendeesTotal(roster, eventAttendeesTotal), companyEmailKeys);
+      const withAttendees = this.withEventAttendeesTotal(roster, eventAttendeesTotal);
+      // Live-only rows off the warehouse roster are read by LF account, as the drawer reads them, so the filter agrees with it.
+      const uncovered = companyEmailKeys ? uncoveredLiveUsernames(withAttendees, companyEmailKeys) : [];
+      const lfUsernames = uncovered.length ? await this.service.getLfUsernameCompanyEmailStatuses(req, orgUid, uncovered) : null;
+      const response = withCompanyEmailStatus(withAttendees, companyEmailKeys, lfUsernames);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -285,8 +289,8 @@ export class OrgLensPeopleController {
       const keyContactIds = parseKeyContactIds(getStringQueryParam(req, 'ids'), operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid, key_contact_count: keyContactIds.length });
 
-      const { username, currentEmails } = await this.resolveKeyContactIdentity(req, orgUid, keyContactIds, operation);
-      const result = await this.service.getCompanyEmailsByKeyContacts(req, orgUid, keyContactIds, username, currentEmails);
+      const { username, withoutLfAccount, currentEmails } = await this.resolveKeyContactIdentity(req, orgUid, keyContactIds, operation);
+      const result = await this.service.getCompanyEmailsByKeyContacts(req, orgUid, keyContactIds, username, currentEmails, withoutLfAccount);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -703,28 +707,33 @@ export class OrgLensPeopleController {
    * tab has already warmed): the lower-cased contact emails of the assignments found, which bind the record addresses
    * to the record's current holder, and the LF username they agree on — `null` when they agree on none or when any
    * requested id has no assignment (agreement over a subset would let an email-grouped opener reach one member's LF
-   * addresses — the DR-010 guard). A failed read (logged, counts only) answers no emails and no username.
+   * addresses — the DR-010 guard). `withoutLfAccount` when every requested id is held and none of them names an LF
+   * username: the person has no LF account to read. A failed read (logged, counts only) answers no emails and no username.
    */
   private async resolveKeyContactIdentity(
     req: Request,
     orgUid: string,
     keyContactIds: readonly string[],
     operation: string
-  ): Promise<{ username: string | null; currentEmails: ReadonlySet<string> }> {
+  ): Promise<{ username: string | null; withoutLfAccount: boolean; currentEmails: ReadonlySet<string> }> {
     try {
       const ids = new Set(keyContactIds);
       const { assignments } = await this.keyContactsService.getKeyContacts(req, orgUid);
       const held = assignments.filter((assignment) => ids.has(assignment.contactUid));
       const currentEmails = new Set(held.map((assignment) => assignment.email?.trim().toLowerCase() ?? '').filter(Boolean));
       const everyIdHeld = new Set(held.map((assignment) => assignment.contactUid)).size === ids.size;
-      return { username: everyIdHeld ? agreedUsername(held.map((assignment) => assignment.username)) : null, currentEmails };
+      return {
+        username: everyIdHeld ? agreedUsername(held.map((assignment) => assignment.username)) : null,
+        withoutLfAccount: everyIdHeld && held.every((assignment) => !assignment.username?.trim()),
+        currentEmails,
+      };
     } catch (error) {
       logger.warning(req, operation, 'key contacts read failed; showing no record addresses', {
         org_uid: orgUid,
         key_contact_count: keyContactIds.length,
         err: error,
       });
-      return { username: null, currentEmails: new Set() };
+      return { username: null, withoutLfAccount: false, currentEmails: new Set() };
     }
   }
 

@@ -139,6 +139,20 @@ function addPerson(account: string, personKey: string, username: string | null, 
   }
 }
 
+/**
+ * An LF account (ORG_PEOPLE_LF_USERNAMES, every LF user, its username stored normalized) and its qualifying addresses at
+ * each account (ORG_PEOPLE_LF_USER_COMPANY_EMAILS), the first one primary.
+ */
+function addLfUser(personKey: string, username: string, emailsByAccount: Record<string, string[]> = {}): void {
+  database.prepare('INSERT INTO ORG_PEOPLE_LF_USERNAMES VALUES (?, ?)').run(username, personKey);
+  const insertEmail = database.prepare('INSERT INTO ORG_PEOPLE_LF_USER_COMPANY_EMAILS VALUES (?, ?, ?, ?)');
+  for (const [account, emails] of Object.entries(emailsByAccount)) {
+    for (const [index, email] of emails.entries()) {
+      insertEmail.run(account, personKey, email, index === 0 ? 1 : 0);
+    }
+  }
+}
+
 /** One ORG_PEOPLE_EXTENDED_COMPANY_EMAILS row: a former employee's LF-account address, or the address on a key-contact record. */
 function addExtendedEmail(
   account: string,
@@ -287,6 +301,8 @@ beforeEach(() => {
     'CREATE TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, KEY_CONTACT_ID TEXT, EMAIL TEXT, ADDRESS_SOURCE TEXT, IS_PRIMARY INTEGER)'
   );
   database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAIL_KEYS (ACCOUNT_ID TEXT, KEY_TYPE TEXT, KEY_VALUE TEXT)');
+  database.exec('CREATE TABLE ORG_PEOPLE_LF_USERNAMES (LF_USERNAME TEXT, PERSON_KEY TEXT)');
+  database.exec('CREATE TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
   // Unranged roster (the reassign pickers' read, and the username → person-key lookup).
   database.exec(`
     CREATE TABLE ORG_PEOPLE_ALL (
@@ -360,10 +376,12 @@ async function expectBothPaths(expected: OrgPersonCompanyEmailsResponse): Promis
 }
 
 describe('OrgLensPeopleService username company emails', () => {
-  it('resolves preserved-case governance and lowercased live usernames to the same account-scoped person', async () => {
-    addPerson(ACCOUNT, 'person-one', ' MiXeDuSeR ', ['z-primary@company.example', 'a-secondary@company.example']);
-    addPerson('other-account', 'person-one', 'MIXEDUSER', ['other-employer@other.example']);
-    addPerson(ACCOUNT, 'unrelated-person', 'someoneelse', ['unrelated@company.example']);
+  it("resolves preserved-case governance and lowercased live usernames to the same LF account's addresses at this account", async () => {
+    addLfUser('lf-user-one', 'mixeduser', {
+      [ACCOUNT]: ['z-primary@company.example', 'a-secondary@company.example'],
+      'other-account': ['other-employer@other.example'],
+    });
+    addLfUser('unrelated-person', 'someoneelse', { [ACCOUNT]: ['unrelated@company.example'] });
 
     await expectBothPaths({
       companyEmails: ['z-primary@company.example', 'a-secondary@company.example'],
@@ -375,7 +393,7 @@ describe('OrgLensPeopleService username company emails', () => {
   // Ranges are nested, so someone live-only in the range on screen is live-only in 30d too, while the all
   // range may hold a stored row for them instead — their `live-` key is then only in the 30d directory.
   it('resolves a live-only key on the 30d directory, where a wider range would hold a stored row instead', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
     getLive.mockImplementation(async (_req: unknown, _account: string, range: string | null) => ({
       rows: [range === '30d' ? { personKey: LIVE_PERSON, lfUsername: 'mixeduser' } : { personKey: 'person-one', lfUsername: 'mixeduser' }],
     }));
@@ -390,7 +408,7 @@ describe('OrgLensPeopleService username company emails', () => {
   // Live-only rows are listed under All and LF projects only (Non-LF lists stored people alone), and the LF roster is
   // inside All, so the 30d LF directory is the one probe.
   it('probes only the 30d LF directory, since the Non-LF one lists no live-only row', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
     getLive.mockResolvedValue({ rows: [{ personKey: 'person-one', lfUsername: 'mixeduser' }] });
 
     expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(UNCONFIRMED);
@@ -400,7 +418,7 @@ describe('OrgLensPeopleService username company emails', () => {
   // The page has just filled the directory it shows; reading that one is a cache hit, while the 30d probes would each be
   // a cold full merge of the live sources.
   it('resolves a live-only key on the directory the drawer was opened from, without the 30d probes', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
     getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
 
     expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON, { range: '365d', projectScope: 'all' })).toEqual({
@@ -412,7 +430,7 @@ describe('OrgLensPeopleService username company emails', () => {
   });
 
   it('falls back to the 30d probes when the directory the drawer was opened from no longer lists the key', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
     getLive.mockImplementation(async (_req: unknown, _account: string, range: string) => ({
       rows: range === '30d' ? [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] : [],
     }));
@@ -428,34 +446,40 @@ describe('OrgLensPeopleService username company emails', () => {
     ]);
   });
 
-  it('reports a known identity without qualifying addresses as unavailable, never as none on record', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser');
+  it('reports a known LF account without qualifying addresses as none on record', async () => {
+    addLfUser('lf-user-one', 'mixeduser');
+
+    await expectBothPaths({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'resolved' });
+  });
+
+  it('reports a username the warehouse does not know as unavailable, never as none on record', async () => {
+    addLfUser('lf-user-two', 'someoneelse', { [ACCOUNT]: ['someone@company.example'] });
 
     await expectBothPaths(UNCONFIRMED);
   });
 
   it('reports a failed lookup when the address table is unavailable', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    database.exec('DROP TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
 
     await expectBothPaths(FAILED);
   });
 
-  it('fails closed for case-folded collisions between people with addresses', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
+  it('fails closed when the username names more than one LF account', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    addLfUser('lf-user-two', 'mixeduser', { [ACCOUNT]: ['second@company.example'] });
 
     await expectBothPaths(UNCONFIRMED);
   });
 
-  it('does not treat identities that exist only at another account as resolved', async () => {
-    addPerson('other-account', 'person-one', 'MixedUser', ['other@other.example']);
+  it("never shows an LF account's addresses at another account", async () => {
+    addLfUser('lf-user-one', 'mixeduser', { 'other-account': ['other@other.example'] });
 
-    await expectBothPaths(UNCONFIRMED);
+    await expectBothPaths({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'resolved' });
   });
 
-  it('reads the address table only, never the identity spine view', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+  it('reads the LF-account views only, never the identity spine view', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
 
     await service.getCompanyEmailsByUsername(REQ, ACCOUNT, GOVERNANCE_USERNAME);
 
@@ -465,14 +489,14 @@ describe('OrgLensPeopleService username company emails', () => {
   });
 
   it('does not resolve blank usernames to blank warehouse identities', async () => {
-    addPerson(ACCOUNT, 'person-one', ' ', ['someone@company.example']);
+    addLfUser('lf-user-one', '', { [ACCOUNT]: ['someone@company.example'] });
 
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' ')).toEqual(UNCONFIRMED);
   });
 
   it('reuses a normalized username result without rerunning the warehouse read and keeps other accounts separate', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    addPerson('other-account', 'person-two', 'mixeduser', ['other@other.example']);
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    database.prepare('INSERT INTO ORG_PEOPLE_LF_USER_COMPANY_EMAILS VALUES (?, ?, ?, ?)').run('other-account', 'lf-user-one', 'other@other.example', 1);
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'MixedUser')).toEqual({
       companyEmails: ['first@company.example'],
       primaryEmail: 'first@company.example',
@@ -484,7 +508,7 @@ describe('OrgLensPeopleService username company emails', () => {
       companyEmailsStatus: 'resolved',
     });
     const warehouseReads = execute.mock.calls.length;
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+    database.exec('DROP TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' mixeduser ')).toEqual({
       companyEmails: ['first@company.example'],
       primaryEmail: 'first@company.example',
@@ -499,14 +523,14 @@ describe('OrgLensPeopleService username company emails', () => {
   });
 
   it('retries a failed username lookup instead of caching the outage', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    database.exec('ALTER TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
       companyEmails: [],
       primaryEmail: null,
       companyEmailsStatus: 'failed',
     });
-    database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_COMPANY_EMAILS');
+    database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
       companyEmails: ['first@company.example'],
       primaryEmail: 'first@company.example',
@@ -516,12 +540,12 @@ describe('OrgLensPeopleService username company emails', () => {
 
   it('reuses a stable unavailable result without turning it into another state', async () => {
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual(UNCONFIRMED);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+    database.exec('DROP TABLE ORG_PEOPLE_LF_USERNAMES');
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'MIXEDUSER')).toEqual(UNCONFIRMED);
   });
 
   it('rejects a cached failed or status-less response instead of replaying it', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
     await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser');
     for (const stale of [
       { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' },
@@ -538,7 +562,7 @@ describe('OrgLensPeopleService username company emails', () => {
   });
 
   it('replays a cache entry written before primaryEmail existed, reading it as no primary on record', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
     await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser');
     for (const key of cacheValues.keys()) {
       cacheValues.set(key, JSON.stringify({ companyEmails: ['cached@company.example'], companyEmailsStatus: 'resolved' }));
@@ -854,8 +878,10 @@ describe('OrgLensPeopleService person-key company emails', () => {
     });
   });
 
-  it('resolves a username on the extended view, ignoring key-contact record rows keyed on another identity', async () => {
-    addExtendedEmail(ACCOUNT, { personKey: 'lf-user-one', email: 'left@company.example', source: 'lf_account', username: 'MixedUser' });
+  it("resolves a username off the roster to its LF account's addresses, ignoring account address rows that carry the username", async () => {
+    addLfUser('lf-user-one', 'mixeduser');
+    database.prepare('INSERT INTO ORG_PEOPLE_LF_USER_COMPANY_EMAILS VALUES (?, ?, ?, ?)').run(ACCOUNT, 'lf-user-one', 'left@company.example', null);
+    addPerson(ACCOUNT, 'person-elsewhere', 'MixedUser', ['roster-row@company.example']);
     addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'record@company.example', source: 'key_contact_record', username: 'mixeduser' });
 
     expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
@@ -886,7 +912,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
         keyContactId: ids[0],
       });
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual({
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).toEqual({
         companyEmails: ['first@company.example', 'second@company.example'],
         primaryEmail: null,
         keyContactRecordEmails: ['first@company.example', 'second@company.example'],
@@ -897,9 +923,28 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(binds).toEqual([ACCOUNT, ...ids]);
     });
 
+    it('answers unlinked when no record names an LF username and none of their addresses qualifies', async () => {
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, true)).toEqual({
+        companyEmails: [],
+        primaryEmail: null,
+        companyEmailsStatus: 'unavailable',
+        companyEmailsReason: 'unlinked_identity',
+      });
+    });
+
+    it('still shows a record address when no record names an LF username', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, true)).toMatchObject({
+        companyEmails: ['first@company.example'],
+        keyContactRecordEmails: ['first@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
     it('answers unconfirmed when neither the records nor the username find an address', async () => {
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual(UNCONFIRMED);
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current)).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current, false)).toEqual(UNCONFIRMED);
     });
 
     it("merges the username's addresses, which win over the record-only mark", async () => {
@@ -908,7 +953,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'shared@company.example', source: 'key_contact_record', keyContactId: ids[0] });
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'record@company.example', source: 'key_contact_record', keyContactId: ids[1] });
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'MixedUser', current)).toEqual({
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'MixedUser', current, false)).toEqual({
         companyEmails: ['shared@company.example', 'record@company.example'],
         primaryEmail: 'shared@company.example',
         keyContactRecordEmails: ['record@company.example'],
@@ -919,7 +964,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     it('answers resolved empty when the username resolves to a roster person with none on file', async () => {
       addRosterRow(ACCOUNT, personKey, 'MixedUser');
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current)).toEqual({
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current, false)).toEqual({
         companyEmails: [],
         primaryEmail: null,
         companyEmailsStatus: 'resolved',
@@ -927,13 +972,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
     });
 
     it('keeps the addresses of one leg when the other fails', async () => {
-      addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+      addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
       vi.spyOn(
         service as unknown as { readKeyContactRecordEmails: () => Promise<OrgPersonCompanyEmailsResponse> },
         'readKeyContactRecordEmails'
       ).mockResolvedValue(FAILED);
 
-      const result = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current);
+      const result = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current, false);
 
       expect(result.companyEmailsStatus).toBe('resolved');
       expect(result.companyEmails).toEqual(['first@company.example']);
@@ -943,11 +988,11 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
       database.exec('ALTER TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS RENAME TO SAVED_EXTENDED');
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).toEqual(FAILED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).toEqual(FAILED);
       expect([...cacheValues.keys()].some((key) => key.includes('people-key-contact-emails'))).toBe(false);
 
       database.exec('ALTER TABLE SAVED_EXTENDED RENAME TO ORG_PEOPLE_EXTENDED_COMPANY_EMAILS');
-      expect((await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current)).companyEmails).toEqual(['first@company.example']);
+      expect((await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).companyEmails).toEqual(['first@company.example']);
     });
 
     // A role reassigned from A to B keeps its record id, so a record row (or a cached read) can still carry A's address.
@@ -955,7 +1000,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'a.previous@company.example', source: 'key_contact_record', keyContactId: ids[0] });
       addExtendedEmail(ACCOUNT, { personKey: '003000000000002AAA', email: 'B.Current@company.example', source: 'key_contact_record', keyContactId: ids[0] });
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, [ids[0]], null, new Set(['b.current@company.example']))).toEqual({
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, [ids[0]], null, new Set(['b.current@company.example']), false)).toEqual({
         companyEmails: ['B.Current@company.example'],
         primaryEmail: null,
         keyContactRecordEmails: ['B.Current@company.example'],
@@ -966,7 +1011,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
     it('shows no record address when there are no current contact emails (the assignments read failed)', async () => {
       addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
 
-      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, new Set())).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, new Set(), false)).toEqual(UNCONFIRMED);
     });
   });
 
@@ -1004,6 +1049,53 @@ describe('OrgLensPeopleService person-key company emails', () => {
         companyEmailsReason: 'unconfirmed',
       });
       expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' Known ')).toMatchObject({ companyEmailsStatus: 'resolved', companyEmails: [] });
+    });
+
+    it('answers uncovered usernames by LF account as the drawer does, an unknown or ambiguous one in neither list', async () => {
+      addLfUser('lf-has', 'hasuser', { [ACCOUNT]: ['has@company.example'] });
+      addLfUser('lf-none', 'noneuser', { 'other-account': ['elsewhere@other.example'] });
+      addLfUser('lf-twice-a', 'twice', { [ACCOUNT]: ['a@company.example'] });
+      addLfUser('lf-twice-b', 'twice');
+
+      const statuses = await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['noneuser', 'hasuser', 'unknown', 'twice', 'hasuser']);
+
+      expect(statuses).toEqual({ usernames: ['hasuser'], noneUsernames: ['noneuser'] });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'hasuser')).toMatchObject({
+        companyEmailsStatus: 'resolved',
+        companyEmails: ['has@company.example'],
+      });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'noneuser')).toMatchObject({ companyEmailsStatus: 'resolved', companyEmails: [] });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'unknown')).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'twice')).toEqual(UNCONFIRMED);
+
+      // Cached per account and username set, in any order; no raw username in a key.
+      const reads = execute.mock.calls.length;
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['twice', 'unknown', 'hasuser', 'noneuser'])).toEqual(statuses);
+      expect(execute).toHaveBeenCalledTimes(reads);
+      for (const key of cacheValues.keys()) {
+        expect(key).not.toContain('hasuser');
+      }
+    });
+
+    it('binds at most 500 usernames per read', async () => {
+      const usernames = Array.from({ length: 1001 }, (_, index) => `user-${String(index).padStart(4, '0')}`);
+      addLfUser('lf-last', usernames[1000], { [ACCOUNT]: ['last@company.example'] });
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, usernames)).toEqual({ usernames: [usernames[1000]], noneUsernames: [] });
+      const reads = (execute.mock.calls as [string, string[]][]).filter(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'));
+      expect(reads.map(([, binds]) => binds.length)).toEqual([501, 501, 2]);
+      expect(reads.every(([, binds]) => binds.at(-1) === ACCOUNT)).toBe(true);
+    });
+
+    it('answers null and warns, storing nothing, when the LF-account read fails', async () => {
+      addLfUser('lf-has', 'hasuser', { [ACCOUNT]: ['has@company.example'] });
+      database.exec('ALTER TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['hasuser'])).toBeNull();
+      expect([...cacheValues.keys()].some((key) => key.includes('people-lf-username-email-statuses'))).toBe(false);
+
+      database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['hasuser'])).toEqual({ usernames: ['hasuser'], noneUsernames: [] });
     });
 
     it('answers null and warns, storing nothing, when the keys read fails', async () => {
@@ -1104,6 +1196,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
 
     it("reads a former employee's LF-account addresses by person key and by LF username, with no former-employee short-circuit", async () => {
       addExtendedEmail(ACCOUNT, { personKey: formerKey, email: 'left@company.example', source: 'lf_account', username: 'LeftUser', isPrimary: true });
+      // Off the roster, the username reads the former employee's LF account, which holds the same qualifying address.
+      addLfUser(formerKey, 'leftuser', { [ACCOUNT]: ['left@company.example'] });
       const resolved = { companyEmails: ['left@company.example'], primaryEmail: 'left@company.example', companyEmailsStatus: 'resolved' };
 
       expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(resolved);

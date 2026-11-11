@@ -34,6 +34,7 @@ import type {
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
   OrgLensTimeRange,
+  OrgLfUsernameCompanyEmailStatuses,
   OrgPeopleDirectoryView,
   OrgPersonCodeContributions,
   OrgPersonCodeProjectCount,
@@ -145,6 +146,9 @@ const FAILED_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = { companyEmails: [
 
 /** The extended view's ADDRESS_SOURCE for an address known only from a corporate key-contact record. */
 const KEY_CONTACT_RECORD_SOURCE = 'key_contact_record';
+
+/** Most LF usernames bound in one All Employees filter read of the LF-account views. */
+const LF_USERNAME_BATCH_SIZE = 500;
 
 /**
  * The two populations off the current roster that the former-employees read lists: former employees (lfx-self-serve#4311)
@@ -422,8 +426,10 @@ export class OrgLensPeopleService {
    *
    * A username that resolves to one roster person (the same person `getEmployeeDetailByUsername` shows) reads that
    * person's addresses by person key, so an empty result is "none on file" and a NULL username on the address rows
-   * cannot hide them. Any other username resolves through the address views' own username column, which also covers
-   * people the roster's engagement gate excludes (most key contacts) and former employees. Failures are never cached.
+   * cannot hide them. Any other username resolves to its LF account (ORG_PEOPLE_LF_USERNAMES), which also covers people
+   * the roster's engagement gate excludes (most key contacts) and people off the roster altogether: that account's
+   * qualifying addresses at this organization, `resolved` and empty when it holds none. Only a username the warehouse
+   * does not know, or one naming more than one account, is `unavailable` (`unconfirmed`). Failures are never cached.
    */
   public async getCompanyEmailsByUsername(req: Request, accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     const normalizedUsername = username.trim().toLowerCase();
@@ -435,10 +441,10 @@ export class OrgLensPeopleService {
       if (personKey) {
         return await this.getCompanyEmailsForPersonKey(req, accountId, personKey);
       }
-      // `v2`: reads the extended (former-employee) addresses too, with no former-employee short-circuit.
+      // `v3`: reads the username's LF account (any LF user), so a known account without an address is "none on file".
       return await withOrgCache(
         accountId,
-        `people-username-emails:v2:${keyDigest(normalizedUsername)}`,
+        `people-username-emails:v3:${keyDigest(normalizedUsername)}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchCompanyEmailsByUsername(accountId, normalizedUsername),
         isCompanyEmailsResponse,
@@ -453,21 +459,58 @@ export class OrgLensPeopleService {
   }
 
   /**
+   * Whether each LF username's account holds a qualifying address at this organization (`has`) or none (`none`), for the
+   * All Employees rows the company-email keys do not cover — live-only people off the warehouse roster — so the filter
+   * agrees with the drawer's {@link getCompanyEmailsByUsername}. `usernames` are normalized (`trim().toLowerCase()`); a
+   * username the warehouse does not know, or that names more than one account, is in neither list. Org-cached per
+   * username set; `null` when the read fails (logged; never cached), leaving those rows `unconfirmed`.
+   */
+  public async getLfUsernameCompanyEmailStatuses(
+    req: Request,
+    accountId: string,
+    usernames: readonly string[]
+  ): Promise<OrgLfUsernameCompanyEmailStatuses | null> {
+    const sorted = [...new Set(usernames)].filter(Boolean).sort();
+    if (sorted.length === 0) {
+      return { usernames: [], noneUsernames: [] };
+    }
+    try {
+      return await withOrgCache(
+        accountId,
+        `people-lf-username-email-statuses:v1:${keyDigest(sorted.join('\n'))}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchLfUsernameCompanyEmailStatuses(accountId, sorted),
+        isLfUsernameCompanyEmailStatuses
+      );
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_people_lf_username_email_statuses', 'LF username company email read failed; leaving those rows unconfirmed', {
+        org_uid: accountId,
+        username_count: sorted.length,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Company-affiliated emails for a key contact opened without a person key: the company addresses recorded on the
    * person's corporate key-contact records (`keyContactIds`, Salesforce record ids), merged with the `username` lookup
    * when the caller derived one from the org's assignments (an address also known from an LF account is not record-only).
    * A record address is kept only while its lower-cased email is in `currentEmails`, the contact emails the org's
    * assignments show for these records now: a record reassigned under the same id must not show its previous holder's
    * address (the record read is cached by id). `currentEmails` only filters addresses already read; it is never a
-   * lookup input. `resolved` when any address is found or the username lookup resolved; otherwise `unavailable`
-   * (`unconfirmed`). A failed leg answers `failed` only when the other found no address; failures are never cached.
+   * lookup input. `resolved` when any address is found or the username lookup resolved. Otherwise `unavailable`:
+   * `unlinked_identity` when `withoutLfAccount` (every record is held at the org and none names an LF username, so there
+   * is no LF account to read), else `unconfirmed`. A failed leg answers `failed` only when the other found no address;
+   * failures are never cached.
    */
   public async getCompanyEmailsByKeyContacts(
     req: Request,
     accountId: string,
     keyContactIds: readonly string[],
     username: string | null,
-    currentEmails: ReadonlySet<string>
+    currentEmails: ReadonlySet<string>,
+    withoutLfAccount: boolean
   ): Promise<OrgPersonCompanyEmailsResponse> {
     const [records, byUsername] = await Promise.all([
       this.readKeyContactRecordEmails(req, accountId, keyContactIds),
@@ -480,7 +523,7 @@ export class OrgLensPeopleService {
       return FAILED_COMPANY_EMAILS;
     }
     if (merged.companyEmails.length === 0 && byUsername?.companyEmailsStatus !== 'resolved') {
-      return UNCONFIRMED_COMPANY_EMAILS;
+      return withoutLfAccount && !username ? UNLINKED_COMPANY_EMAILS : UNCONFIRMED_COMPANY_EMAILS;
     }
     return { ...merged, companyEmailsStatus: 'resolved' };
   }
@@ -1035,41 +1078,69 @@ export class OrgLensPeopleService {
 
   /**
    * As above, keyed on LF username for the governance surfaces (Board, Committee, Key Contacts, Access) when no roster
-   * person carries it: resolves the one person key carrying the username on an LF-account address row of either view
-   * (key-contact record rows are keyed on a Salesforce contact, a different key space), then reads that person's
-   * addresses from both. Identity is never re-resolved against the spine view at request time. The HAVING guard fails
-   * closed if two people collide after normalization. Zero rows is `unavailable` (`unconfirmed`), never "none on
-   * file": this read cannot tell a known person without addresses from an unknown username.
+   * person carries it: resolves the username to its LF account (ORG_PEOPLE_LF_USERNAMES, every LF user, not only the
+   * account's people), then reads that account's qualifying addresses at this organization (ORG_PEOPLE_LF_USER_COMPANY_EMAILS).
+   * Identity → address only: an address is never a lookup key. The HAVING guard fails closed if the username names more
+   * than one account. No identity row is `unavailable` (`unconfirmed`); an identity row without an address is "none on
+   * file" (`resolved`, empty).
    */
   private async fetchCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     const query = `
-      WITH addresses AS (
-        SELECT ACCOUNT_ID, PERSON_KEY, LF_USERNAME, EMAIL, IS_PRIMARY, 'current' AS ADDRESS_SOURCE
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS
-        WHERE ACCOUNT_ID = ?
-        UNION ALL
-        SELECT ACCOUNT_ID, PERSON_KEY, LF_USERNAME, EMAIL, IS_PRIMARY, ADDRESS_SOURCE
-        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EXTENDED_COMPANY_EMAILS
-        WHERE ACCOUNT_ID = ? AND ADDRESS_SOURCE = 'lf_account'
-      ),
-      resolved_person AS (
-        SELECT ACCOUNT_ID, MIN(PERSON_KEY) AS PERSON_KEY
-        FROM addresses
-        WHERE LOWER(TRIM(LF_USERNAME)) = ?
-        GROUP BY ACCOUNT_ID
+      WITH lf_account AS (
+        SELECT MIN(PERSON_KEY) AS PERSON_KEY
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES
+        WHERE LF_USERNAME = ?
+        GROUP BY LF_USERNAME
         HAVING COUNT(DISTINCT PERSON_KEY) = 1
       )
-      SELECT emails.EMAIL, emails.IS_PRIMARY, emails.ADDRESS_SOURCE
-      FROM resolved_person AS person
-      INNER JOIN addresses AS emails
-        ON emails.ACCOUNT_ID = person.ACCOUNT_ID AND emails.PERSON_KEY = person.PERSON_KEY
+      SELECT lf_account.PERSON_KEY, emails.EMAIL, emails.IS_PRIMARY, 'lf_account' AS ADDRESS_SOURCE
+      FROM lf_account
+      LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USER_COMPANY_EMAILS AS emails
+        ON emails.PERSON_KEY = lf_account.PERSON_KEY AND emails.ACCOUNT_ID = ?
     `;
-    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow>(query, [accountId, accountId, username]);
-    const resolved = toCompanyEmails(result.rows);
-    if (resolved.companyEmails.length === 0) {
+    const result = await this.snowflakeService.execute<OrgPersonCompanyEmailRow & { PERSON_KEY: string }>(query, [username, accountId]);
+    if (result.rows.length === 0) {
       return UNCONFIRMED_COMPANY_EMAILS;
     }
-    return { ...resolved, companyEmailsStatus: 'resolved' };
+    return { ...toCompanyEmails(result.rows), companyEmailsStatus: 'resolved' };
+  }
+
+  /**
+   * The batch form of {@link fetchCompanyEmailsByUsername} for the All Employees filter: per known username, whether its
+   * LF account holds a qualifying address here. Bound in chunks of {@link LF_USERNAME_BATCH_SIZE}; a username with no
+   * single account is absent from both lists. No address is returned.
+   */
+  private async fetchLfUsernameCompanyEmailStatuses(accountId: string, usernames: readonly string[]): Promise<OrgLfUsernameCompanyEmailStatuses> {
+    const chunks: string[][] = [];
+    for (let start = 0; start < usernames.length; start += LF_USERNAME_BATCH_SIZE) {
+      chunks.push(usernames.slice(start, start + LF_USERNAME_BATCH_SIZE));
+    }
+    const results = await Promise.all(
+      chunks.map((chunk) =>
+        this.snowflakeService.execute<{ LF_USERNAME: string; EMAIL_COUNT: number | string }>(
+          `
+            WITH identities AS (
+              SELECT LF_USERNAME, MIN(PERSON_KEY) AS PERSON_KEY
+              FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES
+              WHERE LF_USERNAME IN (${chunk.map(() => '?').join(', ')})
+              GROUP BY LF_USERNAME
+              HAVING COUNT(DISTINCT PERSON_KEY) = 1
+            )
+            SELECT identities.LF_USERNAME, COUNT(NULLIF(TRIM(emails.EMAIL), '')) AS EMAIL_COUNT
+            FROM identities
+            LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USER_COMPANY_EMAILS AS emails
+              ON emails.PERSON_KEY = identities.PERSON_KEY AND emails.ACCOUNT_ID = ?
+            GROUP BY identities.LF_USERNAME
+          `,
+          [...chunk, accountId]
+        )
+      )
+    );
+    const statuses: OrgLfUsernameCompanyEmailStatuses = { usernames: [], noneUsernames: [] };
+    for (const row of results.flatMap((result) => result.rows)) {
+      (Number(row.EMAIL_COUNT) > 0 ? statuses.usernames : statuses.noneUsernames).push(row.LF_USERNAME);
+    }
+    return statuses;
   }
 
   /**
@@ -1529,6 +1600,13 @@ function isCompanyEmailKeys(value: unknown): boolean {
   const keys = value as Partial<OrgCompanyEmailKeys> | null;
   const isStrings = (list: unknown): boolean => Array.isArray(list) && list.every((item) => typeof item === 'string');
   return !!keys && isStrings(keys.personKeys) && isStrings(keys.usernames) && isStrings(keys.noneUsernames);
+}
+
+/** A stored LF-username status read: two string arrays. */
+function isLfUsernameCompanyEmailStatuses(value: unknown): boolean {
+  const statuses = value as Partial<OrgLfUsernameCompanyEmailStatuses> | null;
+  const isStrings = (list: unknown): boolean => Array.isArray(list) && list.every((item) => typeof item === 'string');
+  return !!statuses && isStrings(statuses.usernames) && isStrings(statuses.noneUsernames);
 }
 
 /** Narrow upstream free-text voting status to the three badges; unknown values collapse to 'Non-voting'. */

@@ -112,7 +112,7 @@
             </span>
           } @else if (companyEmailsUnlinked()) {
             <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-unlinked">
-              This profile isn't linked to an LF account, so we can't check for a company email
+              This profile isn't linked to an LF profile - no company email on file
             </span>
           } @else if (companyEmailsUnconfirmed()) {
             <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-unconfirmed">
@@ -122,7 +122,7 @@
             <span class="mt-1 truncate text-xs text-gray-500" data-testid="person-detail-drawer-email-no-identity"> Emails aren't shown on this page </span>
           } @else if (companyEmailsNoneOnFile()) {
             <span class="mt-1 whitespace-normal break-words text-xs text-gray-500" data-testid="person-detail-drawer-email-none">
-              No {{ drawer.companyName() }} email on file
+              No verified company email associated with this LF profile
             </span>
           }
         </span>
