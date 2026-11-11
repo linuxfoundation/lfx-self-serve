@@ -464,6 +464,21 @@ describe('CommitteeMembersComponent add-people actions', () => {
       expect(query('invite-expiry')?.textContent).toContain('Expires');
     });
 
+    it('flips a live invite to expired when its expiry passes while the tab stays open', async () => {
+      // Only the clock and intervals are faked, so the async setup still resolves.
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      vi.setSystemTime(new Date('2030-01-01T00:00:00Z'));
+      await openPending([{ ...LIVE, expires_at: '2030-01-01T00:00:30Z' }]);
+      expect(query('invite-expired-tag')).toBeNull();
+      expect(query('invite-expiry')?.textContent).toContain('Expires');
+
+      vi.advanceTimersByTime(60_000);
+      await fixture.whenStable();
+
+      expect(query('invite-expired-tag')).not.toBeNull();
+      expect(query('invite-expiry')?.textContent).toContain('Expired');
+    });
+
     it('shows no expiry for a legacy invite without expires_at', async () => {
       await openPending([LEGACY]);
 
@@ -519,6 +534,25 @@ describe('CommitteeMembersComponent add-people actions', () => {
       menuLabels(EXPIRED);
 
       expect(component.inviteActionMenuItems.find((item) => item.label === 'Revoke invitation')?.disabled).toBe(true);
+    });
+
+    it('does not poll or refresh another group when the page switches groups before the response', async () => {
+      await openPending([EXPIRED]);
+      vi.useFakeTimers();
+      const created = new Subject<unknown>();
+      committeeService.createCommitteeInvite.mockReturnValue(created);
+
+      component.resendInvite(EXPIRED);
+      fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2' });
+      fixture.detectChanges();
+      const invitesCalls = committeeService.getCommitteeInvites.mock.calls.length;
+      const refreshesBefore = refreshes;
+      created.next({});
+      created.complete();
+      vi.advanceTimersByTime(3000);
+
+      expect(committeeService.getCommitteeInvites.mock.calls.length).toBe(invitesCalls);
+      expect(refreshes).toBe(refreshesBefore);
     });
 
     it('ignores a second resend while one is in flight', async () => {

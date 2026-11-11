@@ -21,6 +21,7 @@ import {
   COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
   COMMITTEE_ENGAGEMENT_MIN_INVITES,
   COMMITTEE_ENGAGEMENT_WINDOW_OPTIONS,
+  COMMITTEE_INVITE_EXPIRY_TICK_MS,
   COMMITTEE_LABEL,
   NO_VOTING_STATUS_LABEL,
 } from '@lfx-one/shared/constants';
@@ -81,6 +82,7 @@ import {
   startWith,
   take,
   takeUntil,
+  takeWhile,
   timer,
 } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
@@ -207,13 +209,17 @@ export class CommitteeMembersComponent implements OnInit {
   // manager's `writer` flag is already true (LFXV2-2059).
   public readonly canManageMembers = computed(() => canManageCommitteeMembers(this.committee()));
 
+  /** Wall clock re-read every minute, so an invitation that expires while the tab is open is re-evaluated. */
+  private readonly now = toSignal(timer(COMMITTEE_INVITE_EXPIRY_TICK_MS, COMMITTEE_INVITE_EXPIRY_TICK_MS).pipe(map(() => new Date())), {
+    initialValue: new Date(),
+  });
   /** Expiry state per invite uid, computed once per change instead of by template method calls. */
-  public readonly inviteExpiryByUid = computed(
-    () =>
-      new Map(
-        this.invites().map((invite) => [invite.uid, { expired: isInviteExpired(invite.expires_at), label: formatInviteExpiry(invite.expires_at) }] as const)
-      )
-  );
+  public readonly inviteExpiryByUid = computed(() => {
+    const now = this.now();
+    return new Map(
+      this.invites().map((invite) => [invite.uid, { expired: isInviteExpired(invite.expires_at, now), label: formatInviteExpiry(invite.expires_at) }] as const)
+    );
+  });
   public readonly joinMode = computed(() => this.committee()?.join_mode as JoinMode | undefined);
   public readonly showPendingInvites = computed(() => this.canManageMembers() && (this.invitesLoading() || this.invites().length > 0));
   public readonly tabOptions = computed<FilterPillOption[]>(() => {
@@ -608,7 +614,7 @@ export class CommitteeMembersComponent implements OnInit {
             summary: 'Invitation Sent',
             detail: `A new invitation has been sent to ${invite.invitee_email}.`,
           });
-          this.pollUntilInviteRenewed(invite.uid);
+          this.pollUntilInviteRenewed(committee.uid, invite.uid);
         },
         error: (err: HttpErrorResponse) => {
           this.resendingInviteUid.set(null);
@@ -877,14 +883,16 @@ export class CommitteeMembersComponent implements OnInit {
    * Watches the invite list until the resent invite is no longer expired, absorbing query-service
    * indexing lag, then refreshes the roster. Falls back to a refresh when the poll gives up.
    */
-  private pollUntilInviteRenewed(inviteUid: string): void {
-    const committeeUid = this.committee()?.uid;
-    if (!committeeUid) return;
+  private pollUntilInviteRenewed(committeeUid: string, inviteUid: string): void {
+    // The page is reused across groups, so stop and skip the refresh once another group is showing.
+    const isActiveGroup = (): boolean => this.committee()?.uid === committeeUid;
+    if (!isActiveGroup()) return;
 
     let pollSucceeded = false;
 
     timer(400, 400)
       .pipe(
+        takeWhile(isActiveGroup),
         exhaustMap(() => this.committeeService.getCommitteeInvites(committeeUid).pipe(catchError(() => of(null as CommitteeInvite[] | null)))),
         take(6),
         filter((invites): invites is CommitteeInvite[] => {
@@ -897,10 +905,10 @@ export class CommitteeMembersComponent implements OnInit {
       .subscribe({
         next: () => {
           pollSucceeded = true;
-          this.refreshMembers();
+          if (isActiveGroup()) this.refreshMembers();
         },
         complete: () => {
-          if (!pollSucceeded) {
+          if (!pollSucceeded && isActiveGroup()) {
             this.refreshMembers();
           }
         },

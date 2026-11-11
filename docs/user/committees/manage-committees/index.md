@@ -59,7 +59,7 @@ The Members tab loads the complete roster before enabling **Add Member** and **I
 
 ### Pending invitations
 
-When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and organization from the original. You can also invite the same email again from **Add Member** after an invitation expires.
+When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and organization from the original.
 
 ### Pending applications
 
