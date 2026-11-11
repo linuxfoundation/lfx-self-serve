@@ -86,7 +86,7 @@ An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can 
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
-The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-don-t-my-signed-clas-show-up).
+The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub and GitLab accounts. If those values do not match the identity you used when signing (for example a work email, GitHub or GitLab account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. A GitLab account already connected to your profile is matched too; connecting a new GitLab account from Identities is coming soon. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-don-t-my-signed-clas-show-up).
 
 ## Can I sign a CLA from the CLAs tab?
 
