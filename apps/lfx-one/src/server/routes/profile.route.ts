@@ -60,6 +60,9 @@ router.get('/auth/callback', blockDuringImpersonation, (req, res) => profileCont
 // it would report the impersonator's Flow C token state, which is irrelevant to the read-only target view)
 router.get('/auth/status', blockDuringImpersonation, (req, res) => profileController.getProfileAuthStatus(req, res));
 
+// POST consumes an attempt-bound draft once; do not expose the real user's address while impersonating.
+router.post('/auth/email-support-context', blockDuringImpersonation, (req, res) => profileController.consumeLinkedEmailSupportContext(req, res));
+
 // GET /api/profile - Get current user's combined profile data
 router.get('/', (req, res, next) => profileController.getCurrentUserProfile(req, res, next));
 

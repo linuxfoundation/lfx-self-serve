@@ -142,6 +142,15 @@ describe('OrgPeopleKeyContactsService getKeyContactsForPerson', () => {
     expect(result).toEqual({ assignments: [], status: 'resolved' });
   });
 
+  it('stays unidentified when the address lookup resolved with no address and no assignment matched', async () => {
+    // An LF account with no company email here: its username cannot rule out assignments recorded without one.
+    upstream([contact({})]);
+
+    const result = await service.getKeyContactsForPerson(req, ORG_UID, { username: 'jdoe', emails: [], emailsStatus: 'resolved' });
+
+    expect(result).toEqual({ assignments: [], status: 'unidentified' });
+  });
+
   // The decisive case: a username alone cannot rule out the assignments upstream records without one,
   // so an unmatched partial identity must never be reported as "holds no roles".
   it.each([

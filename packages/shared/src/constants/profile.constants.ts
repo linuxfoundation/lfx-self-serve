@@ -12,6 +12,10 @@ import { CdpIdentityType, EmailVerificationCallbackStatus, EmailVerificationStat
  */
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
 
+/** Opaque one-shot handle for an already-linked callback's private support context; never an email. */
+export const EMAIL_LINKED_SUPPORT_CONTEXT_PARAM = 'email_support_context';
+export const EMAIL_LINKED_SUPPORT_HANDLE_PATTERN = /^[a-f0-9]{64}$/;
+
 /**
  * sessionStorage key for the one-shot Linux.com forward re-auth redirect guard.
  * Written by ProfileLinuxEmailComponent before its automatic Flow C redirect so a
@@ -257,6 +261,12 @@ export const EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: EmailVerificationCallbackStat
 
 /** Flow C callback outcome: the replayed code was correct, but the address is already linked to an LFX account. */
 export const EMAIL_CALLBACK_ALREADY_LINKED_STATUS: EmailVerificationCallbackStatus = 'already_linked';
+
+/** PrimeNG toast key for the sticky already-linked notice that carries a pre-filled Contact support action. */
+export const EMAIL_LINKED_SUPPORT_TOAST_KEY = 'email-linked-support';
+
+/** Title of the already-linked notice shown on the Settings code step and after the Flow C callback. */
+export const EMAIL_LINKED_SUPPORT_TITLE = 'Email already linked';
 
 /** Fixed guidance for a pending email verification that did not finish during the Flow C callback. */
 export const EMAIL_CALLBACK_RETRY_MESSAGE =

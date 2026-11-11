@@ -19,6 +19,7 @@ import {
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { SendEmailVerificationResponse, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -230,17 +231,32 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
     expect(otpError(root)).toBeNull();
   });
 
-  it('opens the support messenger from the error-local support button', async () => {
+  it('opens a support chat pre-filled with the verified address from the error-local support button (#5511)', async () => {
     const { component, close, add, openMessenger, root } = setup(deliveries[0].respond(EMAIL_ALREADY_LINKED_MESSAGE));
     TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
 
     component.onVerify();
     await fixture.whenStable();
-    (otpError(root)?.querySelector('[lfxOpenIntercom]') as HTMLButtonElement | null)?.click();
+    const supportButton = otpError(root)?.querySelector('[data-testid="add-account-linked-support-button"]') as HTMLButtonElement | null;
+    expect(supportButton).not.toBeNull();
+    supportButton?.click();
 
-    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function));
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage(email));
     expect(add).not.toHaveBeenCalled();
     expect(close).not.toHaveBeenCalled();
+  });
+
+  it('offers no pre-filled support button for a wrong or expired code (#5511)', async () => {
+    const { component, root } = setup(() =>
+      throwError(
+        () => new HttpErrorResponse({ status: 400, error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again.' } })
+      )
+    );
+
+    component.onVerify();
+    await fixture.whenStable();
+
+    expect(root.querySelector('[data-testid="add-account-linked-support-button"]')).toBeNull();
   });
 
   it('shows a wrong or expired code as a retryable error without the support link', () => {

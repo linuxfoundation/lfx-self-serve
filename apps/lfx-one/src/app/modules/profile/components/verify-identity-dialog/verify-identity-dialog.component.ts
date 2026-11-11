@@ -18,7 +18,7 @@ import {
   IDENTITY_PROVIDER_LABELS,
 } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, VerifyIdentityDialogData } from '@lfx-one/shared/interfaces';
-import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
+import { buildLinkedEmailSupportMessage, isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
@@ -42,6 +42,8 @@ export class VerifyIdentityDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly identity: ConnectedIdentityFull = this.config.data.identity;
+  // Support-chat pre-fill naming the address this dialog verifies.
+  public readonly linkedSupportMessage = buildLinkedEmailSupportMessage(this.identity.identifier);
   public readonly providerLabel: string = IDENTITY_PROVIDER_LABELS[this.identity.provider] ?? this.identity.provider;
   public readonly isEmailProvider = computed(() => this.identity.provider === 'email');
 
