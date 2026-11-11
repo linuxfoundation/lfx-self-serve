@@ -1459,6 +1459,13 @@ export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RE
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
 
+/**
+ * The Monitor tab's detail line when the Google Ads monitor is refused for the caller's project role
+ * (#4837) and the 403 carries no reason of its own. The campaign-service arm answers only the project's
+ * `campaign_manager` holders.
+ */
+export const MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE = 'Your account needs the campaign manager role on this project to see its Google Ads campaigns.';
+
 /** The BFF's own Google Ads account read is missing a credential or account setting (#4526). */
 export const GOOGLE_ADS_NOT_CONFIGURED_MESSAGE = 'Google Ads is not configured on this server. Ask an LF administrator to check its credentials.';
 

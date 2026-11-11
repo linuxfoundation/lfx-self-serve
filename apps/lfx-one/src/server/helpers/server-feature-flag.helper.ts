@@ -605,19 +605,22 @@ export enum ServerFeatureFlag {
    * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
    * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
    * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
-   * they have no legacy path to fall back to). Google (`/monitor`) has no campaign-service arm, but
-   * `/google/accounts` — campaign-service account discovery for the project's Google Ads connection,
-   * listed on the Monitor tab's Google panel — is campaign-service-only too, and root-only.
+   * they have no legacy path to fall back to). Google (`/monitor`) switches backend too: on, it reads
+   * the project's own Google Ads connection's account through campaign-service (#4526).
+   * `/google/accounts` — campaign-service account discovery for that connection, listed on the
+   * Monitor tab's Google panel — is campaign-service-only, and root-only.
    *
-   * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Google Ads, Meta, Reddit and X run ONE ad account
-   * shared by every foundation, and campaign-service's `account-monitor` is account-scoped, so either
-   * arm returns every foundation's campaigns. Those monitors (`/monitor`, `/meta/monitor`,
-   * `/reddit/monitor`, `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT
-   * writer or ROOT `global_marketing_ops` holder; everyone else gets a 403
-   * `MONITOR_SHARED_ACCOUNT_RESTRICTED` before any upstream call (lfx-self-serve-ops#54). LinkedIn
-   * runs one account per foundation, so only its campaign-service arm is project-isolated: its legacy
-   * (flag OFF) arm reads LF's shared allowlist account and is root-only too. Microsoft and HubSpot
-   * are not gated.
+   * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Meta, Reddit and X run ONE ad account shared by every
+   * foundation, and campaign-service's `account-monitor` is account-scoped, so either arm returns
+   * every foundation's campaigns. Those monitors (`/meta/monitor`, `/reddit/monitor`,
+   * `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT writer or ROOT
+   * `global_marketing_ops` holder; everyone else gets a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED` before
+   * any upstream call (lfx-self-serve-ops#54). Google Ads' account is shared too, but campaign-service's
+   * Google monitor returns only the campaigns recorded for the project, so only its legacy (flag OFF)
+   * account-wide arm is root-only; on, it answers the project's `campaign_manager` holders (#4837).
+   * LinkedIn runs one account per foundation, so its campaign-service arm is project-isolated: its
+   * legacy (flag OFF) arm reads LF's shared allowlist account and is root-only too. Microsoft and
+   * HubSpot are not gated.
    *
    * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
    * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
