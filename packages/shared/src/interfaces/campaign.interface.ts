@@ -1769,6 +1769,16 @@ export interface CampaignBriefLoadResult {
 }
 
 /**
+ * A saved-brief lookup's answer together with the slug that produced it (#5492). The Plan tab tries
+ * the URL's segment and then year-suffixed variants of it, so the slug a found or unreadable answer
+ * is stored under is not always the one the URL names. `result` is null for a failed request.
+ */
+export interface CampaignBriefLookupHit {
+  result: CampaignBriefLoadResult | null;
+  matchedSlug: string;
+}
+
+/**
  * A saved brief the Plan tab offers, with the provenance the page needs to take ownership of its row.
  *
  * Emitted by both the restore offer and its Open to edit action (#4983).

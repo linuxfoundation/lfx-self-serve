@@ -22,13 +22,20 @@
           [maxlength]="textMax"
           [required]="true"
           [invalid]="invalid()['project_name']"
-          describedBy="pa-project-name-error"
+          describedBy="pa-project-name-error pa-project-name-duplicate"
           placeholder="e.g. Shared AI Findings Exchange"
           styleClass="w-full"
           dataTest="project-application-form-project-name" />
         @if (invalid()['project_name']) {
           <p id="pa-project-name-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-project-name-error">Project name is required.</p>
         }
+        <!-- Always in the DOM and only its text changes, so screen readers announce the note when it appears. -->
+        <p
+          id="pa-project-name-duplicate"
+          class="text-xs text-amber-700 m-0 empty:hidden"
+          role="status"
+          data-testid="project-application-form-project-name-duplicate"
+          [textContent]="duplicateProjectMessage()"></p>
       </div>
 
       <div class="flex flex-col gap-1.5">
@@ -38,6 +45,7 @@
           control="project_website"
           inputId="pa-website"
           type="url"
+          autocomplete="url"
           [invalid]="invalid()['project_website']"
           describedBy="pa-website-error"
           placeholder="https://example.org"
@@ -57,6 +65,7 @@
           control="project_repository_url"
           inputId="pa-repository"
           type="url"
+          autocomplete="url"
           [required]="true"
           [invalid]="invalid()['project_repository_url']"
           describedBy="pa-repository-hint pa-repository-error"
@@ -95,17 +104,21 @@
         <label for="pa-organization" class="text-sm text-gray-700"
           >{{ labels['contributing_organization'] }} <span class="text-red-600" aria-hidden="true">*</span></label
         >
-        <lfx-input-text
+        <lfx-organization-search
           [form]="form"
-          control="contributing_organization"
-          inputId="pa-organization"
-          [maxlength]="textMax"
+          nameControl="contributing_organization"
+          [resolveOnSelect]="false"
           [required]="true"
+          [resolveToCdpName]="false"
+          inputId="pa-organization"
+          [maxLength]="textMax"
           [invalid]="invalid()['contributing_organization']"
           describedBy="pa-organization-error"
           placeholder="Company contributing the project"
           styleClass="w-full"
-          dataTest="project-application-form-organization" />
+          inputStyleClass="w-full"
+          panelStyleClass="w-full"
+          dataTestId="project-application-form-organization" />
         @if (invalid()['contributing_organization']) {
           <p id="pa-organization-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-organization-error">
             Assigning company is required.
@@ -113,19 +126,64 @@
         }
       </div>
 
-      <div class="flex flex-col gap-1.5">
+      <div class="flex flex-col gap-1.5" (focusout)="onLegalFocusOut($event)">
         <label for="pa-legal" class="text-sm text-gray-700">{{ labels['legal_contact_email'] }} <span class="text-red-600" aria-hidden="true">*</span></label>
-        <lfx-input-text
-          [form]="form"
-          control="legal_contact_email"
-          inputId="pa-legal"
-          type="email"
-          [required]="true"
-          [invalid]="invalid()['legal_contact_email']"
-          describedBy="pa-legal-error"
-          placeholder="legal@example.org"
-          styleClass="w-full"
-          dataTest="project-application-form-legal" />
+        @if (legalMode() === 'search') {
+          <lfx-user-search
+            [form]="form"
+            searchType="committee_member"
+            emailControl="legal_contact_email"
+            [displayValue]="legalEmailValue()"
+            [showClear]="true"
+            [readonly]="submitting()"
+            inputId="pa-legal"
+            [placeholder]="legalSearchPlaceholder"
+            [manualEntryLabel]="legalManualEntryLabel"
+            describedBy="pa-legal-error"
+            [invalid]="invalid()['legal_contact_email']"
+            [required]="true"
+            styleClass="w-full"
+            inputStyleClass="w-full"
+            panelStyleClass="w-full"
+            dataTestId="project-application-form-legal-search"
+            (onUserSelect)="onLegalPicked()"
+            (onClear)="onLegalCleared()"
+            (onManualEntry)="switchToManualLegal()" />
+          <p class="text-xs text-gray-500 m-0">
+            {{ legalSearchHint }}
+            <button
+              type="button"
+              class="text-primary hover:underline"
+              [disabled]="submitting()"
+              (click)="switchToManualLegal()"
+              data-testid="project-application-form-legal-manual-link">
+              {{ legalManualEntryLabel }}
+            </button>
+          </p>
+        } @else {
+          <lfx-input-text
+            [form]="form"
+            control="legal_contact_email"
+            inputId="pa-legal"
+            type="email"
+            autocomplete="email"
+            [required]="true"
+            [invalid]="invalid()['legal_contact_email']"
+            describedBy="pa-legal-error"
+            placeholder="legal@example.org"
+            styleClass="w-full"
+            dataTest="project-application-form-legal" />
+          <p class="text-xs text-gray-500 m-0">
+            <button
+              type="button"
+              class="text-primary hover:underline"
+              [disabled]="submitting()"
+              (click)="backToLegalSearch()"
+              data-testid="project-application-form-legal-search-link">
+              {{ legalBackToSearchLabel }}
+            </button>
+          </p>
+        }
         @if (invalid()['legal_contact_email']) {
           <p id="pa-legal-error" class="text-xs text-red-600 m-0" data-testid="project-application-form-legal-error">
             Enter the legal contact's email address.

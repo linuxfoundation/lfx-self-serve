@@ -1,14 +1,14 @@
 ---
 title: Company Donations
-description: View the crowdfunding donations made on behalf of a company in the LFX Self Serve Company Lens.
+description: View the crowdfunding donations made on behalf of a company in the LFX Self Serve Company lens.
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, company, lens]
-last_updated: 2026-11-05
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
-When someone donates to a crowdfunding initiative on behalf of a company, LFX matches the donation to that company by its domain. LFX Self Serve lists those donations under that company in the **Company Lens**, so the people who can view the company can see who donated in its name.
+When someone donates to a crowdfunding initiative on behalf of a company, LFX matches the donation to the company by its domain. LFX Self Serve lists those donations under the company in the **Company** lens, so the people who can view the company can see who donated in its name.
 
 ## Who sees it
 
@@ -26,7 +26,7 @@ The page header reads **Donations**, with the description "Donations on LFX Crow
 
 - **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made
-- **Donor** and **Email** — the person who donated
+- **Donor** and **Email** — the person who donated. When the donor chose to hide their name, **Donor** shows **Anonymous** and **Email** shows a dash; the donation and its amount are still listed
 - **Amount** — in USD; a recurring donation shows its amount per charge
 
 The newest donations come first. Select **Load more** to see older ones.

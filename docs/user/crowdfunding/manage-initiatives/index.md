@@ -4,7 +4,7 @@ description: How to view initiative details, edit settings, and archive or activ
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, manage, edit, attribution, archive, activate]
-last_updated: 2026-11-05
+last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
@@ -32,7 +32,7 @@ Select **Back to Initiatives** above the header to return to your initiatives li
 
 **Overview tab** — a financial summary with the current balance, amount raised against the goal, percent funded, and sponsor count, followed by the **Funding goals** for the initiative (when set), each showing its goal, amount donated, and amount spent. Below it, **About this Initiative** shows the full description with its formatting (headings, bold, lists, and links). A **Recent donations** sidebar lists the five most recent donations with the donor, date, and amount.
 
-**Financials tab** — total received, total expenses, and balance, followed by the **Donations received** and **Expense breakdown** tables. Use **Load more** to page through either table.
+**Financials tab** — total received, total expenses, and balance, followed by the **Donations received** and **Expense breakdown** tables. Use **Load more** to page through either table. A donor who chose to hide their name is listed as **Anonymous**, here and in **Recent donations**; the amount still shows, and a company donation keeps the company's name.
 
 ## Edit an initiative
 

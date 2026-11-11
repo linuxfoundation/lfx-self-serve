@@ -8,10 +8,29 @@
     <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meeting-transcript-dialog-context" />
   </div>
 
-  @if (cues(); as cues) {
-    @if (cues.length > 0) {
+  @let state = cues();
+  @if (state === 'error') {
+    <lfx-ui-empty-state
+      class="flex flex-1 items-center justify-center"
+      size="small"
+      icon="fa-light fa-triangle-exclamation"
+      heading="Couldn't load the transcript"
+      description="Something went wrong. Try again."
+      data-testid="meeting-transcript-dialog-error">
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-arrow-rotate-right"
+        (click)="retry()"
+        data-testid="meeting-transcript-dialog-retry">
+        Retry
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else if (state) {
+    @if (state.length > 0) {
       <ul class="flex flex-col gap-[20px]" aria-label="Transcript" data-testid="meeting-transcript-dialog-content">
-        @for (cue of cues; track $index) {
+        @for (cue of state; track $index) {
           <li class="flex items-start gap-[12px]" data-testid="meeting-transcript-dialog-cue">
             <lfx-ui-avatar class="shrink-0" [size]="32" [name]="cue.speaker" decorative />
             <div class="flex min-w-0 flex-col gap-[2px]">

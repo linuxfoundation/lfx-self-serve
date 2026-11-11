@@ -21,6 +21,7 @@ import {
   CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
+  DonationAnonymityResult,
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
@@ -32,6 +33,7 @@ import {
   RecurringDonation,
   RecurringDonationsResponse,
   UpdateAnnouncementInput,
+  UpdateDonationAnonymityInput,
   UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
@@ -165,6 +167,18 @@ export class CrowdfundingService {
 
   public cancelSubscription(id: string): Observable<void> {
     return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`);
+  }
+
+  /** Hides or shows the caller's name on one of their one-time donations (lfx-crowdfunding#466). `id` is the row's `donationId`. */
+  public updateDonationAnonymity(id: string, anonymous: boolean): Observable<DonationAnonymityResult> {
+    const body: UpdateDonationAnonymityInput = { anonymous };
+    return this.http.patch<DonationAnonymityResult>(`/api/crowdfunding/my-donations/${encodeURIComponent(id)}`, body);
+  }
+
+  /** Hides or shows the caller's name on every charge of a recurring donation (lfx-crowdfunding#466). `id` is the subscription id. */
+  public updateSubscriptionAnonymity(id: string, anonymous: boolean): Observable<DonationAnonymityResult> {
+    const body: UpdateDonationAnonymityInput = { anonymous };
+    return this.http.patch<DonationAnonymityResult>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`, body);
   }
 
   public getInitiativeTransactions(

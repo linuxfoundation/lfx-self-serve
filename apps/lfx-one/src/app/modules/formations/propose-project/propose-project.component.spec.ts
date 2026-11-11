@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { ProjectFunding, ProjectStage } from '@lfx-one/shared/enums';
@@ -46,6 +47,8 @@ describe('ProposeProjectComponent (#3037)', () => {
     await TestBed.configureTestingModule({
       imports: [ProposeProjectComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
         provideRouter([]),
         { provide: ProjectApplicationService, useValue: service },
         { provide: MessageService, useValue: messages },

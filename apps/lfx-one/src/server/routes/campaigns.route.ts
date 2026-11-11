@@ -54,8 +54,11 @@ const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
 const optimizeController = new CampaignOptimizeController();
 
-// Google Ads account monitor: requires `?project=`, but reads the shared account, not that project's
-// data. Its route-specific guard admits ROOT callers without granting access to project writes.
+// Google Ads account monitor: requires `?project=`. With LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR on it reads
+// only the project's own campaigns, and campaign-service answers whoever holds `campaign_manager` on the
+// project; a caller it refuses gets a 403 naming that role (#4837). Off, it reads the shared account
+// across foundations and the controller keeps it root-only. Its route-specific guard admits ROOT callers
+// (for that legacy arm) without granting access to project writes.
 router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignController.getMonitorData(req, res, next));
 
 // The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
@@ -113,7 +116,8 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
 // not a drop-in replacement for them; nothing is cut over to it yet. Because the Google, Meta,
 // Reddit and X accounts are shared by every foundation, those account monitors (and LinkedIn's
-// legacy arm) are root-only in the controller (lfx-self-serve-ops#54).
+// legacy arm) are root-only in the controller (lfx-self-serve-ops#54), except Google's
+// campaign-service arm, which reads only the project's own campaigns (#4837).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 // An image for the brief, stored by campaign-service and named by asset id in a platform's
@@ -155,7 +159,8 @@ router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMo
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
 // campaign-service account discovery for the project's Google Ads connection, behind
-// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only, as the Google Ads monitor is.
+// LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off. Root-only: a project with no connection
+// of its own is answered from the LF system credential, so the list can name every account the LF reaches.
 router.get('/google/accounts', (req, res, next) => campaignController.getGoogleAdsAccounts(req, res, next));
 // Which X ad account an X create will use, and the accounts the credential reaches (LFXV2-3319),
 // behind LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE — 404 while it is off. Root-only, as the Google
