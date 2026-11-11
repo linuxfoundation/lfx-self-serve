@@ -84,7 +84,10 @@ describe('orgRollUpSingleOrgPageGuard', () => {
    */
   it.each([
     ['Profile, which never adopts the parameter', { page: 'profile' as const, queryParams: { company: '0014100000AaaAAAAA' } }],
-    ['an addressed EasyCLA, which already names its organization', { page: 'easycla' as const, addressed: true, queryParams: { company: '0014100000AaaAAAAA' } }],
+    [
+      'an addressed EasyCLA, which already names its organization',
+      { page: 'easycla' as const, addressed: true, queryParams: { company: '0014100000AaaAAAAA' } },
+    ],
     ['a return whose organization is empty', { page: 'easycla' as const, queryParams: { company: '   ', signed: '1' } }],
   ])('still redirects %s', (_label, opts) => {
     isRollUp.set(true);

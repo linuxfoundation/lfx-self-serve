@@ -98,8 +98,8 @@ export class OrgLensNavigationService {
   public navigateToRollUpHome(rootUid: string): void {
     const segments = this.currentPrimarySegments();
     const namesNoOrganization =
-      segments[0] === 'org' && (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && !this.isNotFoundAddress(segments);
-    void this.router.navigate(['/org', orgRollUpSegment(rootUid), 'overview'], namesNoOrganization ? { replaceUrl: true } : {});
+      segments[0] === ORG_LENS_URL_ROOT && (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && !this.isNotFoundAddress(segments);
+    void this.router.navigate([ORG_LENS_ROOT_LINK, orgRollUpSegment(rootUid), 'overview'], namesNoOrganization ? { replaceUrl: true } : {});
   }
 
   /** `isNotFoundAddress` for the router's current address — the one page a same-organization pick may still leave. */

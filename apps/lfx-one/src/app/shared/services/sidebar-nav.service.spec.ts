@@ -179,7 +179,10 @@ describe('SidebarNavService', () => {
         // Spec 050 US2: Company Lens items address the selected company. Most cases assert the tree
         // shape, so the builder is stubbed to the legacy form; `orgSegment` names a company for
         // the cases that assert the org-scoped form.
-        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/company/${orgSegment()}/${page}` : `/company/${page}`) } },
+        {
+          provide: OrgLensNavigationService,
+          useValue: { orgLensPath: (page: string) => (orgSegment() ? `/company/${orgSegment()}/${page}` : `/company/${page}`) },
+        },
         {
           provide: AccountContextService,
           useValue: {
