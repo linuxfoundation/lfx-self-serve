@@ -133,6 +133,7 @@ describe('OrgLensMembershipsService.getFoundationProjects', () => {
 describe('OrgLensMembershipsService — family roll-up', () => {
   const PARENT = '001000000000000AAA';
   const SUBSIDIARY = '001000000000001AAA';
+  const UNREADABLE = '001000000000002AAA';
   const ROLL_UP = `family-${PARENT}`;
   const scope = (accountIds: string[] = [SUBSIDIARY, PARENT]) => ({
     rollUpKey: ROLL_UP,
@@ -149,6 +150,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
   const active = (account: string, foundation: string, overrides: Record<string, unknown> = {}) => ({
     ACCOUNT_ID: account,
+    FAMILY_ACCOUNT_ID: PARENT,
     FOUNDATION_ID: foundation,
     FOUNDATION_NAME: foundation.toUpperCase(),
     FOUNDATION_SLUG: foundation,
@@ -159,14 +161,18 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     FIRST_MEMBERSHIP_STARTED_AT: '2020-01-01',
     BOARD_MEMBER_SEAT_COUNT: 1,
     COMMITTEE_MEMBER_SEAT_COUNT: 2,
+    BOARD_MEMBER_SEAT_KEYS: [`${account}-board`],
+    COMMITTEE_MEMBER_SEAT_KEYS: [`${account}-committee-1`, `${account}-committee-2`],
     ORG_PROJECTS_COUNT: 3,
     PROJECT_COUNT: 10,
     MEMBER_COUNT: 50,
     IS_RENEWING_WITHIN_90_DAYS: false,
     ...overrides,
   });
-  const expired = (account: string, foundation: string, expiration: string) => ({
+  const expired = (account: string, foundation: string, expiration: string, isFamilyRollUpRow = true) => ({
     ACCOUNT_ID: account,
+    FAMILY_ACCOUNT_ID: PARENT,
+    IS_FAMILY_ROLLUP_ROW: isFamilyRollUpRow,
     FOUNDATION_ID: foundation,
     FOUNDATION_NAME: foundation.toUpperCase(),
     FOUNDATION_SLUG: foundation,
@@ -177,8 +183,9 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     EXPIRATION_DATE: expiration,
     ACTION_TYPE: 'renew',
   });
-  const discover = (account: string, foundation: string, contributors: number, contributions: number, relevant: number) => ({
-    ACCOUNT_ID: account,
+  const discover = (foundation: string, contributors: number, contributions: number, relevant: number, isFamilyRollUpRow = true) => ({
+    FAMILY_ACCOUNT_ID: PARENT,
+    IS_FAMILY_ROLLUP_ROW: isFamilyRollUpRow,
     FOUNDATION_ID: foundation,
     FOUNDATION_NAME: foundation.toUpperCase(),
     FOUNDATION_SLUG: foundation,
@@ -190,61 +197,45 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     RELEVANT_PROJECTS: relevant,
   });
 
-  let tables: {
-    active: Record<string, unknown>[];
-    expired: Record<string, unknown>[];
-    discover: Record<string, unknown>[];
-    projects: Record<string, unknown>[];
-  };
-  const bound = (binds: string[]) => (rows: Record<string, unknown>[]) => rows.filter((row) => binds.includes(row['ACCOUNT_ID'] as string));
+  let tables: { active: Record<string, unknown>[]; expired: Record<string, unknown>[]; discover: Record<string, unknown>[] };
+  // Stands in for the warehouse: a family read binds the family key and, where the SQL asks, keeps only its roll-up rows.
+  const read = (sql: string, binds: string[], rows: Record<string, unknown>[]) =>
+    rows.filter(
+      (row) =>
+        (sql.includes('WHERE FAMILY_ACCOUNT_ID = ?') ? row['FAMILY_ACCOUNT_ID'] === binds[0] : row['ACCOUNT_ID'] === binds[0]) &&
+        (!sql.includes('IS_FAMILY_ROLLUP_ROW') || row['IS_FAMILY_ROLLUP_ROW'] === true)
+    );
   beforeEach(() => {
     execute.mockReset();
     withOrgCacheMock.mockClear();
     cacheKeys.length = 0;
-    tables = { active: [], expired: [], discover: [], projects: [] };
+    tables = { active: [], expired: [], discover: [] };
     execute.mockImplementation(async (sql: string, binds: string[]) => {
-      const keep = bound(binds);
-      if (sql.includes('ORG_LENS_MEMBERSHIPS_SUMMARY')) return { rows: keep(tables.active) };
-      if (sql.includes('ORG_LENS_EXPIRED_MEMBERSHIPS')) return { rows: keep(tables.expired) };
-      if (sql.includes('ORG_LENS_DISCOVER_MEMBERSHIPS')) return { rows: keep(tables.discover) };
-      if (sql.includes('ORG_LENS_FOUNDATION_PROJECTS_DETAIL')) {
-        const perFoundation = new Map<string, Set<string>>();
-        for (const row of keep(tables.projects)) {
-          const projects = perFoundation.get(row['FOUNDATION_ID'] as string) ?? new Set<string>();
-          projects.add(row['PROJECT_ID'] as string);
-          perFoundation.set(row['FOUNDATION_ID'] as string, projects);
-        }
-        return { rows: [...perFoundation].map(([FOUNDATION_ID, projects]) => ({ FOUNDATION_ID, RELEVANT_PROJECTS: projects.size })) };
-      }
+      if (sql.includes('ORG_LENS_MEMBERSHIPS_SUMMARY')) return { rows: read(sql, binds, tables.active) };
+      if (sql.includes('ORG_LENS_EXPIRED_MEMBERSHIPS')) return { rows: read(sql, binds, tables.expired) };
+      if (sql.includes('ORG_LENS_DISCOVER_MEMBERSHIPS')) return { rows: read(sql, binds, tables.discover) };
       return { rows: [] };
     });
   });
 
   describe('active memberships', () => {
-    it('reads every organization in one query, binding the sorted set, and caches under the roll-up key and the set', async () => {
+    it('reads the family by its warehouse key in one query, with the seat keys, cached once per family', async () => {
       await new OrgLensMembershipsService().getFamilyActiveMemberships(scope([SUBSIDIARY, PARENT, SUBSIDIARY]));
 
+      expect(execute).toHaveBeenCalledTimes(1);
       const [sql, binds] = execute.mock.calls[0];
-      expect(sql).toContain('WHERE ACCOUNT_ID IN (?, ?)');
-      expect(binds).toEqual([PARENT, SUBSIDIARY]);
+      expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
+      expect(sql).toContain('BOARD_MEMBER_SEAT_KEYS');
+      expect(sql).toContain('COMMITTEE_MEMBER_SEAT_KEYS');
+      expect(binds).toEqual([PARENT]);
       expect(withOrgCacheMock.mock.calls[0][0]).toBe(ROLL_UP);
-      expect(cacheKeys[0]).toMatch(/^memberships-active-family:v1:[0-9a-f]{16}$/);
-    });
-
-    it('keys the cache on the set: the same set in any order shares an entry, a different set does not', async () => {
-      const service = new OrgLensMembershipsService();
-      await service.getFamilyActiveMemberships(scope([PARENT, SUBSIDIARY]));
-      await service.getFamilyActiveMemberships(scope([SUBSIDIARY, PARENT]));
-      await service.getFamilyActiveMemberships(scope([PARENT]));
-
-      expect(cacheKeys[0]).toBe(cacheKeys[1]);
-      expect(cacheKeys[2]).not.toBe(cacheKeys[0]);
+      expect(cacheKeys).toEqual(['memberships-active-family:v2']);
     });
 
     it('lists one row per organization and foundation, each naming its organization, and counts every row on the cards', async () => {
       tables.active = [
         active(PARENT, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true }),
-        active(SUBSIDIARY, 'cncf', { BOARD_MEMBER_SEAT_COUNT: 0, COMMITTEE_MEMBER_SEAT_COUNT: 4 }),
+        active(SUBSIDIARY, 'cncf', { BOARD_MEMBER_SEAT_COUNT: 0, BOARD_MEMBER_SEAT_KEYS: [] }),
         active(SUBSIDIARY, 'lfn'),
       ];
 
@@ -256,8 +247,32 @@ describe('OrgLensMembershipsService — family roll-up', () => {
         ['cncf', SUBSIDIARY_ORG],
         ['lfn', SUBSIDIARY_ORG],
       ]);
-      expect(response.summary).toEqual({ activeMemberships: 3, renewingWithin90Days: 1, governanceRoles: 3 + 4 + 3 });
+      expect(response.summary).toEqual({ activeMemberships: 3, renewingWithin90Days: 1, governanceRoles: 3 + 2 + 3 });
       expect(response.organizations).toEqual([SUBSIDIARY_ORG, PARENT_ORG]);
+    });
+
+    it('counts a seat credited to two organizations at the same foundation once, but keeps each row’s own count', async () => {
+      tables.active = [
+        active(PARENT, 'cncf', { BOARD_MEMBER_SEAT_KEYS: ['person-1'], COMMITTEE_MEMBER_SEAT_COUNT: 0, COMMITTEE_MEMBER_SEAT_KEYS: [] }),
+        active(SUBSIDIARY, 'cncf', { BOARD_MEMBER_SEAT_KEYS: ['person-1'], COMMITTEE_MEMBER_SEAT_COUNT: 0, COMMITTEE_MEMBER_SEAT_KEYS: [] }),
+        active(SUBSIDIARY, 'lfn', { BOARD_MEMBER_SEAT_KEYS: ['person-1'], COMMITTEE_MEMBER_SEAT_COUNT: 1, COMMITTEE_MEMBER_SEAT_KEYS: ['person-1'] }),
+      ];
+
+      const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
+
+      expect(response.memberships.map((m) => m.boardMembers)).toEqual([1, 1, 1]);
+      // cncf board once; lfn board and lfn committee are separate seats.
+      expect(response.summary.governanceRoles).toBe(3);
+    });
+
+    it('leaves out an organization of the family the caller cannot read, from the rows and the cards', async () => {
+      tables.active = [active(PARENT, 'cncf'), active(UNREADABLE, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true }), active(UNREADABLE, 'lfn')];
+
+      const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
+
+      expect(response.memberships.map((m) => m.organization?.accountId)).toEqual([PARENT]);
+      expect(response.summary).toEqual({ activeMemberships: 1, renewingWithin90Days: 0, governanceRoles: 3 });
+      expect(response.organizations?.map((o) => o.accountId)).not.toContain(UNREADABLE);
     });
 
     it('computes the cards over the rows the filters keep, the Company filter included', async () => {
@@ -270,8 +285,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       const subsidiary = await service.getFamilyActiveMemberships(scope(), { company: SUBSIDIARY });
       expect(subsidiary.memberships).toHaveLength(2);
-      expect(subsidiary.summary.activeMemberships).toBe(2);
-      expect(subsidiary.summary.renewingWithin90Days).toBe(0);
+      expect(subsidiary.summary).toEqual({ activeMemberships: 2, renewingWithin90Days: 0, governanceRoles: 6 });
 
       const gold = await service.getFamilyActiveMemberships(scope(), { tier: 'Gold Membership', search: 'cn' });
       expect(gold.memberships.map((m) => m.organization?.accountId)).toEqual([PARENT, SUBSIDIARY]);
@@ -290,13 +304,22 @@ describe('OrgLensMembershipsService — family roll-up', () => {
       expect(family.memberships.map(({ organization: _organization, ...row }) => row)).toEqual(single.memberships);
     });
 
-    it('leaves the single-organization read unchanged: one account bound, no organization on the rows', async () => {
+    it('never returns the seat holders’ keys', async () => {
+      tables.active = [active(PARENT, 'cncf')];
+
+      const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
+
+      expect(JSON.stringify(response)).not.toContain(`${PARENT}-board`);
+    });
+
+    it('leaves the single-organization read unchanged: one account bound, no seat keys, no organization on the rows', async () => {
       tables.active = [active(PARENT, 'cncf')];
 
       const response = await new OrgLensMembershipsService().getActiveMemberships(PARENT);
 
       const [sql, binds] = execute.mock.calls[0];
       expect(sql).toContain('WHERE ACCOUNT_ID = ?');
+      expect(sql).not.toContain('SEAT_KEYS');
       expect(binds).toEqual([PARENT]);
       expect(cacheKeys[0]).toBe('memberships-active');
       expect(response.memberships[0].organization).toBeUndefined();
@@ -305,82 +328,62 @@ describe('OrgLensMembershipsService — family roll-up', () => {
   });
 
   describe('expired memberships', () => {
-    it('drops a foundation another organization in the family still holds, and keeps one row per foundation, the latest expiry', async () => {
-      tables.active = [active(PARENT, 'cncf')];
-      tables.expired = [
-        expired(SUBSIDIARY, 'cncf', '2029-06-30'),
-        expired(PARENT, 'lfn', '2028-12-31'),
-        expired(SUBSIDIARY, 'lfn', '2029-03-31'),
-        expired(PARENT, 'oif', '2027-01-31'),
-      ];
+    it('reads only the family’s roll-up rows by its warehouse key, each naming whose membership it was', async () => {
+      tables.expired = [expired(SUBSIDIARY, 'lfn', '2029-03-31'), expired(PARENT, 'lfn', '2028-12-31', false), expired(PARENT, 'oif', '2027-01-31')];
 
       const response = await new OrgLensMembershipsService().getFamilyExpiredMemberships(scope());
 
-      expect(response.memberships.map((m) => [m.foundationId, m.expirationDate, m.organization])).toEqual([
-        ['lfn', '2029-03-31', SUBSIDIARY_ORG],
-        ['oif', '2027-01-31', PARENT_ORG],
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
+      expect(sql).toContain('AND IS_FAMILY_ROLLUP_ROW');
+      expect(binds).toEqual([PARENT]);
+      expect(cacheKeys).toEqual(['memberships-expired-family:v2']);
+      expect(response.memberships.map((m) => [m.foundationId, m.expirationDate, m.organization, m.actionType])).toEqual([
+        ['lfn', '2029-03-31', SUBSIDIARY_ORG, 'renew'],
+        ['oif', '2027-01-31', PARENT_ORG, 'renew'],
       ]);
       expect(response.organizations).toHaveLength(2);
     });
 
-    it('breaks a tie on expiry by organization name, whatever the row order', async () => {
-      tables.expired = [expired(SUBSIDIARY, 'lfn', '2029-03-31'), expired(PARENT, 'lfn', '2029-03-31')];
+    it('leaves out a row naming an organization the caller cannot read', async () => {
+      tables.expired = [expired(UNREADABLE, 'lfn', '2029-03-31'), expired(PARENT, 'oif', '2027-01-31')];
 
       const response = await new OrgLensMembershipsService().getFamilyExpiredMemberships(scope());
 
-      expect(response.memberships.map((m) => m.organization)).toEqual([PARENT_ORG]);
-    });
-
-    it('narrows to one company before folding, while still judging foundations against the whole family', async () => {
-      tables.active = [active(SUBSIDIARY, 'cncf')];
-      tables.expired = [expired(PARENT, 'cncf', '2029-06-30'), expired(PARENT, 'lfn', '2028-12-31'), expired(SUBSIDIARY, 'lfn', '2029-03-31')];
-
-      const response = await new OrgLensMembershipsService().getFamilyExpiredMemberships(scope(), undefined, PARENT);
-
-      expect(response.memberships.map((m) => [m.foundationId, m.organization])).toEqual([['lfn', PARENT_ORG]]);
-    });
-
-    it('applies the name search after folding', async () => {
-      tables.expired = [expired(PARENT, 'lfn', '2028-12-31'), expired(PARENT, 'oif', '2027-01-31')];
-
-      const response = await new OrgLensMembershipsService().getFamilyExpiredMemberships(scope(), 'oi');
-
       expect(response.memberships.map((m) => m.foundationId)).toEqual(['oif']);
+    });
+
+    it('narrows to one company and searches by name', async () => {
+      tables.expired = [expired(SUBSIDIARY, 'lfn', '2029-03-31'), expired(PARENT, 'oif', '2027-01-31'), expired(PARENT, 'osf', '2026-01-31')];
+      const service = new OrgLensMembershipsService();
+
+      const parent = await service.getFamilyExpiredMemberships(scope(), undefined, PARENT);
+      expect(parent.memberships.map((m) => m.foundationId)).toEqual(['oif', 'osf']);
+
+      const searched = await service.getFamilyExpiredMemberships(scope(), 'oi', PARENT);
+      expect(searched.memberships.map((m) => m.foundationId)).toEqual(['oif']);
     });
   });
 
   describe('discover opportunities', () => {
-    it('drops foundations the family holds, keeps one row per foundation, adds contributions and counts projects once', async () => {
-      tables.active = [active(SUBSIDIARY, 'cncf')];
-      tables.discover = [
-        discover(PARENT, 'cncf', 9, 90, 3),
-        discover(PARENT, 'lfn', 4, 40, 2),
-        discover(SUBSIDIARY, 'lfn', 3, 30, 2),
-        discover(SUBSIDIARY, 'oif', 1, 100, 1),
-      ];
-      tables.projects = [
-        { ACCOUNT_ID: PARENT, FOUNDATION_ID: 'lfn', PROJECT_ID: 'p1' },
-        { ACCOUNT_ID: PARENT, FOUNDATION_ID: 'lfn', PROJECT_ID: 'p2' },
-        { ACCOUNT_ID: SUBSIDIARY, FOUNDATION_ID: 'lfn', PROJECT_ID: 'p2' },
-        { ACCOUNT_ID: SUBSIDIARY, FOUNDATION_ID: 'oif', PROJECT_ID: 'p3' },
-      ];
+    it('reads only the family’s roll-up rows by its warehouse key, with the family’s contributors, contributions and projects', async () => {
+      tables.discover = [discover('oif', 1, 100, 1), discover('lfn', 6, 70, 2), discover('lfn', 3, 30, 2, false)];
 
       const response = await new OrgLensMembershipsService().getFamilyDiscoverOpportunities(scope());
 
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
+      expect(sql).toContain('AND IS_FAMILY_ROLLUP_ROW');
+      expect(sql).toContain('FAMILY_CONTRIBUTORS_COUNT AS CONTRIBUTORS_COUNT');
+      expect(sql).toContain('FAMILY_CONTRIBUTION_COUNT AS CONTRIBUTION_COUNT');
+      expect(sql).toContain('FAMILY_RELEVANT_PROJECTS AS RELEVANT_PROJECTS');
+      expect(binds).toEqual([PARENT]);
+      expect(cacheKeys).toEqual(['memberships-discover-family:v2']);
       expect(response.accountId).toBe(ROLL_UP);
       expect(response.opportunities.map((o) => [o.foundationId, o.contributions, o.relevantProjects, o.contributors])).toEqual([
         ['oif', 100, 1, 1],
-        ['lfn', 70, 2, 7],
+        ['lfn', 70, 2, 6],
       ]);
-    });
-
-    it('reads relevant projects for LF projects only, over the same set of organizations', async () => {
-      await new OrgLensMembershipsService().getFamilyDiscoverOpportunities(scope());
-
-      const projectsCall = execute.mock.calls.find(([sql]) => String(sql).includes('ORG_LENS_FOUNDATION_PROJECTS_DETAIL'))!;
-      expect(projectsCall[0]).toContain('COUNT(DISTINCT PROJECT_ID) AS RELEVANT_PROJECTS');
-      expect(projectsCall[0]).toContain('AND IS_LF_PROJECT = TRUE');
-      expect(projectsCall[1]).toEqual([PARENT, SUBSIDIARY]);
     });
   });
 });
