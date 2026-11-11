@@ -135,9 +135,14 @@ export class MeetingsDashboardComponent {
   public isCalendarView = computed(() => this.viewMode() === 'calendar' && this.canShowCalendarView());
   // Group links on the cards return here, and restore the Me lens when that is where the user was.
   public groupLinkState: Signal<GroupLinkState> = computed(() => {
-    const fromMeLens = this.activeLens() === 'me';
-    const backProject = fromMeLens ? undefined : this.project()?.slug;
-    return { backLabel: 'Meetings', backPath: '/meetings', fromMeLens, ...(backProject && { backProject }) };
+    const lens = this.activeLens();
+    const state: GroupLinkState = { backLabel: 'Meetings', backPath: '/meetings', fromMeLens: lens === 'me' };
+    const backProject = this.project()?.slug;
+    // Back from a (possibly sub-project) group returns to this lens and project.
+    if ((lens === 'foundation' || lens === 'project') && backProject) {
+      return { ...state, backProject, backLens: lens };
+    }
+    return state;
   });
   // Project the foundation/project list rolls up from; cards from any other project show their project name.
   // Empty on the Me lens, whose list already spans every project.

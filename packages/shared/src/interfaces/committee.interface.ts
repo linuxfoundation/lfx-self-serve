@@ -389,6 +389,8 @@ export interface GroupLinkState {
   fromMeLens: boolean;
   /** Slug of the foundation or project the list was scoped to, restored as `?project=` on Back. A rolled-up sub-project's group switches the selected project, so without it Back would land on the sub-project's list. */
   backProject?: string;
+  /** Lens the list was on, restored with `backProject`: the sub-project's group page may have moved the viewer to the project lens, which would otherwise put a foundation in the project slot. */
+  backLens?: 'foundation' | 'project';
 }
 
 /**
