@@ -63,7 +63,9 @@ describe('HealthMetricsCellComponent', () => {
 
     await set({ lead: { kind: 'person', name: 'Jane Doe', photoUrl: '' } });
     expect(fixture.nativeElement.className).toContain('pl-[42px]');
-    expect(query('health-metrics-cell-person')).not.toBeNull();
+    // Positioned by a wrapper, since the avatar's own host is `relative`.
+    expect(query('health-metrics-cell-person')?.className).toContain('absolute');
+    expect(query('health-metrics-cell-person')?.querySelector('lfx-ui-avatar')).not.toBeNull();
   });
 
   it('puts a company logo inline before the name and lines the description up under it', async () => {

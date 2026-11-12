@@ -11,13 +11,10 @@
       ><i class="text-[13px]" [class]="lead.icon"></i
     ></span>
   } @else if (lead.kind === 'person') {
-    <lfx-ui-avatar
-      class="absolute left-0 top-1/2 -translate-y-1/2"
-      [size]="32"
-      [name]="lead.name"
-      [src]="lead.photoUrl"
-      decorative
-      data-testid="health-metrics-cell-person" />
+    <!-- The avatar's host is `relative`, so a wrapper takes the absolute position. -->
+    <span class="absolute left-0 top-1/2 inline-flex -translate-y-1/2" data-testid="health-metrics-cell-person">
+      <lfx-ui-avatar [size]="32" [name]="lead.name" [src]="lead.photoUrl" decorative />
+    </span>
   }
 }
 <span class="flex min-w-0 max-w-full items-center gap-[8px]">

@@ -137,6 +137,23 @@ describe('HealthMetricsTruncationTipDirective', () => {
     expect(tooltip()).toBeNull();
   });
 
+  // Hover and focus are separate triggers: the tooltip stays until both have gone (WCAG 1.4.13).
+  it('stays open when the pointer leaves a target that still has focus, and hides on blur', async () => {
+    await setup();
+    widths('label', 200, 100);
+    pointer(el('label'), 'pointerover');
+    el('label').focus();
+    await advance(300);
+    await flush();
+
+    pointer(el('label'), 'pointerout', el('column'));
+    await advance(200);
+    expect(tooltip()?.textContent?.trim()).toBe('A long button label');
+
+    el('label').blur();
+    expect(tooltip()).toBeNull();
+  });
+
   it('does not show on focus when only an ancestor of the focused element is cut off', async () => {
     await setup();
     widths('row', 200, 100);

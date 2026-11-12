@@ -70,6 +70,8 @@ export class HealthMetricsTruncationTipDirective {
     if (this.dismissed && !this.dismissed.contains(next)) this.dismissed = null;
     // Moving between the target's own children is not leaving it.
     if (!this.target || !this.target.contains(event.target as Node) || this.target.contains(next)) return;
+    // Focus is the other trigger: a focused target keeps its tooltip until it blurs (WCAG 1.4.13).
+    if (this.targetFocused()) return;
     this.scheduleHide();
   };
 
@@ -82,7 +84,8 @@ export class HealthMetricsTruncationTipDirective {
   };
 
   private readonly onFocusOut = (event: FocusEvent): void => {
-    if (this.target && event.target === this.target) this.hide();
+    // Blur only ends the focus trigger; a pointer still over the target keeps it open.
+    if (this.target && event.target === this.target && !this.target.matches(':hover')) this.hide();
   };
 
   // Held from the start of the delay until the tooltip is gone, as in the uikit tooltip. Capture phase, so that on an open
@@ -141,8 +144,12 @@ export class HealthMetricsTruncationTipDirective {
     this.cancelHide();
     this.hideTimer = setTimeout(() => {
       this.hideTimer = null;
-      this.hide();
+      if (!this.targetFocused()) this.hide();
     }, HEALTH_METRICS_TRUNCATION_TIP_GRACE_MS);
+  }
+
+  private targetFocused(): boolean {
+    return this.target !== null && this.document.activeElement === this.target;
   }
 
   private cancelHide(): void {
