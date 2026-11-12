@@ -71,9 +71,7 @@ export class NewsletterService {
 
   /** Start the background read of a draft's committees into its audience snapshot (#4352). */
   public resolveAudience(projectUid: string, newsletterUid: string, payload: NewsletterResolveAudiencePayload): Observable<NewsletterAudience> {
-    return this.http
-      .post<NewsletterAudience>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/audience`, payload)
-      .pipe(take(1));
+    return this.http.post<NewsletterAudience>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/audience`, payload).pipe(take(1));
   }
 
   public getAudience(projectUid: string, newsletterUid: string): Observable<NewsletterAudience> {

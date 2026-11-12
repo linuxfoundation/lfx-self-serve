@@ -13,7 +13,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { firstValueFrom, Observable, of, throwError } from 'rxjs';
+import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NewsletterManageComponent } from './newsletter-manage.component';
@@ -49,6 +49,8 @@ interface AudienceApi {
   recipientCount: () => number | null;
   recipientCountLoading: () => boolean;
   handleSendError: (err: HttpErrorResponse, id: string) => void;
+  onAddAudienceEmail: (raw: string) => void;
+  canSend: () => boolean;
 }
 
 describe('NewsletterManageComponent audience snapshot (#4352)', () => {
@@ -61,6 +63,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     getPublication: ReturnType<typeof vi.fn>;
   };
   let messageAdd: ReturnType<typeof vi.fn>;
+  let createCommitteeMember: ReturnType<typeof vi.fn>;
 
   const openDraft = (params: Record<string, string> = { id: 'n-1', projectUid: 'p-1' }): AudienceApi => {
     const paramMap = convertToParamMap(params);
@@ -84,6 +87,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
       getPublication: vi.fn(),
     };
     messageAdd = vi.fn();
+    createCommitteeMember = vi.fn(() => of({}));
     TestBed.configureTestingModule({
       imports: [NewsletterManageComponent],
       providers: [
@@ -91,7 +95,17 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
         { provide: PLATFORM_ID, useValue: 'server' },
         { provide: NewsletterService, useValue: newsletterService },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: CommitteeService, useValue: { getCommitteesByProjectOrThrow: () => of([{ uid: 'c-1', category: 'Newsletter' }]) } },
+        {
+          provide: CommitteeService,
+          useValue: {
+            getCommitteesByProjectOrThrow: () =>
+              of([
+                { uid: 'c-1', category: 'Newsletter' },
+                { uid: 'c-2', category: 'Newsletter' },
+              ]),
+            createCommitteeMember,
+          },
+        },
         { provide: ProjectContextService, useValue: { activeContext: signal(CONTEXT), activeContextUid: signal('p-1') } },
         { provide: ProjectService, useValue: { getProjectStrict: () => of(null) } },
         { provide: UserService, useValue: { user: signal({ name: 'Test Editor', email: 'editor@example.com' }) } },
@@ -199,5 +213,77 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     expect(api.audienceReady()).toBe(false);
     expect(api.recipientCountLoading()).toBe(false);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Still preparing the recipient list' }));
+  });
+
+  it('holds Send from the moment an added email starts a rebuild until the rebuilt snapshot is ready', () => {
+    const api = openDraft();
+    expect(api.audienceReady()).toBe(true);
+    const rebuilt = new Subject<NewsletterAudience>();
+    newsletterService.resolveAudience.mockReturnValue(rebuilt);
+
+    api.onAddAudienceEmail('new.member@example.com');
+    TestBed.tick();
+
+    expect(newsletterService.resolveAudience).toHaveBeenLastCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: true });
+    expect(api.audienceReady()).toBe(false);
+    expect(api.canSend()).toBe(false);
+
+    rebuilt.next(audience({ recipient_count: 1581 }));
+    rebuilt.complete();
+    TestBed.tick();
+    expect(api.audienceReady()).toBe(true);
+    expect(api.recipientCount()).toBe(1581);
+  });
+
+  it('rebuilds a group whose add finished while another group was selected', () => {
+    const api = openDraft();
+    const add = new Subject<unknown>();
+    createCommitteeMember.mockReturnValue(add);
+    api.onAddAudienceEmail('new.member@example.com');
+
+    // The author picks another group before the add finishes, then comes back.
+    api.form.patchValue({ committeeUids: ['c-2'] });
+    add.next({});
+    add.complete();
+    expect(newsletterService.resolveAudience).toHaveBeenCalledTimes(1);
+
+    api.form.patchValue({ committeeUids: ['c-1'] });
+    vi.advanceTimersByTime(300);
+    TestBed.tick();
+    expect(newsletterService.resolveAudience).toHaveBeenLastCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: true });
+  });
+
+  it('rebuilds again when a rebuild gets back a read that started before the add', () => {
+    newsletterService.resolveAudience
+      .mockReturnValueOnce(of(audience({ status: 'processing', requested_at: 'read-1' })))
+      .mockReturnValueOnce(of(audience({ status: 'processing', requested_at: 'read-1' })))
+      .mockReturnValueOnce(of(audience({ status: 'processing', requested_at: 'read-2' })));
+    newsletterService.getAudience
+      .mockReturnValueOnce(of(audience({ recipient_count: 1580 })))
+      .mockReturnValueOnce(of(audience({ recipient_count: 1580 })))
+      .mockReturnValueOnce(of(audience({ recipient_count: 1581 })));
+    const api = openDraft();
+    expect(api.recipientCount()).toBe(1580);
+
+    api.onAddAudienceEmail('new.member@example.com');
+    TestBed.tick();
+
+    // The service handed back read-1, which predates the add, so the page asked again.
+    expect(newsletterService.resolveAudience).toHaveBeenCalledTimes(3);
+    expect(newsletterService.resolveAudience).toHaveBeenLastCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: true });
+    expect(api.recipientCount()).toBe(1581);
+    expect(api.audienceReady()).toBe(true);
+  });
+
+  it('resolves again rather than accept a finished read for other committees', () => {
+    newsletterService.resolveAudience
+      .mockReturnValueOnce(of(audience({ status: 'processing', committee_uids: ['c-9'] })))
+      .mockReturnValueOnce(of(audience({ recipient_count: 1580 })));
+    newsletterService.getAudience.mockReturnValueOnce(of(audience({ committee_uids: ['c-9'], recipient_count: 42 })));
+    const api = openDraft();
+
+    expect(newsletterService.resolveAudience).toHaveBeenCalledTimes(2);
+    expect(api.recipientCount()).toBe(1580);
+    expect(api.audienceReady()).toBe(true);
   });
 });

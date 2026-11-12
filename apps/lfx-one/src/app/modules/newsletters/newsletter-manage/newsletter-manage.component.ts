@@ -79,6 +79,7 @@ import {
   interval,
   map,
   merge,
+  Observable,
   of,
   Subject,
   pairwise,
@@ -419,6 +420,12 @@ export class NewsletterManageComponent {
   // The draft's audience snapshot (#4352). A send reads the recipients from it, so Send and Schedule wait until
   // it is ready for the committees on screen. Null until a saved draft's committees have been resolved.
   protected readonly audience = signal<NewsletterAudience | null>(null);
+  // Committees an email was added to since their snapshot was last rebuilt. Their next resolve asks for a
+  // rebuild, even when the add finished while another group was selected or the earlier rebuild was cancelled.
+  private readonly audienceRebuildNeeded = new Set<string>();
+  // The requested_at of each running read this page has seen. The service hands back a running read instead of
+  // starting a new one, so a rebuild that gets one of these back may not include the latest add.
+  private readonly seenAudienceReads = new Set<string>();
 
   // === Audience email adds ===
   // Owned here (not by the audience step) because the stepper destroys the step
@@ -928,10 +935,11 @@ export class NewsletterManageComponent {
     this.committeeService.createCommitteeMember(committeeUid, { email }, { skipNotification: true }).subscribe({
       next: () => {
         this.updateAudienceEmailAdd(committeeUid, email, { status: 'added' });
-        // Refresh the recipient pill only if this group is still the selected
-        // audience — an add resolving after a group switch must not clobber
-        // the new group's count.
-        if (this.committeeUidsValue()[0] === committeeUid) {
+        // The group's snapshot doesn't have this email yet, so its next resolve rebuilds it, even when this
+        // add finishes after a group switch. Only a selected group is resolved now, so an add resolving after
+        // a switch doesn't replace the new group's count.
+        this.audienceRebuildNeeded.add(committeeUid);
+        if (this.committeeUidsValue().includes(committeeUid)) {
           this.fetchRecipientCountFor(this.committeeUidsValue(), true);
         }
       },
@@ -1169,22 +1177,31 @@ export class NewsletterManageComponent {
    * Starts (or reuses) the draft's audience snapshot and polls until the background read finishes, for up to
    * NEWSLETTER_AUDIENCE_POLL_MAX status checks. The count comes from the snapshot, and Send waits on
    * audienceReady. A long committee can take a while, so the spinner stays up while it is processing.
+   *
+   * The service returns a read that is already running rather than start another, and that read can be for
+   * other committees or can predate an add. Either way, once it ends this resolves again rather than accept it.
    */
-  private resolveAudience$(id: string, uids: string[], refresh: boolean) {
+  private resolveAudience$(id: string, uids: string[], refresh: boolean): Observable<NewsletterAudience> {
     const projectUid = this.projectUid();
+    const rebuild = refresh || uids.some((uid) => this.audienceRebuildNeeded.has(uid));
+    // Send and Schedule wait from now until this resolve answers, so neither can use a snapshot it replaces.
+    this.audience.set(null);
     this.recipientCountLoading.set(true);
     let lastStatus: NewsletterAudience['status'] | null = null;
-    return this.newsletterService.resolveAudience(projectUid, id, { committee_uids: uids, refresh }).pipe(
-      switchMap((audience) =>
-        audience.status === 'processing'
-          ? // One status check at a time: the next starts NEWSLETTER_AUDIENCE_POLL_MS after the last answer,
-            // so a slow response is never cancelled, and the cap counts checks rather than answers.
-            defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
-              repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
-              takeWhile((polled) => polled.status === 'processing', true)
-            )
-          : of(audience)
-      ),
+    let reusedRead = false;
+    return this.newsletterService.resolveAudience(projectUid, id, { committee_uids: uids, refresh: rebuild }).pipe(
+      switchMap((audience) => {
+        if (audience.status !== 'processing') return of(audience);
+        // A read this page saw running before asking for a rebuild started before the latest add.
+        reusedRead = rebuild && this.seenAudienceReads.has(audience.requested_at);
+        this.seenAudienceReads.add(audience.requested_at);
+        // One status check at a time: the next starts NEWSLETTER_AUDIENCE_POLL_MS after the last answer,
+        // so a slow response is never cancelled, and the cap counts checks rather than answers.
+        return defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
+          repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
+          takeWhile((polled) => polled.status === 'processing', true)
+        );
+      }),
       tap({
         next: (audience) => {
           lastStatus = audience.status;
@@ -1199,6 +1216,13 @@ export class NewsletterManageComponent {
             });
           }
         },
+      }),
+      switchMap((audience) => {
+        if (audience.status === 'processing') return of(audience);
+        const otherCommittees = !this.uidsEqual([...audience.committee_uids].sort(), [...uids].sort());
+        if (reusedRead || otherCommittees) return this.resolveAudience$(id, uids, rebuild);
+        if (rebuild && audience.status === 'ready') uids.forEach((uid) => this.audienceRebuildNeeded.delete(uid));
+        return of(audience);
       }),
       tap((audience) => {
         // Ignore a result for a selection that changed while the read ran.

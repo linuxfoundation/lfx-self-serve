@@ -232,7 +232,12 @@ export class NewsletterServiceClient {
     );
   }
 
-  public async resolveAudience(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterResolveAudiencePayload): Promise<NewsletterAudience> {
+  public async resolveAudience(
+    req: Request,
+    projectUid: string,
+    newsletterUid: string,
+    payload: NewsletterResolveAudiencePayload
+  ): Promise<NewsletterAudience> {
     return this.microserviceProxy.proxyRequest<NewsletterAudience>(
       req,
       'LFX_V2_SERVICE',
@@ -244,7 +249,12 @@ export class NewsletterServiceClient {
   }
 
   public async getAudience(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAudience> {
-    return this.microserviceProxy.proxyRequest<NewsletterAudience>(req, 'LFX_V2_SERVICE', `/projects/${projectUid}/newsletters/${newsletterUid}/audience`, 'GET');
+    return this.microserviceProxy.proxyRequest<NewsletterAudience>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectUid}/newsletters/${newsletterUid}/audience`,
+      'GET'
+    );
   }
 
   public async recipients(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientsResponse> {
