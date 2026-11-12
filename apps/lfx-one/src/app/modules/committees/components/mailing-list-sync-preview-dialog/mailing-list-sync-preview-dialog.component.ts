@@ -211,8 +211,8 @@ export class MailingListSyncPreviewDialogComponent {
     return computed(() => {
       const diff = this.diff();
       return [
-        { id: 'adds', label: `Add (${diff?.adds.length ?? 0})` },
-        { id: 'removes', label: `Remove (${diff?.removes.length ?? 0})` },
+        { id: 'adds', label: `Add (${this.selectedAdds().length})` },
+        { id: 'removes', label: `Remove (${this.selectedRemoves().length})` },
         { id: 'conflicts', label: `Conflicts (${diff?.conflicts.length ?? 0})` },
       ];
     });
@@ -223,7 +223,7 @@ export class MailingListSyncPreviewDialogComponent {
       const diff = this.diff();
       this.addFormVersion();
       if (!diff) return [];
-      return diff.adds.filter((add) => this.addCheckboxForm.get(add.member_id)?.value !== false);
+      return diff.adds.filter((add) => this.addCheckboxForm.get(add.member_id)?.value === true);
     });
   }
 
@@ -232,7 +232,7 @@ export class MailingListSyncPreviewDialogComponent {
       const diff = this.diff();
       this.removeFormVersion();
       if (!diff) return [];
-      return diff.removes.filter((remove) => this.removeCheckboxForm.get(remove.member_id)?.value !== false);
+      return diff.removes.filter((remove) => this.removeCheckboxForm.get(remove.member_id)?.value === true);
     });
   }
 
@@ -368,14 +368,14 @@ export class MailingListSyncPreviewDialogComponent {
     // member_id never contains one — true for the UID-shaped ids the backend returns today.
     const addControls: Record<string, FormControl<boolean>> = {};
     diff.adds.forEach((add) => {
-      addControls[add.member_id] = new FormControl(true, { nonNullable: true });
+      addControls[add.member_id] = new FormControl(false, { nonNullable: true });
     });
     this.addCheckboxForm = new FormGroup(addControls);
     this.addCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.addFormVersion.update((v) => v + 1));
 
     const removeControls: Record<string, FormControl<boolean>> = {};
     diff.removes.forEach((remove) => {
-      removeControls[remove.member_id] = new FormControl(true, { nonNullable: true });
+      removeControls[remove.member_id] = new FormControl(false, { nonNullable: true });
     });
     this.removeCheckboxForm = new FormGroup(removeControls);
     this.removeCheckboxForm.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.removeFormVersion.update((v) => v + 1));
