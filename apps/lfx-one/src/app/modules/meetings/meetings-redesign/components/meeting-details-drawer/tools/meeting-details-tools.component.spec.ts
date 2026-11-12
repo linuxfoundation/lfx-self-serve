@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { DialogRef } from '@angular/cdk/dialog';
 import { OverlayContainer } from '@angular/cdk/overlay';
 import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -17,10 +16,10 @@ import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeDialogsService } from '../../../services/meetings-home-dialogs.service';
-import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingAttendeeGridComponent } from '../../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsReconcileDialogComponent } from '../reconcile/meeting-details-reconcile-dialog.component';
 import { MeetingDetailsArtifactsService } from './meeting-details-artifacts.service';
 import { MeetingDetailsToolsComponent } from './meeting-details-tools.component';
@@ -158,11 +157,10 @@ describe('MeetingDetailsToolsComponent', () => {
             confirmedMeetingRsvps: () => confirmed(),
           },
         },
-        { provide: DialogRef, useValue: { closed, close: closeDialog } },
         { provide: Clipboard, useValue: { copy } },
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingsHomeEditService, useValue: { edit } },
-        { provide: MeetingsHomeStore, useValue: { applySummaryChange } },
+        { provide: MeetingDetailsSource, useValue: { applySummaryChange, hostRef: { closed, close: closeDialog } } },
         { provide: MeetingsHomeDialogsService, useValue: { openSummary, openTranscript, openRecording, copyRecordingLink } },
         { provide: UiModalService, useValue: { open: modalOpen } },
       ],

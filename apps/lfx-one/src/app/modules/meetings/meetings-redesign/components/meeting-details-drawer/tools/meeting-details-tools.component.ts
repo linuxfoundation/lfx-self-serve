@@ -15,10 +15,10 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { catchError, distinctUntilChanged, of, startWith, switchMap, take } from 'rxjs';
 
 import { MeetingsHomeDialogsService } from '../../../services/meetings-home-dialogs.service';
-import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingAttendeeGridComponent } from '../../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingHomeAttendanceComponent } from '../../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsHostKeyComponent } from './host-key/meeting-details-host-key.component';
 import { MeetingDetailsReconcileDialogComponent } from '../reconcile/meeting-details-reconcile-dialog.component';
 import { MeetingDetailsArtifactsService } from './meeting-details-artifacts.service';
@@ -50,7 +50,7 @@ export class MeetingDetailsToolsComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly dialogs = inject(MeetingsHomeDialogsService);
   private readonly modal = inject(UiModalService);
-  private readonly store = inject(MeetingsHomeStore);
+  private readonly source = inject(MeetingDetailsSource);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly context = inject(MeetingDetailsContext);
   protected readonly artifactsService = inject(MeetingDetailsArtifactsService);
@@ -81,7 +81,7 @@ export class MeetingDetailsToolsComponent {
     const onChange = (change: PastMeetingSummary): void => {
       this.artifactsService.summary.set(change);
       // The home list behind the drawer shows the same summary.
-      this.store.applySummaryChange(pastMeetingId, change);
+      this.source.applySummaryChange(pastMeetingId, change);
     };
     this.dialogs.openSummary(row, summary, onChange, { origin: 'drawer', showPending: true });
   }

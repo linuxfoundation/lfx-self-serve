@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsAgendaComponent } from './meeting-details-agenda.component';
 import { MeetingMaterialsDrawerComponent } from './materials-drawer/meeting-materials-drawer.component';
 
@@ -119,7 +120,7 @@ describe('MeetingDetailsAgendaComponent', () => {
         },
         { provide: MeetingsHomeEditService, useValue: { edit } },
         { provide: UiDrawerService, useValue: { open: drawerOpen } },
-        { provide: DialogRef, useValue: dialogRef },
+        { provide: MeetingDetailsSource, useValue: { hostRef: dialogRef } },
         { provide: UiToastService, useValue: { show: toastShow } },
       ],
     });
