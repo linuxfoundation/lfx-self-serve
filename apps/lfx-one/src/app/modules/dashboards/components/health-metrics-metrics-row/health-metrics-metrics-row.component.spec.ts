@@ -60,6 +60,13 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect(el('row')).toBeNull();
   });
 
+  it('spans the only item on phones', async () => {
+    await render([metric('a')]);
+
+    expect(classes('row-a')).toContain('max-[640px]:col-span-full');
+    expect(classes('row-a')).toContain('pl-0');
+  });
+
   it('does not span an even last item', async () => {
     await render([metric('a'), metric('b'), metric('c'), metric('d')]);
 
