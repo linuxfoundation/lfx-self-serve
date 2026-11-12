@@ -40,6 +40,7 @@ import type {
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
+  IndexedPollAnswer,
   MyVoteBallot,
   MyVoteResponse,
   MyVotesQuickFilter,
@@ -780,8 +781,8 @@ function parseVoteVoterChoiceKey(choiceKey: string): { questionId: string; choic
   return { questionId: choiceKey.slice(0, separator), choiceId: choiceKey.slice(separator + 1) };
 }
 
-/** A ranked answer's preferences in rank order — `ranked_user_choice` when present, else `user_choice`; unranked entries keep their order. */
-function rankedAnswerChoices(answer: PollAnswer): UserChoice[] {
+/** A ranked answer's preferences in rank order — nonempty `ranked_user_choice`, else `user_choice`; unranked entries keep their order. */
+export function rankedAnswerChoices(answer: IndexedPollAnswer): UserChoice[] {
   const choices = answer.ranked_user_choice?.length ? answer.ranked_user_choice : (answer.user_choice ?? []);
   return choices
     .map((choice, index) => ({ choice, index }))

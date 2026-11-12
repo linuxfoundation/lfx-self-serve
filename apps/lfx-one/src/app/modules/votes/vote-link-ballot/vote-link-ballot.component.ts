@@ -88,7 +88,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   protected readonly finalStateText = VOTE_BALLOT_FINAL_STATE;
   /** Vote-setting fallback for first submissions and POST→PUT recovery; a finality rejection always blocks changes (#4723). */
   protected readonly changeAllowed = computed(() => isVoteChangeAllowed(this.ballot()) && !this.changeBlocked());
-  /** Whether the voter's submitted ballot can be changed now: ITX's answer when reported, otherwise derived from the vote (#4723). */
+  /** Whether the submitted ballot can change: ITX's answer when reported, otherwise derived from the vote and observed submission (#4723). */
   protected readonly canChange = computed(() => {
     const ballot = this.ballot();
     if (!ballot || this.changeBlocked()) return false;
@@ -96,7 +96,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       canChangeVote: ballot.ballot?.can_change_vote,
       allowVoteChange: ballot.allow_vote_change,
       status: ballot.status,
-      submitted: !!ballot.ballot?.already_voted,
+      submitted: !!ballot.ballot?.already_voted || this.state() === 'submitted' || this.state() === 'updated',
       voterRemoved: !!ballot.ballot?.voter_removed,
     });
   });

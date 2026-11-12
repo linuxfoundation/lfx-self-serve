@@ -290,16 +290,27 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(testId('vote-link-submitted')).not.toBeNull();
   });
 
-  it('switches to update mode and retries once with PUT when POST says the ballot is not awaiting a response', async () => {
-    submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response'))).mockReturnValueOnce(of(undefined));
-    await open(of(BALLOT));
-    submit();
+  it.each([undefined, true, false])(
+    'confirms a successful POST-to-PUT retry using authoritative capability %s or the observed submission',
+    async (canChangeVote) => {
+      submitLinkResponse.mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response'))).mockReturnValueOnce(of(undefined));
+      await open(of({ ...BALLOT, ballot: { ...BALLOT.ballot, can_change_vote: canChangeVote } }));
+      submit();
+      fixture.detectChanges();
 
-    expect(submitLinkResponse).toHaveBeenCalledTimes(2);
-    expect(submitLinkResponse.mock.calls[0][1]).toBe(false);
-    expect(submitLinkResponse.mock.calls[1][1]).toBe(true);
-    expect(state()).toBe('updated');
-  });
+      expect(submitLinkResponse).toHaveBeenCalledTimes(2);
+      expect(submitLinkResponse.mock.calls[0][1]).toBe(false);
+      expect(submitLinkResponse.mock.calls[1][1]).toBe(true);
+      expect(state()).toBe('updated');
+      if (canChangeVote === false) {
+        expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('Your vote is final.');
+        expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
+      } else {
+        expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('You can change your vote');
+        expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('Your vote is final.');
+      }
+    }
+  );
 
   it('retries only once: a second not-awaiting error is surfaced, not looped', async () => {
     submitLinkResponse.mockReturnValue(throwError(() => httpError(400, 'vote is not awaiting response')));

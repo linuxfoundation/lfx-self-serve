@@ -20,7 +20,7 @@ import {
   VoteLinkBallot,
   VoteLinkBallotState,
 } from '@lfx-one/shared/interfaces';
-import { buildCommentResponses, getCommentPromptsData, isRankedPollType, reconcileCommentFormControls } from '@lfx-one/shared/utils';
+import { buildCommentResponses, getCommentPromptsData, isRankedPollType, rankedAnswerChoices, reconcileCommentFormControls } from '@lfx-one/shared/utils';
 import { CodePointLengthPipe } from '@pipes/code-point-length.pipe';
 import { CheckboxModule } from 'primeng/checkbox';
 
@@ -220,11 +220,7 @@ export class VoteBallotFormComponent {
       const answer = applyPrefill ? prefill?.poll_answers?.find((a) => a.question_id === question.question_id) : undefined;
       if (ranked) {
         const declared = question.choices.map((choice) => choice.choice_id);
-        const choices = answer?.ranked_user_choice?.length ? answer.ranked_user_choice : (answer?.user_choice ?? []);
-        const answered = choices
-          .map((choice, index) => ({ choice, index }))
-          .sort((a, b) => (a.choice.choice_rank ?? a.index + 1) - (b.choice.choice_rank ?? b.index + 1))
-          .map(({ choice }) => choice.choice_id);
+        const answered = answer ? rankedAnswerChoices(answer).map((choice) => choice.choice_id) : [];
         const known = answered.filter((id) => declared.includes(id));
         const order = applyPrefill ? known : declared;
         this.form.addControl(question.question_id, new FormControl<string[]>(order, { nonNullable: true, validators: [Validators.required] }), {

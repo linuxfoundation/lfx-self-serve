@@ -14,6 +14,7 @@ import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState, VoteVoterStatus } from '../enums';
 import type {
+  IndexedPollAnswer,
   MyVoteBallot,
   MyVoteResponse,
   PollAnswer,
@@ -69,6 +70,7 @@ import {
   matchesVoteVoterChoice,
   mergeCommentResults,
   partitionVoteSummaryRecipients,
+  rankedAnswerChoices,
   resolveVoterResultsState,
   sortVoteVotersForDisplay,
   votePermalinkPath,
@@ -2473,5 +2475,55 @@ describe('computeParticipationSegments', () => {
     expect(computeParticipationSegments(stats(5, 9), 0)).toEqual({ voted: 100, abstained: 0 });
     expect(computeParticipationSegments(stats(5, 2), 7)).toEqual({ voted: 0, abstained: 40 });
     expect(computeParticipationSegments(stats(5, 2), -3)).toEqual({ voted: 40, abstained: 0 });
+  });
+});
+
+describe('rankedAnswerChoices', () => {
+  it('prefers nonempty ranked choices and sorts without mutating their recorded array', () => {
+    const ranked: UserChoice[] = [
+      { choice_id: 'c-b', choice_text: 'Second', choice_rank: 2 },
+      { choice_id: 'c-a', choice_text: 'First', choice_rank: 1 },
+    ];
+    const answer: PollAnswer = {
+      question_id: 'q1',
+      prompt: 'Rank candidates',
+      type: 'multiple_choice',
+      ranked_user_choice: ranked,
+      user_choice: [{ choice_id: 'c-other', choice_text: 'Unused fallback' }],
+    };
+
+    expect(rankedAnswerChoices(answer).map((choice) => choice.choice_id)).toEqual(['c-a', 'c-b']);
+    expect(ranked.map((choice) => choice.choice_id)).toEqual(['c-b', 'c-a']);
+  });
+
+  it.each([[], undefined])('falls back to user_choice when ranked_user_choice is %s', (rankedUserChoice) => {
+    const answer: IndexedPollAnswer = {
+      question_id: 'q1',
+      prompt: 'Rank candidates',
+      type: 'multiple_choice',
+      ranked_user_choice: rankedUserChoice,
+      user_choice: [
+        { choice_id: 'c-b', choice_text: 'Second', choice_rank: 2 },
+        { choice_id: 'c-a', choice_text: 'First', choice_rank: 1 },
+      ],
+    };
+
+    expect(rankedAnswerChoices(answer).map((choice) => choice.choice_id)).toEqual(['c-a', 'c-b']);
+    expect(answer.user_choice?.map((choice) => choice.choice_id)).toEqual(['c-b', 'c-a']);
+  });
+
+  it('preserves array order when saved preferences omit ranks', () => {
+    const choices: UserChoice[] = [
+      { choice_id: 'c-b', choice_text: 'First' },
+      { choice_id: 'c-a', choice_text: 'Second' },
+    ];
+    const answer: IndexedPollAnswer = { question_id: 'q1', prompt: 'Rank candidates', type: 'multiple_choice', user_choice: choices };
+
+    expect(rankedAnswerChoices(answer)).toEqual(choices);
+    expect(rankedAnswerChoices(answer)).not.toBe(choices);
+  });
+
+  it('returns no preferences when neither answer array is populated', () => {
+    expect(rankedAnswerChoices({ question_id: 'q1', prompt: 'Rank candidates', type: 'multiple_choice' })).toEqual([]);
   });
 });
