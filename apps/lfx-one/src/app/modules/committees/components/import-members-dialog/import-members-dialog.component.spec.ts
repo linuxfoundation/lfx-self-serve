@@ -1259,10 +1259,13 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each([
-      [401, 'Your session has expired. Sign in again, then retry.'],
-      [403, 'You no longer have permission to manage this group.'],
-      [404, 'The pending invitation could not be found. Review pending invitations before retrying.'],
-    ])('shows cleanup HTTP %i immediately while another revoke is pending', async (status, reason) => {
+      [401, false, 'Your session has expired. Sign in again, then retry.'],
+      [403, false, 'You no longer have permission to manage this group.'],
+      [404, false, 'The pending invitation could not be found. Review pending invitations before retrying.'],
+      [401, true, 'Your session has expired. Sign in again, then retry.'],
+      [403, true, 'You no longer have permission to manage this group.'],
+      [404, true, 'The pending invitation could not be found. Review pending invitations before retrying.'],
+    ])('shows cleanup HTTP %i immediately with manual stop %s while another revoke is pending', async (status, manualStop, reason) => {
       await setup(
         OPEN_GROUP,
         [],
@@ -1275,6 +1278,12 @@ describe('ImportMembersDialogComponent', () => {
       component.startImport();
       respond(0);
       expect(revokeResponses).toHaveLength(2);
+      if (manualStop) {
+        component.stopImport();
+        await render();
+        expect(component.stopping()).toBe(true);
+        expect(query('import-members-stop-reason')).toBeNull();
+      }
 
       revokeResponses[0].error(new HttpErrorResponse({ status }));
       await render();
@@ -1291,8 +1300,7 @@ describe('ImportMembersDialogComponent', () => {
       component.stopImport();
       expect(component.stopReason()).toBe(reason);
 
-      revokeResponses[1].next();
-      revokeResponses[1].complete();
+      revokeResponses[1].error(new HttpErrorResponse({ status: status === 404 ? 403 : 404 }));
       await render();
 
       expect(component.phase()).toBe('results');
@@ -1301,6 +1309,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.notSubmittedCount()).toBe(5);
       expect(component.rows()[0].cleanupWarning).toContain('pending invitation could not be revoked');
       expect(query('import-members-stop-reason')?.textContent).toContain(reason);
+      expect(component.stopReason()).toBe(reason);
     });
 
     it.each([401, 403, 404])('stops queued chunks after cleanup HTTP %i while retaining the added member', async (status) => {

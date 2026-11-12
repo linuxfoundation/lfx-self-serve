@@ -735,9 +735,10 @@ export class ImportMembersDialogComponent {
     );
   }
 
-  /** Share stop handling across creation and cleanup without changing an already-added row's outcome. */
+  /** Fatal guidance overrides a manual stop without replacing an earlier fatal reason or an added row's outcome. */
   private stopForFatalError(err: HttpErrorResponse, reason: string): void {
-    if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && !this.stopReason()) {
+    if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && (!this.stopReason() || this.manualStopRequested())) {
+      this.manualStopRequested.set(false);
       this.stopReason.set(reason);
     }
   }
