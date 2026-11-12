@@ -65,7 +65,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
       providers: [
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationPipeline } },
-        ...(query ? [{ provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(query)) } }] : []),
+        ...(query ? [{ provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(query) } } }] : []),
       ],
     }).compileComponents();
     if (query) {
@@ -197,7 +197,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
         providers: [
           provideRouter([]),
           { provide: FormationService, useValue: { getFormationPipeline } },
-          { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({ foundation: 'f2' })) } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ foundation: 'f2' }) } } },
         ],
       }).compileComponents();
       vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -383,8 +383,9 @@ describe('FormationsPipelineComponent (#5475)', () => {
 
     const led = q('formations-pipeline-lead-l')!;
     expect(led.textContent).toContain('Lee Lead');
-    expect(led.querySelector('[tabindex="0"]')).not.toBeNull();
-    expect(led.textContent).toContain('lee@example.com'); // read aloud by screen readers, shown in the tooltip
+    const host = led.querySelector('[tabindex="0"]');
+    expect(host?.getAttribute('role')).toBe('group');
+    expect(host?.getAttribute('aria-label')).toBe('Lee Lead, lee@example.com'); // read aloud by screen readers; the tooltip shows the email on hover and focus
     const unset = q('formations-pipeline-lead-n')!;
     expect(unset.textContent).toContain('Not set');
     expect(unset.querySelector('[tabindex]')).toBeNull();

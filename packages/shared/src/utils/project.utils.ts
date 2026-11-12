@@ -34,7 +34,7 @@ export function isFoundationProject(project: EnrichedPersonaProject): boolean {
   return project.isFoundation;
 }
 
-// PCC test-project override (lfx-pcc helper.ts) — kept in sync with hasHealthMetricDashboard.
+// PCC test-project override (lfx-pcc helper.ts): these projects count as foundations by name. The names live in TEST_PROJECT_NAMES.
 const FOUNDATION_NAME_OVERRIDES = new Set<string>(TEST_PROJECT_NAMES);
 
 /** Whether a project name is one of the PCC test projects ({@link TEST_PROJECT_NAMES}). */

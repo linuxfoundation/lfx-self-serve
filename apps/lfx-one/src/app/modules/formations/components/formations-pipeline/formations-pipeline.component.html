@@ -184,9 +184,16 @@
                   </td>
                   <td [attr.data-testid]="'formations-pipeline-lead-' + row.uid">
                     @if (row.formationLeadEmail && row.formationLeadEmail !== row.formationLeadLabel) {
-                      <!-- Focusable so the email tooltip is reachable from the keyboard; the visually hidden text gives screen readers the same email. -->
-                      <span class="text-sm text-gray-700" tabindex="0" [pTooltip]="row.formationLeadEmail" tooltipPosition="top" tooltipEvent="both">
-                        {{ row.formationLeadLabel }}<span class="sr-only">, {{ row.formationLeadEmail }}</span>
+                      <!-- Focusable so the email tooltip is reachable from the keyboard; the group's label gives screen readers the same name and email. -->
+                      <span
+                        class="text-sm text-gray-700"
+                        role="group"
+                        tabindex="0"
+                        [attr.aria-label]="row.formationLeadLabel + ', ' + row.formationLeadEmail"
+                        [pTooltip]="row.formationLeadEmail"
+                        tooltipPosition="top"
+                        tooltipEvent="both">
+                        <span aria-hidden="true">{{ row.formationLeadLabel }}</span>
                       </span>
                     } @else {
                       <span class="text-sm" [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'">{{ row.formationLeadLabel }}</span>

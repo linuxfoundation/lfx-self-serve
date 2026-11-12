@@ -223,7 +223,12 @@ export class FormationPipelineService {
     });
   }
 
-  /** Whether a project is a PCC test project or sits under one: its own name or any ancestor in the resolved chain matches. The chain stops at a foundation, and the test projects are foundations by name, so a descendant's chain always reaches them. */
+  /**
+   * Whether a project is a PCC test project or sits under one: its own name, or the name of any ancestor in the chain `resolveParents` loaded.
+   * That chain stops at the first foundation (the test projects are foundations by name, so a descendant of one reaches it), so a project
+   * separated from a test project by another real foundation is not recognised. The test group's children are the test projects themselves,
+   * so that shape does not occur; climbing past every foundation would cost extra reads on every row for it.
+   */
   private isTestProject(project: UpstreamPipelineProject, known: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): boolean {
     if (isTestProjectName(project.name)) {
       return true;

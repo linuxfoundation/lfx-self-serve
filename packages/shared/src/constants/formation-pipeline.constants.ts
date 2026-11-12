@@ -128,8 +128,8 @@ export const FORMATION_PIPELINE_QUERY_PARAMS = {
   direction: 'dir',
 } as const;
 
-/** What a foundation uid in the URL may look like; the BFF's `foundation_uid` check accepts the same shape. */
-export const FORMATION_PIPELINE_FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+/** What a foundation (project) uid may look like: query-service `parent`'s uid segment. Read by the BFF's `foundation_uid` validation and by the Pipeline's URL parser, so the two cannot drift. */
+export const FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** A launch inside this many days is flagged amber. */
 export const FORMATION_PIPELINE_LAUNCH_SOON_DAYS = 30;

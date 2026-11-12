@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, effect, inject, linkedSignal, signal, Signal, untracked } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -65,9 +65,9 @@ import {
   finalize,
   map,
   of,
+  skip,
   startWith,
   switchMap,
-  take,
   tap,
 } from 'rxjs';
 
@@ -106,7 +106,7 @@ export class FormationsPipelineComponent {
   protected readonly pageSize = FORMATION_PIPELINE_PAGE_SIZE;
 
   /** The filter and sort state the page opened with, read from the URL once: a shared or reloaded link reopens the same view (#5619). Unknown values fall back to the defaults. */
-  private readonly initialState = parsePipelineUrlState(toSignal(this.route.queryParamMap.pipe(take(1)), { initialValue: null })() ?? { get: () => null });
+  private readonly initialState = parsePipelineUrlState(this.route.snapshot.queryParamMap);
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(this.initialState.search, { nonNullable: true }),
@@ -129,26 +129,16 @@ export class FormationsPipelineComponent {
   private readonly foundationKind: Signal<FormationPipelineFoundationKindFilter> = this.initFoundationKind();
   private readonly response: Signal<FormationPipelineResponse> = this.initResponse();
 
-  /** The last params written, so the first run (state read from this very URL) and repeats do not navigate. */
-  private lastUrlKey = JSON.stringify(buildPipelineUrlParams(this.initialState));
-  /** Keeps the URL in step with the filters and sort (#5619): `replaceUrl`, so filtering does not fill the history; `merge`, so `tab` and `project` stay. Search is the debounced term. */
-  private readonly urlSync = effect(() => {
-    const params = buildPipelineUrlParams({
+  /** The query params for the current filters and sort; the search is the debounced term. */
+  private readonly urlParams = computed(() =>
+    buildPipelineUrlParams({
       stage: this.stage(),
       foundationUid: this.foundationUid(),
       foundationKind: this.foundationKind(),
       search: this.searchTerm(),
       sort: this.sort(),
-    });
-    const key = JSON.stringify(params);
-    untracked(() => {
-      if (key === this.lastUrlKey) {
-        return;
-      }
-      this.lastUrlKey = key;
-      this.router.navigate([], { relativeTo: this.route, queryParams: params, queryParamsHandling: 'merge', replaceUrl: true });
-    });
-  });
+    })
+  );
 
   /** The foundation's rows narrowed by the foundation type and the name search, client-side: no refetch while the rows are already loaded. */
   private readonly searchedRows = computed(() =>
@@ -199,6 +189,10 @@ export class FormationsPipelineComponent {
       string
     >;
   });
+
+  public constructor() {
+    this.initUrlSync();
+  }
 
   protected onStageChange(stage: string): void {
     this.stage.set(this.toStageFilter(stage));
@@ -271,6 +265,21 @@ export class FormationsPipelineComponent {
       ),
       { initialValue: this.initialState.foundationUid }
     );
+  }
+
+  /**
+   * Keeps the URL in step with the filters and sort (#5619): `replaceUrl`, so filtering does not fill the history; `merge`, so `tab` and
+   * `project` stay. Seeded with the params of the state this page was opened with, so reading the URL never writes it back.
+   */
+  private initUrlSync(): void {
+    toObservable(this.urlParams)
+      .pipe(
+        startWith(buildPipelineUrlParams(this.initialState)),
+        distinctUntilChanged((previous, next) => JSON.stringify(previous) === JSON.stringify(next)),
+        skip(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((queryParams) => this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true }));
   }
 
   private initFoundationKind(): Signal<FormationPipelineFoundationKindFilter> {

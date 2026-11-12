@@ -9,7 +9,7 @@ import {
   FORMATION_PIPELINE_DEFAULT_SORT,
   FORMATION_PIPELINE_DEFAULT_STAGE,
   FORMATION_PIPELINE_FOUNDATION_KINDS,
-  FORMATION_PIPELINE_FOUNDATION_UID_PATTERN,
+  FOUNDATION_UID_PATTERN,
   FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES,
   FORMATION_PIPELINE_LIVE_STAGES,
   FORMATION_PIPELINE_PROSPECT_LABEL,
@@ -367,7 +367,7 @@ export function parsePipelineUrlState(params: { get(name: string): string | null
   }
 
   const foundationUid = params.get(names.foundation);
-  if (foundationUid && FORMATION_PIPELINE_FOUNDATION_UID_PATTERN.test(foundationUid)) {
+  if (foundationUid && FOUNDATION_UID_PATTERN.test(foundationUid)) {
     state.foundationUid = foundationUid;
   }
 

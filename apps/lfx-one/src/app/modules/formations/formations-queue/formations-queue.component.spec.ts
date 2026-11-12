@@ -235,7 +235,13 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
         },
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(options.tab ? { tab: options.tab } : {})) } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            queryParamMap: of(convertToParamMap(options.tab ? { tab: options.tab } : {})),
+            snapshot: { queryParamMap: convertToParamMap(options.tab ? { tab: options.tab } : {}) },
+          },
+        },
         { provide: ProjectService, useValue: { searchProjects: () => of([]) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
