@@ -322,6 +322,7 @@ export * from './org-contributions.interface';
 export * from './org-contributions.internal.interface';
 
 // Project Lens — Participating Organizations (#2091)
+export * from './foundation-participating-orgs.interface';
 export * from './project-participating-orgs.interface';
 export * from './project-participating-orgs.internal.interface';
 

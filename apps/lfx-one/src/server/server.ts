@@ -74,6 +74,7 @@ import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import sitemapRouter from './routes/sitemap.route';
 import socialListeningRouter from './routes/social-listening.route';
+import foundationParticipatingOrgsRouter from './routes/foundation-participating-orgs.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import crowdfundingRouter from './routes/crowdfunding.route';
@@ -431,6 +432,8 @@ app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
 // Executive-dashboard Foundation Lens surface (ED + LF Staff) — the router applies requireDashboardAccess to every endpoint.
 app.use('/api/social-listening', socialListeningRouter);
+// Foundation Lens → Participating Companies (#5697): executive director or LF staff, like Health Metrics.
+app.use('/api/foundation-participating-orgs', foundationParticipatingOrgsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/user', personaRouter);
 app.use('/api/nav', navigationRouter);

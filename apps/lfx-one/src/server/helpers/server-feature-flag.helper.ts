@@ -698,6 +698,20 @@ export enum ServerFeatureFlag {
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
 
   /**
+   * Dark-launch gate for the Foundation Lens Participating Companies endpoints
+   * (`/api/foundation-participating-orgs`, #5697). OFF answers every request with a neutral 404,
+   * whether or not the caller may use the page. The endpoints are currently backed by a fictional
+   * demo data set (`foundation-participating-orgs.demo-data.ts`, #5707) until the foundation-level
+   * warehouse model exists, so this stays OFF everywhere real users can reach it.
+   *
+   * Paired with, and independent of, the client-side `foundation-participating-orgs-enabled`
+   * flag: the client flag hides the route and the nav item, this one is the real kill switch for a
+   * direct API call. Reads only, so a rolling update where pods disagree just means some pods answer
+   * 404 and others serve; nothing is half-written. OFF by default.
+   */
+  FoundationParticipatingOrgs = 'LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED',
+
+  /**
    * The master kill switch for the embedded Gatewaze admin pilot (`GwModuleOutletComponent`,
    * mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`) on the server. OFF answers every
    * `/api/gatewaze/*` request (`gatewaze.route.ts`) with an identical neutral 404 `not_found`,

@@ -802,6 +802,13 @@ environment:
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 
+  # Dark-launch gate for the Foundation Lens Participating Companies endpoints (#5697). OFF answers every
+  # /api/foundation-participating-orgs request with a neutral 404. The data is a fictional demo set until the
+  # foundation-level warehouse model exists (#5707), so keep it OFF wherever real users can reach the app.
+  # Pairs with the client-side `foundation-participating-orgs-enabled` flag, which hides the route and nav item.
+  LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED:
+    value:
+
   # Server-side kill switch for the /api/gatewaze routes. It does NOT gate the Angular routes — the
   # client-side `gatewaze-embed-enabled` flag controls route matching and chunk loading. The pilot
   # needs that flag, this one and LFX_GATEWAZE_HOST_SESSION below.
