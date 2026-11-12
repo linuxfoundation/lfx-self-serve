@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AppFooterComponent } from '@components/app-footer/app-footer.component';
@@ -14,7 +14,7 @@ import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
-import { filter } from 'rxjs';
+import { EMPTY, filter, Observable, switchMap } from 'rxjs';
 
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
@@ -117,9 +117,13 @@ export class HealthMetricsGateComponent {
 
   /** The redesigned page renders the app footer itself, at its own gutters; the legacy page keeps the layout's. */
   private initFooter(): void {
-    effect((onCleanup) => {
-      if (this.overviewEnabled()) onCleanup(this.appService.claimFooter());
-    });
+    // `claimFooter` returns its release, which runs as the teardown when the flag turns off or the page goes.
+    toObservable(this.overviewEnabled)
+      .pipe(
+        switchMap((enabled) => (enabled ? new Observable<never>(() => this.appService.claimFooter()) : EMPTY)),
+        takeUntilDestroyed()
+      )
+      .subscribe();
   }
 
   private initTabSelect(): void {
