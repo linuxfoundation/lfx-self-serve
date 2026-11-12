@@ -40,7 +40,8 @@ describe('HealthMetricsCellComponent', () => {
 
     const description = query('health-metrics-cell-description') as HTMLElement;
     for (const cls of ['text-[12px]', 'text-gray-500', 'truncate']) expect(description.className).toContain(cls);
-    expect(description.textContent?.trim()).toBe('Platinum · since 2021');
+    // Exactly the text, with no template space beside the icons.
+    expect(description.textContent).toBe('Platinum · since 2021');
     const icons = Array.from(description.querySelectorAll('i')).map((icon) => icon.className);
     expect(icons[0]).toContain('fa-clock');
     expect(icons[0]).toContain('text-[11px]');

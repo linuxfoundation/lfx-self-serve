@@ -32,7 +32,7 @@ export class EmptyStateComponent {
   public readonly ctaSize = input<ButtonProps['size']>('small');
   /** Set to false when the component is already inside a card-like container */
   public readonly withCard = input(true);
-  /** `compact` is the in-card state Health Metrics sections use: no card or CTA of its own, smaller type and icon. */
+  /** `compact` is the in-card state Health Metrics sections use: no card or CTA, smaller type and icon, and Reset filters when `resettable`. */
   public readonly variant = input<'default' | 'compact'>('default');
   /** On the compact variant, offers "Reset filters" for a filtered view with no rows; the page clears its search, filters and page. */
   public readonly resettable = input(false);

@@ -16,6 +16,7 @@ import type { HealthMetricsCellLead, HealthMetricsMembersReservedTier } from '@l
 @Component({
   selector: 'lfx-health-metrics-cell',
   imports: [HealthMetricsTierIconComponent, UiAvatarComponent],
+  // Exact px, not rem: the design's 2px between the value and its description.
   templateUrl: './health-metrics-cell.component.html',
   host: { class: 'relative flex min-w-0 flex-col gap-[2px]', '[class]': 'indentClass()' },
 })

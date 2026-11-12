@@ -43,7 +43,8 @@
     @if (descriptionIcon()) {
       <i class="mr-[5px] text-[11px]" [class]="descriptionIcon()" aria-hidden="true"></i>
     }
-    {{ description() }}
+    <!-- Its own element, so no template space lands between the icons and the text. -->
+    <span>{{ description() }}</span>
     @if (descriptionEndIcon()) {
       <i class="ml-[4px] text-[10px]" [class]="descriptionEndIcon()" aria-hidden="true"></i>
     }

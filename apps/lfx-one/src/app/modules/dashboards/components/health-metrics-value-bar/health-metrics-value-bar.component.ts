@@ -14,6 +14,7 @@ import type { HealthMetricsBarFillRule } from '@lfx-one/shared/interfaces';
 @Component({
   selector: 'lfx-health-metrics-value-bar',
   templateUrl: './health-metrics-value-bar.component.html',
+  // Exact px, not rem: the design's 8px between the value and its bar.
   host: { class: 'inline-flex min-w-0 items-center gap-[8px]' },
 })
 export class HealthMetricsValueBarComponent {

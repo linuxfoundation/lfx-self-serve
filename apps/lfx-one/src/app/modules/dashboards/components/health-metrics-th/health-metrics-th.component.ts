@@ -15,6 +15,7 @@ import type { HealthMetricsColumnSort } from '@lfx-one/shared/interfaces';
   selector: 'lfx-health-metrics-th',
   imports: [UiTooltipDirective],
   templateUrl: './health-metrics-th.component.html',
+  // Exact px, not rem: the design's 6px between the label, its sort arrow and its tip.
   host: { class: 'inline-flex items-center gap-[6px] whitespace-nowrap align-middle' },
 })
 export class HealthMetricsThComponent {
