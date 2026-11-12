@@ -49,9 +49,8 @@ export interface GatewayFetchOptions {
    */
   acceptEmptyBody?: boolean;
   /**
-   * Sends `X-LFX-CACHE: false` so the upstream skips its read cache. For reads that must see the
-   * caller's own recent writes: the v1 user-service caches list responses for hours and does not
-   * evict them on create (#5679).
+   * Sends `X-LFX-CACHE: false` so the upstream skips its read cache. Use for reads that must see
+   * the caller's own recent writes rather than potentially stale cached responses (#5679).
    */
   bypassCache?: boolean;
 }

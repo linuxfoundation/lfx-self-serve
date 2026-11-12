@@ -70,7 +70,7 @@ describe('UserPreferenceService', () => {
     });
   }
 
-  // Every lookup must read past the user-service list cache, which create does not evict (#5679).
+  // Every lookup must bypass potentially stale user-service list responses (#5679).
   function expectListReadsBypassCache(expectedReads: number): void {
     const listReads = gw.mock.calls.filter((c) => c[1] === listUrl);
     expect(listReads).toHaveLength(expectedReads);
