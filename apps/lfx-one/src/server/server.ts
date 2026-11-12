@@ -31,6 +31,7 @@ import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middl
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
+import { openprofileRedirect } from './middleware/openprofile-redirect.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import inviteRouter from './routes/invite.route';
@@ -355,6 +356,9 @@ app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
 // Same reason: revokes and deletes the user's Gatewaze host session. Bounded, and always calls
 // next(), so a Gatewaze or Valkey fault never blocks the LFX logout.
 app.use('/logout', endGatewazeSessionOnLogout);
+
+// Old openprofile.dev paths (ID-1147). Before auth so signed-out visitors are redirected, then logged in on the new URL.
+app.use(openprofileRedirect);
 
 app.use(auth(authConfig));
 

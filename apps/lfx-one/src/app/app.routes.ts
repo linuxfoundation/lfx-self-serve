@@ -40,6 +40,7 @@ import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
+import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -742,7 +743,7 @@ export const routes: Routes = [
       {
         path: 'meetings',
         title: 'Meetings',
-        canActivate: [lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [openprofileMeLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
@@ -874,7 +875,7 @@ export const routes: Routes = [
       {
         path: 'events',
         title: 'Events',
-        canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [openprofileMeLensGuard, myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
