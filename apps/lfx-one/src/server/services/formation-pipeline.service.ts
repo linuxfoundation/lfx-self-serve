@@ -6,10 +6,12 @@ import {
   FORMATION_PIPELINE_STAGE_UPSTREAM,
   FORMATION_PIPELINE_STAGES,
   FORMATION_TEAM_REQUIRED_CODE,
+  LF_FOUNDATION_ROOT_SLUG,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
 import type {
+  FormationPipelineFoundationKind,
   FormationPipelineParent,
   FormationPipelinePerson,
   FormationPipelineQuery,
@@ -21,7 +23,15 @@ import type {
   UpstreamPipelineSettings,
   UserInfo,
 } from '@lfx-one/shared/interfaces';
-import { chunkArray, comparePipelineText, computeIsFoundation, countPipelineRows, getPipelineStageKey, matchesPipelineSearch } from '@lfx-one/shared/utils';
+import {
+  chunkArray,
+  comparePipelineText,
+  computeIsFoundation,
+  countPipelineRows,
+  getPipelineStageKey,
+  isTestProjectName,
+  matchesPipelineSearch,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError } from '../errors';
@@ -64,7 +74,11 @@ export class FormationPipelineService {
     const projects = await this.fetchPipelineProjects(req);
     const parents = await this.resolveParents(req, projects, rootUid, query.foundationUid);
 
-    const scoped = projects.filter((project) => this.inScope(project, parents, rootUid, query) && matchesPipelineSearch(project.name, query.search));
+    // Test projects and everything under them never reach rows, counts or the CSV (#5619).
+    const scoped = projects.filter(
+      (project) =>
+        this.inScope(project, parents, rootUid, query) && !this.isTestProject(project, parents, rootUid) && matchesPipelineSearch(project.name, query.search)
+    );
     const baseRows = scoped.map((project) => this.toRow(project, parents, rootUid));
 
     // Counts ignore the stage selection, so they come before it is applied; the UI derives its own counts from the rows after its client-side search.
@@ -83,6 +97,7 @@ export class FormationPipelineService {
           executive_director: this.toPerson(settings?.executive_director),
           program_manager: this.toPerson(settings?.program_manager),
           opportunity_owner: this.toPerson(settings?.opportunity_owner),
+          formation_lead: this.toPerson(settings?.formation_lead),
           has_checklist: checklistUids.has(row.uid),
         };
       })
@@ -209,6 +224,32 @@ export class FormationPipelineService {
     });
   }
 
+  /**
+   * Whether a project is a PCC test project or sits under one: its own name, or the name of any ancestor in the chain `resolveParents` loaded.
+   * That chain stops at the first foundation (the test projects are foundations by name, so a descendant of one reaches it), so a project
+   * separated from a test project by another real foundation is not recognised. The test group's children are the test projects themselves,
+   * so that shape does not occur; climbing past every foundation would cost extra reads on every row for it.
+   */
+  private isTestProject(project: UpstreamPipelineProject, known: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): boolean {
+    if (isTestProjectName(project.name)) {
+      return true;
+    }
+    const seen = new Set<string>();
+    let uid = collapseRootParentUid(project.parent_uid || null, rootUid);
+    while (uid && !seen.has(uid)) {
+      seen.add(uid);
+      const node = known.get(uid);
+      if (!node) {
+        return false;
+      }
+      if (isTestProjectName(node.name)) {
+        return true;
+      }
+      uid = collapseRootParentUid(node.parent_uid || null, rootUid);
+    }
+    return false;
+  }
+
   /** The nearest foundation ancestor of a project (never the project itself), or `null` when its chain holds none. */
   private nearestFoundation(
     project: UpstreamPipelineProject,
@@ -277,13 +318,33 @@ export class FormationPipelineService {
     return false;
   }
 
+  /**
+   * Where the project sits by its DIRECT parent (#5619), not by `computeIsFoundation`, which formation-stage projects almost never pass:
+   * `under_lf` when the parent is The Linux Foundation, `under_foundation` for any other parent, `no_parent` when there is none (a
+   * parent that is the hidden ROOT counts as none). The parent's document comes from the chain `resolveParents` already loaded; one
+   * query-service did not return cannot be identified as The Linux Foundation, so it reads as another parent.
+   */
+  private foundationKind(
+    project: UpstreamPipelineProject,
+    known: ReadonlyMap<string, UpstreamPipelineProject>,
+    rootUid: string | null
+  ): FormationPipelineFoundationKind {
+    const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid);
+    if (!parentUid) {
+      return 'no_parent';
+    }
+    return known.get(parentUid)?.slug === LF_FOUNDATION_ROOT_SLUG ? 'under_lf' : 'under_foundation';
+  }
+
   private toRow(project: UpstreamPipelineProject, parents: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): FormationPipelineRow {
+    const parent = this.nearestFoundation(project, parents, rootUid);
     return {
       uid: project.uid,
       slug: project.slug,
       name: project.name,
       stage: getPipelineStageKey(project.stage) as FormationPipelineRow['stage'],
-      parent: this.nearestFoundation(project, parents, rootUid),
+      parent,
+      foundation_kind: this.foundationKind(project, parents, rootUid),
       announcement_date: null,
       formation_date: project.formation_date || null,
       legal_entity_name: project.legal_entity_name || null,
@@ -291,6 +352,7 @@ export class FormationPipelineService {
       executive_director: null,
       program_manager: null,
       opportunity_owner: null,
+      formation_lead: null,
       created_at: project.created_at || null,
       updated_at: project.updated_at || null,
       has_checklist: false,
