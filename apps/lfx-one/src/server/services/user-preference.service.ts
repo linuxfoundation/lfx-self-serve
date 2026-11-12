@@ -101,6 +101,9 @@ export class UserPreferenceService {
     const baseUrl = getUserServiceBaseUrl(operation, 'user_service');
     // Upstream $filter values are unquoted — quoting matches nothing. A failed filter returns
     // everything, so the find below (by AppName+Name, the uniqueness key) is the real guard.
+    // The user-service caches this list and does not evict it on create, so a cached read keeps
+    // returning the pre-create list and every write after the first POSTs into a 409 (#5679).
+    // Every lookup therefore reads past the cache.
     const filter = encodeURIComponent(`AppName eq ${appName} and Name eq ${name}`);
     const url = `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences?$filter=${filter}`;
 
@@ -111,6 +114,7 @@ export class UserPreferenceService {
       service: 'user_service',
       errorMessage: 'Preference fetch failed',
       errorCode: 'USER_PREFERENCE_FETCH_FAILED',
+      bypassCache: true,
     });
 
     return list?.Data?.find((p) => p.Name === name && p.AppName === appName) ?? null;

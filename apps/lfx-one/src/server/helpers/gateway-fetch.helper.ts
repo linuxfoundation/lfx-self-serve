@@ -5,7 +5,7 @@
 
 import { Request } from 'express';
 
-import { API_GW_TIMEOUT_MS, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
+import { API_GW_TIMEOUT_MS, LFX_CACHE_BYPASS_HEADER, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 
@@ -47,6 +47,12 @@ export interface GatewayFetchOptions {
    * body is still a failure — other callers expect JSON.
    */
   acceptEmptyBody?: boolean;
+  /**
+   * Sends `X-LFX-CACHE: false` so the upstream skips its read cache. For reads that must see the
+   * caller's own recent writes: the v1 user-service caches list responses for hours and does not
+   * evict them on create (#5679).
+   */
+  bypassCache?: boolean;
 }
 
 /**
@@ -76,6 +82,7 @@ export async function fetchGatewayResponse(req: Request, url: string, options: G
       headers: {
         Authorization: `Bearer ${token}`,
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.bypassCache ? { [LFX_CACHE_BYPASS_HEADER]: 'false' } : {}),
       },
       ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
       signal: AbortSignal.timeout(API_GW_TIMEOUT_MS),
