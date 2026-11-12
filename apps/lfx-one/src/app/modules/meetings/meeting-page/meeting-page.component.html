@@ -23,7 +23,6 @@
         </div>
       }
       @case ('details') {
-        <!-- Keyed by the row, so another meeting gets fresh details instead of the last one's state. -->
         @if (row(); as row) {
           @for (shown of [row]; track shown.key) {
             <lfx-meeting-page-details />
@@ -31,7 +30,6 @@
         }
       }
       @default {
-        <!-- Loading, or handing the visit to the legacy page. -->
         <div class="flex flex-col gap-4 px-4 py-8 sm:px-8" role="status" aria-label="Loading meeting" data-testid="meeting-page-loading">
           <lfx-ui-skeleton width="40%" height="16px" />
           <lfx-ui-skeleton width="70%" height="32px" />

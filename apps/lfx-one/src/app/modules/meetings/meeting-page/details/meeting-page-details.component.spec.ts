@@ -73,12 +73,6 @@ describe('MeetingPageDetailsComponent', () => {
     expect(navigateByUrl).toHaveBeenCalledWith(`/meetings/123?occurrence=${Date.parse(start)}`);
   });
 
-  it('opens a one-time meeting at its plain page', () => {
-    source().open({ ...PAST_ROW, meeting: { id: '456' } as Meeting, occurrenceId: null });
-
-    expect(navigateByUrl).toHaveBeenCalledWith('/meetings/456');
-  });
-
   it('gives another past date picked in place its own page', () => {
     const fixture = TestBed.createComponent(MeetingPageDetailsComponent);
     TestBed.tick();

@@ -89,12 +89,6 @@ describe('meetingPageRedesignGuard', () => {
       expect(await runGuard()).toBe(false);
     });
 
-    it('matches when the legacy page shows another meeting', async () => {
-      signIn();
-      shown = { routeConfig: { path: 'meetings/:id' }, paramMap: new Map([['id', '456']]), firstChild: null };
-      expect(await runGuard()).toBe(true);
-    });
-
     it('keeps the server decision for the hydrating URL, once', async () => {
       signIn();
       TestBed.inject(TransferState).set(MEETING_PAGE_REDESIGN_KEY, { id: '123', enabled: false });

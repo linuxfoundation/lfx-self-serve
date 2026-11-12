@@ -21,7 +21,7 @@ import { isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, filter, map, Observable, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, filter, map, Observable, Subscription, switchMap, take, tap } from 'rxjs';
 
 /**
  * Loads the public meeting behind `/meetings/:id` for a meeting page, the way the legacy join page always has.
@@ -63,6 +63,7 @@ export class MeetingPageDataService {
   private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private joinWindowChecked = false;
   private joinWindowOpenAtLoadState = false;
+  private pendingPageview: Subscription | null = null;
 
   public readonly project: Signal<PublicMeetingProject | null> = this.projectState.asReadonly();
   /** The meeting password, from `?password=` or else the router state the composer's toast link carries. */
@@ -167,7 +168,9 @@ export class MeetingPageDataService {
       take(1)
     );
     const analyticsReady$ = toObservable(plausibleService.ready, { injector: this.injector }).pipe(filter(Boolean));
-    combineLatest([pageviewContext$, analyticsReady$])
+    // A newer pageview replaces one still waiting for Plausible, so a meeting left early is never counted.
+    this.pendingPageview?.unsubscribe();
+    this.pendingPageview = combineLatest([pageviewContext$, analyticsReady$])
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(([{ project, parent }]) => {
         const isTopLevel = !project.parent_uid;

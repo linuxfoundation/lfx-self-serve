@@ -94,7 +94,6 @@ describe('MeetingPageComponent', () => {
     const element = render();
     expect(element.querySelector('lfx-meeting-page-details')).not.toBeNull();
 
-    // The route changes first, so the page shows its loading state before the next meeting.
     routeId.set('123-1700604800000');
     meeting.set(undefined);
     TestBed.tick();

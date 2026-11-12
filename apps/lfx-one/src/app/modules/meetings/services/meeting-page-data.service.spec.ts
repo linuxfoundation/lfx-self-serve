@@ -162,4 +162,14 @@ describe('MeetingPageDataService', () => {
 
     expect(trackPage).toHaveBeenCalledWith({ foundation: 'project', foundation_name: 'Project' });
   });
+
+  it('drops a pageview still waiting for analytics when a newer one replaces it', async () => {
+    const host = await create();
+    host.data.trackPageview();
+    host.data.trackPageview();
+    analyticsReady.set(true);
+    TestBed.tick();
+
+    expect(trackPage).toHaveBeenCalledTimes(1);
+  });
 });
