@@ -463,8 +463,7 @@ export class OrgSelectorComponent {
       // display/analytics; the canonical fetch + Snowflake enrichment populate display fields.
       accountId: item.accountId ?? '',
       accountName: item.name,
-      // Tier is org-specific — never carry over the previously selected org's value. Snowflake
-      // enrichment (refreshFromSnowflake) populates it when authoritative data arrives; the empty
+      // Tier is org-specific — never carry over the previously selected org's value. The empty
       // default matches PLACEHOLDER_ACCOUNT semantics. `slug` below is the indexed row's, never Snowflake's.
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,

@@ -68,6 +68,9 @@ export class AccountContextService {
   /** Snowflake-resolved Account records keyed by accountId; flat regardless of Salesforce conglomerate hierarchy. */
   private readonly liveAccounts: WritableSignal<Map<string, Account>> = signal(new Map());
 
+  private readonly selectedTiers = new Map<string, string>();
+  private readonly tierLookupsInFlight = new Set<string>();
+
   public readonly selectedAccount: WritableSignal<Account>;
 
   /**
@@ -430,7 +433,7 @@ export class AccountContextService {
           // persona seed, cookie stub) are both kept as given so the two stay distinguishable.
           slug: account.slug,
         }
-      : account;
+      : { ...account, membershipTier: account.membershipTier || (this.selectedTiers.get(account.accountId) ?? '') };
     // A switch to another organization ends the address's claim on the selection.
     if (this.addressedUid() !== null && this.addressedUid() !== (next.uid ?? null)) {
       this.addressedUid.set(null);
@@ -438,6 +441,7 @@ export class AccountContextService {
     }
     this.selectedAccount.set(next);
     this.persistToStorage(next);
+    this.lookUpSelectedTier(next);
   }
 
   /**
@@ -716,6 +720,7 @@ export class AccountContextService {
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
     // but covers the edge case where the indexed snapshot had a stale or null accountId).
     this.persistToStorage(next);
+    this.lookUpSelectedTier(next);
   }
 
   private refreshFromSnowflake(accountIds: string[]): void {
@@ -774,6 +779,42 @@ export class AccountContextService {
             this.persistToStorage(next);
           }
         }
+      });
+  }
+
+  private lookUpSelectedTier(account: Account): void {
+    const accountId = account.accountId;
+    if (!isPlatformBrowser(this.platformId) || !accountId || isOrgRollUpSegment(accountId) || account.membershipTier) {
+      return;
+    }
+    if (
+      this.selectedTiers.has(accountId) ||
+      this.tierLookupsInFlight.has(accountId) ||
+      this.liveAccounts().has(accountId) ||
+      this.userOrganizations().some((seed) => seed.accountId === accountId)
+    ) {
+      return;
+    }
+
+    this.tierLookupsInFlight.add(accountId);
+    this.analyticsService
+      .getOrgLensAccountContext([accountId])
+      .pipe(take(1))
+      .subscribe({
+        next: (rows) => {
+          const row = rows.find((candidate) => candidate.accountId === accountId);
+          if (!row) {
+            return;
+          }
+          const tier = row.membershipTierDisplayName ?? '';
+          this.selectedTiers.set(accountId, tier);
+          const current = this.selectedAccount();
+          if (tier && current.accountId === accountId && current.membershipTier !== tier) {
+            this.selectedAccount.set({ ...current, membershipTier: tier });
+          }
+        },
+        complete: () => this.tierLookupsInFlight.delete(accountId),
+        error: () => this.tierLookupsInFlight.delete(accountId),
       });
   }
 

@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { computed, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
-import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
@@ -510,6 +510,194 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
     expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
     expect(service.selectedAccount().accountName).toBe('Canonical Name');
     expect(service.availableAccounts()).toHaveLength(0);
+  });
+});
+
+describe('AccountContextService — membership tier for the selected organization', () => {
+  const UID_GRANT = '0014100000MgaAAAAA';
+  const UID_OTHER = '0014100000MgbBBBBB';
+  const UID_SEED = '0014100000MgcCCCCC';
+  const grantOrg: Account = { accountId: UID_GRANT, accountName: 'Grant Org', membershipTier: '', uid: UID_GRANT, slug: 'grant-org' };
+  const otherOrg: Account = { accountId: UID_OTHER, accountName: 'Other Org', membershipTier: '', uid: UID_OTHER, slug: 'other-org' };
+  const seedOrg: Account = { accountId: UID_SEED, accountName: 'Seed Org', membershipTier: '', uid: UID_SEED };
+
+  const tierRow = (accountId: string, tier: string | null): OrgLensAccountContextResponse =>
+    ({
+      accountId,
+      accountName: 'Snowflake name',
+      logoUrl: null,
+      cdevOrgId: null,
+      membershipTierDisplayName: tier,
+    }) as unknown as OrgLensAccountContextResponse;
+
+  const setup = (platformId = 'browser') => {
+    const cookies = new Map<string, string>();
+    const getOrgLensAccountContext = vi.fn().mockReturnValue(of([]));
+    const httpGet = vi.fn().mockReturnValue(of(null));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: PLATFORM_ID, useValue: platformId },
+        {
+          provide: SsrCookieService,
+          useValue: {
+            get: (key: string) => cookies.get(key) ?? '',
+            set: (key: string, value: string) => cookies.set(key, value),
+            delete: (key: string) => cookies.delete(key),
+          },
+        },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
+        { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            writerSet: signal(new Set([UID_GRANT])),
+            auditorSet: signal(new Set()),
+            inheritedWriterSet: signal(new Set()),
+            inheritedAuditorSet: signal(new Set()),
+            isStaff: signal(false),
+            claManagerOrgSet: signal(new Set()),
+          },
+        },
+        {
+          provide: OrgRollUpFamiliesService,
+          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
+        },
+        { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
+        { provide: HttpClient, useValue: { get: httpGet } },
+      ],
+    });
+    return { service: TestBed.inject(AccountContextService), getOrgLensAccountContext, cookies, httpGet };
+  };
+
+  it('fills the tier for an organization picked in the switcher', () => {
+    const { service, getOrgLensAccountContext } = setup();
+    getOrgLensAccountContext.mockReturnValue(of([tierRow(UID_OTHER, 'Gold Membership'), tierRow(UID_GRANT, 'Platinum Membership')]));
+
+    service.setAccount(grantOrg);
+
+    expect(getOrgLensAccountContext).toHaveBeenCalledWith([UID_GRANT]);
+    expect(service.selectedAccount().membershipTier).toBe('Platinum Membership');
+  });
+
+  it('patches only the tier, never the name or slug the org list and canonical record set', () => {
+    const { service, getOrgLensAccountContext } = setup();
+    getOrgLensAccountContext.mockReturnValue(of([tierRow(UID_GRANT, 'Gold Membership')]));
+
+    service.setAccount(grantOrg);
+
+    expect(service.selectedAccount()).toEqual({ ...grantOrg, membershipTier: 'Gold Membership' });
+  });
+
+  it('fills the tier for an organization adopted from a deep link', () => {
+    const { service, getOrgLensAccountContext } = setup();
+    getOrgLensAccountContext.mockReturnValue(of([tierRow(UID_GRANT, 'Platinum Membership')]));
+
+    service.adoptFromAddress(grantOrg);
+
+    expect(service.isAdoptedFromAddress()).toBe(true);
+    expect(service.selectedAccount().membershipTier).toBe('Platinum Membership');
+  });
+
+  it('fills the tier for a granted organization restored from the cookie beside a persona seed', () => {
+    const { service, getOrgLensAccountContext, cookies } = setup();
+    cookies.set(ACCOUNT_COOKIE_KEY, JSON.stringify({ uid: UID_GRANT }));
+    getOrgLensAccountContext.mockImplementation((ids: string[]) => of(ids.includes(UID_GRANT) ? [tierRow(UID_GRANT, 'Associate Membership')] : []));
+
+    service.initializeUserOrganizations([seedOrg]);
+
+    expect(getOrgLensAccountContext).toHaveBeenCalledWith([UID_GRANT]);
+    expect(service.selectedAccount().uid).toBe(UID_GRANT);
+    expect(service.selectedAccount().membershipTier).toBe('Associate Membership');
+  });
+
+  it('fills the tier once the canonical record gives a uid-only stub its accountId', async () => {
+    const { service, getOrgLensAccountContext, httpGet } = setup();
+    getOrgLensAccountContext.mockReturnValue(of([tierRow(UID_GRANT, 'Silver Membership')]));
+    httpGet.mockReturnValue(of({ uid: UID_GRANT, accountId: UID_GRANT, name: 'Grant Org' } as OrgCanonicalRecord));
+    const stub: Account = { accountId: '', accountName: '', membershipTier: '', uid: UID_GRANT };
+
+    service.adoptFromAddress(stub);
+    expect(getOrgLensAccountContext).not.toHaveBeenCalled();
+    await service.refreshCanonicalRecord(stub);
+
+    expect(service.selectedAccount().membershipTier).toBe('Silver Membership');
+  });
+
+  it('keeps the tier across a switch away and back without asking again', () => {
+    const { service, getOrgLensAccountContext } = setup();
+    getOrgLensAccountContext.mockImplementation((ids: string[]) => of([tierRow(ids[0], ids[0] === UID_GRANT ? 'Platinum Membership' : 'Gold Membership')]));
+
+    service.setAccount(grantOrg);
+    service.setAccount(otherOrg);
+    expect(service.selectedAccount().membershipTier).toBe('Gold Membership');
+    service.setAccount(grantOrg);
+
+    expect(service.selectedAccount().membershipTier).toBe('Platinum Membership');
+    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not patch the current selection with a late answer for the previous one', () => {
+    const { service, getOrgLensAccountContext } = setup();
+    const grant$ = new Subject<OrgLensAccountContextResponse[]>();
+    getOrgLensAccountContext.mockReturnValueOnce(grant$.asObservable()).mockReturnValue(of([tierRow(UID_OTHER, null)]));
+
+    service.setAccount(grantOrg);
+    service.setAccount(otherOrg);
+    grant$.next([tierRow(UID_GRANT, 'Platinum Membership')]);
+    grant$.complete();
+
+    expect(service.selectedAccount().uid).toBe(UID_OTHER);
+    expect(service.selectedAccount().membershipTier).toBe('');
+  });
+
+  it('shows no tier for an organization the warehouse has no tier for', () => {
+    const { service, getOrgLensAccountContext } = setup();
+    getOrgLensAccountContext.mockReturnValue(of([tierRow(UID_GRANT, null)]));
+
+    service.setAccount(grantOrg);
+    service.setAccount(otherOrg);
+    service.setAccount(grantOrg);
+
+    expect(service.selectedAccount().membershipTier).toBe('');
+    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(2);
+  });
+
+  it('asks again on the next selection when the lookup came back without a row', () => {
+    const { service, getOrgLensAccountContext } = setup();
+    getOrgLensAccountContext.mockReturnValueOnce(of([])).mockReturnValue(of([tierRow(UID_GRANT, 'Gold Membership')]));
+
+    service.setAccount(grantOrg);
+    expect(service.selectedAccount().membershipTier).toBe('');
+    service.setAccount(grantOrg);
+
+    expect(service.selectedAccount().membershipTier).toBe('Gold Membership');
+  });
+
+  it('leaves a persona seed to the seed enrichment, with no second lookup', () => {
+    const { service, getOrgLensAccountContext } = setup();
+
+    service.initializeUserOrganizations([seedOrg]);
+    service.setAccount(seedOrg);
+
+    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
+    expect(getOrgLensAccountContext).toHaveBeenCalledWith([UID_SEED]);
+  });
+
+  it('never looks up a tier for the family roll-up', () => {
+    const { service, getOrgLensAccountContext } = setup();
+
+    service.setAccount({ accountId: `family-${UID_GRANT}`, accountName: 'All Organizations', membershipTier: '', uid: `family-${UID_GRANT}` });
+
+    expect(getOrgLensAccountContext).not.toHaveBeenCalled();
+  });
+
+  it('makes no lookup during SSR', () => {
+    const { service, getOrgLensAccountContext } = setup('server');
+
+    service.setAccount(grantOrg);
+
+    expect(getOrgLensAccountContext).not.toHaveBeenCalled();
   });
 });
 
