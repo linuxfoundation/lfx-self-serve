@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDetailsBodyComponent } from './body/meeting-details-body.component';
 import { MeetingDetailsDrawerComponent } from './meeting-details-drawer.component';
 import { MeetingDetailsContext } from './meeting-details.context';
 import { MeetingDetailsOccurrenceNavComponent } from './occurrence-nav/meeting-details-occurrence-nav.component';
@@ -170,7 +171,7 @@ describe('MeetingDetailsDrawerComponent', () => {
         },
       ],
     });
-    TestBed.overrideComponent(MeetingDetailsDrawerComponent, {
+    TestBed.overrideComponent(MeetingDetailsBodyComponent, {
       remove: { imports: [MeetingDetailsScheduleComponent, MeetingDetailsOccurrenceNavComponent] },
       add: { imports: [ScheduleStubComponent, OccurrenceNavStubComponent] },
     });
