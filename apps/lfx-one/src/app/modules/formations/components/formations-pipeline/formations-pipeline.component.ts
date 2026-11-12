@@ -48,6 +48,7 @@ import {
   toPipelineTableRow,
 } from '@lfx-one/shared/utils';
 import type { TablePageEvent } from 'primeng/table';
+import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
 
 /**
@@ -70,6 +71,7 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
     StatCardGridComponent,
     TableComponent,
     TagComponent,
+    TooltipModule,
   ],
   templateUrl: './formations-pipeline.component.html',
 })

@@ -16,6 +16,7 @@ import {
   getPipelineCsvFilename,
   getFormationStageDisplayLabel,
   getPipelineEdPmLines,
+  getPipelineFormationLead,
   getPipelineLaunch,
   getPipelineRowLink,
   toPipelineTableRow,
@@ -40,6 +41,7 @@ function row(overrides: Partial<FormationPipelineRow> = {}): FormationPipelineRo
     executive_director: null,
     program_manager: null,
     opportunity_owner: null,
+    formation_lead: null,
     created_at: null,
     updated_at: null,
     has_checklist: false,
@@ -135,9 +137,30 @@ describe('sortPipelineRows', () => {
   });
 
   it('sorts by every column without throwing', () => {
-    for (const key of ['project', 'stage', 'expected_launch', 'formation_date', 'legal_entity', 'ed_pm', 'opportunity_owner', 'updated'] as const) {
+    for (const key of [
+      'project',
+      'stage',
+      'expected_launch',
+      'formation_date',
+      'legal_entity',
+      'ed_pm',
+      'formation_lead',
+      'opportunity_owner',
+      'updated',
+    ] as const) {
       expect(sortPipelineRows(rows, { key, direction: 'asc' })).toHaveLength(3);
     }
+  });
+
+  it('sorts by formation lead, with unset leads last in either direction', () => {
+    const led = [
+      row({ uid: 'x', name: 'X', formation_lead: { name: 'Zed Lead', email: 'z@example.com' } }),
+      row({ uid: 'y', name: 'Y', formation_lead: null }),
+      row({ uid: 'w', name: 'W', formation_lead: { name: '', email: 'a@example.com' } }),
+      row({ uid: 'v', name: 'V', formation_lead: { name: 'Amy Lead', email: 'amy@example.com' } }),
+    ];
+    expect(sortPipelineRows(led, { key: 'formation_lead', direction: 'asc' }).map((r) => r.uid)).toEqual(['w', 'v', 'x', 'y']);
+    expect(sortPipelineRows(led, { key: 'formation_lead', direction: 'desc' }).map((r) => r.uid)).toEqual(['x', 'v', 'w', 'y']);
   });
 
   it('sorts by project name', () => {
@@ -197,6 +220,7 @@ describe('buildPipelineCsvRows', () => {
         stage: 'prospect',
         announcement_date: '2026-11-18T00:00:00Z',
         executive_director: { name: 'Ed, Jr', email: 'e@example.com' },
+        formation_lead: { name: 'Lee Lead', email: 'lee@example.com' },
       }),
     ]);
     expect(matrix[0]).toEqual([
@@ -204,6 +228,7 @@ describe('buildPipelineCsvRows', () => {
       'Foundation',
       'Stage',
       'Expected launch',
+      'Formation lead',
       'Formation date',
       'Legal entity',
       'ED',
@@ -211,7 +236,7 @@ describe('buildPipelineCsvRows', () => {
       'Opportunity owner',
       'Updated',
     ]);
-    expect(rowsToCsv(matrix).split('\r\n')[1]).toBe('"\'=HYPERLINK(""x"")",Foundation,Draft,2026-11-18,,,"Ed, Jr",,,');
+    expect(rowsToCsv(matrix).split('\r\n')[1]).toBe('"\'=HYPERLINK(""x"")",Foundation,Draft,2026-11-18,Lee Lead,,,"Ed, Jr",,,');
   });
 
   it('names the file by day', () => {
@@ -280,5 +305,27 @@ describe('getFormationStageDisplayLabel (#5619)', () => {
   it('puts the neutral caption on the Archived stat card', () => {
     const cards = buildPipelineStatCards(countPipelineRows([row({ stage: 'archived' })]), [], 'in_pipeline', NOW);
     expect(cards.find((card) => card.action === 'archived')?.subLine).toBe('No longer active');
+  });
+});
+
+describe('getPipelineFormationLead (#5619)', () => {
+  it('serves the name with the email for the tooltip, and "Not set" when empty or missing', () => {
+    expect(getPipelineFormationLead(row({ formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } }))).toEqual({
+      name: 'Lee Lead',
+      email: 'lee@example.com',
+    });
+    expect(getPipelineFormationLead(row({ formation_lead: { name: '', email: 'lee@example.com' } }))).toEqual({
+      name: 'lee@example.com',
+      email: 'lee@example.com',
+    });
+    expect(getPipelineFormationLead(row({ formation_lead: { name: '', email: '' } }))).toEqual({ name: 'Not set', email: '' });
+    expect(getPipelineFormationLead(row({ formation_lead: null }))).toEqual({ name: 'Not set', email: '' });
+  });
+
+  it('flows into the table row for the table and the phone card', () => {
+    const tableRow = toPipelineTableRow(row({ formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } }), NOW);
+    expect(tableRow.formationLeadLabel).toBe('Lee Lead');
+    expect(tableRow.formationLeadEmail).toBe('lee@example.com');
+    expect(toPipelineTableRow(row(), NOW)).toMatchObject({ formationLeadLabel: 'Not set', formationLeadEmail: '' });
   });
 });

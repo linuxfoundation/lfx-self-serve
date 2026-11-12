@@ -94,7 +94,7 @@
               data-testid="formations-pipeline-empty" />
           }
         } @else {
-          <!-- Desktop table. min-w-[64rem] is exact by design: below it the eight columns crush each other, so the card scrolls sideways. -->
+          <!-- Desktop table. min-w-[70rem] is exact by design: below it the nine columns crush each other, so the card scrolls sideways. -->
           <div class="hidden min-[600px]:block overflow-x-auto" data-testid="formations-pipeline-table-wrapper">
             <lfx-table
               [value]="displayRows()"
@@ -106,7 +106,7 @@
               [showCurrentPageReport]="true"
               currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
               dataKey="uid"
-              tableStyleClass="table-fixed min-w-[64rem]"
+              tableStyleClass="table-fixed min-w-[70rem]"
               selectionMode="single"
               (onRowSelect)="onRowSelect($event)"
               ariaLabel="Formation pipeline"
@@ -172,6 +172,16 @@
                       }
                     </div>
                   </td>
+                  <td [attr.data-testid]="'formations-pipeline-lead-' + row.uid">
+                    @if (row.formationLeadEmail && row.formationLeadEmail !== row.formationLeadLabel) {
+                      <!-- Focusable so the email tooltip is reachable from the keyboard; the visually hidden text gives screen readers the same email. -->
+                      <span class="text-sm text-gray-700" tabindex="0" [pTooltip]="row.formationLeadEmail" tooltipPosition="top" tooltipEvent="both">
+                        {{ row.formationLeadLabel }}<span class="sr-only">, {{ row.formationLeadEmail }}</span>
+                      </span>
+                    } @else {
+                      <span class="text-sm" [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'">{{ row.formationLeadLabel }}</span>
+                    }
+                  </td>
                   <td class="text-sm text-gray-700">{{ row.formationDateLabel || '—' }}</td>
                   <td class="text-sm text-gray-700">{{ row.legalEntityLabel || '—' }}</td>
                   <td>
@@ -219,6 +229,15 @@
                         · {{ row.launch.relativeLabel }}
                       }
                     </span>
+                  </div>
+                  <div class="flex justify-between gap-3 text-xs">
+                    <span class="text-gray-500">Formation lead</span>
+                    <span
+                      class="text-right"
+                      [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'"
+                      [attr.data-testid]="'formations-pipeline-card-lead-' + row.uid"
+                      >{{ row.formationLeadLabel }}</span
+                    >
                   </div>
                   <div class="flex justify-between gap-3 text-xs">
                     <span class="text-gray-500">ED / PM</span>

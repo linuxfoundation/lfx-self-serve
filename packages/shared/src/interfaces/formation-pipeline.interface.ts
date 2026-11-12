@@ -39,6 +39,8 @@ export interface FormationPipelineRow {
   executive_director: FormationPipelinePerson | null;
   program_manager: FormationPipelinePerson | null;
   opportunity_owner: FormationPipelinePerson | null;
+  /** The project's Formation Lead (`project_settings.formation_lead`); `null` when unset or the field is not served yet. */
+  formation_lead: FormationPipelinePerson | null;
   created_at: string | null;
   updated_at: string | null;
   /** True when a `formation` checklist document exists for the project, in any lifecycle (a frozen one counts). */
@@ -59,7 +61,16 @@ export interface FormationPipelineQuery {
 }
 
 /** Columns the pipeline table can sort by. */
-export type FormationPipelineSortKey = 'project' | 'stage' | 'expected_launch' | 'formation_date' | 'legal_entity' | 'ed_pm' | 'opportunity_owner' | 'updated';
+export type FormationPipelineSortKey =
+  | 'project'
+  | 'stage'
+  | 'expected_launch'
+  | 'formation_lead'
+  | 'formation_date'
+  | 'legal_entity'
+  | 'ed_pm'
+  | 'opportunity_owner'
+  | 'updated';
 
 export type FormationPipelineSortDirection = 'asc' | 'desc';
 
@@ -104,6 +115,8 @@ export interface UpstreamPipelineSettings {
   executive_director?: UserInfo | null;
   program_manager?: UserInfo | null;
   opportunity_owner?: UserInfo | null;
+  /** Added by lfx-v2-project-service#184; present once the v1 sync and backfill (lfx-v1-sync-helper#216) have run. */
+  formation_lead?: UserInfo | null;
 }
 
 /** Page tabs of the LF-root Formations page: the pipeline, plus the existing formations and proposals tabs. */
@@ -125,6 +138,10 @@ export interface FormationPipelineTableRow extends FormationPipelineRow {
   legalEntityLabel: string;
   edLine: string;
   pmLine: string;
+  /** The lead's name (email or username when there is no name), or the "Not set" copy. */
+  formationLeadLabel: string;
+  /** The lead's email for the hover/focus tooltip; `''` when none. */
+  formationLeadEmail: string;
   ownerLabel: string;
   updatedLabel: string;
   link: FormationPipelineRowLink;

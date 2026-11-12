@@ -26,6 +26,7 @@ function row(overrides: Partial<FormationPipelineRow>): FormationPipelineRow {
     executive_director: null,
     program_manager: null,
     opportunity_owner: null,
+    formation_lead: null,
     created_at: null,
     updated_at: null,
     has_checklist: false,
@@ -143,7 +144,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
     await render();
     await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-all"]'));
 
-    for (const key of ['project', 'stage', 'expected_launch', 'formation_date', 'legal_entity', 'ed_pm', 'opportunity_owner', 'updated']) {
+    for (const key of ['project', 'stage', 'expected_launch', 'formation_date', 'legal_entity', 'ed_pm', 'formation_lead', 'opportunity_owner', 'updated']) {
       await click(q(`formations-pipeline-sort-${key}`)!.querySelector('button'));
       expect(q(`formations-pipeline-sort-${key}`)?.getAttribute('aria-sort')).toBe('ascending');
       expect(rowIds()).toHaveLength(4);
@@ -154,6 +155,42 @@ describe('FormationsPipelineComponent (#5475)', () => {
     await click(q('formations-pipeline-sort-project')!.querySelector('button'));
     expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
     expect(rowIds()).toEqual(['d', 'b', 'a', 'c']);
+  });
+
+  it('shows the formation lead with the email on hover and focus, and "Not set" when there is none', async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } }),
+          row({ uid: 'n', name: 'Unled', stage: 'engaged', formation_lead: null }),
+        ])
+      )
+    );
+
+    const led = q('formations-pipeline-lead-l')!;
+    expect(led.textContent).toContain('Lee Lead');
+    expect(led.querySelector('[tabindex="0"]')).not.toBeNull();
+    expect(led.textContent).toContain('lee@example.com'); // read aloud by screen readers, shown in the tooltip
+    const unset = q('formations-pipeline-lead-n')!;
+    expect(unset.textContent).toContain('Not set');
+    expect(unset.querySelector('[tabindex]')).toBeNull();
+  });
+
+  it('exports the formation lead in the CSV', async () => {
+    await render(of(response([row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } })])));
+    let captured: Blob | null = null;
+    URL.createObjectURL = vi.fn((blob: Blob) => {
+      captured = blob;
+      return 'blob:x';
+    });
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    fixture.componentInstance['exportCsv']();
+
+    const text = await (captured as unknown as Blob).text();
+    expect(text.split('\r\n')[0]).toContain('Formation lead');
+    expect(text).toContain('Lee Lead');
   });
 
   it('links a row to the formation page whether or not it has a checklist', async () => {

@@ -128,6 +128,11 @@ export function getPipelineEdPmLines(row: Pick<FormationPipelineRow, 'executive_
   };
 }
 
+/** The Formation Lead cell: name (falling back to email, then username) and the email for the tooltip; "Not set" when the lead is empty or missing. */
+export function getPipelineFormationLead(row: Pick<FormationPipelineRow, 'formation_lead'>): { name: string; email: string } {
+  return { name: personName(row.formation_lead) || FORMATION_PIPELINE_COPY.notSet, email: row.formation_lead?.email?.trim() ?? '' };
+}
+
 /** Name of the opportunity owner, or `''`. */
 export function getPipelineOpportunityOwner(row: Pick<FormationPipelineRow, 'opportunity_owner'>): string {
   return personName(row.opportunity_owner);
@@ -157,6 +162,8 @@ function sortValue(row: FormationPipelineRow, key: FormationPipelineSort['key'])
       return FORMATION_PIPELINE_STAGES.indexOf(row.stage);
     case 'expected_launch':
       return timeOf(row.announcement_date);
+    case 'formation_lead':
+      return personName(row.formation_lead) || null;
     case 'formation_date':
       return timeOf(row.formation_date);
     case 'legal_entity':
@@ -252,6 +259,7 @@ export function getPipelineRowLink(row: Pick<FormationPipelineRow, 'slug' | 'sta
 /** Resolves every display string of a row once. */
 export function toPipelineTableRow(row: FormationPipelineRow, now: Date = new Date()): FormationPipelineTableRow {
   const { ed, pm } = getPipelineEdPmLines(row);
+  const lead = getPipelineFormationLead(row);
   const formationDay = row.formation_date?.slice(0, 10);
   return {
     ...row,
@@ -262,6 +270,8 @@ export function toPipelineTableRow(row: FormationPipelineRow, now: Date = new Da
     legalEntityLabel: row.legal_entity_name?.trim() ?? '',
     edLine: ed,
     pmLine: pm,
+    formationLeadLabel: lead.name,
+    formationLeadEmail: lead.email,
     ownerLabel: getPipelineOpportunityOwner(row),
     updatedLabel: getPipelineUpdatedLabel(row.updated_at),
     link: getPipelineRowLink(row),
@@ -278,6 +288,7 @@ const PIPELINE_CSV_HEADER: string[] = [
   'Foundation',
   'Stage',
   'Expected launch',
+  'Formation lead',
   'Formation date',
   'Legal entity',
   'ED',
@@ -299,6 +310,7 @@ export function buildPipelineCsvRows(rows: readonly FormationPipelineRow[]): str
       row.parent?.name ?? '',
       FORMATION_PIPELINE_STAGE_LABELS[row.stage],
       date(row.announcement_date),
+      personName(row.formation_lead),
       date(row.formation_date),
       row.legal_entity_name ?? '',
       personName(row.executive_director),

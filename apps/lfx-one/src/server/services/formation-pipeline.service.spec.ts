@@ -154,6 +154,26 @@ describe('FormationPipelineService.getPipeline', () => {
     expect(b).toMatchObject({ announcement_date: null, executive_director: null, program_manager: null, opportunity_owner: null, has_checklist: true });
   });
 
+  // #5619 D8: the Formation Lead arrives on `project_settings.formation_lead`; values land once lfx-v1-sync-helper#216's backfill has run.
+  it('serves the formation lead from settings (name, email, username only), and null when empty or missing', async () => {
+    mockUpstream({
+      projects: [project({ uid: 'a', name: 'A' }), project({ uid: 'b', name: 'B' }), project({ uid: 'c', name: 'C' }), project({ uid: 'd', name: 'D' })],
+      settings: [
+        { uid: 'a', formation_lead: { name: 'Lee Lead', email: 'lee@example.com', username: 'llead', avatar: 'secret.png' } },
+        { uid: 'b', formation_lead: {} },
+        { uid: 'c' },
+      ],
+    });
+
+    const { rows } = await service.getPipeline(req, allStages);
+    const lead = (uid: string) => rows.find((row) => row.uid === uid)?.formation_lead;
+
+    expect(lead('a')).toEqual({ name: 'Lee Lead', email: 'lee@example.com', username: 'llead' });
+    expect(lead('b')).toBeNull();
+    expect(lead('c')).toBeNull();
+    expect(lead('d')).toBeNull(); // no settings document at all
+  });
+
   it('gives empty fields, not an error, when a project has no settings document', async () => {
     mockUpstream({ projects: [project({ uid: 'a' })], settings: [] });
 

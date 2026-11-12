@@ -95,6 +95,7 @@ export class FormationPipelineService {
           executive_director: this.toPerson(settings?.executive_director),
           program_manager: this.toPerson(settings?.program_manager),
           opportunity_owner: this.toPerson(settings?.opportunity_owner),
+          formation_lead: this.toPerson(settings?.formation_lead),
           has_checklist: checklistUids.has(row.uid),
         };
       })
@@ -324,6 +325,7 @@ export class FormationPipelineService {
       executive_director: null,
       program_manager: null,
       opportunity_owner: null,
+      formation_lead: null,
       created_at: project.created_at || null,
       updated_at: project.updated_at || null,
       has_checklist: false,

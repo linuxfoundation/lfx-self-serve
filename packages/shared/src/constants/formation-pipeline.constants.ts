@@ -138,6 +138,7 @@ export const FORMATION_PIPELINE_COLUMNS: readonly { key: FormationPipelineSortKe
   { key: 'project', label: 'Project' },
   { key: 'stage', label: 'Stage' },
   { key: 'expected_launch', label: 'Expected launch' },
+  { key: 'formation_lead', label: 'Formation lead' },
   { key: 'formation_date', label: 'Formation date' },
   { key: 'legal_entity', label: 'Legal entity' },
   { key: 'ed_pm', label: 'ED / PM' },
