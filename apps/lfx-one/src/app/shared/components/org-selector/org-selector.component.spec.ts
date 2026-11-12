@@ -5,7 +5,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
-import { Account, OrgItem, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { Account, DisplayOrgItem, OrgItem, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
@@ -243,6 +243,9 @@ describe('OrgSelectorComponent navbar card', () => {
   interface NavbarCardView {
     isSingleOrg(): boolean;
     navbarRoleTooltip(): string;
+    selectedRoleLabel(): string;
+    selectedRoleTooltip(): string;
+    displayedItems(): DisplayOrgItem[];
   }
 
   interface CardSetup {
@@ -339,6 +342,35 @@ describe('OrgSelectorComponent navbar card', () => {
   it('marks a direct role as direct only when the viewer also holds inherited access', async () => {
     expect((await createCard({ writers: [UID_A] })).navbarRoleTooltip()).not.toContain('Granted directly');
     expect((await createCard({ writers: [UID_A], inheritedWriters: [UID_PARENT] })).navbarRoleTooltip()).toContain('Granted directly');
+  });
+  describe('a CLA-only organization (#5557)', () => {
+    const claOnlyB: OrgItem = { ...rowB, slug: null, claOnly: true };
+    const CLA_ONLY_TOOLTIP = 'You are a CLA Manager or initial CLA Manager designee for this organization. Only its EasyCLA page opens.';
+
+    it('labels a CLA-only row listed after a held one, and keeps the panel openable', async () => {
+      const card = await createCard({ items: [rowA, claOnlyB], writers: [UID_A] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([
+        [UID_A, 'Org Admin Editor', ''],
+        [UID_B, 'CLA Manager', CLA_ONLY_TOOLTIP],
+      ]);
+      expect(card.isSingleOrg()).toBe(false);
+    });
+
+    it('labels the card when the selection is a CLA-only organization', async () => {
+      const card = await createCard({ items: [{ ...rowA, claOnly: true }] });
+
+      expect(card.selectedRoleLabel()).toBe('CLA Manager');
+      expect(card.selectedRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
+      expect(card.navbarRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
+    });
+
+    it('lets a held grant win over a CLA-only flag on the same row', async () => {
+      const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Org Admin Editor');
+      expect(card.displayedItems()[0].roleLabel).toBe('Org Admin Editor');
+    });
   });
 });
 

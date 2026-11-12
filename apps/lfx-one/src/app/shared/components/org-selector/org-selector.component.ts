@@ -21,6 +21,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
 import {
+  NAVBAR_ORG_CLA_ONLY_ROLE,
   NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
   NAVBAR_ORG_ROLE_TOOLTIPS,
   NAVBAR_ORG_ROLE_UNKNOWN_SOURCE,
@@ -199,9 +200,19 @@ export class OrgSelectorComponent {
       this.orgRoleGrantsService.inheritedAuditorSet()
     );
   });
-  protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation()));
-  protected readonly selectedRoleIcon: Signal<string> = computed(() => this.personaToIcon(this.selectedRolePersona()));
+  /** The selection is a listed CLA-only organization: no grant persona, so the card carries the CLA Manager role line instead. */
+  private readonly selectedClaOnly: Signal<boolean> = computed(() => {
+    const uid = this.selectedAccountUid();
+    return !!uid && !this.selectedRolePersona() && this.items().some((item) => item.uid === uid && item.claOnly === true);
+  });
+  protected readonly selectedRoleLabel: Signal<string> = computed(() =>
+    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.label : this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation())
+  );
+  protected readonly selectedRoleIcon: Signal<string> = computed(() =>
+    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.icon : this.personaToIcon(this.selectedRolePersona())
+  );
   protected readonly selectedRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
     if (!uid || !persona) return '';
@@ -243,6 +254,7 @@ export class OrgSelectorComponent {
 
   /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
   protected readonly navbarRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
     if (!uid || !persona) return '';
@@ -265,6 +277,15 @@ export class OrgSelectorComponent {
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
       // signal map only if the server response somehow omitted it on a row known to be inherited.
       const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
+      if (!persona && item.claOnly === true) {
+        return {
+          item,
+          isSelected: !!selectedUid && selectedUid === item.uid,
+          roleLabel: NAVBAR_ORG_CLA_ONLY_ROLE.label,
+          roleIcon: NAVBAR_ORG_CLA_ONLY_ROLE.icon,
+          roleTooltip: NAVBAR_ORG_CLA_ONLY_ROLE.tooltip,
+        };
+      }
       return {
         item,
         isSelected: !!selectedUid && selectedUid === item.uid,

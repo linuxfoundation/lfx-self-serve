@@ -55,6 +55,13 @@ export const NAVBAR_ORG_ROLE_TOOLTIPS: Readonly<Record<OrgRolePersona, string>> 
   'inherited-auditor': 'You can view this organization through your access to {source}.',
 };
 
+/** Role line of an organization the caller reaches only as its CLA Manager or initial CLA Manager designee. */
+export const NAVBAR_ORG_CLA_ONLY_ROLE = {
+  label: 'CLA Manager',
+  icon: 'fa-light fa-file-signature',
+  tooltip: 'You are a CLA Manager or initial CLA Manager designee for this organization. Only its EasyCLA page opens.',
+} as const;
+
 /** Stands in for `{source}` when the organization an inherited role comes from is unknown. */
 export const NAVBAR_ORG_ROLE_UNKNOWN_SOURCE = 'a related organization';
 

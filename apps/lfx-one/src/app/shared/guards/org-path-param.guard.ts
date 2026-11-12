@@ -164,7 +164,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
         uid: resolved.uid,
         slug: resolved.slug,
       };
-      // M3: the selector may not list this organization (a grant holder reaches a CLA-only org by link only), so its CLA-only shell keys on this answer.
+      // M3: the selector may not list this organization yet (its scope can postdate the role grants), so its CLA-only shell keys on this answer.
       claOnlyAccess.noteAddressed(resolved.uid, resolved.claOnly === true);
       accountContext.adoptFromAddress(account);
       // Spec 020 US4 — fire-and-forget canonical reconciliation fills display fields.
