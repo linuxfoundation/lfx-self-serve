@@ -160,7 +160,7 @@ describe('FormationPipelineService.getPipeline', () => {
       projects: [project({ uid: 'a', name: 'A' }), project({ uid: 'b', name: 'B' }), project({ uid: 'c', name: 'C' }), project({ uid: 'd', name: 'D' })],
       settings: [
         { uid: 'a', formation_lead: { name: 'Lee Lead', email: 'lee@example.com', username: 'llead', avatar: 'secret.png' } },
-        { uid: 'b', formation_lead: {} },
+        { uid: 'b', formation_lead: { name: '', email: '' } },
         { uid: 'c' },
       ],
     });

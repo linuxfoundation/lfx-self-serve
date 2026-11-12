@@ -80,7 +80,9 @@ export function countPipelineRows(rows: readonly FormationPipelineRow[]): Format
 
 /** The one search policy (#5619): trimmed and cut to {@link FORMATION_PIPELINE_SEARCH_MAX_LENGTH}. The input, the live filter, the URL writer and the URL parser all go through it, so a reloaded link matches exactly what was on screen. */
 export function normalizePipelineSearch(search: string | null | undefined): string {
-  return (search ?? '').trim().slice(0, FORMATION_PIPELINE_SEARCH_MAX_LENGTH);
+  const cut = (search ?? '').trim().slice(0, FORMATION_PIPELINE_SEARCH_MAX_LENGTH);
+  // `slice` counts UTF-16 code units: a cut inside a surrogate pair leaves a lone high surrogate, which `encodeURIComponent` throws on and `URLSearchParams` rewrites.
+  return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
 }
 
 /** Case-insensitive name match used by both the BFF `q` filter and the UI. An empty query matches everything. */

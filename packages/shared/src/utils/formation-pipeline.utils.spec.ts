@@ -383,6 +383,21 @@ describe('Pipeline URL state (#5619)', () => {
     expect(matchesPipelineSearch(`${cut}b`, long)).toBe(true);
   });
 
+  it('never cuts a search inside a surrogate pair, so the written link always encodes and reads back the same', () => {
+    const emoji = '🚀';
+    const atLimit = 'a'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH - 1) + emoji;
+    const cut = normalizePipelineSearch(atLimit);
+    expect(cut).toBe('a'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH - 1));
+    expect(() => encodeURIComponent(cut)).not.toThrow();
+    const state = { ...getDefaultPipelineUrlState(), search: atLimit };
+    expect(fromQuery(toQuery(state)).search).toBe(cut);
+    expect(matchesPipelineSearch(`${cut}b`, atLimit)).toBe(true);
+    // A pair that fits whole is kept.
+    expect(normalizePipelineSearch('a'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH - 2) + emoji)).toBe(
+      'a'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH - 2) + emoji
+    );
+  });
+
   it('opens on the defaults for an empty query, and writes nothing for the defaults', () => {
     expect(fromQuery('')).toEqual(getDefaultPipelineUrlState());
     expect(toQuery(getDefaultPipelineUrlState())).toBe('');
