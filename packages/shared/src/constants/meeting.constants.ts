@@ -1181,6 +1181,9 @@ export const MEETING_CLOCK_TICK_MS = 5_000;
 /** Router navigation state that sends a `/meetings/:id` visit to the legacy page when the redesigned one can't serve it. */
 export const MEETING_PAGE_LEGACY_STATE = 'meetingPageLegacy';
 
+/** Router navigation state that opens the legacy page's guest form, to join with another email address. */
+export const MEETING_PAGE_GUEST_FORM_STATE = 'meetingPageGuestForm';
+
 /**
  * How many upcoming meetings the dashboard meetings card lets a user page through, starting from the
  * meeting it opens on. Fixed rather than a setting so there is nothing to store per user.

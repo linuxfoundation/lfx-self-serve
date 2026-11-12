@@ -3,7 +3,7 @@
 
 import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { inject, Provider, Signal } from '@angular/core';
-import { MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, PastMeetingSummary } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsDrawerData, MeetingDetailsTab, MeetingHomeRow, MeetingOccurrence, PastMeetingSummary } from '@lfx-one/shared/interfaces';
 
 import { MeetingsHomeStore } from '../../services/meetings-home.store';
 
@@ -21,6 +21,12 @@ export abstract class MeetingDetailsSource {
   public abstract readonly upcomingRows: Signal<MeetingHomeRow[]>;
   /** The dialog the details live in, closed by flows that leave them; null when they are not in one. */
   public abstract readonly hostRef: DialogRef | null;
+  /** Moves on from a date just cancelled; the drawer closes instead. */
+  public readonly occurrenceCancelled?: (meeting: Meeting, occurrence: MeetingOccurrence) => void;
+  /** True once, when Join may open Zoom by itself as the page loads; the drawer never does. */
+  public readonly claimJoinOnLoad?: () => boolean;
+  /** Joins with another email address in place; the drawer links to the meeting page instead. */
+  public readonly joinWithOtherEmail?: () => void;
   /** Shows another row, such as an upcoming date picked from a past one. */
   public abstract open(row: MeetingHomeRow): void;
   /** Mirrors a summary edit into the host's list. */

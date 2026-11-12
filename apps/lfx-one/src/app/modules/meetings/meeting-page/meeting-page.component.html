@@ -24,10 +24,9 @@
         </div>
       }
       @case ('details') {
-        @if (row(); as row) {
-          @for (shown of [row]; track shown.key) {
-            <lfx-meeting-page-details />
-          }
+        <!-- Re-created for another row and after a reload, so an edit or a cancel shows the meeting as it now stands. -->
+        @for (shown of detailsKey(); track shown) {
+          <lfx-meeting-page-details />
         }
       }
       @default {

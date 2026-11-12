@@ -35,6 +35,7 @@ import {
   isMeetingHomeRowPendingRsvp,
   isMeetingPendingRsvp,
   toPastMeetingHomeRow,
+  toUpcomingMeetingHomeRow,
 } from './meeting-list.utils';
 
 // Thursday, Oct 1 2026, 09:00 in the runner's local zone; buckets are local-calendar based.
@@ -266,6 +267,28 @@ describe('expandMeetingOccurrences', () => {
       const responses = expandMeetingOccurrences([meeting], NOW).map((item) => (item.myRsvp === undefined ? 'unknown' : (item.myRsvp?.response_type ?? null)));
       expect(responses).toEqual([null, 'unknown', 'accepted', 'unknown']);
     });
+  });
+});
+
+describe('toUpcomingMeetingHomeRow', () => {
+  it('builds one date of a series as the list does, keyed by the series and the date', () => {
+    const occurrence: MeetingOccurrence = { occurrence_id: seconds(local(10, 9)), start_time: local(10, 9).toISOString(), duration: 30, title: 'Date title' };
+    const meeting = buildMeeting({ recurrence: WEEKLY, occurrences: [occurrence], my_rsvp: null });
+
+    expect(toUpcomingMeetingHomeRow(meeting, occurrence)).toMatchObject({
+      key: `m-1:${occurrence.occurrence_id}`,
+      occurrence,
+      title: 'Date title',
+      occurrenceId: occurrence.occurrence_id,
+      startTime: occurrence.start_time,
+      durationMinutes: 30,
+      myRsvp: null,
+    });
+  });
+
+  it('keys a one-time meeting by its id and returns null without a valid start', () => {
+    expect(toUpcomingMeetingHomeRow(buildMeeting(), null)?.key).toBe('m-1');
+    expect(toUpcomingMeetingHomeRow(buildMeeting({ start_time: 'nope' }), null)).toBeNull();
   });
 });
 

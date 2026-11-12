@@ -61,8 +61,11 @@ export class MeetingPageDataService {
   private readonly meetingResolvedRouteId = signal<string | null>(null);
   private readonly clockState = signal<number>(Date.now());
   private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  private reloadsRequested = 0;
+  private readonly reloadsDoneState = signal(0);
   private joinWindowChecked = false;
   private joinWindowOpenAtLoadState = false;
+  private joinOnLoadClaimed = false;
   private pendingPageview: Subscription | null = null;
 
   public readonly project: Signal<PublicMeetingProject | null> = this.projectState.asReadonly();
@@ -91,12 +94,26 @@ export class MeetingPageDataService {
   public readonly meetingMatchesRoute: Signal<boolean> = computed(() => this.meetingRouteId() === this.meetingResolvedRouteId());
   /** Wall clock for time-gated UI; ticks only after `startClock()`, which is browser-only. */
   public readonly clock: Signal<number> = this.clockState.asReadonly();
+  /** Reloads asked for by `refresh()` or `reloadOnNextLoad()` that have since loaded; a page re-creates what it shows on it. */
+  public readonly reloadsDone: Signal<number> = this.reloadsDoneState.asReadonly();
   /** Emits now and on every `refresh()`, for streams that reload with the meeting. */
   public readonly refreshes$: Observable<void> = this.refreshTrigger$.asObservable();
 
   /** True only when the join window was already open when the meeting first loaded, the one case Zoom may open by itself. */
   public get joinWindowOpenAtLoad(): boolean {
     return this.joinWindowOpenAtLoadState;
+  }
+
+  /**
+   * Whether Zoom may open by itself now, at most once per page: the join window was open at load, and the URL has
+   * neither `?zoom_redirect=false` nor `?action=`.
+   */
+  public claimJoinOnLoad(): boolean {
+    const params = this.activatedRoute.snapshot.queryParamMap;
+    const allowed =
+      this.joinWindowOpenAtLoadState && !this.joinOnLoadClaimed && params.get('zoom_redirect')?.toLowerCase() !== 'false' && !params.has('action');
+    if (allowed) this.joinOnLoadClaimed = true;
+    return allowed;
   }
 
   /**
@@ -137,7 +154,13 @@ export class MeetingPageDataService {
 
   /** Refetches the meeting for the current route. */
   public refresh(): void {
+    this.reloadOnNextLoad();
     this.refreshTrigger$.next();
+  }
+
+  /** Counts the next load, such as one a navigation starts, as a reload in `reloadsDone`. */
+  public reloadOnNextLoad(): void {
+    this.reloadsRequested++;
   }
 
   /** The `?occurrence=` (start ms) date when it is an active one, else the current or next date. */
@@ -245,6 +268,7 @@ export class MeetingPageDataService {
         // Only a settled success clears a prior failure; clearing eagerly would flash a seeded error view back to the skeleton.
         this.meetingLoadFailedState.set(false);
         this.meetingResolvedRouteId.set(this.meetingRouteId());
+        this.reloadsDoneState.set(this.reloadsRequested);
         this.recordJoinWindowAtLoad(res as Meeting);
         // Persist the resolved state during SSR so the client can hydrate to the same branch.
         // Angular defers serialization until this tracked HTTP call settles.

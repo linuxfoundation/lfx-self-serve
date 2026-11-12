@@ -38,7 +38,7 @@ export class MeetingDetailsHeaderComponent {
   private readonly toast = inject(UiToastService);
   /** Null outside a drawer, which drops Close. */
   protected readonly drawer = inject(UiDrawerContext, { optional: true });
-  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
+  private readonly source = inject(MeetingDetailsSource);
   private readonly editService = inject(MeetingsHomeEditService);
   private readonly deleteService = inject(MeetingsHomeDeleteService);
   protected readonly context = inject(MeetingDetailsContext);
@@ -95,15 +95,17 @@ export class MeetingDetailsHeaderComponent {
 
   protected editMeeting(): void {
     // A recurring meeting's scope question opens over the drawer, which closes only once the editor opens.
-    this.editService.edit(this.context.shownRow(), undefined, this.hostRef);
+    this.editService.edit(this.context.shownRow(), undefined, this.source.hostRef);
   }
 
   protected cancelOccurrence(): void {
     const occurrence = this.context.occurrence();
     if (!occurrence) return;
-    // The page's flow cancels the date and reloads the list; the drawer then closes on a date that no longer exists.
+    // The drawer closes on a date that no longer exists; a page moves on to another one.
     this.deleteService.cancelOccurrence(this.context.shownRow(), occurrence, 'drawer').subscribe((cancelled) => {
-      if (cancelled) this.drawer?.requestClose();
+      if (!cancelled) return;
+      this.drawer?.requestClose();
+      this.source.occurrenceCancelled?.(this.context.meeting(), occurrence);
     });
   }
 
