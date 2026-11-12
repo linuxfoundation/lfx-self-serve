@@ -371,7 +371,10 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(badge.className).not.toContain('uppercase');
     expect(badge.getAttribute('tabindex')).toBe('0');
     expect(badge.getAttribute('role')).toBe('img');
-    expect(badge.getAttribute('aria-label')).toBe('Provisional: Figures are preliminary and not yet reconciled with finance, so they may change.');
+    expect(badge.getAttribute('aria-label')).toBe('Provisional');
+    // The tooltip describes the badge, so the tip is announced once, after the name.
+    const describedBy = badge.getAttribute('aria-describedby') ?? '';
+    expect(document.getElementById(describedBy)?.textContent?.trim()).toBe('Figures are preliminary and not yet reconciled with finance, so they may change.');
     expect(byTestId('test-heading-badge-alpha')).toBeNull();
   });
 
