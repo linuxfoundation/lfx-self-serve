@@ -151,6 +151,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
   // The saved layout nests deeper than the editor supports (only possible through the API). The editor doesn't
   // load it or emit any layout, so the stored blocks can't be overwritten by a cut-down copy (#5296).
   protected readonly layoutTooDeep = signal<boolean>(false);
+  // What each inline field showed when it was focused, and whether an edit has been saved since. The canvas
+  // shows a cleaned copy of stored rich text, so a field the author hasn't changed can differ from the stored
+  // value. Comparing with what was shown keeps a focus and blur from rewriting it.
+  private readonly inlineBaselines = new WeakMap<HTMLElement, { html: string; committed: boolean }>();
   // The canvas: the ordered top-level blocks the user has composed.
   protected readonly blocks = signal<NewsletterComposerBlock[]>([]);
   // The currently selected block (top-level or container child), edited in the
@@ -1333,6 +1337,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
     el.addEventListener('focus', () => {
       const richtext = el.getAttribute('data-nl-richtext') === 'true';
+      this.inlineBaselines.set(el, { html: richtext ? el.innerHTML : (el.textContent ?? ''), committed: false });
       // Selecting the block keeps panel + canvas consistent; freezing its HTML
       // is what protects the caret from re-renders while typing.
       if (this.selectedBlockId() !== blockId) this.selectBlock(blockId);
@@ -1393,9 +1398,13 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // `jobs.0.company`); write into the nested array/object rather than a flat key.
     const stored = getAtPath(block.content, field);
     if (stored === next) return;
-    // The canvas shows rich text with class (and any target but _blank) stripped. If that's the only difference,
-    // the author hasn't edited anything, so keep the stored value as it is.
-    if (richtext && typeof stored === 'string' && stripRichtextAttributes(stored) === next) return;
+    // The canvas shows a cleaned copy of stored rich text. Until the author changes what was shown at focus, the
+    // field hasn't been edited, so keep the stored value as it is. Without a focus baseline, fall back to
+    // comparing with the stripped stored value.
+    const baseline = this.inlineBaselines.get(el);
+    if (richtext && baseline && !baseline.committed && baseline.html === next) return;
+    if (richtext && !baseline && typeof stored === 'string' && stripRichtextAttributes(stored) === next) return;
+    if (baseline) baseline.committed = true;
 
     const content = setAtPath(block.content, field, next);
     this.blocks.update((current) => this.patchContent(current, blockId, content));

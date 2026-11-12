@@ -129,17 +129,20 @@
                                 [form]="item"
                                 [control]="nested.key"
                                 styleClass="w-full"
+                                [invalid]="!!urlErrors()[entry.key + '.' + itemIdx + '.' + nested.key]"
+                                [describedBy]="'nlfld-error-' + entry.key + '-' + itemIdx + '-' + nested.key"
                                 [dataTest]="'newsletter-composer-field-input-' + entry.key + '-' + itemIdx + '-' + nested.key">
                               </lfx-input-text>
                             }
                           }
-                          @if (urlErrors()[entry.key + '.' + itemIdx + '.' + nested.key]; as urlError) {
-                            <p
-                              class="text-xs text-red-600"
-                              [attr.data-testid]="'newsletter-composer-field-error-' + entry.key + '-' + itemIdx + '-' + nested.key">
-                              {{ urlError }}
-                            </p>
-                          }
+                          <!-- Always rendered, so screen readers announce the URL error when it appears (aria-live). -->
+                          <p
+                            [id]="'nlfld-error-' + entry.key + '-' + itemIdx + '-' + nested.key"
+                            class="m-0 text-xs text-red-600"
+                            aria-live="polite"
+                            [attr.data-testid]="'newsletter-composer-field-error-' + entry.key + '-' + itemIdx + '-' + nested.key">
+                            {{ urlErrors()[entry.key + '.' + itemIdx + '.' + nested.key] }}
+                          </p>
                         </div>
                       }
                     </div>
@@ -158,13 +161,24 @@
                 </div>
               }
               @default {
-                <lfx-input-text [form]="fg" [control]="entry.key" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + entry.key">
+                <lfx-input-text
+                  [form]="fg"
+                  [control]="entry.key"
+                  styleClass="w-full"
+                  [invalid]="!!urlErrors()[entry.key]"
+                  [describedBy]="'nlfld-error-' + entry.key"
+                  [dataTest]="'newsletter-composer-field-input-' + entry.key">
                 </lfx-input-text>
               }
             }
-            @if (urlErrors()[entry.key]; as urlError) {
-              <p class="text-xs text-red-600" [attr.data-testid]="'newsletter-composer-field-error-' + entry.key">{{ urlError }}</p>
-            }
+            <!-- Always rendered, so screen readers announce the URL error when it appears (aria-live). -->
+            <p
+              [id]="'nlfld-error-' + entry.key"
+              class="m-0 text-xs text-red-600"
+              aria-live="polite"
+              [attr.data-testid]="'newsletter-composer-field-error-' + entry.key">
+              {{ urlErrors()[entry.key] }}
+            </p>
           </div>
         }
 

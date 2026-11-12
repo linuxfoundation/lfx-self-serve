@@ -168,8 +168,9 @@ export function newsletterLayoutDepthError(blocks: unknown): string | null {
  * Removes `class`, and any `target` other than `_blank`, from rich text that has already been through Angular's
  * HTML sanitizer, which keeps both (#5295). `target="_blank"` stays because the rich text editor writes it on
  * every link. It relies on the sanitizer's output, where attribute values are always double-quoted and `<`, `>`
- * and `"` inside them are encoded, so every `<...>` is a tag. Don't use it on unsanitized HTML.
+ * and `"` inside them are encoded, so every `<...>` is a tag. Don't use it on unsanitized HTML. A tag never
+ * contains a raw `<`, so the match stops at one, which keeps the scan linear on input like `<a<a<a...`.
  */
 export function stripRichtextAttributes(html: string): string {
-  return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\s(?:class="[^"]*"|target="(?!_blank")[^"]*")/gi, ''));
+  return html.replace(/<[a-zA-Z][^<>]*>/g, (tag) => tag.replace(/\s(?:class="[^"]*"|target="(?!_blank")[^"]*")/gi, ''));
 }

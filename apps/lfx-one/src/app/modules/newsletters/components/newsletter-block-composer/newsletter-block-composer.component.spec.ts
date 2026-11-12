@@ -84,6 +84,27 @@ describe('NewsletterBlockComposerComponent — Outline keyboard nesting', () => 
     component = fixture.componentInstance;
   });
 
+  it('does not save a focus and blur on rich text the canvas shows cleaned, then saves edits and their undo (#5295)', () => {
+    api().blocks.set([{ ...leaf('b1'), content: { body: "<p class='ql-align-center'>Hi</p>" } }]);
+    const emitted: NewsletterLayout[] = [];
+    component.layoutChange.subscribe((l) => emitted.push(l));
+    const el = document.createElement('div');
+    el.setAttribute('data-nl-field', 'body');
+    el.setAttribute('data-nl-richtext', 'true');
+    el.innerHTML = '<p>Hi</p>';
+    api()['wireEditable'](el, 'b1');
+
+    el.dispatchEvent(new Event('focus'));
+    api()['commitInlineEdit'](el, 'b1');
+    expect(emitted).toHaveLength(0);
+
+    el.innerHTML = '<p>Hello</p>';
+    api()['commitInlineEdit'](el, 'b1');
+    el.innerHTML = '<p>Hi</p>';
+    api()['commitInlineEdit'](el, 'b1');
+    expect(emitted).toHaveLength(2);
+  });
+
   it('strips class and stray targets from pasted rich text before it reaches the page (#5295)', () => {
     (component as unknown as { platformId: string }).platformId = 'browser';
     const original = document.execCommand;

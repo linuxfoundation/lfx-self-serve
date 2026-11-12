@@ -211,6 +211,13 @@ describe('stripRichtextAttributes', () => {
     );
   });
 
+  it('stays fast on a long run of unclosed tag starts', () => {
+    const input = '<a'.repeat(50_000);
+    const start = Date.now();
+    expect(stripRichtextAttributes(input)).toBe(input);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
   it('leaves text that only looks like an attribute alone', () => {
     // Sanitized output encodes quotes in text, so this never matches a tag.
     expect(stripRichtextAttributes('<p>class=&#34;x&#34;</p>')).toBe('<p>class=&#34;x&#34;</p>');
