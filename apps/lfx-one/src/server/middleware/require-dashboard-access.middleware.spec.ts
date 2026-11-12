@@ -253,6 +253,7 @@ describe('requireExecutiveOrLFStaff', () => {
     getPersonas.mockReset();
     getProjectBySlug.mockReset();
     getProjectById.mockReset();
+    checkProjectWriter.mockReset();
   });
 
   it('allows LF staff without resolving the project', async () => {
@@ -288,6 +289,31 @@ describe('requireExecutiveOrLFStaff', () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
     getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-foundation-b' });
     getProjectById.mockResolvedValue({ uid: 'uid-foundation-b', slug: 'foundation-b', parent_uid: '' });
+    expect(verdict(await run(projectReq()))).toBe('deny');
+  });
+
+  it('denies (not 5xx) when the ancestry lookup fails, and reads parents metadata-only', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a']));
+    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-root' });
+    getProjectById.mockRejectedValue(new Error('404'));
+    expect(verdict(await run(projectReq()))).toBe('deny');
+    expect(getProjectById).toHaveBeenCalledWith(expect.anything(), 'uid-root', false);
+  });
+
+  it('allows a root writer without ED scopes only with writer access on the topmost foundation', async () => {
+    getPersonas.mockResolvedValue({ personas: ['executive-director'], personaProjects: {}, isRootWriter: true, isLFStaff: false });
+    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-f' });
+    getProjectById.mockResolvedValue({ uid: 'uid-f', slug: 'f', parent_uid: '' });
+
+    checkProjectWriter.mockResolvedValue(true);
+    expect(verdict(await run(projectReq()))).toBe('allow');
+    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'f');
+  });
+
+  it('denies a root writer lacking writer access on the foundation', async () => {
+    getPersonas.mockResolvedValue({ personas: ['executive-director'], personaProjects: {}, isRootWriter: true, isLFStaff: false });
+    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: '' });
+    checkProjectWriter.mockResolvedValue(false);
     expect(verdict(await run(projectReq()))).toBe('deny');
   });
 

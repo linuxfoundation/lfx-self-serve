@@ -9,6 +9,8 @@ import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 
+import type { Project } from '@lfx-one/shared/interfaces';
+
 const ED: PersonaType = 'executive-director';
 
 // Dashboard access admits the same callers as the client-side dashboardAccessGuard: EDs and LF Staff,
@@ -102,14 +104,33 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
       const edSlugs = new Set(edProjects.map((project) => project.projectSlug.toLowerCase()));
       const slug = String(req.params['slug'] ?? '');
 
-      // Walk project -> parent -> ... until an ED-scoped project is found or the chain ends.
-      let project = slug ? await projectService.getProjectBySlug(req, slug) : null;
-      for (let depth = 0; project && depth < MAX_PARENT_DEPTH; depth++) {
-        if (edUids.has(project.uid) || edSlugs.has(String(project.slug ?? '').toLowerCase())) {
-          next();
-          return;
+      // Walk project -> parent -> ... until an ED-scoped project is found or the chain ends. Lookups are
+      // metadata-only (`access: false`) and fail closed: a missing or unreadable ancestor (e.g. the hidden
+      // ROOT parent of a top-level project) ends the climb as "not in scope" rather than surfacing a 5xx.
+      let topmost: { slug: string } | null = null;
+      try {
+        let project: Project | null = slug ? await projectService.getProjectBySlug(req, slug) : null;
+        for (let depth = 0; project && depth < MAX_PARENT_DEPTH; depth++) {
+          topmost = { slug: project.slug };
+          if (edUids.has(project.uid) || edSlugs.has(String(project.slug ?? '').toLowerCase()) || (project.parent_uid && edUids.has(project.parent_uid))) {
+            next();
+            return;
+          }
+          project = project.parent_uid && depth + 1 < MAX_PARENT_DEPTH ? await projectService.getProjectById(req, project.parent_uid, false) : null;
         }
-        project = project.parent_uid ? await projectService.getProjectById(req, project.parent_uid) : null;
+      } catch (error) {
+        logger.warning(req, 'require_executive_or_lf_staff', 'Project ancestry lookup ended before a scoped foundation was found', {
+          path: req.path,
+          requested_slug: slug,
+          err: error,
+        });
+      }
+
+      // A root writer carries the ED persona without ED scopes: trust it per foundation, not across the board,
+      // as `requireDashboardAccess` does — it must also hold writer access on the project's topmost foundation.
+      if (result.isRootWriter && topmost && (await personaDetectionService.checkProjectWriter(req, topmost.slug))) {
+        next();
+        return;
       }
 
       logger.warning(req, 'require_executive_or_lf_staff', 'ED requested a project outside their foundation scope', {
