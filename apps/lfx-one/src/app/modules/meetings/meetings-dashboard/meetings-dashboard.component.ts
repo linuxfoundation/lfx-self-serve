@@ -367,6 +367,7 @@ export class MeetingsDashboardComponent {
 
     this.syncFiltersToUrl();
     this.resetRollupFiltersOnProjectChange();
+    this.resetRollupFiltersOnMeLens();
 
     toObservable(this.activeLens)
       .pipe(takeUntilDestroyed())
@@ -1282,6 +1283,23 @@ export class MeetingsDashboardComponent {
       )
       .subscribe((queryParams) => {
         void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
+      });
+  }
+
+  /**
+   * The roll-up filters have no controls on the Me lens, so switching there from the foundation/project
+   * lens clears them. Only an actual switch counts: the lens can start on `me` until grants resolve
+   * (LFXV2-2754), and that first value must not wipe filters a shared link carried.
+   */
+  private resetRollupFiltersOnMeLens(): void {
+    toObservable(this.activeLens)
+      .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed())
+      .subscribe(([previous, current]) => {
+        if (current === 'me' && (previous === 'foundation' || previous === 'project')) {
+          this.rollupProjectsFilter.set([]);
+          this.groupFilter.set(null);
+          this.groupTypeFilter.set(null);
+        }
       });
   }
 

@@ -920,6 +920,21 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(component.groupFilter()).toBeNull();
     });
 
+    it('clears the roll-up filters on the Me lens, which has no controls for them', () => {
+      const component = mount();
+      openScope(component);
+      component.onRollupProjectsFilterChange(['child']);
+      component.groupFilter.set('wg');
+
+      lens.set('me');
+      flush();
+      for (const request of http.match('/api/user/meetings')) request.flush([]);
+      flush();
+
+      expect(component.rollupProjectsFilter()).toEqual([]);
+      expect(component.groupFilter()).toBeNull();
+    });
+
     it('clears the roll-up filters when the foundation or project changes', () => {
       const component = mount();
       openScope(component);

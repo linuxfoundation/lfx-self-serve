@@ -4,7 +4,7 @@
 // Deep import: the utils barrel pulls Angular-only code that server unit specs cannot load.
 import { isFilterSafeIdentifier } from '@lfx-one/shared/utils/org-selector.utils';
 
-import type { MeetingRollupFilters } from '@lfx-one/shared/interfaces';
+import type { MeetingRollupFilters, MeetingRollupGroupOption } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
 
@@ -94,18 +94,22 @@ export function buildRollupScopedQuery(
   /* eslint-disable @typescript-eslint/no-unused-vars */
   const { root_project_uid: _root, project_uids: _projects, committee_uid: _committee, group_type: _groupType, tags, ...rest } = query;
   /* eslint-enable @typescript-eslint/no-unused-vars */
-  // Tags are one OR group: with a group filter in play, a caller's own committee tags would widen it.
-  const dropped = committeeUids ? ['project_uid:', 'committee_uid:'] : ['project_uid:'];
-  const keptTags = [
-    ...toArray(tags).filter((tag) => !dropped.some((prefix) => tag.startsWith(prefix))),
-    ...(committeeUids ?? []).map((uid) => `committee_uid:${uid}`),
-  ];
+  // Tags are one OR group: with a group filter in play, any tag of the caller's would widen it, so the
+  // group tags replace them all.
+  const keptTags = committeeUids ? committeeUids.map((uid) => `committee_uid:${uid}`) : toArray(tags).filter((tag) => !tag.startsWith('project_uid:'));
 
   return {
     ...rest,
     ...(keptTags.length > 0 && { tags: keptTags }),
     filters_or: scopeUids.map((uid) => `project_uid:${uid}`),
   };
+}
+
+/** Accepts cached roll-up groups only when they still have the option shape; anything else is refetched. */
+export function isRollupGroups(value: unknown): value is MeetingRollupGroupOption[] {
+  return (
+    Array.isArray(value) && value.every((group) => typeof group?.uid === 'string' && typeof group?.name === 'string' && typeof group?.project_uid === 'string')
+  );
 }
 
 /** Accepts a cached roll-up scope only when it is still a list of project UIDs; anything else is refetched. */

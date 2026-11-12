@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import type {
   BatchRegistrantOperationResponse,
@@ -744,5 +744,53 @@ describe('MeetingService project-lens meeting fetchers (#4964)', () => {
 
     await expect(firstValueFrom(service[method]('project-1'))).rejects.toBe(failure);
     expect(errorLog).toHaveBeenCalledExactlyOnceWith(message, failure);
+  });
+
+  describe('roll-up (GH-5566)', () => {
+    const params = (): HttpParams => get.mock.calls[0][1].params;
+
+    it('sends the roll-up root and only the filters that are set', async () => {
+      get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+      await firstValueFrom(
+        service.getMeetingsByProjectPaginated('root', undefined, undefined, undefined, undefined, {
+          includeSubProjects: true,
+          projectUids: ['a', 'b'],
+          committeeUid: 'c',
+          groupType: 'Board',
+          pageSize: 1000,
+        })
+      );
+
+      expect(params().get('root_project_uid')).toBe('root');
+      expect(params().get('project_uids')).toBe('a,b');
+      expect(params().get('committee_uid')).toBe('c');
+      expect(params().get('group_type')).toBe('Board');
+      expect(params().get('page_size')).toBe('1000');
+      expect(params().has('tags')).toBe(false);
+    });
+
+    it('omits unset filters and keeps a single project scoped by tag without the roll-up', async () => {
+      get.mockReturnValue(of({ count: 0 }));
+
+      await firstValueFrom(service.getPastMeetingsCountByProject('root', { includeSubProjects: true }));
+      await firstValueFrom(service.getPastMeetingsCountByProject('project-1', { projectUids: ['ignored'] }));
+
+      const [rollup, single] = get.mock.calls.map((call) => call[1].params as HttpParams);
+      expect(rollup.keys()).toEqual(['root_project_uid']);
+      expect(single.keys()).toEqual(['tags']);
+      expect(single.get('tags')).toBe('project_uid:project-1');
+    });
+
+    it('fetches the filter options for a root, and offers none when that fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      get.mockReturnValueOnce(of({ projects: [{ uid: 'p', name: 'P', slug: 'p' }], groups: [] }));
+      get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({ projects: [{ uid: 'p', name: 'P', slug: 'p' }], groups: [] });
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({ projects: [], groups: [] });
+      expect(get.mock.calls[0][0]).toBe('/api/meetings/rollup-filters');
+      expect(params().get('root_project_uid')).toBe('root');
+    });
   });
 });

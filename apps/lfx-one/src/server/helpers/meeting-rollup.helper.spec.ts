@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
-import { buildRollupScopedQuery, isRollupScope, narrowRollupScope, readRollupFilters, readRollupRootUid } from './meeting-rollup.helper';
+import { buildRollupScopedQuery, isRollupGroups, isRollupScope, narrowRollupScope, readRollupFilters, readRollupRootUid } from './meeting-rollup.helper';
 
 const ROOT = '0a1b2c3d-1111-2222-3333-444455556666';
 
@@ -99,9 +99,23 @@ describe('buildRollupScopedQuery with groups', () => {
     expect(result).toEqual({ tags: ['committee_uid:c-1', 'committee_uid:c-2'], filters_or: [`project_uid:${ROOT}`] });
   });
 
-  it('drops caller committee tags when it sets its own, since tags are one OR group', () => {
-    const result = buildRollupScopedQuery({ root_project_uid: ROOT, tags: ['committee_uid:other', 'x:y'] }, [ROOT], ['c-1']);
+  it('replaces every caller tag with its group tags, since tags are one OR group', () => {
+    const result = buildRollupScopedQuery({ root_project_uid: ROOT, tags: ['committee_uid:other', 'meeting_type:Board'] }, [ROOT], ['c-1']);
 
-    expect(result['tags']).toEqual(['x:y', 'committee_uid:c-1']);
+    expect(result['tags']).toEqual(['committee_uid:c-1']);
+  });
+
+  it('keeps non-project caller tags when no group filter is set', () => {
+    const result = buildRollupScopedQuery({ root_project_uid: ROOT, tags: ['project_uid:other', 'x:y'] }, [ROOT]);
+
+    expect(result['tags']).toEqual(['x:y']);
+  });
+});
+
+describe('isRollupGroups', () => {
+  it('accepts group options and refuses anything else from the cache', () => {
+    expect(isRollupGroups([{ uid: 'g', name: 'G', category: null, project_uid: 'p' }])).toBe(true);
+    expect(isRollupGroups([{ uid: 'g' }])).toBe(false);
+    expect(isRollupGroups('g')).toBe(false);
   });
 });
