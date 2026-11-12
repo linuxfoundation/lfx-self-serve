@@ -234,6 +234,37 @@ describe('MailingListSyncPreviewDialogComponent diff selection', () => {
       { id: 'conflicts', label: 'Conflicts (0)' },
     ]);
   });
+
+  it('clears a selection and disables Apply again when a checked row is unchecked', async () => {
+    const { fixture } = await setup({});
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(true);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(true);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-1']);
+    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (1)' },
+      { id: 'removes', label: 'Remove (1)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(false);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(false);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedAdds()).toEqual([]);
+    expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (0)' },
+      { id: 'removes', label: 'Remove (0)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+
+    const applyBtn = fixture.nativeElement.querySelector('[data-testid="sync-preview-apply-btn"] button') as HTMLButtonElement;
+    expect(applyBtn.disabled).toBe(true);
+  });
 });
 
 describe('MailingListSyncPreviewDialogComponent committee mismatch', () => {
