@@ -4916,13 +4916,15 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     // Behaviour the fold has always had: a run holding a break is one space, any other run is kept as written.
     expect(fit(['Join\nus', 'Join \r\n  now', 'a  b', 'Line\n\n\nbreaks'])).toEqual(['Join us', 'Join now', 'a  b', 'Line breaks']);
 
-    // The old `/\s*[\r\n]+\s*/g` took minutes on this: a run of spaces with no break in it, as a peer's saved brief could hold.
-    const hostile = [' '.repeat(300_000), `a${' '.repeat(300_000)}b`, `${' '.repeat(300_000)}\n${' '.repeat(300_000)}`];
+    // The old `/\s*[\r\n]+\s*/g` took seconds per string at this size and quadruples with each doubling: a run of
+    // spaces with no break in it, as a peer's saved brief could hold. Kept small so a regression fails, not hangs.
+    const run = ' '.repeat(60_000);
+    const hostile = [run, `a${run}b`, `${run}\n${run}`];
     const start = performance.now();
     const fitted = fit(hostile);
     expect(performance.now() - start).toBeLessThan(2_000);
     expect(fitted).toEqual([]);
-  }, 20_000);
+  });
 
   /**
    * One config carries one channel, so a Performance Max / Video / Display selection paired with
