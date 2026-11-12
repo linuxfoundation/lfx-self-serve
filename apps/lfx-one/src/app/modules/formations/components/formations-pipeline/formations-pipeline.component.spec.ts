@@ -391,6 +391,22 @@ describe('FormationsPipelineComponent (#5475)', () => {
     expect(unset.querySelector('[tabindex]')).toBeNull();
   });
 
+  it('shows the formation lead on the phone card too, wrapping a long value instead of overflowing', async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: '', email: 'a-very-long-address-without-spaces@example.com' } }),
+          row({ uid: 'n', name: 'Unled', stage: 'engaged', formation_lead: null }),
+        ])
+      )
+    );
+
+    expect(q('formations-pipeline-mobile-lead-l')?.textContent).toContain('a-very-long-address-without-spaces@example.com');
+    expect(q('formations-pipeline-mobile-lead-l')?.classList).toContain('break-words');
+    expect(q('formations-pipeline-lead-l')?.classList).toContain('break-words');
+    expect(q('formations-pipeline-mobile-lead-n')?.textContent).toContain('Not set');
+  });
+
   it('exports the formation lead in the CSV', async () => {
     await render(of(response([row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } })])));
     let captured: Blob | null = null;

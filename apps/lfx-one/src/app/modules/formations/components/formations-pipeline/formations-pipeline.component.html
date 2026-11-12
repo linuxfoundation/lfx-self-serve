@@ -182,21 +182,22 @@
                       }
                     </div>
                   </td>
-                  <td [attr.data-testid]="'formations-pipeline-lead-' + row.uid">
+                  <td class="break-words" [attr.data-testid]="'formations-pipeline-lead-' + row.uid">
                     @if (row.formationLeadEmail && row.formationLeadEmail !== row.formationLeadLabel) {
                       <!-- Focusable so the email tooltip is reachable from the keyboard; the group's label gives screen readers the same name and email. -->
                       <span
-                        class="text-sm text-gray-700"
+                        class="text-sm text-gray-700 break-words"
                         role="group"
                         tabindex="0"
                         [attr.aria-label]="row.formationLeadLabel + ', ' + row.formationLeadEmail"
                         [pTooltip]="row.formationLeadEmail"
                         tooltipPosition="top"
+                        tooltipStyleClass="max-w-none whitespace-nowrap"
                         tooltipEvent="both">
                         <span aria-hidden="true">{{ row.formationLeadLabel }}</span>
                       </span>
                     } @else {
-                      <span class="text-sm" [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'">{{ row.formationLeadLabel }}</span>
+                      <span class="text-sm break-words" [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'">{{ row.formationLeadLabel }}</span>
                     }
                   </td>
                   <td class="text-sm text-gray-700">{{ row.formationDateLabel || '—' }}</td>
@@ -250,9 +251,9 @@
                   <div class="flex justify-between gap-3 text-xs">
                     <span class="text-gray-500">Formation lead</span>
                     <span
-                      class="text-right"
+                      class="text-right break-words min-w-0"
                       [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'"
-                      [attr.data-testid]="'formations-pipeline-card-lead-' + row.uid"
+                      [attr.data-testid]="'formations-pipeline-mobile-lead-' + row.uid"
                       >{{ row.formationLeadLabel }}</span
                     >
                   </div>
