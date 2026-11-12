@@ -22,7 +22,7 @@ import { MeetingPageDetailsComponent, MeetingPageRowHost } from './details/meeti
 /**
  * The redesigned `/meetings/:id` page, matched by `meetingPageRedesignGuard`: the meeting details for a signed-in viewer
  * with full access, with loading and error states. Not-found goes to `/meetings/not-found` like the legacy page.
- * @description Fallback rule: only an ended meeting, opened by a non-organizer with full access, renders here; anything
+ * @description Fallback rule: only an ended meeting, opened by a viewer with full access, renders here; anything
  * else re-navigates the same URL to the legacy page, on the server too, so hydration keeps the page it rendered.
  */
 @Component({
@@ -64,7 +64,7 @@ export class MeetingPageComponent implements MeetingPageRowHost {
   private initRow(): Signal<MeetingHomeRow | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting || !this.pageData.meetingMatchesRoute() || !this.serves(meeting) || !isPastMeetingCalendarRow(meeting)) return null;
+      if (!meeting || !this.pageData.meetingMatchesRoute() || !this.serves() || !isPastMeetingCalendarRow(meeting)) return null;
       // The public payload carries its project apart; the details read the flattened fields.
       const { project } = meeting;
       return toPastMeetingHomeRow({
@@ -86,9 +86,9 @@ export class MeetingPageComponent implements MeetingPageRowHost {
     });
   }
 
-  /** An ended meeting the viewer fully sees and does not organize; organizer tools and live join stay on the legacy page. */
-  private serves(meeting: Meeting): boolean {
-    return this.pageData.loadedViaPastMeetingId() && this.pageData.pastMeetingFullAccess() && !meeting.organizer;
+  /** An ended meeting the viewer fully sees; live join stays on the legacy page. */
+  private serves(): boolean {
+    return this.pageData.loadedViaPastMeetingId() && this.pageData.pastMeetingFullAccess();
   }
 
   // The guard skips this page for a navigation carrying the legacy state, and records that for hydration on the server.
