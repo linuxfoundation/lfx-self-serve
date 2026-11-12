@@ -37,11 +37,11 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 
 import { MeetingsHomeDeleteService } from '../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../services/meetings-home-edit.service';
-import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsAgendaComponent } from './agenda/meeting-details-agenda.component';
 import { MeetingDetailsGuestsComponent } from './guests/meeting-details-guests.component';
 import { MeetingDetailsHeaderComponent } from './header/meeting-details-header.component';
 import { MeetingDetailsContext } from './meeting-details.context';
+import { provideMeetingDetailsDrawerSource } from './meeting-details.source';
 import { MeetingDetailsOccurrenceNavComponent } from './occurrence-nav/meeting-details-occurrence-nav.component';
 import { MeetingDetailsProjectLinkComponent } from './project-link/meeting-details-project-link.component';
 import { MeetingDetailsScheduleComponent } from './schedule/meeting-details-schedule.component';
@@ -76,7 +76,7 @@ import { MeetingDetailsToolsComponent } from './tools/meeting-details-tools.comp
   providers: [
     MeetingDetailsContext,
     MeetingDetailsArtifactsService,
-    { provide: MeetingsHomeStore, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeStore) },
+    provideMeetingDetailsDrawerSource(),
     { provide: MeetingsHomeEditService, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeEditService) },
     { provide: MeetingsHomeDeleteService, useFactory: () => inject<MeetingDetailsDrawerData>(DIALOG_DATA).injector.get(MeetingsHomeDeleteService) },
   ],

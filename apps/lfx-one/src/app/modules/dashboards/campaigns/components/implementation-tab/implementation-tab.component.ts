@@ -57,6 +57,8 @@ import {
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   LINKEDIN_IMAGE_MAX_BYTES,
+  LINKEDIN_MAX_VARIANTS,
+  LINKEDIN_MIN_VARIANTS,
   TWITTER_IMAGE_MAX_BYTES,
   TWITTER_IMAGE_TOO_LARGE_MESSAGE,
   TWITTER_MAX_BUDGET,
@@ -239,8 +241,10 @@ import {
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
+import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
@@ -363,6 +367,12 @@ import type {
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  LinkedInTargetingProfileConfig,
+  LinkedInTargetingProfileEdit,
+  LinkedInTargetingFacets,
+  LinkedInTargetingRemovals,
+  LinkedInVariantDraft,
+  LinkedInVariantView,
   MetaAdVariant,
   MetaCampaignCreateRequest,
   MetaObjective,
@@ -443,7 +453,11 @@ import {
   isHttpUrl,
   isReversedCampaignFlight,
   joinAsSentenceList,
+  linkedInCreativeTextLength,
+  linkedInTargetingAfterRemovals,
+  linkedInVariantTextError,
   parseNegativeKeywordInput,
+  resolveLinkedInTargetingProfileId,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -506,6 +520,12 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
   return { ...result, outcome: failure?.nothingCreated ? 'nothing-created' : 'unconfirmed', displayError, nextStep, platformUrl };
 }
 
+/**
+ * Numbers each LinkedIn variant's `key`. Module-wide rather than per instance, so a key made after a
+ * remount never repeats one a restored draft still holds.
+ */
+let linkedInVariantKeySequence = 0;
+
 @Component({
   selector: 'lfx-implementation-tab',
   imports: [
@@ -536,8 +556,10 @@ function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow 
     CreativeSlotGridComponent,
     GoogleCreativeImageLibraryComponent,
     UiComboboxComponent,
+    UiInputComponent,
     UiMultiSelectComponent,
     UiOptionComponent,
+    UiTextareaComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
   // also provides one at root, and this instance behaves the same.
@@ -757,6 +779,16 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInAssetUploadEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInAssetUploadAvailable = computed<boolean>(() => this.linkedInAssetUploadEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section may offer removing entries from the selected targeting profile
+   * (`CampaignListResult.linkedInTargetingEditEnabled`, #5546). `null` (unknown) shows the profile
+   * read-only, as for the image controls.
+   */
+  public readonly linkedInTargetingEditEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTargetingEditEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTargetingEditAvailable = computed<boolean>(() => this.linkedInTargetingEditEnabled() === true);
 
   /**
    * Whether the Microsoft section may offer an image UPLOAD (`CampaignListResult.microsoftAssetUploadEnabled`),
@@ -1378,6 +1410,10 @@ export class ImplementationTabComponent implements OnInit {
     linkedInAccountId: [''],
     linkedInGeoTargets: [[] as LinkedInGeoTarget[]],
     linkedInTargetingProfile: [DEFAULT_LINKEDIN_TARGETING_PROFILE as LinkedInTargetingProfile],
+    // What the operator took out of that profile (#5546), on the form so the draft carries it like
+    // the profile itself. Removals rather than the kept set, so "nothing removed" is the profile as
+    // configured whatever the catalogue holds when it loads.
+    linkedInTargetingRemovals: [{ skills: [], groups: [] } as LinkedInTargetingRemovals],
     // The X section's two typed fields, on the FORM so the `lfx-input-text` / `lfx-textarea`
     // wrappers can bind them and `valueChanges` drives the draft, as for the LinkedIn controls
     // above. Both RAW strings: a blank budget is "not entered", which 0 cannot say. No validators,
@@ -1555,11 +1591,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly briefHsToken = signal<string | null>(null);
   protected readonly briefDriveFolderUrl = signal('');
   protected readonly selectedPlatforms = signal<CampaignPlatform[]>(['google-ads']);
-  protected readonly linkedInVariants = signal<LinkedInCreativeVariant[]>([]);
+  /** The LinkedIn ad variants as edited: seeded from the brief, carried in the draft (#5547). */
+  protected readonly linkedInVariants = signal<LinkedInVariantDraft[]>([]);
   protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
+  /** The configured targeting profiles (#5546), from the mounted ConfigMap; the same list for every foundation. */
+  protected readonly linkedInTargetingProfiles = signal<LinkedInTargetingProfileConfig[]>([]);
+  protected readonly linkedInTargetingProfilesLoading = signal(false);
+  protected readonly linkedInTargetingProfilesFailed = signal(false);
   protected readonly redditVariants = signal<RedditAdVariant[]>([]);
   protected readonly redditSubreddits = signal<string[]>([]);
   protected readonly redditInterests = signal<string[]>([]);
@@ -1702,24 +1743,28 @@ export class ImplementationTabComponent implements OnInit {
   private readonly googleImageUploadError = signal('');
   private googleImageUploadSub: Subscription | null = null;
   /**
-   * The LinkedIn ad image, set on EVERY variant at create (see `linkedInVariantsForCreate`): an
-   * upload made for this brief, and nothing else, since LinkedIn takes no image URL. The upload
-   * state mirrors the Meta fields above one for one.
+   * The LinkedIn image upload, for the variant `linkedInImageUploadVariantKey` names. Each variant
+   * holds its own finished upload (`LinkedInVariantDraft.imageAssetId`), which is what is sent (see
+   * `linkedInVariantsForCreate`): an upload made for this brief, and nothing else, since LinkedIn
+   * takes no image URL. ONE upload runs at a time, because `uploadCreativeAsset('linkedin')` cancels
+   * the previous one; otherwise the state mirrors the Meta fields above one for one.
    */
-  protected readonly linkedInImageAssetId = signal('');
-  protected readonly linkedInImageAssetName = signal('');
-  protected readonly linkedInImageAssetBriefId = signal('');
+  protected readonly linkedInImageUploadVariantKey = signal('');
+  /**
+   * The one LinkedIn upload belongs to no variant on screen: the brief re-seeded the variants (new
+   * keys) while it ran. It is not cancelled, because a draft restore that follows the re-seed brings
+   * that variant back and the upload lands on it; until then it holds no picker and not Create.
+   */
+  private readonly linkedInImageUploadOrphaned = computed(() => {
+    const slotKey = this.linkedInImageUploadVariantKey();
+    return slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey);
+  });
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   private readonly linkedInImageUploadPendingName = signal('');
   private readonly linkedInImageUploadPendingBriefId = signal('');
   private readonly linkedInImageUploadFailedBriefId = signal('');
   protected readonly linkedInImageUploadError = signal('');
-  protected readonly linkedInImageFileDescribedBy = computed(() =>
-    ['linkedin-image-file-hint', 'linkedin-image-file-status', ...(this.linkedInImageUploadStatus() === 'error' ? ['linkedin-image-file-error'] : [])].join(' ')
-  );
   private linkedInImageUploadSub: Subscription | null = null;
-  /** The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief. */
-  protected readonly linkedInImagePickerDisabled = computed(() => !this.briefPersistence().briefId || this.briefPersistence().status === 'saving');
   /**
    * The X tweet image: an upload made for this brief, attached to the authored tweet as its image
    * (`twitterConfig.imageAssetId`). X takes no image URL here, so the upload is the whole control,
@@ -2292,6 +2337,38 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInTargetingProfile.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInTargetingProfile.value)),
     { initialValue: this.campaignForm.controls.linkedInTargetingProfile.value }
   );
+
+  private readonly linkedInTargetingRemovals = toSignal(
+    this.campaignForm.controls.linkedInTargetingRemovals.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInTargetingRemovals.value)),
+    { initialValue: this.campaignForm.controls.linkedInTargetingRemovals.value }
+  );
+
+  /**
+   * The configured profile the selection resolves to (#5546) — `custom` reads `cloud-native`, as
+   * campaign-service does — or `null` until the catalogue has it.
+   */
+  protected readonly linkedInSelectedTargetingProfile: Signal<LinkedInTargetingProfileConfig | null> = this.initLinkedInSelectedTargetingProfile();
+
+  /** The selected profile's member groups and skills that are KEPT after the operator's removals; `null` until it loads. */
+  protected readonly linkedInEffectiveTargeting: Signal<LinkedInTargetingFacets | null> = this.initLinkedInEffectiveTargeting();
+
+  /**
+   * The edit a create sends as `linkedInConfig.targetingProfileEdit`, or `null` when nothing the
+   * profile carries was removed — so an untouched profile sends exactly what it always did.
+   */
+  protected readonly linkedInTargetingProfileEdit: Signal<LinkedInTargetingProfileEdit | null> = this.initLinkedInTargetingProfileEdit();
+
+  /** Whether the operator holds removals at all, loaded or not — what the create gate and the reset control read. */
+  protected readonly linkedInTargetingRemovalsHeld: Signal<boolean> = this.initLinkedInTargetingRemovalsHeld();
+
+  /**
+   * Shown, not blocking, when every member group and skill is removed. campaign-service accepts it:
+   * it refuses a profile only when skills, groups AND its fixed job functions are all empty
+   * (`internal/platform/linkedin/client.go` `validatePrerequisites`), and those job functions are a
+   * constant it always adds (`internal/platform/linkedin/config.go` `jobFunctions`). The audience is
+   * then everyone in those job functions in the chosen locations, which is worth saying.
+   */
+  protected readonly linkedInTargetingEmptyWarning: Signal<boolean> = this.initLinkedInTargetingEmptyWarning();
 
   /**
    * The geo targets a Reddit dispatch will actually carry.
@@ -3379,33 +3456,31 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleImageAssetBlock: Signal<CampaignGoogleImageAssetBlock | null> = this.initGoogleImageAssetBlock();
   protected readonly googleImageAssetBlockMessage = computed(() => this.googleImageAssetBlock()?.message ?? '');
 
+  protected readonly linkedInMinVariants = LINKEDIN_MIN_VARIANTS;
+  protected readonly linkedInMaxVariants = LINKEDIN_MAX_VARIANTS;
+  /** Each LinkedIn variant as the editor shows it: its copy, its limits and its own image (#5547). */
+  protected readonly linkedInVariantViews: Signal<LinkedInVariantView[]> = this.initLinkedInVariantViews();
   /**
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
-   * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have.
+   * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
+   * blocked variant's; each variant shows its own beside its picker.
    */
-  protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = this.initLinkedInImageAssetBlock();
-  /** Whether the draft holds an uploaded LinkedIn image made for the brief now open — the only one sent. */
-  protected readonly linkedInImageAssetForThisBrief = computed(
-    () => this.linkedInImageAssetId() !== '' && this.linkedInImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
-  );
-  /** An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes. */
-  private readonly linkedInAssetWithheld = computed(
-    () => (this.linkedInImageAssetForThisBrief() || this.linkedInImageUploadStatus() === 'uploading') && !this.linkedInAssetUploadAvailable()
+  protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(
+    () => this.linkedInVariantViews().find((view) => view.imageBlock !== null)?.imageBlock ?? null
   );
   protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
-  protected readonly linkedInImageUploadStatusMessage = computed(() => {
-    if (this.linkedInImageUploadStatus() === 'uploading') return 'Uploading image…';
-    return this.linkedInImageAssetForThisBrief() ? `Uploaded: ${this.linkedInImageAssetName() || 'image'}` : '';
-  });
-  protected readonly linkedInImageUploadLiveMessage = computed(() => (this.linkedInAssetUploadAvailable() ? this.linkedInImageUploadStatusMessage() : ''));
-  /**
-   * What the variant preview says about the thumbnail each dark post will carry, read from the same
-   * condition the payload is (`linkedInImageSent`), so the preview never promises an image the
-   * request leaves out.
-   */
-  protected readonly linkedInPreviewImageLabel = computed(() =>
-    this.linkedInImageSent() ? `Image: ${this.linkedInImageAssetName() || 'uploaded image'}` : ''
+  /** Whether any variant's intro text or headline is one campaign-service would refuse or cut. */
+  protected readonly linkedInVariantTextInvalid = computed(() =>
+    this.linkedInVariantViews().some((view) => view.introTextError !== '' || view.headlineError !== '')
   );
+  /** The upload's status, announced with the variant it is for. */
+  protected readonly linkedInImageUploadLiveMessage = computed(() => {
+    if (!this.linkedInAssetUploadAvailable()) return '';
+    const views = this.linkedInVariantViews();
+    const index = views.findIndex((view) => view.key === this.linkedInImageUploadVariantKey());
+    if (index === -1 || views[index].imageStatusMessage === '') return '';
+    return `Variant ${index + 1}: ${views[index].imageStatusMessage}`;
+  });
 
   /**
    * Why Create is blocked while the tab holds X without an explicit yes from `twitterCreateEnabled`,
@@ -3667,6 +3742,18 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return 'LinkedIn Ads: set a budget of at least $1.';
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return 'LinkedIn Ads: add at least one location.';
     if (linkedInSelected && this.linkedInVariants().length === 0) return 'LinkedIn Ads: add at least one ad variant.';
+    if (linkedInSelected && this.linkedInVariants().length > LINKEDIN_MAX_VARIANTS)
+      return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
+    // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
+    if (linkedInSelected && this.linkedInVariantTextInvalid()) return 'LinkedIn Ads: fix the ad variant text.';
+    // Removals the create cannot carry (#5546) — the legacy creator would drop them, and without the
+    // profile catalogue they cannot be applied — are a block rather than a silent revert to the
+    // profile as configured.
+    if (linkedInSelected && this.linkedInTargetingRemovalsHeld()) {
+      if (!this.linkedInTargetingEditAvailable()) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
+      if (!this.linkedInSelectedTargetingProfile())
+        return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
+    }
     // The account must be one the CATALOG confirms, not merely a non-empty string.
     //
     // `ngOnInit`'s reconciliation only runs on a successful response, so it cannot cover the two
@@ -3822,7 +3909,13 @@ export class ImplementationTabComponent implements OnInit {
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
       return 'Waiting for the Google Ads image upload to finish.';
-    if (this.showLinkedInSection() && this.linkedInAssetUploadAvailable() && this.linkedInImageUploadStatus() === 'uploading')
+    // Not for an orphaned upload, whose image has no variant to land on and no Cancel on screen.
+    if (
+      this.showLinkedInSection() &&
+      this.linkedInAssetUploadAvailable() &&
+      this.linkedInImageUploadStatus() === 'uploading' &&
+      !this.linkedInImageUploadOrphaned()
+    )
       return 'Waiting for the LinkedIn Ads image upload to finish.';
     if (this.showTwitterSection() && this.twitterCreateAvailable() && this.twitterImageUploadStatus() === 'uploading')
       return 'Waiting for the X image upload to finish.';
@@ -4665,11 +4758,15 @@ export class ImplementationTabComponent implements OnInit {
     // runs the initial load, so only later foundation switches should refetch the ad-account list.
     toObservable(this.activeFoundationSlug)
       .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => this.loadLinkedInAccounts());
+      .subscribe(() => {
+        this.loadLinkedInAccounts();
+        this.loadLinkedInTargetingProfiles();
+      });
   }
 
   public ngOnInit(): void {
     this.loadLinkedInAccounts();
+    this.loadLinkedInTargetingProfiles();
   }
 
   // === Public Methods ===
@@ -4753,7 +4850,23 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
+    // Another profile reseeds the facets: removals were made against the one being left. Compared
+    // as campaign-service resolves them, so `custom` to `cloud-native` (the same facets) keeps them.
+    const current = this.campaignForm.controls.linkedInTargetingProfile.value;
+    if (resolveLinkedInTargetingProfileId(profile) !== resolveLinkedInTargetingProfileId(current)) this.resetLinkedInTargeting();
     this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
+  }
+
+  /** Takes one member group or skill out of the selected profile (#5546). */
+  protected removeLinkedInTargetingFacet(kind: keyof LinkedInTargetingRemovals, urn: string): void {
+    const current = this.campaignForm.controls.linkedInTargetingRemovals.value;
+    if (current[kind].includes(urn)) return;
+    this.campaignForm.controls.linkedInTargetingRemovals.setValue({ ...current, [kind]: [...current[kind], urn] });
+  }
+
+  /** Back to the selected profile as configured. */
+  protected resetLinkedInTargeting(): void {
+    this.campaignForm.controls.linkedInTargetingRemovals.setValue({ skills: [], groups: [] });
   }
 
   // `setLinkedInBudget` and `setLinkedInLifetimeBudget` were removed here (LFXV2-3230), for the
@@ -4948,18 +5061,43 @@ export class ImplementationTabComponent implements OnInit {
     }
     this.emitDraft();
   }
+  /** Edit one LinkedIn variant's intro text or headline. */
+  protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline', value: string): void {
+    this.linkedInVariants.update((variants) => variants.map((variant) => (variant.key === key ? { ...variant, [field]: value } : variant)));
+    this.emitDraft();
+  }
+
+  /** Add an empty LinkedIn variant, up to `LINKEDIN_MAX_VARIANTS`. */
+  protected addLinkedInVariant(): void {
+    if (this.linkedInVariants().length >= LINKEDIN_MAX_VARIANTS) return;
+    this.linkedInVariants.update((variants) => [...variants, this.newLinkedInVariant({ introText: '', headline: '' })]);
+    this.emitDraft();
+  }
+
+  /** Remove a LinkedIn variant, keeping at least `LINKEDIN_MIN_VARIANTS`; its upload in flight, if any, is cancelled. */
+  protected removeLinkedInVariant(key: string): void {
+    if (this.linkedInVariants().length <= LINKEDIN_MIN_VARIANTS) return;
+    if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
+    this.linkedInVariants.update((variants) => variants.filter((variant) => variant.key !== key));
+    this.emitDraft();
+  }
+
   /**
-   * Upload the chosen LinkedIn image for this brief — `onMetaImageFileChange`'s sibling, step for
-   * step, plus LinkedIn's own 5 MB limit: campaign-service refuses a larger image at dispatch, so it
-   * is refused here before anything is stored.
+   * Upload the chosen LinkedIn image for one variant of this brief — `onMetaImageFileChange`'s
+   * sibling, step for step, plus LinkedIn's own 5 MB limit: campaign-service refuses a larger image at
+   * dispatch, so it is refused here before anything is stored.
    */
-  protected onLinkedInImageFileChange(event: Event): void {
+  protected onLinkedInVariantImageFileChange(key: string, event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0] ?? null;
     input.value = '';
     if (!file) return;
+    // The picker is disabled meanwhile; a new upload would cancel the other variant's.
+    if (this.linkedInImageSlotHeldByOther(key)) return;
 
-    this.clearLinkedInImageAsset();
+    this.clearLinkedInImageUpload();
+    this.setLinkedInVariantImage(key, '', '', '');
+    this.linkedInImageUploadVariantKey.set(key);
     this.emitDraft();
 
     // A refused pick is recorded against the open brief and saved, like a failed upload: the image
@@ -4985,9 +5123,10 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /** Forget the uploaded LinkedIn image (the stored asset stays upstream, unused). */
-  protected onLinkedInImageAssetRemove(): void {
-    this.clearLinkedInImageAsset();
+  /** Forget one variant's LinkedIn image, or its upload in flight or failed (a stored asset stays upstream, unused). */
+  protected onLinkedInVariantImageRemove(key: string): void {
+    if (this.linkedInImageUploadVariantKey() === key) this.clearLinkedInImageUpload();
+    this.setLinkedInVariantImage(key, '', '', '');
     this.emitDraft();
   }
   /**
@@ -5063,7 +5202,7 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Upload the chosen X tweet image for this brief — `onLinkedInImageFileChange`'s sibling, step for
+   * Upload the chosen X tweet image for this brief — `onLinkedInVariantImageFileChange`'s sibling, step for
    * step, against X's own 5 MB limit: campaign-service refuses a larger image at dispatch.
    */
   protected onTwitterImageFileChange(event: Event): void {
@@ -6272,6 +6411,8 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
               targetingProfile: this.linkedInTargetingProfile(),
+              // Only when something was removed, so an untouched profile sends what it always did.
+              ...this.linkedInTargetingEditField(),
               variants: this.linkedInVariantsForCreate(),
               adAccountId: this.linkedInAccountId(),
               ...this.biddingField('linkedin-ads'),
@@ -7182,63 +7323,182 @@ export class ImplementationTabComponent implements OnInit {
     this.metaImageUploadFailedBriefId.set(briefId);
   }
   /**
-   * The LinkedIn variants as sent: the brief's copy, each carrying the uploaded image when one is
-   * sent (see `linkedInImageSent`). The asset replaces any `imageUrn` the plan named, since
-   * campaign-service refuses a variant carrying both.
+   * The LinkedIn variants as sent: each variant's copy as edited, carrying its OWN uploaded image
+   * when that goes out (`linkedInVariantImageSent`). The asset replaces any `imageUrn` the plan named,
+   * since campaign-service refuses a variant carrying both; a variant with neither sends no image
+   * field. The tab-only fields (`key`, the asset's name and brief) are never sent.
    */
   private linkedInVariantsForCreate(): LinkedInCreativeVariant[] {
-    if (!this.linkedInImageSent()) return this.linkedInVariants();
-    const imageAssetId = this.linkedInImageAssetId();
     return this.linkedInVariants().map((variant) => {
-      const sent: LinkedInCreativeVariant = { ...variant, imageAssetId };
-      delete sent.imageUrn;
-      return sent;
+      const { introText, headline } = variant;
+      if (this.linkedInVariantImageSent(variant)) return { introText, headline, imageAssetId: variant.imageAssetId };
+      return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn } : { introText, headline };
     });
   }
 
-  /** Whether the uploaded LinkedIn image goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
-  private linkedInImageSent(): boolean {
-    return this.linkedInAssetUploadAvailable() && this.linkedInImageAssetForThisBrief();
+  /** Whether a variant's upload goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
+  private linkedInVariantImageSent(variant: LinkedInVariantDraft): boolean {
+    return this.linkedInAssetUploadAvailable() && this.linkedInVariantImageForThisBrief(variant);
   }
 
-  /** `initMetaImageAssetBlock`'s sibling, for the upload alone. */
-  private initLinkedInImageAssetBlock(): Signal<CampaignLinkedInImageAssetBlock | null> {
+  /** Whether the variant holds an upload made for the brief now open — the only one sent. */
+  private linkedInVariantImageForThisBrief(variant: LinkedInVariantDraft): boolean {
+    return variant.imageAssetId !== '' && variant.imageAssetBriefId === (this.briefPersistence().briefId ?? '');
+  }
+
+  /**
+   * Whether the one LinkedIn upload belongs to ANOTHER variant and must not be replaced: still
+   * running, or failed for the open brief (whose block holds Create until it is removed). An orphaned
+   * upload (`linkedInImageUploadOrphaned`) holds nothing, so a new pick simply replaces it.
+   */
+  private linkedInImageSlotHeldByOther(key: string): boolean {
+    const slotKey = this.linkedInImageUploadVariantKey();
+    if (slotKey === '' || slotKey === key || this.linkedInImageUploadOrphaned()) return false;
+    if (this.linkedInImageUploadStatus() === 'uploading') return true;
+    const briefId = this.briefPersistence().briefId ?? '';
+    return this.linkedInImageUploadStatus() === 'error' && briefId !== '' && this.linkedInImageUploadFailedBriefId() === briefId;
+  }
+
+  private initLinkedInSelectedTargetingProfile(): Signal<LinkedInTargetingProfileConfig | null> {
     return computed(() => {
-      if (!this.showLinkedInSection()) return null;
-      const briefId = this.briefPersistence().briefId;
-      if (this.linkedInImageAssetId() !== '' && briefId && this.linkedInImageAssetBriefId() !== briefId) {
-        return {
-          kind: 'otherBrief',
-          message: 'The uploaded LinkedIn image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.',
-        };
-      }
-      if (this.linkedInImageUploadStatus() === 'error' && briefId && this.linkedInImageUploadFailedBriefId() === briefId) {
-        return {
-          kind: 'uploadFailed',
-          message: `The LinkedIn image upload did not complete: ${this.linkedInImageUploadError()} Remove it, or choose the image again.`,
-        };
-      }
-      if (!this.linkedInAssetWithheld()) return null;
-      if (this.linkedInAssetUploadEnabled() === false) {
-        return {
-          kind: 'unsupported',
-          message: 'LinkedIn ad images are not available on this deployment, so the image cannot be sent. Remove it to create the campaign without it.',
-        };
-      }
-      if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
-      }
-      if (!this.briefPersistence().briefId) {
-        return {
-          kind: 'unsaved',
-          message: "LinkedIn ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
-        };
-      }
-      return {
-        kind: 'failed',
-        message: 'Could not confirm that LinkedIn ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
-      };
+      const id = resolveLinkedInTargetingProfileId(this.linkedInTargetingProfile());
+      return this.linkedInTargetingProfiles().find((profile) => profile.id === id) ?? null;
     });
+  }
+
+  private initLinkedInEffectiveTargeting(): Signal<LinkedInTargetingFacets | null> {
+    return computed(() => {
+      const profile = this.linkedInSelectedTargetingProfile();
+      return profile ? linkedInTargetingAfterRemovals(profile, this.linkedInTargetingRemovals() ?? { skills: [], groups: [] }) : null;
+    });
+  }
+
+  private initLinkedInTargetingProfileEdit(): Signal<LinkedInTargetingProfileEdit | null> {
+    return computed(() => {
+      const profile = this.linkedInSelectedTargetingProfile();
+      const effective = this.linkedInEffectiveTargeting();
+      if (!profile || !effective) return null;
+      if (effective.skills.length === profile.skills.length && effective.groups.length === profile.groups.length) return null;
+      return { id: profile.id, skills: effective.skills, groups: effective.groups };
+    });
+  }
+
+  private initLinkedInTargetingRemovalsHeld(): Signal<boolean> {
+    return computed(() => {
+      const removals = this.linkedInTargetingRemovals();
+      return !!removals && removals.skills.length + removals.groups.length > 0;
+    });
+  }
+
+  private initLinkedInTargetingEmptyWarning(): Signal<boolean> {
+    return computed(() => {
+      const effective = this.linkedInEffectiveTargeting();
+      return !!effective && this.linkedInTargetingProfileEdit() !== null && effective.skills.length === 0 && effective.groups.length === 0;
+    });
+  }
+
+  private initLinkedInVariantViews(): Signal<LinkedInVariantView[]> {
+    return computed(() => {
+      const slotKey = this.linkedInImageUploadVariantKey();
+      const uploading = this.linkedInImageUploadStatus() === 'uploading';
+      const failed = this.linkedInImageUploadStatus() === 'error';
+      // The picker is offered only for a saved brief that is not mid-save, since an upload belongs to one brief.
+      const pickerBlocked = !this.briefPersistence().briefId || this.briefPersistence().status === 'saving';
+      const variants = this.linkedInVariants();
+      const slotIndex = variants.findIndex((variant) => variant.key === slotKey);
+      return variants.map((variant, index): LinkedInVariantView => {
+        const ownsSlot = slotKey === variant.key;
+        const imageUploading = ownsSlot && uploading;
+        const forThisBrief = this.linkedInVariantImageForThisBrief(variant);
+        const heldByOther = this.linkedInImageSlotHeldByOther(variant.key);
+        const imagePickerNote = heldByOther ? `Finish or remove the image for variant ${slotIndex + 1} first.` : '';
+        let imageStatusMessage = '';
+        if (imageUploading) imageStatusMessage = 'Uploading image…';
+        else if (forThisBrief) imageStatusMessage = `Uploaded: ${variant.imageAssetName || 'image'}`;
+        return {
+          key: variant.key,
+          introText: variant.introText,
+          headline: variant.headline,
+          introTextLength: linkedInCreativeTextLength(variant.introText),
+          headlineLength: linkedInCreativeTextLength(variant.headline),
+          introTextError: linkedInVariantTextError('introText', variant.introText) ?? '',
+          headlineError: linkedInVariantTextError('headline', variant.headline) ?? '',
+          imageStatusMessage,
+          imageUploading,
+          imageHeld: variant.imageAssetId !== '',
+          imageError: ownsSlot && failed ? this.linkedInImageUploadError() : '',
+          imagePickerDisabled: pickerBlocked || heldByOther,
+          imagePickerNote,
+          imageBlock: this.linkedInVariantImageBlock(variant, index, imageUploading),
+        };
+      });
+    });
+  }
+
+  /** `initMetaImageAssetBlock`'s sibling, for one variant's upload alone. */
+  private linkedInVariantImageBlock(variant: LinkedInVariantDraft, index: number, imageUploading: boolean): CampaignLinkedInImageAssetBlock | null {
+    if (!this.showLinkedInSection()) return null;
+    const n = index + 1;
+    const briefId = this.briefPersistence().briefId;
+    if (variant.imageAssetId !== '' && briefId && variant.imageAssetBriefId !== briefId) {
+      return {
+        kind: 'otherBrief',
+        message: `The image for LinkedIn variant ${n} was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again.`,
+      };
+    }
+    if (
+      this.linkedInImageUploadVariantKey() === variant.key &&
+      this.linkedInImageUploadStatus() === 'error' &&
+      briefId &&
+      this.linkedInImageUploadFailedBriefId() === briefId
+    ) {
+      return {
+        kind: 'uploadFailed',
+        message: `The image upload for LinkedIn variant ${n} did not complete: ${this.linkedInImageUploadError()} Remove it, or choose the image again.`,
+      };
+    }
+    // An upload for the open brief (made, or still running) the request cannot carry: the upload capability is not an explicit yes.
+    const withheld = (this.linkedInVariantImageForThisBrief(variant) || imageUploading) && !this.linkedInAssetUploadAvailable();
+    if (!withheld) return null;
+    if (this.linkedInAssetUploadEnabled() === false) {
+      return {
+        kind: 'unsupported',
+        message: `LinkedIn ad images are not available on this deployment, so the image for variant ${n} cannot be sent. Remove it to create the campaign without it.`,
+      };
+    }
+    if (this.createCapabilityRead() === 'pending') {
+      return { kind: 'pending', message: 'Checking LinkedIn ad image support…' };
+    }
+    if (!briefId) {
+      return {
+        kind: 'unsaved',
+        message: "LinkedIn ad image support can't be checked until this brief is saved. Save the brief, or remove the image.",
+      };
+    }
+    return {
+      kind: 'failed',
+      message: `Could not confirm that LinkedIn ad images are supported, so the image for variant ${n} cannot be sent yet. Retry the check, or remove the image.`,
+    };
+  }
+
+  /** A LinkedIn variant for the editor, with a fresh key and no upload. */
+  private newLinkedInVariant(copy: LinkedInCreativeVariant): LinkedInVariantDraft {
+    return {
+      key: `linkedin-variant-${++linkedInVariantKeySequence}`,
+      introText: copy.introText,
+      headline: copy.headline,
+      ...(copy.imageUrn ? { imageUrn: copy.imageUrn } : {}),
+      imageAssetId: '',
+      imageAssetName: '',
+      imageAssetBriefId: '',
+    };
+  }
+
+  /** Set (or, with `''`, clear) one variant's upload. */
+  private setLinkedInVariantImage(key: string, imageAssetId: string, imageAssetName: string, imageAssetBriefId: string): void {
+    this.linkedInVariants.update((variants) =>
+      variants.map((variant) => (variant.key === key ? { ...variant, imageAssetId, imageAssetName, imageAssetBriefId } : variant))
+    );
   }
 
   /** `followMetaImageUpload`'s sibling. */
@@ -7257,9 +7517,10 @@ export class ImplementationTabComponent implements OnInit {
           this.emitDraft();
           return;
         }
-        this.linkedInImageAssetId.set(asset.id);
-        this.linkedInImageAssetName.set(fileName);
-        this.linkedInImageAssetBriefId.set(briefId);
+        // Onto the variant the image was chosen for, and only that one. Gone (the brief re-seeded the
+        // variants), the image has nowhere to go and the upload is simply over.
+        const key = this.linkedInImageUploadVariantKey();
+        if (this.linkedInVariants().some((variant) => variant.key === key)) this.setLinkedInVariantImage(key, asset.id, fileName, briefId);
         this.linkedInImageUploadStatus.set('idle');
         this.creativeLibraryRevision.update((revision) => revision + 1);
         this.emitDraft();
@@ -7291,17 +7552,16 @@ export class ImplementationTabComponent implements OnInit {
     this.followLinkedInImageUpload(upload$, briefId, fileName);
   }
 
-  private clearLinkedInImageAsset(): void {
+  /** Cancel and forget the one LinkedIn upload, in flight or failed. A variant's finished upload is untouched. */
+  private clearLinkedInImageUpload(): void {
     this.linkedInImageUploadSub?.unsubscribe();
     this.linkedInImageUploadSub = null;
     if (this.linkedInImageUploadStatus() === 'uploading' || this.linkedInImageUploadPendingName() !== '') {
       this.campaignService.cancelCreativeAssetUpload('linkedin');
     }
+    this.linkedInImageUploadVariantKey.set('');
     this.linkedInImageUploadPendingName.set('');
     this.linkedInImageUploadPendingBriefId.set('');
-    this.linkedInImageAssetId.set('');
-    this.linkedInImageAssetName.set('');
-    this.linkedInImageAssetBriefId.set('');
     this.linkedInImageUploadStatus.set('idle');
     this.linkedInImageUploadError.set('');
     this.linkedInImageUploadFailedBriefId.set('');
@@ -7398,7 +7658,7 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
-  /** `initLinkedInImageAssetBlock`'s sibling, for the tweet image. */
+  /** `linkedInVariantImageBlock`'s sibling, for the tweet image. */
   private initTwitterImageAssetBlock(): Signal<CampaignTwitterImageAssetBlock | null> {
     return computed(() => {
       if (!this.showTwitterSection()) return null;
@@ -7531,6 +7791,14 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   private failLinkedInImageUpload(message: string, briefId = ''): void {
+    // A failure for a variant that no longer exists (the brief re-seeded the variants mid-upload) has
+    // no variant to show it on and no Remove to clear it, so recording it would hold every other
+    // picker. The slot is freed instead.
+    const slotKey = this.linkedInImageUploadVariantKey();
+    if (slotKey !== '' && !this.linkedInVariants().some((variant) => variant.key === slotKey)) {
+      this.clearLinkedInImageUpload();
+      return;
+    }
     this.linkedInImageUploadStatus.set('error');
     this.linkedInImageUploadError.set(message);
     this.linkedInImageUploadFailedBriefId.set(briefId);
@@ -7876,6 +8144,49 @@ export class ImplementationTabComponent implements OnInit {
     return serverAuthoredMessage(err, `The image could not be uploaded. Try again, or ${alternative}.`);
   }
 
+  /**
+   * The targeting profile catalogue (#5546). The BFF serves the mounted ConfigMap and ignores the
+   * project, but the route sits behind `requireCampaignManager`, which reads the project and can
+   * answer 403 for a foundation the caller doesn't manage. So it reloads on a foundation switch
+   * too, clearing an earlier failure. A failure leaves the list empty and says so; `canSubmit` then
+   * blocks a create only if removals are held.
+   */
+  private loadLinkedInTargetingProfiles(): void {
+    // Stamp the slug as `loadLinkedInAccounts` does: a late answer for the previous foundation must
+    // not overwrite (or fail) the load made for the current one.
+    const requestedSlug = this.activeFoundationSlug();
+    // Drop the previous foundation's catalogue too: left in place, a failed reload would still show
+    // its profiles and hide the failure (lfx-one review 3 on #5631).
+    this.linkedInTargetingProfiles.set([]);
+    this.linkedInTargetingProfilesLoading.set(true);
+    this.linkedInTargetingProfilesFailed.set(false);
+    this.campaignService
+      .getLinkedInTargetingProfiles(requestedSlug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (profiles) => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInTargetingProfiles.set(profiles);
+          this.linkedInTargetingProfilesLoading.set(false);
+        },
+        error: () => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInTargetingProfilesFailed.set(true);
+          this.linkedInTargetingProfilesLoading.set(false);
+        },
+      });
+  }
+
+  /** `{ targetingProfileEdit }` when the operator removed something from the selected profile, else nothing. */
+  private linkedInTargetingEditField(): { targetingProfileEdit?: LinkedInTargetingProfileEdit } {
+    const edit = this.linkedInTargetingProfileEdit();
+    return edit ? { targetingProfileEdit: edit } : {};
+  }
+
   private loadLinkedInAccounts(): void {
     // Stamp the slug this request was made for — a foundation switch fires a new request before
     // the previous one resolves, and `takeUntilDestroyed` alone doesn't cancel it (the component
@@ -8006,6 +8317,8 @@ export class ImplementationTabComponent implements OnInit {
       linkedInAccountId: draft.linkedInAccountId,
       linkedInGeoTargets: draft.linkedInGeoTargets,
       linkedInTargetingProfile: draft.linkedInTargetingProfile,
+      // Absent on a draft saved before #5546, which removed nothing.
+      linkedInTargetingRemovals: draft.linkedInTargetingRemovals ?? { skills: [], groups: [] },
     });
 
     // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
@@ -8314,12 +8627,13 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.metaImageUploadPendingName) {
       this.resumeMetaImageUpload(draft.metaImageUploadPendingName, draft.metaImageUploadPendingBriefId ?? '');
     }
-    // The LinkedIn image, on the Meta upload's terms above.
-    if (draft.linkedInImageAssetId !== undefined) {
-      this.linkedInImageAssetId.set(draft.linkedInImageAssetId);
-      this.linkedInImageAssetName.set(draft.linkedInImageAssetName ?? '');
-      this.linkedInImageAssetBriefId.set(draft.linkedInImageAssetBriefId ?? '');
+    // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
+    // entry copied, so the parent's draft is never reachable from the editor.
+    if (Array.isArray(draft.linkedInVariants)) {
+      this.linkedInVariants.set(draft.linkedInVariants.map((variant) => ({ ...variant })));
     }
+    // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
+    this.linkedInImageUploadVariantKey.set(draft.linkedInImageUploadVariantKey ?? '');
     if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
       this.failLinkedInImageUpload(draft.linkedInImageUploadFailedMessage, draft.linkedInImageUploadFailedBriefId);
     }
@@ -8666,6 +8980,7 @@ export class ImplementationTabComponent implements OnInit {
       linkedInAccountId: form.linkedInAccountId,
       linkedInGeoTargets: form.linkedInGeoTargets,
       linkedInTargetingProfile: form.linkedInTargetingProfile,
+      linkedInTargetingRemovals: form.linkedInTargetingRemovals,
       eventSlug: form.eventSlug,
       // Every creative group, raw: each channel's image creative and Demand Gen's video ad. Named here
       // for the same reason every field above is: this emit is an object literal, so a nested group
@@ -8796,19 +9111,20 @@ export class ImplementationTabComponent implements OnInit {
       // not show them re-making. The Reddit objective and post fields fail the same way, buying a
       // different campaign or none at all.
       //
-      // The brief-derived ARRAYS are deliberately NOT here — `metaVariants`, `linkedInVariants`,
-      // `redditVariants` and the four Reddit targeting lists. They have no editor: the full set of
-      // event bindings in this component's template contains no handler that writes any of them,
-      // and `populateFromBrief` is now their ONLY writer — `applyDraft` no longer has a restore
-      // arm for any of the seven, which is exactly what this change removed. Carrying them made
-      // the draft round-trip the brief's own recommendation back to itself.
+      // The brief-derived ARRAYS are deliberately NOT here — `metaVariants`, `redditVariants` and
+      // the four Reddit targeting lists. They have no editor: the full set of event bindings in
+      // this component's template contains no handler that writes any of them, and
+      // `populateFromBrief` is now their ONLY writer — `applyDraft` no longer has a restore arm for
+      // any of the six, which is exactly what this change removed. Carrying them made the draft
+      // round-trip the brief's own recommendation back to itself. (`linkedInVariants` gained an
+      // editor in #5547 and is carried below, per the last paragraph.)
       //
       // Removing them is not a loss, and that was MEASURED rather than reasoned about, because the
       // reasoning goes the wrong way twice:
       //
       //   - `applyDraft` restores on `!== undefined`, and an empty array IS defined. So carrying
       //     these made the restore overwrite the brief's fresh seed with a stale copy. Absent,
-      //     `populateFromBrief` re-seeds all seven from the brief the parent still holds.
+      //     `populateFromBrief` re-seeds all six from the brief the parent still holds.
       //   - The "a brief with no redditCopy re-seeds nothing, so an unrestored value is gone"
       //     argument does not survive being run: with no `redditCopy` the seed leaves the arrays
       //     EMPTY, so the draft carried `[]` and there was never a value to lose.
@@ -8845,9 +9161,9 @@ export class ImplementationTabComponent implements OnInit {
       metaImageUploadPendingBriefId: this.metaImageUploadPendingBriefId(),
       metaImageUploadFailedMessage: this.metaImageUploadFailedBriefId() ? this.metaImageUploadError() : '',
       metaImageUploadFailedBriefId: this.metaImageUploadFailedBriefId(),
-      linkedInImageAssetId: this.linkedInImageAssetId(),
-      linkedInImageAssetName: this.linkedInImageAssetName(),
-      linkedInImageAssetBriefId: this.linkedInImageAssetBriefId(),
+      // A real editor since #5547, so carried (see the note on the brief-derived arrays above).
+      linkedInVariants: this.linkedInVariants().map((variant) => ({ ...variant })),
+      linkedInImageUploadVariantKey: this.linkedInImageUploadVariantKey(),
       linkedInImageUploadPendingName: this.linkedInImageUploadPendingName(),
       linkedInImageUploadPendingBriefId: this.linkedInImageUploadPendingBriefId(),
       linkedInImageUploadFailedMessage: this.linkedInImageUploadFailedBriefId() ? this.linkedInImageUploadError() : '',
@@ -9012,7 +9328,7 @@ export class ImplementationTabComponent implements OnInit {
     // the campaign with no ad group, ad or keyword, so that step runs only when the operator asks.
 
     if (brief.linkedInCopy) {
-      this.linkedInVariants.set(brief.linkedInCopy.variants);
+      this.linkedInVariants.set(brief.linkedInCopy.variants.map((variant) => this.newLinkedInVariant(variant)));
       // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
       // holds nothing" guard does not survive contact with the call order (LFXV2-3230).
       //
@@ -9036,6 +9352,7 @@ export class ImplementationTabComponent implements OnInit {
       // `valueChanges` subscription returns early rather than snapshotting a half-built form.
       this.campaignForm.controls.linkedInGeoTargets.setValue(brief.linkedInCopy.recommendedGeoTargets);
       this.campaignForm.controls.linkedInTargetingProfile.setValue(brief.linkedInCopy.recommendedTargetingProfile);
+      this.resetLinkedInTargeting();
       // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
       // reaching here came straight from the generator, which always emits both; a RESTORED
       // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
@@ -9173,6 +9490,7 @@ export class ImplementationTabComponent implements OnInit {
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],
       linkedInTargetingProfile: DEFAULT_LINKEDIN_TARGETING_PROFILE,
+      linkedInTargetingRemovals: { skills: [], groups: [] },
     });
   }
 

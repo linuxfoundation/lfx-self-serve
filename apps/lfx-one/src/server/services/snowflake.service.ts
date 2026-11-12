@@ -176,14 +176,31 @@ export class SnowflakeService {
             // complete callback so generic-pool holds the connection until the statement
             // finishes, keeping pool accounting (max, maxWaitingClients, acquireTimeout)
             // accurate for in-flight queries.
+            //
+            // A statement still running when the timeout fires is cancelled, so its complete
+            // callback fires with an error and the connection goes back to the pool instead of
+            // being held until Snowflake finishes. A timeout while still waiting for a pooled
+            // connection has no statement to cancel; `timedOut` makes the callback release that
+            // connection at once, without executing, when it finally arrives. A statement is kept
+            // for cancelling only while not `completed` (`complete` may fire synchronously, before
+            // `execute` returns), so a statement that finished is never cancelled.
+            let timedOut = false;
+            let runningStatement: Pick<RowStatement, 'cancel'> | undefined;
             const executePromise = pool.use(
               (connection: Connection) =>
                 new Promise<SnowflakeQueryResult<T>>((resolve, reject) => {
-                  connection.execute({
+                  if (timedOut) {
+                    reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
+                    return;
+                  }
+                  let completed = false;
+                  const statement = connection.execute({
                     sqlText,
                     binds: binds as any[],
                     fetchAsString: options?.fetchAsString,
                     complete: (err: SnowflakeError | undefined, stmt: RowStatement, rows: any[] | undefined) => {
+                      completed = true;
+                      runningStatement = undefined;
                       if (err) {
                         reject(err);
                       } else {
@@ -195,12 +212,19 @@ export class SnowflakeService {
                       }
                     },
                   });
+                  if (!completed) {
+                    runningStatement = statement;
+                  }
                 })
             );
 
             let timeoutHandle: ReturnType<typeof setTimeout>;
             const timeoutPromise = new Promise<never>((_, reject) => {
-              timeoutHandle = setTimeout(() => reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`)), queryTimeoutMs);
+              timeoutHandle = setTimeout(() => {
+                timedOut = true;
+                reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
+                this.cancelTimedOutStatement(runningStatement, queryHash, queryTimeoutMs);
+              }, queryTimeoutMs);
             });
 
             let result: SnowflakeQueryResult<T>;
@@ -233,10 +257,15 @@ export class SnowflakeService {
             // A caller that named an object exempts only that one: a missing CORE table in the same
             // statement is a genuine fault and must keep its error telemetry and breaker failure.
             const expectedObject = options?.expectMissingObject;
+            // A list exempts only an error blaming one of its objects, as a single name does.
+            const listedMissingObject =
+              typeof expectedObject === 'object' ? expectedObject.find((name) => SnowflakeService.isMissingObjectError(error, name)) : undefined;
             const expectedMissing =
               expectedObject !== undefined &&
               expectedObject !== false &&
-              SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined);
+              (typeof expectedObject === 'object'
+                ? listedMissingObject !== undefined
+                : SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined));
             const expectedIdentifier = [options?.expectInvalidIdentifier ?? []].flat().find((identifier) => isInvalidIdentifierError(error, identifier));
             const expectedInvalidIdentifier = expectedIdentifier !== undefined;
             const poolQueueFull = isPoolQueueFullError(error);
@@ -246,7 +275,7 @@ export class SnowflakeService {
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
               if (expectedMissing) {
-                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : true);
+                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : (listedMissingObject ?? true));
               }
               if (expectedInvalidIdentifier) {
                 span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);
@@ -559,6 +588,27 @@ export class SnowflakeService {
         },
         originalError: error instanceof Error ? error : undefined,
       });
+    }
+  }
+
+  /**
+   * Cancel a statement that outlived its per-query timeout, so Snowflake stops it and its complete callback releases the
+   * pooled connection. Runs on the timer: a cancel failure is logged, never thrown. No statement (still waiting for a
+   * connection, or already complete) does nothing.
+   * @private
+   */
+  private cancelTimedOutStatement(statement: Pick<RowStatement, 'cancel'> | undefined, queryHash: string, timeoutMs: number): void {
+    if (!statement) {
+      return;
+    }
+    const warn = (err: unknown): void =>
+      logger.warning(undefined, 'snowflake_query', 'Failed to cancel a timed-out query', { query_hash: queryHash, timeout_ms: timeoutMs, err });
+    try {
+      statement.cancel((err) => {
+        if (err) warn(err);
+      });
+    } catch (error) {
+      warn(error);
     }
   }
 

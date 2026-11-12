@@ -263,6 +263,19 @@ export const GOOGLE_MIN_DAILY_BUDGET_USD = 1;
 /** The LinkedIn targeting profile the Implementation tab starts from, and resets to when a brief carries no LinkedIn copy (#4624). */
 export const DEFAULT_LINKEDIN_TARGETING_PROFILE: LinkedInTargetingProfile = 'cloud-native';
 
+/** The create request field an edited LinkedIn targeting profile rides in (#5546), as a refusal names it. */
+export const LINKEDIN_TARGETING_PROFILE_EDIT_FIELD = 'linkedInConfig.targetingProfileEdit';
+
+/**
+ * Selections campaign-service resolves to another configured profile before reading its facets:
+ * `custom` reads `cloud-native` (`internal/platform/linkedin/targeting.go` `buildTargetingCriteria`,
+ * and `validatePrerequisites` in `client.go`). The Implement tab shows, and the BFF checks an edit
+ * against, the profile the selection resolves to.
+ */
+export const LINKEDIN_TARGETING_PROFILE_ALIASES: Readonly<Partial<Record<LinkedInTargetingProfile, LinkedInTargetingProfile>>> = {
+  custom: 'cloud-native',
+};
+
 export const CAMPAIGN_JOB_POLL_INTERVAL_MS = 2000;
 
 /**
@@ -749,10 +762,29 @@ export function parseCampaignName(raw: string): ParsedCampaignName {
 
 export const LINKEDIN_API_VERSION = '202602';
 
+/**
+ * LinkedIn single image ad text limits, in characters (code points). campaign-service's
+ * `createDarkPost` (`internal/platform/linkedin/client.go`) cuts the normalized intro text at 600
+ * runes and the headline at 200 without saying so, so the Implement tab refuses longer copy rather
+ * than let campaign-service shorten it (`linkedInVariantTextError`).
+ */
 export const LINKEDIN_CHAR_LIMITS = {
   introText: 600,
   headline: 200,
 } as const;
+
+/**
+ * The fewest ad variants a LinkedIn create takes: campaign-service refuses an empty set before
+ * anything is created (`len(cfg.Variants) == 0`, `internal/dispatch/linkedin.go`).
+ */
+export const LINKEDIN_MIN_VARIANTS = 1;
+
+/**
+ * The most ad variants the Implement tab offers. campaign-service sets no cap of its own, and every
+ * variant becomes one creative, so this is LinkedIn's: at most 15 ACTIVE creatives per campaign
+ * (LinkedIn Marketing API, "Account Structure and Hierarchy").
+ */
+export const LINKEDIN_MAX_VARIANTS = 15;
 
 export const META_CHAR_LIMITS = {
   primaryText: 125,

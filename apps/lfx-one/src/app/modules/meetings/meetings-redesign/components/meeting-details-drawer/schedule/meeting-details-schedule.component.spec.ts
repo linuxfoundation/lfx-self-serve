@@ -13,8 +13,8 @@ import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeJoinService } from '../../../services/meetings-home-join.service';
-import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsScheduleComponent } from './meeting-details-schedule.component';
 
 const START = '2026-11-05T17:00:00Z';
@@ -106,7 +106,7 @@ describe('MeetingDetailsScheduleComponent', () => {
             markRegistered,
           },
         },
-        { provide: MeetingsHomeStore, useValue: { upcomingRows } },
+        { provide: MeetingDetailsSource, useValue: { upcomingRows } },
         { provide: MeetingsHomeJoinService, useValue: { joinLink: () => link } },
         { provide: UserService, useValue: { authenticated: signal(true), user: signal({ name: 'Ada Lovelace', email: 'ada@example.test' }) } },
         { provide: UiModalService, useValue: { open } },
