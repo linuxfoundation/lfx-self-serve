@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_CHAR_LIMITS } from '../constants/campaign.constants';
+import { LINKEDIN_CHAR_LIMITS, LINKEDIN_TARGETING_PROFILE_ALIASES } from '../constants/campaign.constants';
+import type {
+  LinkedInTargetingProfile,
+  LinkedInTargetingFacets,
+  LinkedInTargetingProfileConfig,
+  LinkedInTargetingRemovals,
+} from '../interfaces/campaign.interface';
 
 /**
  * LinkedIn ad copy as campaign-service sends it: trimmed, em and en dashes turned into commas, then
@@ -70,4 +76,22 @@ export function linkedInVariantTextError(field: 'introText' | 'headline', text: 
   const limit = LINKEDIN_CHAR_LIMITS[field];
   if (length > limit) return `The ${label} is ${length} characters, over LinkedIn's ${limit}. Shorten it.`;
   return null;
+}
+
+/** The configured profile id campaign-service reads the facets of for a selection (`custom` reads `cloud-native`). */
+export function resolveLinkedInTargetingProfileId(profile: LinkedInTargetingProfile): LinkedInTargetingProfile {
+  return LINKEDIN_TARGETING_PROFILE_ALIASES[profile] ?? profile;
+}
+
+/**
+ * The selected profile's facets that are KEPT once the operator's removals are taken out, in the
+ * profile's own order. An empty list here means everything was removed.
+ * A removal naming a URN the profile does not carry is ignored, so a draft restored after the
+ * ConfigMap changed cannot hide an entry it never saw.
+ */
+export function linkedInTargetingAfterRemovals(profile: LinkedInTargetingProfileConfig, removals: LinkedInTargetingRemovals): LinkedInTargetingFacets {
+  return {
+    skills: profile.skills.filter((urn) => !removals.skills.includes(urn)),
+    groups: profile.groups.filter((urn) => !removals.groups.includes(urn)),
+  };
 }

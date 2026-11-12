@@ -40,7 +40,6 @@ describe('NonMembersPeopleComponent', () => {
   let getNonMembersPeople: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
   let verdicts: boolean[];
 
@@ -69,7 +68,6 @@ describe('NonMembersPeopleComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(NonMembersPeopleComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -95,21 +93,18 @@ describe('NonMembersPeopleComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
-    counts = [];
     lifecycle = [];
     verdicts = [];
   });
 
-  it('reads the selected foundation and period, renders the page, count and note, and settles', async () => {
+  it('reads the selected foundation and period, renders the page and count, and settles', async () => {
     await render(response({ totalRecords: 388, scopeTotal: 388 }));
 
     expect(getNonMembersPeople).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', search: '', offset: 0, pageSize: 10 });
     expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
     expect(text('non-members-people-count')).toBe('388 engaged individuals');
-    expect(text('non-members-people-provisional')).toContain('provisional');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(counts).toEqual([null, 388]);
   });
 
   it('renders a person row with title, organization, meetings and last attended', async () => {
@@ -137,7 +132,7 @@ describe('NonMembersPeopleComponent', () => {
     expect(row?.textContent).not.toMatch(/@/);
   });
 
-  it('caps the search box at the length the read honours and keeps the all-time caveat out of the header', async () => {
+  it('caps the search box at the length the read honours and keeps the headers plain', async () => {
     await render();
     const headers = [...(fixture.nativeElement as HTMLElement).querySelectorAll('th')].map((th) => th.textContent?.trim());
     const input = fixture.nativeElement.querySelector('#non-members-people-search') as HTMLInputElement;
@@ -145,16 +140,6 @@ describe('NonMembersPeopleComponent', () => {
     expect(input.maxLength).toBe(100);
     expect(input.placeholder).toBe('Search person or organization…');
     expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended']);
-  });
-
-  it("gives People its own plain note on each person's organization, plus the all-time caveat", async () => {
-    await render();
-    const note = query('non-members-people-provisional');
-
-    expect(text('non-members-people-provisional')).toContain("treat each person's organization as provisional too");
-    expect(text('non-members-people-provisional')).not.toContain('never send it to sales');
-    expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')).toBeNull();
-    expect(text('non-members-people-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
   });
 
   it('re-reads a debounced, trimmed search from page 1 and writes it to the URL with the fragment kept', async () => {
@@ -197,20 +182,6 @@ describe('NonMembersPeopleComponent', () => {
     await render(response({ totalRecords: 1, scopeTotal: 1 }), { nonPeopleSearch: 'jane' });
 
     expect(text('non-members-people-count')).toBe('1 of 1 engaged individual match · clear');
-  });
-
-  it('keeps the sub-nav count through page turns and searches, blanking it only for a new period', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }));
-    counts.length = 0;
-
-    fixture.componentInstance['onTablePage']({ first: 10, rows: 10 });
-    await settle();
-    expect(counts.every((count) => count === 80)).toBe(true);
-
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
-    await settle();
-    expect(counts.at(-2)).toBeNull();
-    expect(counts.at(-1)).toBe(80);
   });
 
   it('pages through the table, including a new page size, and writes the page to the URL', async () => {
@@ -265,7 +236,6 @@ describe('NonMembersPeopleComponent', () => {
     expect(getNonMembersPeople).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30 }));
     expect(getNonMembersPeople).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(counts).toEqual([null, 34]);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonPeopleSearch: null, nonPeoplePage: 4 } }));
   });
 
@@ -284,7 +254,6 @@ describe('NonMembersPeopleComponent', () => {
     expect(verdicts).toEqual([false]);
     expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
     expect(text('non-members-people-count')).toBe('Engaged individuals not available');
-    expect(counts.at(-1)).toBeNull();
   });
 
   it('drops the "of" total from the search line when the total is unset', async () => {
@@ -307,9 +276,8 @@ describe('NonMembersPeopleComponent', () => {
   });
 
   // A failed read must not render copy that asserts the foundation had no engaged individuals.
-  it('separates a failed read from an empty one, settling it without a count', async () => {
+  it('separates a failed read from an empty one, settling it', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }));
-    counts.length = 0;
     lifecycle.length = 0;
     getNonMembersPeople.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
@@ -317,7 +285,6 @@ describe('NonMembersPeopleComponent', () => {
     await settle();
 
     expect(query('non-members-people-error')).not.toBeNull();
-    expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false, false]);
   });
@@ -327,7 +294,6 @@ describe('NonMembersPeopleComponent', () => {
     await render();
 
     expect(getNonMembersPeople).not.toHaveBeenCalled();
-    expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(text('non-members-people-count')).toBe('—');
   });

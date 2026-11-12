@@ -58,17 +58,11 @@ const PERSON: HealthMetricsNonMembersPerson = {
 };
 
 describe('buildHealthMetricsNonMembersSubNavItems', () => {
-  it('lists every section in render order, with its label', () => {
+  it('lists every section in render order, with its label and no note', () => {
     const items = buildHealthMetricsNonMembersSubNavItems();
 
     expect(items.map((item) => item.key)).toEqual(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.key));
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.label));
-  });
-
-  it('badges only the sections given a count', () => {
-    const items = buildHealthMetricsNonMembersSubNavItems({ orgs: 412 });
-
-    expect(items.map((item) => item.count)).toEqual([412, null, null]);
     expect(items.every((item) => item.note === '')).toBe(true);
   });
 });
@@ -175,7 +169,7 @@ describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
 });
 
 describe('buildHealthMetricsNonMembersConversionView', () => {
-  it('qualifies the estimate, counts the side stats and names the tier in the footnote', () => {
+  it('qualifies the estimate and counts the side stats', () => {
     const view = buildHealthMetricsNonMembersConversionView(CONVERSION);
 
     expect(view).toMatchObject({
@@ -185,11 +179,6 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
       pipelineLabel: 'Estimated pipeline',
       hasEstimate: true,
     });
-    expect(view.footnote).toEqual([
-      { text: 'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only. The ' },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ]);
     expect(view.side).toEqual([
       { key: 'high-fit', label: 'High-fit organizations', value: '2' },
       { key: 'new', label: 'New this period', value: '37' },
@@ -209,11 +198,6 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
     expect(view.pipelineValue).toBe('—');
     expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
     expect(view.hasEstimate).toBe(false);
-    expect(view.footnote).toEqual([
-      { text: 'Estimated pipeline multiplies high-fit organizations by an entry-tier fee and is indicative only. The ' },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ]);
   });
 
   it('renders a NULL count as not available but keeps a real zero', () => {

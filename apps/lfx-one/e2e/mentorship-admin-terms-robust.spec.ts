@@ -28,9 +28,13 @@ test.setTimeout(60_000);
 test.use({ viewport: { width: 1440, height: 900 } });
 
 const menuLabels = async (page: Page, termId: string): Promise<string[]> => {
-  await page.getByTestId(`mentorship-term-actions-${termId}`).getByRole('button').click();
+  const trigger = page.getByTestId(`mentorship-term-actions-${termId}`).getByRole('button');
+  await trigger.click();
+  await expect(page.getByRole('menuitem').first()).toBeVisible();
   const labels = await page.getByRole('menuitem').allInnerTexts();
-  await page.keyboard.press('Escape');
+  // Escape leaves the popup open, so the trigger closes it before the next row's menu is read.
+  await trigger.click();
+  await expect(page.getByRole('menuitem')).toHaveCount(0);
   return labels.map((label) => label.trim());
 };
 
@@ -63,7 +67,8 @@ test.describe('Admin Terms tab actions — structure', () => {
 
     const confirmation = page.locator('.p-confirmdialog');
     await expect(confirmation).toBeVisible();
-    await expect(confirmation.getByRole('button')).toHaveCount(2);
+    // The dialog also renders its own close button, so count the footer's buttons only.
+    await expect(confirmation.locator('.p-dialog-footer').getByRole('button')).toHaveCount(2);
     await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(confirmation).toHaveCount(0);
   });

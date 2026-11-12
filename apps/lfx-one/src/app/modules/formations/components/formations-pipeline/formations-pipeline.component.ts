@@ -5,7 +5,7 @@ import { Component, computed, DestroyRef, inject, linkedSignal, signal, Signal }
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -19,13 +19,17 @@ import { FormationService } from '@services/formation.service';
 import {
   FORMATION_PIPELINE_COLUMNS,
   FORMATION_PIPELINE_COPY,
-  FORMATION_PIPELINE_DEFAULT_SORT,
+  FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
   FORMATION_PIPELINE_DEFAULT_STAGE,
+  FORMATION_PIPELINE_FOUNDATION_KIND_LABELS,
+  FORMATION_PIPELINE_FOUNDATION_KINDS,
   FORMATION_PIPELINE_PAGE_SIZE,
+  FORMATION_PIPELINE_SEARCH_MAX_LENGTH,
   FORMATION_PIPELINE_STAGES,
 } from '@lfx-one/shared/constants';
 import type {
   FilterPillOption,
+  FormationPipelineFoundationKindFilter,
   FormationPipelineResponse,
   FormationPipelineSort,
   FormationPipelineSortKey,
@@ -37,18 +41,37 @@ import {
   buildPipelineCsvRows,
   downloadCsv,
   buildPipelinePillOptions,
+  buildPipelineUrlParams,
   buildPipelineStatCards,
   comparePipelineText,
   countPipelineRows,
   emptyPipelineCounts,
+  filterPipelineRowsByFoundationKind,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
+  parsePipelineUrlState,
   matchesPipelineSearch,
+  normalizePipelineSearch,
   sortPipelineRows,
   toPipelineTableRow,
 } from '@lfx-one/shared/utils';
 import type { TablePageEvent } from 'primeng/table';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
+import { TooltipModule } from 'primeng/tooltip';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  finalize,
+  map,
+  of,
+  skip,
+  startWith,
+  switchMap,
+  tap,
+} from 'rxjs';
 
 /**
  * The Pipeline tab of the LF-root Formations page (#5475): every non-Active project by stage for the formation team,
@@ -70,6 +93,7 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
     StatCardGridComponent,
     TableComponent,
     TagComponent,
+    TooltipModule,
   ],
   templateUrl: './formations-pipeline.component.html',
 })
@@ -77,33 +101,65 @@ export class FormationsPipelineComponent {
   private readonly formationService = inject(FormationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly copy = FORMATION_PIPELINE_COPY;
   protected readonly columns = FORMATION_PIPELINE_COLUMNS;
   protected readonly pageSize = FORMATION_PIPELINE_PAGE_SIZE;
+  protected readonly searchMaxLength = FORMATION_PIPELINE_SEARCH_MAX_LENGTH;
+
+  /** The filter and sort state the page opened with, read from the URL once: a shared or reloaded link reopens the same view (#5619). Unknown values fall back to the defaults. */
+  private readonly initialState = parsePipelineUrlState(this.route.snapshot.queryParamMap);
 
   protected readonly filterForm = new FormGroup({
-    search: new FormControl<string>('', { nonNullable: true }),
-    foundation: new FormControl<string | null>(null),
+    search: new FormControl<string>(this.initialState.search, { nonNullable: true }),
+    foundation: new FormControl<string | null>(this.initialState.foundationUid),
+    foundationKind: new FormControl<FormationPipelineFoundationKindFilter>(this.initialState.foundationKind, { nonNullable: true }),
   });
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   protected readonly loading = signal(true);
   /** `forbidden` is the BFF's 403 (not on the formation team); `failed` is anything else. */
   protected readonly loadError = signal<'forbidden' | 'failed' | null>(null);
-  protected readonly stage = signal<FormationPipelineStageFilter>(FORMATION_PIPELINE_DEFAULT_STAGE);
-  protected readonly sort = signal<FormationPipelineSort>(FORMATION_PIPELINE_DEFAULT_SORT);
+  protected readonly stage = signal<FormationPipelineStageFilter>(this.initialState.stage);
+  protected readonly sort = signal<FormationPipelineSort>(this.initialState.sort);
   private readonly knownFoundations = signal<ReadonlyMap<string, string>>(new Map());
+  /** Declared before `response`, whose first read can already consult it. */
+  private foundationsRequested = false;
 
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly foundationUid: Signal<string | null> = this.initFoundationUid();
+  private readonly foundationKind: Signal<FormationPipelineFoundationKindFilter> = this.initFoundationKind();
   private readonly response: Signal<FormationPipelineResponse> = this.initResponse();
 
-  /** The foundation's rows narrowed by the name search, client-side: no refetch while the rows are already loaded. */
-  private readonly searchedRows = computed(() => this.response().rows.filter((row) => matchesPipelineSearch(row.name, this.searchTerm())));
+  /** The query params for the current filters and sort; the search is the debounced term. */
+  private readonly urlParams = computed(() =>
+    buildPipelineUrlParams({
+      stage: this.stage(),
+      foundationUid: this.foundationUid(),
+      foundationKind: this.foundationKind(),
+      search: this.searchTerm(),
+      sort: this.sort(),
+    })
+  );
+
+  /** The foundation's rows narrowed by the foundation type and the name search, client-side: no refetch while the rows are already loaded. */
+  private readonly searchedRows = computed(() =>
+    filterPipelineRowsByFoundationKind(this.response().rows, this.foundationKind()).filter((row) => matchesPipelineSearch(row.name, this.searchTerm()))
+  );
   /** Stage counts over the searched rows, so the pills and stat cards agree with the table. */
   protected readonly counts = computed(() => countPipelineRows(this.searchedRows()));
-  protected readonly isFiltered = computed(() => this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE || !!this.searchTerm().trim() || !!this.foundationUid());
+  protected readonly isFiltered = computed(
+    () =>
+      this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE ||
+      !!this.searchTerm().trim() ||
+      !!this.foundationUid() ||
+      this.foundationKind() !== FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND
+  );
+  protected readonly foundationKindOptions = computed(() => [
+    { label: this.copy.allFoundationKinds, value: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND },
+    ...FORMATION_PIPELINE_FOUNDATION_KINDS.map((value) => ({ label: FORMATION_PIPELINE_FOUNDATION_KIND_LABELS[value], value })),
+  ]);
   protected readonly foundationOptions = computed(() => [
     { label: this.copy.allFoundations, value: null },
     ...[...this.knownFoundations()].map(([value, label]) => ({ label, value })).sort((a, b) => comparePipelineText(a.label, b.label)),
@@ -137,6 +193,10 @@ export class FormationsPipelineComponent {
     >;
   });
 
+  public constructor() {
+    this.initUrlSync();
+  }
+
   protected onStageChange(stage: string): void {
     this.stage.set(this.toStageFilter(stage));
   }
@@ -166,7 +226,7 @@ export class FormationsPipelineComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({ search: '', foundation: null });
+    this.filterForm.reset({ search: '', foundation: null, foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND });
     this.stage.set(FORMATION_PIPELINE_DEFAULT_STAGE);
   }
 
@@ -191,17 +251,43 @@ export class FormationsPipelineComponent {
     return toSignal(
       this.filterForm.controls.search.valueChanges.pipe(
         debounceTime(300),
-        map((value) => value.trim()),
+        map((value) => normalizePipelineSearch(value)),
         distinctUntilChanged(),
         takeUntilDestroyed(this.destroyRef)
       ),
-      { initialValue: '' }
+      { initialValue: this.initialState.search }
     );
   }
 
   private initFoundationUid(): Signal<string | null> {
-    return toSignal(this.filterForm.controls.foundation.valueChanges.pipe(startWith(null), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef)), {
-      initialValue: null,
+    return toSignal(
+      this.filterForm.controls.foundation.valueChanges.pipe(
+        startWith(this.initialState.foundationUid),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      ),
+      { initialValue: this.initialState.foundationUid }
+    );
+  }
+
+  /**
+   * Keeps the URL in step with the filters and sort (#5619): `replaceUrl`, so filtering does not fill the history; `merge`, so `tab` and
+   * `project` stay. Seeded with the params of the state this page was opened with, so reading the URL never writes it back.
+   */
+  private initUrlSync(): void {
+    toObservable(this.urlParams)
+      .pipe(
+        startWith(buildPipelineUrlParams(this.initialState)),
+        distinctUntilChanged((previous, next) => JSON.stringify(previous) === JSON.stringify(next)),
+        skip(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((queryParams) => this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true }));
+  }
+
+  private initFoundationKind(): Signal<FormationPipelineFoundationKindFilter> {
+    return toSignal(this.filterForm.controls.foundationKind.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef)), {
+      initialValue: this.initialState.foundationKind,
     });
   }
 
@@ -213,7 +299,10 @@ export class FormationsPipelineComponent {
           this.loadError.set(null);
           this.loading.set(true);
           return this.formationService.getFormationPipeline(foundationUid).pipe(
-            tap((response) => this.rememberFoundations(response, foundationUid)),
+            tap((response) => {
+              this.rememberFoundations(response, foundationUid);
+              this.loadFoundationOptionsForDeepLink(foundationUid);
+            }),
             catchError((error: unknown) => {
               console.error('[FormationsPipeline] Failed to load the pipeline', error);
               this.loadError.set(error instanceof HttpErrorResponse && error.status === 403 ? 'forbidden' : 'failed');
@@ -225,6 +314,21 @@ export class FormationsPipelineComponent {
       ),
       { initialValue: empty }
     );
+  }
+
+  /** A link that opens already scoped to a foundation has no unfiltered read to list the foundations from, so the select would show no label: read it once in the background. */
+  private loadFoundationOptionsForDeepLink(foundationUid: string | null): void {
+    if (!foundationUid || this.foundationsRequested || this.knownFoundations().size > 0) {
+      return;
+    }
+    this.foundationsRequested = true;
+    this.formationService
+      .getFormationPipeline(null)
+      .pipe(
+        catchError(() => EMPTY),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((response) => this.rememberFoundations(response, null));
   }
 
   /** The foundation options come from the unfiltered read; a foundation-scoped read would shrink the list to itself. */

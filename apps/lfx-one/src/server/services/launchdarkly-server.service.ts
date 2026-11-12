@@ -3,6 +3,7 @@
 
 import { init } from '@launchdarkly/node-server-sdk';
 import { LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS } from '@lfx-one/shared/constants';
+import { ServerFlagUserContext } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -66,10 +67,11 @@ export class LaunchDarklyServerService {
    * Whether `flagKey` is on for the authenticated user. Returns `defaultValue` when there is no
    * username on the session, no SDK key, LaunchDarkly has not connected in time, or evaluation
    * throws. Never throws.
+   * @param context replaces the username context, for a UI-only flag that must match the browser's evaluation.
    */
-  public async isFlagEnabled(req: Request, flagKey: string, defaultValue = false): Promise<boolean> {
+  public async isFlagEnabled(req: Request, flagKey: string, defaultValue = false, context?: ServerFlagUserContext): Promise<boolean> {
     try {
-      const contextKey = getEffectiveUsername(req);
+      const contextKey = context?.key ?? getEffectiveUsername(req);
       if (!contextKey) {
         logger.warning(req, 'evaluate_server_flag', 'No username on session; using flag default', { flag: flagKey });
         return defaultValue;
@@ -80,7 +82,7 @@ export class LaunchDarklyServerService {
         return defaultValue;
       }
 
-      return await client.boolVariation(flagKey, { kind: 'user', key: contextKey }, defaultValue);
+      return await client.boolVariation(flagKey, { ...context, kind: 'user', key: contextKey }, defaultValue);
     } catch (error) {
       logger.warning(req, 'evaluate_server_flag', 'Flag evaluation failed; using flag default', {
         flag: flagKey,

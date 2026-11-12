@@ -786,7 +786,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
         { provide: MessageService, useValue: { add: vi.fn() } },
         // `getLinkedInAccounts` is stubbed because `ngOnInit` calls it unconditionally, even with
         // only Meta selected; without it the component throws before any Meta assertion runs.
-        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
 
@@ -1978,6 +1978,7 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
             // `ngOnInit` resolves the LinkedIn ad-account list on mount. Stubbed empty because
             // these tests select google-ads only, so the list is never read.
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
           },
         },
       ],
@@ -2295,7 +2296,7 @@ describe('ImplementationTabComponent reddit objective', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -2414,7 +2415,7 @@ describe('ImplementationTabComponent reddit call to action', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -2900,7 +2901,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { getLinkedInAccounts: () => accountsSubject.asObservable() } },
+        { provide: CampaignService, useValue: { getLinkedInAccounts: () => accountsSubject.asObservable(), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -3102,6 +3103,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
           provide: CampaignService,
           useValue: {
             getLinkedInAccounts: () => accountsSubject.asObservable(),
+            getLinkedInTargetingProfiles: () => of([]),
             createCampaign: (request: Record<string, unknown>) => {
               posted = request;
               return of({ jobId: '' });
@@ -3381,6 +3383,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
                 { accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' },
                 { accountId: 'urn:li:sponsoredAccount:2', name: 'LF Events Account', status: 'ACTIVE' },
               ]),
+            getLinkedInTargetingProfiles: () => of([]),
           },
         },
       ],
@@ -4905,6 +4908,23 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     fixture.detectChanges();
     return c;
   }
+
+  it('folds a line break in generated creative copy into a space, in linear time however long the whitespace run', () => {
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    const fit = (values: unknown[]): string[] => c['fittingCreativeCopy']('demand-gen', 'headlines', values);
+
+    // Behaviour the fold has always had: a run holding a break is one space, any other run is kept as written.
+    expect(fit(['Join\nus', 'Join \r\n  now', 'a  b', 'Line\n\n\nbreaks'])).toEqual(['Join us', 'Join now', 'a  b', 'Line breaks']);
+
+    // The old `/\s*[\r\n]+\s*/g` took seconds per string at this size and quadruples with each doubling: a run of
+    // spaces with no break in it, as a peer's saved brief could hold. Kept small so a regression fails, not hangs.
+    const run = ' '.repeat(60_000);
+    const hostile = [run, `a${run}b`, `${run}\n${run}`];
+    const start = performance.now();
+    const fitted = fit(hostile);
+    expect(performance.now() - start).toBeLessThan(2_000);
+    expect(fitted).toEqual([]);
+  });
 
   /**
    * One config carries one channel, so a Performance Max / Video / Display selection paired with
@@ -13773,6 +13793,7 @@ describe('ImplementationTabComponent bidding control', () => {
           useValue: {
             createCampaign,
             getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+            getLinkedInTargetingProfiles: () => of([]),
           },
         },
       ],
@@ -14384,6 +14405,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             // The slot grid mounts beside the upload control and reads the plan as soon as this
             // suite's brief is saved. Every list upstream returns is non-nil, so the empty plan
             // is spelled out rather than left undefined.
@@ -15146,6 +15168,7 @@ describe('ImplementationTabComponent meta ad image', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
@@ -15389,7 +15412,7 @@ describe('ImplementationTabComponent microsoft flight dates', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -15536,7 +15559,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -15935,6 +15958,7 @@ describe('ImplementationTabComponent google stored images', () => {
             cancelCreativeAssetUpload,
             listCreativeAssets,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
             // The conversion-action picker's read (#4991): this suite is about images, so the list
             // is empty.
@@ -16594,6 +16618,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([ACCOUNT]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
@@ -17125,6 +17150,7 @@ describe('ImplementationTabComponent x create', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload: vi.fn(),
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getTwitterAdsAccounts,
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
@@ -17560,6 +17586,7 @@ describe('ImplementationTabComponent microsoft image extension', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
@@ -22465,5 +22492,427 @@ describe('ImplementationTabComponent display audiences', () => {
         expect(c['displayAudiencesBlock']()).toBeNull();
       });
     });
+  });
+});
+
+/**
+ * The LinkedIn targeting profile's facets (#5546): shown under the profile picker, each member group
+ * and skill removable, reset to the profile, reseeded on another profile, carried by the draft, and
+ * sent as `linkedInConfig.targetingProfileEdit` only when something was removed.
+ */
+describe('ImplementationTabComponent linkedin targeting facets', () => {
+  const EVENT_SLUG = 'kubecon-eu-2026';
+  // Synthetic facet ids.
+  const PROFILES = [
+    { id: 'cloud-native', label: 'Cloud Native', skills: ['urn:li:skill:101', 'urn:li:skill:102'], groups: ['urn:li:group:201', 'urn:li:group:202'] },
+    { id: 'mcp', label: 'AI / MCP', skills: ['urn:li:skill:301'], groups: ['urn:li:group:401'] },
+  ];
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+
+  const brief = (profile = 'cloud-native'): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: EVENT_SLUG, countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
+        recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+        recommendedTargetingProfile: profile,
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  interface Internals {
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void; value: unknown }> };
+    selectedPlatforms: { set(v: string[]): void };
+    createBlockedReason: () => string | null;
+    submit(): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+
+  async function mount(options: {
+    draft?: CampaignImplementationDraft | null;
+    edit?: boolean | null;
+    briefData?: CampaignBriefOutput;
+  }): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (options.draft) f.componentRef.setInput('draft', options.draft);
+    f.componentRef.setInput('linkedInTargetingEditEnabled', options.edit === undefined ? true : options.edit);
+    f.componentRef.setInput('briefData', options.briefData ?? brief());
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+    return { fixture: f, latest: () => captured };
+  }
+
+  function makeSubmittable(f: ComponentFixture<ImplementationTabComponent>): void {
+    const c = at(f);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    f.detectChanges();
+  }
+
+  function sentLinkedInConfig(): Record<string, unknown> {
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[0][0]['linkedInConfig'] as Record<string, unknown>;
+  }
+
+  const q = (f: ComponentFixture<ImplementationTabComponent>, testid: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${testid}"]`) as HTMLElement | null;
+
+  function chips(f: ComponentFixture<ImplementationTabComponent>, section: 'groups' | 'skills'): string[] {
+    const host = q(f, `implementation-linkedin-targeting-${section}`);
+    return Array.from(host?.querySelectorAll('span.font-mono') ?? []).map((el) => (el.textContent ?? '').trim());
+  }
+
+  /** The Reset control stays in the layout and is hidden with `invisible`, so the chips don't shift (frontend-checklist §8). */
+  function resetHidden(f: ComponentFixture<ImplementationTabComponent>): boolean {
+    const el = q(f, 'implementation-linkedin-targeting-reset')!;
+    const hidden = el.classList.contains('invisible');
+    expect(el.getAttribute('aria-hidden')).toBe(hidden ? 'true' : 'false');
+    expect(el.getAttribute('tabindex')).toBe(hidden ? '-1' : null);
+    return hidden;
+  }
+
+  function removeChip(f: ComponentFixture<ImplementationTabComponent>, urn: string): void {
+    const button = f.nativeElement.querySelector(`[data-testid^="implementation-linkedin-targeting-remove-"][aria-label="Remove ${urn}"]`) as HTMLButtonElement;
+    button.click();
+    f.detectChanges();
+  }
+
+  function pickProfile(f: ComponentFixture<ImplementationTabComponent>, profile: 'cloud-native' | 'mcp'): void {
+    q(f, `implementation-linkedin-profile-${profile}`)!.click();
+    f.detectChanges();
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+            getLinkedInTargetingProfiles: () => of(PROFILES),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it('seeds the facets from the selected profile, with counts', async () => {
+    const { fixture } = await mount({});
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-count')?.textContent).toContain('2 of 2');
+    expect(resetHidden(fixture)).toBe(true);
+  });
+
+  it("shows cloud-native's facets for a custom selection, which campaign-service reads as cloud-native", async () => {
+    const { fixture } = await mount({ briefData: brief('custom') });
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+  });
+
+  it('removes an entry, and resets to the profile', async () => {
+    const { fixture } = await mount({});
+
+    removeChip(fixture, 'urn:li:group:201');
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:202']);
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-count')?.textContent).toContain('1 of 2');
+    expect(resetHidden(fixture)).toBe(false);
+
+    q(fixture, 'implementation-linkedin-targeting-reset')!.click();
+    fixture.detectChanges();
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+    expect(resetHidden(fixture)).toBe(true);
+  });
+
+  it('reseeds from the newly picked profile, dropping removals made against the old one', async () => {
+    const { fixture } = await mount({});
+    removeChip(fixture, 'urn:li:skill:101');
+
+    pickProfile(fixture, 'mcp');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:301']);
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:401']);
+
+    pickProfile(fixture, 'cloud-native');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+  });
+
+  it('keeps removals when Cloud Native is picked on a custom selection, whose facets it already shows', async () => {
+    const { fixture } = await mount({ briefData: brief('custom') });
+    removeChip(fixture, 'urn:li:skill:101');
+
+    pickProfile(fixture, 'cloud-native');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:102']);
+  });
+
+  it('keeps removals when the already-selected profile is picked again', async () => {
+    const { fixture } = await mount({});
+    removeChip(fixture, 'urn:li:skill:101');
+
+    pickProfile(fixture, 'cloud-native');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:102']);
+  });
+
+  it('sends exactly what it always did when nothing was removed', async () => {
+    const { fixture } = await mount({});
+    makeSubmittable(fixture);
+    at(fixture).submit();
+
+    const config = sentLinkedInConfig();
+    expect(config).not.toHaveProperty('targetingProfileEdit');
+    expect(config['targetingProfile']).toBe('cloud-native');
+  });
+
+  it('sends nothing extra after a removal is undone by a reset', async () => {
+    const { fixture } = await mount({});
+    removeChip(fixture, 'urn:li:skill:101');
+    q(fixture, 'implementation-linkedin-targeting-reset')!.click();
+    makeSubmittable(fixture);
+    at(fixture).submit();
+
+    expect(sentLinkedInConfig()).not.toHaveProperty('targetingProfileEdit');
+  });
+
+  it('sends the edited profile, keyed by the profile campaign-service resolves the selection to', async () => {
+    const { fixture } = await mount({ briefData: brief('custom') });
+    removeChip(fixture, 'urn:li:skill:101');
+    removeChip(fixture, 'urn:li:group:202');
+    makeSubmittable(fixture);
+    at(fixture).submit();
+
+    const config = sentLinkedInConfig();
+    expect(config['targetingProfile']).toBe('custom');
+    expect(config['targetingProfileEdit']).toEqual({ id: 'cloud-native', skills: ['urn:li:skill:102'], groups: ['urn:li:group:201'] });
+  });
+
+  it('warns, without blocking, when every member group and skill is removed', async () => {
+    const { fixture } = await mount({});
+    for (const urn of ['urn:li:group:201', 'urn:li:group:202', 'urn:li:skill:101', 'urn:li:skill:102']) removeChip(fixture, urn);
+    makeSubmittable(fixture);
+
+    expect(q(fixture, 'implementation-linkedin-targeting-empty-warning')).not.toBeNull();
+    expect(at(fixture).createBlockedReason()).toBeNull();
+    at(fixture).submit();
+    expect(sentLinkedInConfig()['targetingProfileEdit']).toEqual({ id: 'cloud-native', skills: [], groups: [] });
+  });
+
+  it('shows the profile read-only while the capability is unanswered', async () => {
+    const { fixture } = await mount({ edit: null });
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+    expect(fixture.nativeElement.querySelector('[data-testid^="implementation-linkedin-targeting-remove-"]')).toBeNull();
+  });
+
+  it('blocks a create holding removals once the capability says no, rather than dropping them', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:skill:101');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const { fixture } = await mount({ draft, edit: false });
+    makeSubmittable(fixture);
+
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
+  });
+
+  it('blocks a create holding removals while the capability is unanswered, rather than reaching the BFF', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:skill:101');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const { fixture } = await mount({ draft, edit: null });
+    makeSubmittable(fixture);
+
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
+  });
+
+  it('never blocks an unedited campaign on the capability, whatever it says', async () => {
+    for (const edit of [null, false, true]) {
+      const { fixture } = await mount({ edit });
+      makeSubmittable(fixture);
+
+      expect(at(fixture).createBlockedReason()).toBeNull();
+      fixture.destroy();
+    }
+  });
+
+  it('shows the empty text for each kind once every entry of that kind is removed', async () => {
+    const { fixture } = await mount({});
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-empty')).toBeNull();
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')).toBeNull();
+
+    removeChip(fixture, 'urn:li:group:201');
+    removeChip(fixture, 'urn:li:group:202');
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-empty')?.textContent).toContain('No member groups');
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')).toBeNull();
+
+    removeChip(fixture, 'urn:li:skill:101');
+    removeChip(fixture, 'urn:li:skill:102');
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')?.textContent).toContain('No skills');
+  });
+
+  it("says the profile isn't configured when the catalogue loads without an entry for it", async () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => of([PROFILES[1]]);
+    const { fixture } = await mount({});
+
+    expect(q(fixture, 'implementation-linkedin-targeting-unconfigured')?.textContent).toContain("This profile isn't configured on this deployment.");
+    expect(q(fixture, 'implementation-linkedin-targeting-groups')).toBeNull();
+  });
+
+  it('blocks a create holding removals when the profile catalogue failed to load, rather than sending the profile unedited', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:skill:101');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => throwError(() => new Error('unavailable'));
+    const { fixture } = await mount({ draft });
+    makeSubmittable(fixture);
+
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(at(fixture).createBlockedReason()).toBe(
+      "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile."
+    );
+
+    // The reset the message asks for is offered even though the profile never loaded.
+    q(fixture, 'implementation-linkedin-targeting-reset')!.click();
+    fixture.detectChanges();
+    expect(at(fixture).createBlockedReason()).toBeNull();
+  });
+
+  it('reloads the catalogue on a foundation switch, clearing an earlier failure (a 403 on mount must not stick)', async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const calls: string[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: (slug: string) => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = (slug: string) => {
+      calls.push(slug);
+      return calls.length === 1 ? throwError(() => new HttpErrorResponse({ status: 403 })) : of(PROFILES);
+    };
+    const { fixture } = await mount({});
+
+    expect(calls).toEqual(['a']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(chips(fixture, 'groups')).toEqual([]);
+
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(calls).toEqual(['a', 'b']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).toBeNull();
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+  });
+
+  it("shows the failure, not the previous foundation's profiles, when the reload after a switch fails", async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const calls: string[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: (slug: string) => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = (slug: string) => {
+      calls.push(slug);
+      return calls.length === 1 ? of(PROFILES) : throwError(() => new HttpErrorResponse({ status: 403 }));
+    };
+    const { fixture } = await mount({});
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(calls).toEqual(['a', 'b']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(chips(fixture, 'groups')).toEqual([]);
+  });
+
+  it("drops the previous foundation's late profile answer after a foundation switch", async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const answers: Subject<unknown>[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => {
+      const subject = new Subject<unknown>();
+      answers.push(subject);
+      return subject.asObservable();
+    };
+    const { fixture } = await mount({});
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    expect(answers).toHaveLength(2);
+
+    answers[0].error(new Error('late 403 for a'));
+    fixture.detectChanges();
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).toBeNull();
+
+    answers[1].next(PROFILES);
+    answers[1].complete();
+    fixture.detectChanges();
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+  });
+
+  it('carries the removals through a tab round-trip and into the request', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:group:201');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.linkedInTargetingRemovals).toEqual({ skills: [], groups: ['urn:li:group:201'] });
+
+    const { fixture } = await mount({ draft });
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:202']);
+    makeSubmittable(fixture);
+    at(fixture).submit();
+    expect(sentLinkedInConfig()['targetingProfileEdit']).toEqual({
+      id: 'cloud-native',
+      skills: ['urn:li:skill:101', 'urn:li:skill:102'],
+      groups: ['urn:li:group:202'],
+    });
+  });
+
+  it('starts a different brief from the profile as configured', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:group:201');
+
+    first.fixture.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, slug: 'another-event' } });
+    first.fixture.detectChanges();
+
+    expect(chips(first.fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
   });
 });

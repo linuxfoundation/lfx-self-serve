@@ -13,6 +13,22 @@ export const MEMBER_IMPORT_MAX_RECORDS = 500;
 
 export const MEMBER_IMPORT_TEMPLATE_FILENAME = 'member-import-template.csv';
 
+/**
+ * File name of the invalid-rows recovery CSV: reversibly encoded member values plus
+ * `lfx_import_encoding` and `errors` columns, ready to fix and re-import.
+ */
+export const MEMBER_IMPORT_INVALID_ROWS_FILENAME = 'member-import-invalid-rows.csv';
+
+/** Reserved recovery metadata is never projected into member data. */
+export const MEMBER_IMPORT_ERRORS_COLUMN = 'errors';
+export const MEMBER_IMPORT_ENCODING_COLUMN = 'lfx_import_encoding';
+export const MEMBER_IMPORT_RECOVERY_ENCODING = 'text-v1';
+/** Readable, spreadsheet-inert encoding for formula-leading and prefix-looking recovery values. */
+export const MEMBER_IMPORT_TEXT_PREFIX = 'lfx-text:';
+
+/** Fixed page size used by the import dialog and its live page-bounds correction. */
+export const MEMBER_IMPORT_PAGE_SIZE = 10;
+
 /** Match the upstream member URL spelling before WHATWG parsing can repair malformed URLs. */
 export const MEMBER_IMPORT_HTTP_URL_PATTERN = /^https?:\/\/[^\s/$.?#][^\s]*$/;
 
@@ -26,7 +42,7 @@ export const MEMBER_IMPORT_EMAIL_PATTERN =
 /** Display the same voting choices that member validation accepts. */
 export const MEMBER_IMPORT_VOTING_STATUS_LABELS = MEMBER_FORM_VOTING_STATUSES.map(({ label }) => label).join(', ');
 
-/** Every header the member import CSV accepts, in template order. Anything else is rejected. */
+/** Every member-data column in template order. Headers match ignoring case, spaces, hyphens and underscores; other columns are ignored. */
 export const MEMBER_IMPORT_COLUMNS = [
   'email',
   'first_name',
@@ -53,17 +69,22 @@ export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
   { column: 'linkedin_profile', requiredWhen: 'never', votingOnly: false, description: 'Full LinkedIn profile URL, e.g. https://www.linkedin.com/in/…' },
   { column: 'organization_name', requiredWhen: 'organization', votingOnly: false, description: 'Up to 200 characters. Provide together with the website.' },
   { column: 'organization_website', requiredWhen: 'organization', votingOnly: false, description: 'Full https:// address. Provide together with the name.' },
-  { column: 'role', requiredWhen: 'voting', votingOnly: false, description: `Allowed values: ${MEMBER_ROLES.map(({ value }) => value).join(', ')}.` },
+  {
+    column: 'role',
+    requiredWhen: 'voting',
+    votingOnly: false,
+    description: `Allowed values: ${MEMBER_ROLES.map(({ value }) => value).join(', ')}. Not case-sensitive.`,
+  },
   { column: 'role_start_date', requiredWhen: 'never', votingOnly: false, description: 'YYYY-MM-DD. Needs a role.' },
   { column: 'role_end_date', requiredWhen: 'never', votingOnly: false, description: 'YYYY-MM-DD, not before the start date. Needs a role.' },
-  { column: 'voting_status', requiredWhen: 'voting', votingOnly: true, description: `${MEMBER_IMPORT_VOTING_STATUS_LABELS}.` },
+  { column: 'voting_status', requiredWhen: 'voting', votingOnly: true, description: `${MEMBER_IMPORT_VOTING_STATUS_LABELS}. Not case-sensitive.` },
   { column: 'voting_start_date', requiredWhen: 'never', votingOnly: true, description: 'YYYY-MM-DD. Needs a voting status.' },
   { column: 'voting_end_date', requiredWhen: 'never', votingOnly: true, description: 'YYYY-MM-DD, not before the start date. Needs a voting status.' },
   {
     column: 'appointed_by',
     requiredWhen: 'never',
     votingOnly: false,
-    description: `Allowed values: ${APPOINTED_BY_OPTIONS.map(({ value }) => value).join(', ')}. Leave blank for the default.`,
+    description: `Allowed values: ${APPOINTED_BY_OPTIONS.map(({ value }) => value).join(', ')}. Not case-sensitive. Leave blank for the default.`,
   },
 ];
 

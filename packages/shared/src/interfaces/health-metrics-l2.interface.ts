@@ -14,17 +14,31 @@ export interface HealthMetricsFootnotePart {
   route?: string;
 }
 
+/** A Health Metrics note's kind: a caution, or a verdict (healthy, needs attention, needs action, or a plain summary). */
+export type HealthMetricsNoteTone = 'caution' | 'healthy' | 'attention' | 'action' | 'summary';
+
+/** A note under a section: a caution or a verdict, with its text in runs. */
+export interface HealthMetricsNote {
+  tone: HealthMetricsNoteTone;
+  parts: readonly HealthMetricsFootnotePart[];
+}
+
+/** How a note tone renders: the `lfx-ui-note` variant, and the verdict label before the text (empty for a caution). */
+export interface HealthMetricsNoteStyle {
+  variant: 'secondary' | 'success' | 'warning' | 'error';
+  label: string;
+}
+
 /** One anchored section of a Health Metrics Level 2 tab; the key doubles as its URL fragment. */
 export interface HealthMetricsL2Section {
   key: string;
   label: string;
   heading: string;
   description: string;
-  /** Empty renders no footnote. */
-  footnote: readonly HealthMetricsFootnotePart[];
-  footnoteCaution: boolean;
-  /** A pill beside the heading, e.g. for figures still pending validation. */
-  headingBadge?: string;
+  /** A caution or verdict under the section's body. */
+  note?: HealthMetricsNote;
+  /** Marks figures still pending validation with a Provisional badge beside the heading. */
+  provisional?: boolean;
   /** What the section shows once it settles with nothing for the period. */
   empty: HealthMetricsL2SectionEmpty;
 }
@@ -83,12 +97,10 @@ export interface HealthMetricsL2SectionView extends HealthMetricsL2Section {
   headingId: string;
 }
 
-/** Sub-nav badge for one section: a count plus an optional qualifier note. */
+/** Sub-nav entry for one section, with an optional warning note. */
 export interface HealthMetricsL2SubNavItem {
   key: string;
   label: string;
-  /** `null` renders no badge — an unresolved total, or a section the design gives none. */
-  count: number | null;
   /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
 }
@@ -107,4 +119,37 @@ export interface HealthMetricsChartTipRowView {
 export interface HealthMetricsChartTipView {
   title: string;
   rows: HealthMetricsChartTipRowView[];
+}
+
+/** How a metrics row colours a trend: a rise, a fall, flat or not available, or plain context in place of a change. */
+export type HealthMetricsMetricTrendTone = 'up' | 'down' | 'flat' | 'context';
+
+/** A metrics row item's 120 × 4 bar with its caption. */
+export interface HealthMetricsMetricBar {
+  /** Fill width, 0 to 100. */
+  pct: number;
+  /** Tailwind background class for the fill, such as `bg-blue-500`. */
+  fillClass: string;
+  /** Text after the bar, such as `{N} of {M}`. */
+  label: string;
+}
+
+/** One headline number in the drill-down tabs' shared metrics row. */
+export interface HealthMetricsMetricItem {
+  key: string;
+  label: string;
+  value: string;
+  /** Signed change under the value, such as `+12%`, or plain context when `trendTone` is `context`. */
+  trend?: string;
+  trendTone?: HealthMetricsMetricTrendTone;
+  /** Tailwind background class for the 8px status dot before the label, such as `bg-emerald-500`. */
+  dotClass?: string;
+  /** Help text behind the question mark after the label. */
+  tip?: string;
+  /** Muted line under the value, such as ` vs {Month}`. */
+  description?: string;
+  /** Coloured lead before the description, such as `+{N}%`. */
+  descriptionLead?: string;
+  descriptionLeadTone?: 'up' | 'down';
+  bar?: HealthMetricsMetricBar;
 }

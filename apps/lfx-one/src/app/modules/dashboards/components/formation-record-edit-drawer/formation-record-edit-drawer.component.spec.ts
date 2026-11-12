@@ -30,6 +30,7 @@ function stored(overrides: Partial<Project> = {}): Project {
 /** The drawer keeps its form state in protected signals; tests drive them the way the bound uikit controls do. */
 interface DrawerState {
   stage: { (): string | null; set(value: string | null): void };
+  stageOptions(): { value: string; label: string; disabled: boolean }[];
   legalEntityType: { set(value: string | null): void };
   legalEntityName: { set(value: string): void };
   dissolutionDate: { set(value: string): void };
@@ -90,6 +91,20 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(getProjectRecord).toHaveBeenCalledWith('proj-1');
     expect(state().stage()).toBe('Formation - Engaged');
     expect(query('[data-testid="formation-record-edit-loading"]')).toBeNull();
+  });
+
+  // #5619: the formation team calls a v2 `Prospect` "Draft"; the stored value never changes.
+  it('shows a stored Prospect stage as Draft while keeping its value', async () => {
+    await render({ project: stored({ stage: 'Prospect' }) });
+
+    expect(state().stage()).toBe('Prospect');
+    expect(state().stageOptions()[0]).toEqual({ value: 'Prospect', label: 'Draft', disabled: true });
+    expect(
+      state()
+        .stageOptions()
+        .slice(1)
+        .every((option) => option.label === option.value)
+    ).toBe(true);
   });
 
   it('sends only the fields that changed', async () => {
@@ -164,14 +179,14 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(updateFormationRecord).not.toHaveBeenCalled();
   });
 
-  it('asks for confirmation before Active, naming the checklist effect and open required count, then saves on confirm', async () => {
+  it('asks for confirmation before Active, naming the formation-items effect and open required count, then saves on confirm', async () => {
     const { updateFormationRecord } = await render({ openRequiredCount: 3 });
     state().stage.set('Active');
 
     await save();
 
     const confirmation = query('[data-testid="formation-record-confirmation"]');
-    expect(confirmation?.textContent).toContain('completes its formation checklist');
+    expect(confirmation?.textContent).toContain('completes its formation.');
     expect(confirmation?.textContent).toContain('3 required items are still open');
     expect(updateFormationRecord).not.toHaveBeenCalled();
 
@@ -180,14 +195,14 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(updateFormationRecord).toHaveBeenCalledWith('proj-1', { stage: 'Active' });
   });
 
-  it('describes Formation - Disengaged as freezing the checklist', async () => {
+  it('describes Formation - Disengaged as freezing the formation items', async () => {
     await render({ openRequiredCount: 1 });
     state().stage.set('Formation - Disengaged');
 
     await save();
 
     const text = query('[data-testid="formation-record-confirmation"]')?.textContent ?? '';
-    expect(text).toContain('freezes its formation checklist');
+    expect(text).toContain('freezes its formation items');
     expect(text).toContain('1 required item is still open');
   });
 

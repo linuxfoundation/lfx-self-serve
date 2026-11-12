@@ -146,6 +146,53 @@ describe('ImportMembersDialogComponent', () => {
     await fixture.whenStable();
   }
 
+  function pillLabels(): string[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="import-members-status-filter"] button') as NodeListOf<HTMLElement>).map(
+      (pill) => pill.textContent?.trim() ?? ''
+    );
+  }
+
+  /** First-column (Row) values of the table rows currently shown. */
+  function visibleRowNumbers(): string[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="import-members-row-"]') as NodeListOf<HTMLElement>)
+      .filter((row) => row.tagName === 'TR')
+      .map((row) => row.querySelector('td')?.textContent?.trim() ?? '');
+  }
+
+  async function selectStatus(status: string): Promise<void> {
+    query(`filter-pill-${status}`)?.click();
+    await render();
+  }
+
+  /** Clicks Download invalid rows and captures the CSV that downloadCsv hands to the browser download APIs. */
+  async function captureInvalidRowsDownload(): Promise<{ filename: string; rows: string[][]; csv: string }> {
+    let blob: Blob | undefined;
+    let filename: string | undefined;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = ((captured: Blob) => {
+      blob = captured;
+      return 'blob:mock-url';
+    }) as typeof URL.createObjectURL;
+    URL.revokeObjectURL = (() => undefined) as typeof URL.revokeObjectURL;
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      filename = this.download;
+    });
+    try {
+      query('import-members-download-invalid-btn')?.querySelector('button')?.click();
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = originalCreateObjectURL;
+      URL.revokeObjectURL = originalRevokeObjectURL;
+    }
+    if (!blob || filename === undefined) {
+      throw new Error('Download invalid rows did not trigger a download');
+    }
+    // Plain split is only for the comma-free download assertions; round-trip tests use raw CSV.
+    const text = (await blob.text()).replace(new RegExp(String.fromCharCode(0xfeff)), '');
+    return { filename, rows: text.split('\r\n').map((line) => line.split(',')), csv: text };
+  }
+
   beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -179,9 +226,11 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-row-4')?.textContent).toContain('Already a member of this group.');
       expect(query('import-members-row-5')?.textContent).toContain('Duplicate of row 2.');
       expect(query('import-members-status')?.textContent).toContain('1 ready, 1 invalid, 2 skipped.');
-      expect((query('import-members-submit-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
-
-      component.startImport();
+      expect(pillLabels()).toEqual(['All (4)', 'Ready (1)', 'Invalid (1)', 'Skipped (2)']);
+      expect(query('import-members-invalid-help')?.textContent).toContain('1 invalid row will be skipped.');
+      expect(query('import-members-download-invalid-btn')).not.toBeNull();
+      expect((query('import-members-submit-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      expect(query('import-members-submit-btn')?.textContent).toContain('Add 1 member (skip 1 invalid)');
       expectNothingWritten();
     });
 
@@ -263,10 +312,10 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it('recovers from a rejected file when a corrected file is chosen', async () => {
-      await upload('email,permission\nada@example.com,manage');
+      await upload('Email,email\nada@example.com,ada@example.com');
       await render();
       expect(component.phase()).toBe('select');
-      expect(query('import-members-file-errors')?.textContent).toContain('Unknown columns: "permission"');
+      expect(query('import-members-file-errors')?.textContent).toContain('The column "email" appears more than once.');
 
       await upload('email\nada@example.com', 'fixed.csv');
       await render();
@@ -275,13 +324,54 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.fileName()).toBe('fixed.csv');
     });
 
-    it.each([
-      ['a non-CSV file', 'email\nada@example.com', 'members.xlsx', 'Choose a .csv file'],
-      ['malformed UTF-8', new Uint8Array([0x65, 0x6d, 0x61, 0x69, 0x6c, 0x0a, 0xc3, 0x28]), 'members.csv', 'could not be read as UTF-8'],
-    ])('rejects %s before previewing', async (_label, content, name, message) => {
-      await upload(content, name);
+    it('rejects a non-CSV file before previewing', async () => {
+      await upload('email\nada@example.com', 'members.xlsx');
       expect(component.rows()).toEqual([]);
-      expect(component.fileErrors()[0]).toContain(message);
+      expect(component.fileErrors()[0]).toContain('Choose a .csv file');
+    });
+
+    it('previews flexible headers and values, listing ignored columns in a notice', async () => {
+      await upload('Email,First Name,Last Name,Notes,Role\nada@example.com,Ada,Lovelace,met at summit,chair');
+      await render();
+
+      expect(component.phase()).toBe('preview');
+      expect(component.fileErrors()).toEqual([]);
+      expect(component.readyCount()).toBe(1);
+      expect(component.rows()[0].cells).toEqual({ email: 'ada@example.com', first_name: 'Ada', last_name: 'Lovelace', role: 'Chair' });
+      expect(query('import-members-row-2')?.textContent).toContain('Chair');
+      const notices = query('import-members-file-notices');
+      expect(notices?.getAttribute('role')).toBeNull();
+      expect(notices?.textContent).toContain("Ignored columns: Notes. The import doesn't use them.");
+      expect(query('import-members-status')?.getAttribute('aria-live')).toBe('polite');
+      expect(query('import-members-status')?.textContent).toContain("1 ready, 0 invalid, 0 skipped. Ignored columns: Notes. The import doesn't use them.");
+      expect(notices?.textContent).not.toContain('UTF-8');
+    });
+
+    it('reads a non-UTF-8 file as Windows-1252 and says so in the preview', async () => {
+      await upload(new Uint8Array([...new TextEncoder().encode('email,first_name\nada@example.com,Jos'), 0xe9]));
+      await render();
+
+      expect(component.phase()).toBe('preview');
+      expect(component.rows()[0].cells.first_name).toBe('José');
+      expect(query('import-members-row-2')?.textContent).toContain('José');
+      expect(component.fileNotices()).toEqual([
+        "This file wasn't saved as UTF-8, so it was read as Windows (Western European) text. Check that names with accents look right before adding.",
+      ]);
+      expect(query('import-members-file-notices')?.textContent).toContain('read as Windows (Western European) text');
+      expect(query('import-members-status')?.textContent).toContain(component.fileNotices()[0]);
+    });
+
+    it('clears file notices when a different file is chosen', async () => {
+      await upload(new Uint8Array([...new TextEncoder().encode('email,notes\nada@example.com,Jos'), 0xe9]));
+      await render();
+      expect(component.fileNotices()).toHaveLength(2);
+
+      await upload('email\ngrace@example.com', 'clean.csv');
+      await render();
+      expect(component.phase()).toBe('preview');
+      expect(component.fileNotices()).toEqual([]);
+      expect(query('import-members-file-notices')).toBeNull();
+      expect(query('import-members-status')?.textContent?.trim()).toBe('1 ready, 0 invalid, 0 skipped.');
     });
 
     it('rejects a file over the size limit without reading it', async () => {
@@ -377,13 +467,43 @@ describe('ImportMembersDialogComponent', () => {
       expectNothingWritten();
     });
 
-    it('blocks collection until every invalid row is corrected or removed', async () => {
+    it('collects only ready rows and skips invalid ones', async () => {
       await setup(VOTING_GROUP, [], [], true);
-      await upload('email,organization_name,organization_website,role,voting_status\nada@example.com,Example Org,https://org.example,None,Invalid');
-      component.startImport();
+      await upload(
+        [
+          'email,organization_name,organization_website,role,voting_status',
+          'ada@example.com,Example Org,https://org.example,None,Invalid',
+          'grace@example.com,Example Org,https://org.example,None,Observer',
+        ].join('\n')
+      );
+      await render();
       expect(component.invalidCount()).toBe(1);
-      expect(dialogRef.close).not.toHaveBeenCalled();
+      expect(query('import-members-submit-btn')?.textContent).toContain('Import 1 member (skip 1 invalid)');
+
+      query('import-members-submit-btn')?.querySelector('button')?.click();
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([
+        {
+          email: 'grace@example.com',
+          organization: { id: null, name: 'Example Org', website: 'https://org.example' },
+          role: { name: 'None' },
+          voting: { status: 'Observer' },
+          createOptions: { skipNotification: true },
+          pendingInviteUids: [],
+        },
+      ]);
       expectNothingWritten();
+    });
+
+    it('keeps the import disabled when every row is invalid but still offers the invalid rows', async () => {
+      await setup(OPEN_GROUP, [], [], true);
+      await upload('email\nnot-an-email\nalso-bad');
+      await render();
+      expect(component.canImport()).toBe(false);
+      expect((query('import-members-submit-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(query('import-members-submit-btn')?.textContent).toContain('Import 0 members (skip 2 invalid)');
+      expect(query('import-members-download-invalid-btn')).not.toBeNull();
+      component.startImport();
+      expect(dialogRef.close).not.toHaveBeenCalled();
     });
 
     it('collects 100 voting-group members with their organizations, roles and voting statuses', async () => {
@@ -403,6 +523,211 @@ describe('ImportMembersDialogComponent', () => {
         pendingInviteUids: [],
       });
       expectNothingWritten();
+    });
+  });
+
+  describe('skipping, downloading and filtering invalid rows', () => {
+    beforeEach(async () => setup());
+
+    it('sends only ready rows and keeps the invalid rows listed and downloadable in the results', async () => {
+      await upload('email\nada@example.com\nnot-an-email\ngrace@example.com');
+      await render();
+      query('import-members-submit-btn')?.querySelector('button')?.click();
+
+      expect(pending).toHaveLength(1);
+      expect(sentEmails(0)).toEqual(['ada@example.com', 'grace@example.com']);
+      respond(0);
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(component.rows().map((row) => row.status)).toEqual(['added', 'invalid', 'added']);
+      expect(query('import-members-row-3')).not.toBeNull();
+      expect(pillLabels()).toEqual(['All (3)', 'Invalid (1)', 'Added (2)']);
+      expect(query('import-members-download-invalid-btn')).not.toBeNull();
+      expect(component.canRetry()).toBe(false);
+    });
+
+    it('downloads only the invalid rows with their values as written and an errors column', async () => {
+      await upload('email,first_name\nada@example.com,Ada\nnot-an-email,Bad\n,=Formula\nexisting@example.com,Old');
+      await render();
+
+      const { filename, rows } = await captureInvalidRowsDownload();
+      expect(filename).toBe('member-import-invalid-rows.csv');
+      const [header, ...records] = rows;
+      expect(header[0]).toBe('email');
+      expect(header.at(-1)).toBe('errors');
+      expect(records).toHaveLength(2);
+      expect(records.map((record) => record[header.indexOf('email')])).toEqual(['not-an-email', '']);
+      expect(records[0][header.indexOf('errors')]).toBe('Email is not a valid address.');
+      // Recovery text is spreadsheet-inert and reversible, without an identity-changing apostrophe.
+      expect(records[1][header.indexOf('first_name')]).toBe('lfx-text:=Formula');
+      expect(records[1][header.indexOf('lfx_import_encoding')]).toBe('text-v1');
+      expect(records[1][header.indexOf('errors')]).toBe('Email is required.');
+    });
+
+    it('re-uploads corrected downloaded rows with metadata and submits the exact recovered identities', async () => {
+      await upload("email,role\nready@example.com,Chair\n+person@example.com,unsupported\n'+literal@example.com,unsupported\nbad,Chair");
+      await render();
+      expect(component.invalidCount()).toBe(3);
+      const { csv } = await captureInvalidRowsDownload();
+      expect(csv).toContain('lfx_import_encoding');
+      expect(csv).toContain('lfx-text:+person@example.com');
+      expectNothingWritten();
+      const corrected = csv.replaceAll(',unsupported,', ',Chair,').replace('bad,', 'fixed@example.com,');
+      await upload(corrected, 'corrected-download.csv');
+      expect(component.fileErrors()).toEqual([]);
+      expect(component.readyCount()).toBe(3);
+      expect(component.invalidCount()).toBe(0);
+      expect(component.rows().map((row) => row.payload?.email)).toEqual(['+person@example.com', "'+literal@example.com", 'fixed@example.com']);
+      expect(component.rows().every((row) => !('errors' in row.cells) && !('lfx_import_encoding' in row.cells))).toBe(true);
+      query('import-members-submit-btn')?.querySelector('button')?.click();
+      expect(sentEmails(0)).toEqual(['+person@example.com', "'+literal@example.com", 'fixed@example.com']);
+      respond(0);
+      await render();
+      expect(component.addedCount()).toBe(3);
+    });
+
+    it('hides the download when no row is invalid', async () => {
+      await upload('email\nada@example.com');
+      await render();
+      expect(query('import-members-download-invalid-btn')).toBeNull();
+      expect(pillLabels()).toEqual(['All (1)', 'Ready (1)']);
+    });
+
+    it('filters the preview by status and returns to all rows', async () => {
+      await upload('email\nada@example.com\nnot-an-email\nada@example.com\ngrace@example.com');
+      await render();
+      expect(visibleRowNumbers()).toEqual(['2', '3', '4', '5']);
+
+      await selectStatus('invalid');
+      expect(component.activeStatusFilter()).toBe('invalid');
+      expect(query('filter-pill-invalid')?.getAttribute('aria-pressed')).toBe('true');
+      expect(visibleRowNumbers()).toEqual(['3']);
+
+      await selectStatus('skipped');
+      expect(visibleRowNumbers()).toEqual(['4']);
+
+      await selectStatus('ready');
+      expect(visibleRowNumbers()).toEqual(['2', '5']);
+
+      await selectStatus('all');
+      expect(visibleRowNumbers()).toEqual(['2', '3', '4', '5']);
+    });
+
+    it('filters the results by status', async () => {
+      await upload('email\nada@example.com\nnot-an-email\ngrace@example.com');
+      component.startImport();
+      respond(0, { 1: { status: 'failed', retryable: false, reason: 'invalid' } });
+      await render();
+
+      expect(pillLabels()).toEqual(['All (3)', 'Invalid (1)', 'Added (1)', 'Failed (1)']);
+      await selectStatus('failed');
+      expect(visibleRowNumbers()).toEqual(['4']);
+      await selectStatus('added');
+      expect(visibleRowNumbers()).toEqual(['2']);
+    });
+
+    it('falls back to all rows when the filtered status disappears', async () => {
+      await upload('email\nada@example.com\nnot-an-email\ngrace@example.com');
+      await render();
+
+      await selectStatus('invalid');
+      query('import-members-remove-3')?.querySelector('button')?.click();
+      await render();
+      expect(component.activeStatusFilter()).toBe('all');
+      expect(query('filter-pill-invalid')).toBeNull();
+      expect(query('filter-pill-all')?.getAttribute('aria-pressed')).toBe('true');
+      expect(visibleRowNumbers()).toEqual(['2', '4']);
+
+      await selectStatus('ready');
+      expect(visibleRowNumbers()).toEqual(['2', '4']);
+      component.startImport();
+      await render();
+      expect(component.phase()).toBe('importing');
+      expect(component.activeStatusFilter()).toBe('all');
+      expect(visibleRowNumbers()).toEqual(['2', '4']);
+    });
+
+    it('keeps All selected when a vanished status returns during automatic recovery', async () => {
+      await upload('email\nada@example.com');
+      vi.useFakeTimers();
+      component.startImport();
+      failBulk(0, 429, { 'Retry-After': '1' });
+      fixture.detectChanges();
+
+      query('filter-pill-waiting')?.click();
+      fixture.detectChanges();
+      expect(component.activeStatusFilter()).toBe('waiting');
+
+      vi.advanceTimersByTime(1_000);
+      fixture.detectChanges();
+      expect(pending).toHaveLength(2);
+      expect(component.activeStatusFilter()).toBe('all');
+      expect(query('filter-pill-all')?.getAttribute('aria-pressed')).toBe('true');
+
+      failBulk(1, 429, { 'Retry-After': '1' });
+      fixture.detectChanges();
+      expect(component.waitingCount()).toBe(1);
+      expect(component.activeStatusFilter()).toBe('all');
+      expect(query('filter-pill-all')?.getAttribute('aria-pressed')).toBe('true');
+      expect(query('filter-pill-waiting')?.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('returns to page 1 when the filter changes', async () => {
+      const invalid = Array.from({ length: 12 }, (_, i) => `bad-${i}`).join('\n');
+      await upload(`email\n${emails(13)}\n${invalid}`);
+      await render();
+      expect(visibleRowNumbers()).toHaveLength(10);
+
+      (fixture.nativeElement.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+      await render();
+      expect(component.tableFirst()).toBe(10);
+      expect(visibleRowNumbers()[0]).toBe('12');
+
+      await selectStatus('invalid');
+      expect(component.tableFirst()).toBe(0);
+      expect(visibleRowNumbers()).toHaveLength(10);
+      expect(visibleRowNumbers()[0]).toBe('15');
+    });
+
+    it.each([470, 20])('keeps live filtered page %i within bounds while preserving valid pages', async (first) => {
+      await upload(`email\n${emails(500)}`);
+      component.startImport();
+      await render();
+      expect(pending).toHaveLength(1);
+      await selectStatus('not_submitted');
+      expect(component.filteredRowViews()).toHaveLength(475);
+      if (first === 470) {
+        (fixture.nativeElement.querySelector('.p-paginator-last') as HTMLButtonElement).click();
+      } else {
+        (fixture.nativeElement.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+        await render();
+        (fixture.nativeElement.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+      }
+      await render();
+      expect(component.tableFirst()).toBe(first);
+      expect(visibleRowNumbers()).toHaveLength(first === 470 ? 5 : 10);
+
+      respond(0);
+      await render();
+      expect(pending).toHaveLength(2);
+      expect(component.activeStatusFilter()).toBe('not_submitted');
+      expect(component.filteredRowViews()).toHaveLength(450);
+      expect(query('filter-pill-not_submitted')?.textContent).toContain('Not yet submitted (450)');
+      expect(component.tableFirst()).toBe(first === 470 ? 440 : 20);
+      expect(visibleRowNumbers()).toHaveLength(10);
+      expect(visibleRowNumbers()[0]).toBe(first === 470 ? '492' : '72');
+    });
+
+    it('resets the filter when another file is chosen', async () => {
+      await upload('email\nada@example.com\nnot-an-email');
+      await render();
+      await selectStatus('invalid');
+
+      await upload('email\ngrace@example.com\nnot-an-email', 'next.csv');
+      await render();
+      expect(component.statusFilter()).toBe('all');
+      expect(visibleRowNumbers()).toEqual(['2', '3']);
     });
   });
 
@@ -452,14 +777,116 @@ describe('ImportMembersDialogComponent', () => {
 
       component.close();
       component.removeRow(2);
-      component.stopImport();
       expect(dialogRef.close).not.toHaveBeenCalled();
       expect(component.stopReason()).toBeNull();
       expect(component.rows()).toHaveLength(2);
       expect(component.canChooseFile()).toBe(false);
       expect(component.form.controls.send_notification.disabled).toBe(true);
       expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('stops after the in-flight batch and leaves later rows unsent for Retry', async () => {
+      await upload(`email\n${emails(60)}`);
+      component.startImport();
+      await render();
+
+      const stopButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
+      expect(stopButton.textContent).toContain('Stop import');
+      expect(stopButton.disabled).toBe(false);
+      expect(query('import-members-submitting-btn')).not.toBeNull();
+      stopButton.click();
+      await render();
+
+      expect(component.stopping()).toBe(true);
+      expect(component.phase()).toBe('importing');
+      expect(component.statusMessage()).toBe('Stopping after the current batch: 0 of 60 done.');
+      expect(query('import-members-progress')?.textContent).toContain('Stopping after the current batch: 0 of 60 done…');
+      expect(query('import-members-stop-reason')).toBeNull();
+      const stoppingButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
+      expect(stoppingButton.textContent).toContain('Stopping…');
+      expect(stoppingButton.disabled).toBe(true);
+      expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      component.stopImport();
+      expect(component.stopReason()).toBe('You stopped the import.');
+
+      respond(0);
+      await render();
+
+      expect(pending).toHaveLength(1);
+      expect(component.phase()).toBe('results');
+      expect(component.stopping()).toBe(false);
+      expect(component.addedCount()).toBe(25);
+      expect(component.notSubmittedCount()).toBe(35);
+      expect(component.rows()[25].reason).toBe('Not sent: You stopped the import.');
+      expect(query('import-members-stop-reason')?.textContent).toContain('The import stopped: You stopped the import.');
       expect(query('import-members-stop-btn')).toBeNull();
+      expect(query('import-members-retry-btn')?.textContent).toContain('Retry 35');
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 25, conflicts: 0 });
+    });
+
+    it('clears the manual stopping state before retrying unsent rows', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      component.stopImport();
+      respond(0);
+      expect(component.phase()).toBe('results');
+
+      component.retryFailed();
+      await render();
+
+      expect(component.phase()).toBe('importing');
+      expect(component.stopping()).toBe(false);
+      expect(component.stopReason()).toBeNull();
+      expect(query('import-members-progress')?.textContent).toContain('Adding members: 0 of 5 done');
+      expect((query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      respond(1);
+      expect(component.addedCount()).toBe(30);
+    });
+
+    it('keeps a lost in-flight response unknown when stopped mid-batch', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      component.stopImport();
+      failBulk(0, 0);
+      fixture.detectChanges();
+
+      expect(component.phase()).toBe('results');
+      expect(component.paused()).toBe(false);
+      expect(
+        component
+          .rows()
+          .slice(0, 25)
+          .every((row) => row.status === 'unknown' && row.uncertain)
+      ).toBe(true);
+      expect(component.rows()[0].reason).toContain('outcome of an earlier attempt is unknown');
+      expect(
+        component
+          .rows()
+          .slice(25)
+          .every((row) => row.status === 'not_submitted')
+      ).toBe(true);
+      vi.advanceTimersByTime(120_000);
+      expect(pending).toHaveLength(1);
+    });
+
+    it('does not start a pause when the in-flight batch is throttled after Stop', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      component.stopImport();
+      failBulk(0, 429, { 'Retry-After': '30' });
+      fixture.detectChanges();
+
+      expect(component.paused()).toBe(false);
+      expect(component.pauseCount()).toBe(0);
+      expect(query('import-members-paused-notice')).toBeNull();
+      expect(component.phase()).toBe('results');
+      expect(component.notSubmittedCount()).toBe(30);
+      expect(component.stopReason()).toBe('You stopped the import.');
+      vi.advanceTimersByTime(120_000);
+      expect(pending).toHaveLength(1);
     });
 
     it('records added, existing and invalid rows, and never retries invalid rows', async () => {
@@ -592,8 +1019,8 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.stopReason()).toBe('Automatic recovery has stopped after three pauses. Review the outcomes before retrying.');
       expect(component.rows()[0]).toMatchObject({ status: 'unknown', uncertain: true });
       expect(component.retryableCount()).toBe(1);
-      expect(query('import-members-unknown-count')?.textContent).toContain('1 outcome unknown');
-      expect(query('import-members-not-submitted-count')).toBeNull();
+      expect(query('filter-pill-unknown')?.textContent).toContain('Outcome unknown (1)');
+      expect(query('filter-pill-not_submitted')).toBeNull();
       component.close();
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
       expect(query('import-members-retry-btn')?.textContent).toContain('Retry 1');
@@ -642,7 +1069,8 @@ describe('ImportMembersDialogComponent', () => {
           .slice(25)
           .every((row) => row.status === 'not_submitted' && !row.uncertain)
       ).toBe(true);
-      expect(query('import-members-unknown-count')?.textContent).toContain('25 outcome unknown');
+      expect(query('filter-pill-unknown')?.textContent).toContain('Outcome unknown (25)');
+      expect(query('filter-pill-not_submitted')?.textContent).toContain('Not yet submitted (5)');
       component.close();
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0, uncertain: true });
       vi.advanceTimersByTime(120_000);
@@ -704,21 +1132,31 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each([
-      [401, 'Your session has expired. Sign in again, then retry.'],
-      [403, 'You no longer have permission to manage this group.'],
-      [404, 'This group could not be found.'],
-    ])('stops sending after HTTP %i and keeps unsent rows retryable', async (status, reason) => {
+      [401, false, 'Your session has expired. Sign in again, then retry.'],
+      [403, false, 'You no longer have permission to manage this group.'],
+      [404, false, 'This group could not be found.'],
+      [401, true, 'Your session has expired. Sign in again, then retry.'],
+      [403, true, 'You no longer have permission to manage this group.'],
+      [404, true, 'This group could not be found.'],
+    ])('stops sending after HTTP %i with manual stop %s and keeps unsent rows retryable', async (status, manualStop, reason) => {
       await upload(`email\n${emails(30)}`);
       component.startImport();
+      if (manualStop) {
+        component.stopImport();
+        expect(component.stopping()).toBe(true);
+      }
       failBulk(0, status);
       await render();
 
       expect(pending).toHaveLength(1);
       expect(component.phase()).toBe('results');
       expect(component.stopReason()).toBe(reason);
+      expect(component.stopping()).toBe(false);
       expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import chunk failed', { status });
       expect(component.rows().every((row) => row.status === 'not_submitted')).toBe(true);
       expect(component.rows()[0].reason).toBe(`Not sent: ${reason}`);
+      expect(component.rows()[25].reason).toBe(`Not sent: ${reason}`);
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
       expect(query('import-members-stop-reason')?.textContent).toContain('marked Not yet submitted');
       expect(component.retryableCount()).toBe(30);
 
@@ -828,6 +1266,60 @@ describe('ImportMembersDialogComponent', () => {
       respond(1);
       expect(component.phase()).toBe('results');
       expect(component.addedCount()).toBe(30);
+    });
+
+    it.each([
+      [401, false, 'Your session has expired. Sign in again, then retry.'],
+      [403, false, 'You no longer have permission to manage this group.'],
+      [404, false, 'The pending invitation could not be found. Review pending invitations before retrying.'],
+      [401, true, 'Your session has expired. Sign in again, then retry.'],
+      [403, true, 'You no longer have permission to manage this group.'],
+      [404, true, 'The pending invitation could not be found. Review pending invitations before retrying.'],
+    ])('shows cleanup HTTP %i immediately with manual stop %s while another revoke is pending', async (status, manualStop, reason) => {
+      await setup(
+        OPEN_GROUP,
+        [],
+        [
+          { uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' },
+          { uid: 'invite-2', invitee_email: 'person1@example.com', status: 'pending' },
+        ]
+      );
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      respond(0);
+      expect(revokeResponses).toHaveLength(2);
+      if (manualStop) {
+        component.stopImport();
+        await render();
+        expect(component.stopping()).toBe(true);
+        expect(query('import-members-stop-reason')).toBeNull();
+      }
+
+      revokeResponses[0].error(new HttpErrorResponse({ status }));
+      await render();
+
+      expect(component.phase()).toBe('importing');
+      expect(component.stopping()).toBe(false);
+      expect(component.stopReason()).toBe(reason);
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
+      expect(query('import-members-progress')?.textContent).not.toContain('Stopping after the current batch');
+      expect(component.statusMessage()).not.toContain('Stopping after the current batch');
+      expect((query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(revokeResponses[1].observed).toBe(true);
+      expect(pending).toHaveLength(1);
+      component.stopImport();
+      expect(component.stopReason()).toBe(reason);
+
+      revokeResponses[1].error(new HttpErrorResponse({ status: status === 404 ? 403 : 404 }));
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(pending).toHaveLength(1);
+      expect(component.addedCount()).toBe(25);
+      expect(component.notSubmittedCount()).toBe(5);
+      expect(component.rows()[0].cleanupWarning).toContain('pending invitation could not be revoked');
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
+      expect(component.stopReason()).toBe(reason);
     });
 
     it.each([401, 403, 404])('stops queued chunks after cleanup HTTP %i while retaining the added member', async (status) => {

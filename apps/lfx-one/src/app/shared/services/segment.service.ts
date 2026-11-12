@@ -5,6 +5,7 @@ import { afterNextRender, DestroyRef, inject, Injectable } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { environment } from '@environments/environment';
+import { MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { LfxSegmentAnalytics } from '@lfx-one/shared/interfaces';
 import { buildSegmentPageEvent, sanitizeSegmentEvent } from '@lfx-one/shared/utils';
 import { afterRouterTitleApplied } from '@shared/utils/document-title.util';
@@ -194,6 +195,8 @@ export class SegmentService {
     this.router.events
       .pipe(
         filter((event) => event instanceof NavigationEnd),
+        // The meeting page re-renders a visit it can't serve as the legacy page at the same URL; that visit was already counted.
+        filter(() => !this.router.lastSuccessfulNavigation?.extras.state?.[MEETING_PAGE_LEGACY_STATE]),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((event: NavigationEnd) => {

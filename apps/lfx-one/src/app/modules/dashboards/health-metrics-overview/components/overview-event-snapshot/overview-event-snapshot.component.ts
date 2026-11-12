@@ -10,9 +10,10 @@ import { ProjectContextService } from '@services/project-context.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
-import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, of, switchMap, tap } from 'rxjs';
+
+import { HealthMetricsInfoTipComponent } from '../../../components/health-metrics-info-tip/health-metrics-info-tip.component';
 
 import type {
   HealthMetricsEventsSnapshot,
@@ -27,7 +28,7 @@ import type {
  */
 @Component({
   selector: 'lfx-overview-event-snapshot',
-  imports: [SkeletonModule, UiBadgeComponent, UiSwitchComponent, UiSwitchOptionComponent, UiTooltipDirective],
+  imports: [HealthMetricsInfoTipComponent, SkeletonModule, UiBadgeComponent, UiSwitchComponent, UiSwitchOptionComponent],
   templateUrl: './overview-event-snapshot.component.html',
 })
 export class OverviewEventSnapshotComponent {

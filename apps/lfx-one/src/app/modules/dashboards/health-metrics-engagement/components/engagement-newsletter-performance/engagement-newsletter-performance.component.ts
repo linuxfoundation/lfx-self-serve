@@ -55,8 +55,6 @@ export class EngagementNewsletterPerformanceComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The sub-nav badge: newsletters sent in the period; `null` while a read is pending or failed. */
-  public readonly countChange = output<number | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -116,7 +114,7 @@ export class EngagementNewsletterPerformanceComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // The badge and the list are per period, so a pill change re-reports both off the loaded response.
+      // The list is per period, so a pill change re-settles it off the loaded response.
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
         .subscribe(() => this.onRangeChange());
@@ -156,7 +154,6 @@ export class EngagementNewsletterPerformanceComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countChange.emit(null);
           this.reading.emit();
         }),
         switchMap((query) =>
@@ -171,9 +168,7 @@ export class EngagementNewsletterPerformanceComponent {
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (!foundationSeen) return;
 
-              const view = buildHealthMetricsEngagementNewsletterView(response, this.chrome.selectedRange());
-              this.countChange.emit(this.loadFailed() ? null : view.newslettersSent);
-              this.settled.emit(!this.loadFailed() && view.isEmpty);
+              this.settled.emit(!this.loadFailed() && buildHealthMetricsEngagementNewsletterView(response, this.chrome.selectedRange()).isEmpty);
             })
           )
         )
@@ -182,12 +177,11 @@ export class EngagementNewsletterPerformanceComponent {
     );
   }
 
-  /** Re-reports the badge and re-settles the re-projected list; a failed or unread scope stays `null`. */
+  /** Re-settles the re-projected list; a failed or unread scope has nothing to re-settle. */
   private onRangeChange(): void {
     // A read in flight still holds the previous foundation's payload, and its own settle is still to come.
     if (this.loadFailed() || this.loading()) return;
 
-    this.countChange.emit(this.view().newslettersSent);
     this.settled.emit(this.view().isEmpty);
   }
 

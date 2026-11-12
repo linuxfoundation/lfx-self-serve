@@ -35,7 +35,7 @@ import type { TablePageEvent } from 'primeng/table';
 import type {
   FilterPillOption,
   HealthMetricsEngagementRepFilter,
-  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementRepNoteCounts,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepRow,
   HealthMetricsEngagementRepRowLabels,
@@ -63,10 +63,10 @@ export class EngagementRepresentativesComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   /**
-   * Feeds the container's sub-nav badge. This view counts its scope per period, so the badge follows
-   * the pill; `null` is "no measured counts" and renders no badge rather than a believable zero.
+   * Feeds the container's sub-nav note. This view counts its scope per period, so the note follows
+   * the pill; `null` is "no measured counts" and renders no note.
    */
-  public readonly countsChange = output<HealthMetricsEngagementRepPeriodCounts | null>();
+  public readonly countsChange = output<HealthMetricsEngagementRepNoteCounts | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -133,7 +133,7 @@ export class EngagementRepresentativesComponent {
         )
         .subscribe((filter) => this.filter.set(filter));
 
-      // The badge counts are per period, so a pill change re-reports them off the loaded response.
+      // The note counts are per period, so a pill change re-reports them off the loaded response.
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
         .subscribe(() => this.emitCounts());
@@ -263,10 +263,10 @@ export class EngagementRepresentativesComponent {
     );
   }
 
-  /** Re-reports the badge off the already-loaded response; a failed or unread scope stays `null`. */
+  /** Re-reports the note counts off the already-loaded response; a failed or unread scope stays `null`. */
   private emitCounts(): void {
     // A read in flight still holds the previous foundation's payload, so a pill change mid-load
-    // would republish counts the badge has already been told to drop.
+    // would republish counts the note has already been told to drop.
     if (this.loadFailed() || this.loading()) return;
 
     this.countsChange.emit(selectHealthMetricsEngagementRepCounts(this.response().counts, this.chrome.selectedRange()));

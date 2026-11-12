@@ -143,11 +143,13 @@ describe('HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS', () => {
     'non-members': Object.values(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS),
   };
 
-  it.each(Object.entries(HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS))('%s lands on a real section of a real tab, clearing only that tab’s params', (_key, link) => {
+  // No fragment opens the tab at the top; a named one must be a real section.
+  it.each(Object.entries(HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS))('%s lands on a real tab (and section), clearing only that tab’s params', (_key, link) => {
     const [base, tab] = link.commands;
+    const fragment = 'fragment' in link ? link.fragment : undefined;
     expect(base).toBe(HEALTH_METRICS_BASE_PATH);
     expect(HEALTH_METRICS_TABS.map((candidate) => candidate.route)).toContain(tab);
-    expect(sections[tab].map((section) => section.key)).toContain(link.fragment);
+    if (fragment !== undefined) expect(sections[tab].map((section) => section.key)).toContain(fragment);
     for (const param of Object.keys(link.queryParams)) expect(params[tab] ?? []).toContain(param);
   });
 });
@@ -178,7 +180,7 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
       ['Non-members', '4,088'],
       ['Non-renewals', '270'],
     ]);
-    expect(members.link.fragment).toBe('list');
+    expect(members.link.fragment).toBeUndefined();
     expect(nonMembers.link.commands[1]).toBe('non-members');
     expect(members.rows.map((row) => [row.label, row.countLabel, row.pctLabel])).toEqual([
       ['High', '64', '28%'],
@@ -1222,14 +1224,17 @@ describe('toHealthMetricsOverviewKpiStripLayout', () => {
     expect(toHealthMetricsOverviewKpiStripLayout(340, 2)).toBe('row');
   });
 
-  it('stacks a narrower strip in one column', () => {
-    expect(toHealthMetricsOverviewKpiStripLayout(339, 2)).toBe('stack');
-    expect(toHealthMetricsOverviewKpiStripLayout(500, 3)).toBe('stack');
+  it('goes two per row for any item count once an item would be narrower than 170px', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(339, 2)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(500, 3)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(600, 4)).toBe('grid');
+    expect(toHealthMetricsOverviewKpiStripLayout(260, 5)).toBe('grid');
   });
 
-  it('makes four items a 2 × 2 grid while two columns still have 170px each, and stacks them below that', () => {
-    expect(toHealthMetricsOverviewKpiStripLayout(600, 4)).toBe('grid');
-    expect(toHealthMetricsOverviewKpiStripLayout(339, 4)).toBe('stack');
+  it('stacks once half the strip would be narrower than 130px', () => {
+    expect(toHealthMetricsOverviewKpiStripLayout(259, 2)).toBe('stack');
+    expect(toHealthMetricsOverviewKpiStripLayout(250, 3)).toBe('stack');
+    expect(toHealthMetricsOverviewKpiStripLayout(120, 1)).toBe('stack');
   });
 });
 

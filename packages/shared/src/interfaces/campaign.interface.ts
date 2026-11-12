@@ -62,6 +62,34 @@ export interface LinkedInTargetingProfileConfig {
   groups: readonly string[];
 }
 
+/**
+ * A set of LinkedIn targeting facet URNs, with no claim about which side of an edit it is on (#5546).
+ * Empty lists mean no entries in the set, so what that implies depends on the extending type or the
+ * value holding it: the KEPT facets of an edited profile, or the REMOVED ones.
+ */
+export interface LinkedInTargetingFacets {
+  skills: string[];
+  groups: string[];
+}
+
+/**
+ * The facet URNs an operator took OUT of the selected LinkedIn targeting profile on the Implement tab
+ * (#5546). Removal only: nothing can be added until campaign-service offers a name-to-URN lookup
+ * (linuxfoundation/lfx-v2-campaign-service#585). Empty lists mean nothing was removed, i.e. the
+ * profile as configured. For the entries that are KEPT, use `LinkedInTargetingFacets`.
+ */
+export interface LinkedInTargetingRemovals extends LinkedInTargetingFacets {}
+
+/**
+ * The selected profile as edited, sent as `linkedInConfig.targetingProfileEdit` (#5546) only when
+ * the operator removed something. `id` is the profile campaign-service resolves the selection to
+ * (`custom` resolves to `cloud-native`); `skills` and `groups` are the entries KEPT, not removed. The
+ * BFF accepts it only when every URN is one the configured profile already carries.
+ */
+export interface LinkedInTargetingProfileEdit extends LinkedInTargetingFacets {
+  id: LinkedInTargetingProfile;
+}
+
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
 /**
@@ -1187,6 +1215,11 @@ export interface CampaignImplementationDraft {
   linkedInGeoTargets: LinkedInGeoTarget[];
   linkedInTargetingProfile: LinkedInTargetingProfile;
   /**
+   * The URNs removed from the selected targeting profile (#5546). Optional because absent and empty
+   * mean the same thing here: the profile as configured.
+   */
+  linkedInTargetingRemovals?: LinkedInTargetingRemovals;
+  /**
    * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
    * Without it, generating a brief for event B and opening Implement would restore event A's
    * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
@@ -2057,6 +2090,8 @@ export interface LinkedInCampaignCreateRequest {
   adAccountId?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
+  /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
+  targetingProfileEdit?: LinkedInTargetingProfileEdit;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -6768,6 +6803,16 @@ export interface CampaignListResult {
    * the client like the capabilities above.
    */
   linkedInAssetUploadEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer removing entries from the selected targeting profile,
+   * sent as `linkedInConfig.targetingProfileEdit` (#5546).
+   *
+   * `cutoverOwnsCreate()` and nothing else, like `metaCreativeEnabled`: campaign-service builds the
+   * targeting from the profiles the request carries, while the legacy creator reads the mounted
+   * ConfigMap and would drop the edit. Modelled on the client like the capabilities above, which
+   * shows the profile read-only.
+   */
+  linkedInTargetingEditEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

@@ -106,6 +106,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   computeOrgAllEmployeeStats,
+  foldForSearch,
   orgCodeFilterValues,
   orgCommitFiltersFor,
   orgCommitFiltersUrlMatches,
@@ -852,18 +853,13 @@ export class AllEmployeesComponent {
 
   private initFilteredRows(): OrgAllEmployeeRowVm[] {
     const rows = this.viewRows();
-    const q = this.searchTerm().trim().toLowerCase();
+    const q = foldForSearch(this.searchTerm());
     const foundationId = this.selectedFoundationId();
     const activity = this.selectedActivity();
     const companyEmail = this.selectedCompanyEmail();
 
     return rows.filter((row) => {
-      if (q) {
-        const inName = row.name.toLowerCase().includes(q);
-        const inTitle = (row.title ?? '').toLowerCase().includes(q);
-        const inEmail = (row.email ?? '').toLowerCase().includes(q);
-        if (!inName && !inTitle && !inEmail) return false;
-      }
+      if (q && ![row.name, row.title, row.email, row.lfUsername].some((field) => foldForSearch(field).includes(q))) return false;
       if (foundationId && !row.engagedFoundationIds.includes(foundationId)) return false;
       if (activity !== 'all') {
         const matches =

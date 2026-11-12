@@ -44,23 +44,14 @@
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="nonmem">
-    <lfx-engagement-non-member-participation
-      (countsChange)="nonMemberCounts.set($event)"
-      (reading)="shell.sectionReading('nonmem')"
-      (settled)="shell.sectionSettled('nonmem', $event)" />
+    <lfx-engagement-non-member-participation (reading)="shell.sectionReading('nonmem')" (settled)="shell.sectionSettled('nonmem', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="newsletters">
-    <lfx-engagement-newsletter-performance
-      (countChange)="newsletterCount.set($event)"
-      (reading)="shell.sectionReading('newsletters')"
-      (settled)="shell.sectionSettled('newsletters', $event)" />
+    <lfx-engagement-newsletter-performance (reading)="shell.sectionReading('newsletters')" (settled)="shell.sectionSettled('newsletters', $event)" />
   </ng-template>
 
   <ng-template lfxHealthMetricsL2Section="recipients">
-    <lfx-engagement-newsletter-recipients
-      (countChange)="recipientCount.set($event)"
-      (reading)="shell.sectionReading('recipients')"
-      (settled)="shell.sectionSettled('recipients', $event)" />
+    <lfx-engagement-newsletter-recipients (reading)="shell.sectionReading('recipients')" (settled)="shell.sectionSettled('recipients', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

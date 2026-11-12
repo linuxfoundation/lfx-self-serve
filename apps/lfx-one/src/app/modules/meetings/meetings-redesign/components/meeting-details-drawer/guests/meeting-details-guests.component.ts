@@ -58,6 +58,7 @@ import { catchError, combineLatest, debounceTime, filter, map, Observable, of, s
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 
 /**
  * Guests tab of the meeting details drawer, Participants once the meeting has ended.
@@ -93,7 +94,7 @@ export class MeetingDetailsGuestsComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly dialogRef = inject(DialogRef, { optional: true });
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly stickSentinel = viewChild<ElementRef<HTMLElement>>('stickSentinel');
@@ -180,7 +181,7 @@ export class MeetingDetailsGuestsComponent {
 
   /** Runs Edit Meeting's checks and scope question over the drawer and opens the editor at its Guests step. */
   protected addGuests(): void {
-    this.editService.edit(this.context.shownRow(), 'guests', this.dialogRef);
+    this.editService.edit(this.context.shownRow(), 'guests', this.hostRef);
   }
 
   protected confirmResend(registrant: MeetingRegistrant): void {
@@ -290,8 +291,12 @@ export class MeetingDetailsGuestsComponent {
             // The previous date's count and hosts must not linger while this load runs, after it fails, or once hidden.
             this.context.guestCount.set(null);
             this.context.hosts.set([]);
+            this.context.listedSelfRegistrantUids.set([]);
           }
-          if (!canView) return of<MeetingGuestsLoad>({ status: 'ready', rows: [] });
+          if (!canView) {
+            this.context.listedSelfRegistrantUids.set([]);
+            return of<MeetingGuestsLoad>({ status: 'ready', rows: [] });
+          }
           const viewer = { username: this.userService.viewerUsername(), email: this.userService.user()?.email ?? null };
           let rows$: Observable<MeetingGuestRow[]>;
           if (ended) {
@@ -315,7 +320,12 @@ export class MeetingDetailsGuestsComponent {
                   viewer,
                   rsvpEnabled
                 );
-                return removedSelf ? rows.filter((row) => !row.you) : rows;
+                const selfUids = rows.filter((row) => row.you).map((row) => row.uid);
+                this.context.listedSelfRegistrantUids.set(removedSelf ? [] : selfUids);
+                if (!removedSelf) return rows;
+                // A new registrant uid for the viewer is a re-invite, which lifts the removal and re-emits without it.
+                this.meetingService.clearRemovalIfReinvited(meeting.id, selfUids);
+                return rows.filter((row) => !row.you);
               })
             );
           }
