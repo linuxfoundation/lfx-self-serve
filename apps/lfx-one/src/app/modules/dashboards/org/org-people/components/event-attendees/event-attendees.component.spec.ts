@@ -10,7 +10,7 @@ import type { OrgDropdownOption, OrgEventAttendeeDetailRow, OrgEventAttendeesRes
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { of, throwError } from 'rxjs';
-import { describe, expect, it, type Mock, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { EventAttendeesService } from '../../services/event-attendees.service';
@@ -253,5 +253,58 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     await settle();
     expect(form().controls['foundation'].value).toBe('');
     expect(testId('org-people-event-attendees-row-1')).not.toBeNull();
+  });
+
+  describe('search (lfx-self-serve#5662)', () => {
+    const PARTICIPANT_REFS = [1, 2, 3, 4];
+    const rowCount = (ref: number): number => el().querySelectorAll(`[data-testid="org-people-event-attendees-row-${ref}"]`).length;
+    const rowRefs = (): number[] => PARTICIPANT_REFS.filter((ref) => rowCount(ref) > 0);
+
+    async function search(term: string): Promise<number[]> {
+      form().controls['search'].setValue(term);
+      await settle();
+      return rowRefs();
+    }
+
+    beforeEach(async () => {
+      await mount('/?tab=events', {
+        ...RESPONSE,
+        details: [
+          // A CJK compatibility ideograph (U+F92E) that renders like 冷 (U+51B7), at two events.
+          detail(1, 'event-a', { displayName: '王小冷' }),
+          detail(1, 'event-b', { displayName: '王小冷' }),
+          detail(2, 'event-a', { displayName: 'José Ramírez' }),
+          detail(3, 'event-a', { displayName: 'Ada Lovelace', jobTitle: 'Staff Engineer' }),
+          detail(4, 'event-a', { displayName: 'Alan Turing' }),
+        ],
+      });
+    });
+
+    it('finds a name stored with lookalike characters, with or without a space or an ideographic space, listing the person once', async () => {
+      for (const term of ['王小冷', '王小 冷', '王小　冷']) {
+        expect(await search(term)).toEqual([1]);
+        expect(rowCount(1)).toBe(1);
+      }
+    });
+
+    it('ignores accents and case', async () => {
+      expect(await search('JOSE')).toEqual([2]);
+    });
+
+    it('matches the job title', async () => {
+      expect(await search('staff engineer')).toEqual([3]);
+    });
+
+    it('lists everyone for a query that is only spaces', async () => {
+      expect(await search('   ')).toEqual(PARTICIPANT_REFS);
+    });
+
+    it('narrows together with the event filter', async () => {
+      form().patchValue({ event: 'event-b' });
+      expect(await search('JOSE')).toEqual([]);
+
+      form().patchValue({ event: 'event-a' });
+      expect(await search('JOSE')).toEqual([2]);
+    });
   });
 });

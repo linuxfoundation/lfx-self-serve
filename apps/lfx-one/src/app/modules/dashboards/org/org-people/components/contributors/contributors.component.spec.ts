@@ -1024,3 +1024,77 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
     });
   });
 });
+
+describe('ContributorsComponent — search (lfx-self-serve#5662)', () => {
+  let fixture: ComponentFixture<ContributorsComponent>;
+
+  const PERSON_KEYS = ['p-compat', 'p-ideo-space', 'p-accent', 'p-title', 'p-other'];
+  const el = (): HTMLElement => fixture.nativeElement;
+  const form = (): FormGroup => (fixture.componentInstance as unknown as { filterForm: FormGroup }).filterForm;
+  const rowKeys = (): string[] => PERSON_KEYS.filter((key) => el().querySelector(`[data-testid="org-people-contributors-row-${key}"]`));
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function search(term: string): Promise<string[]> {
+    form().controls['search'].setValue(term);
+    // Past the filter bar's 150ms debounce.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await settle();
+    return rowKeys();
+  }
+
+  beforeEach(async () => {
+    const base = contributorsResponse();
+    const contributor = (personKey: string, displayName: string, title: string | null = null) => ({ ...base.contributors[0], personKey, displayName, title });
+    const response: OrgContributorsResponse = {
+      ...base,
+      contributors: [
+        // A CJK compatibility ideograph (U+F92E) that renders like 冷 (U+51B7).
+        contributor('p-compat', '王小冷'),
+        contributor('p-ideo-space', '王小　冷'),
+        contributor('p-accent', 'José Ramírez'),
+        contributor('p-title', 'Ada Lovelace', 'Staff Engineer'),
+        contributor('p-other', 'Alan Turing'),
+      ],
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [ContributorsComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
+        { provide: ContributorsService, useValue: { getContributors: vi.fn(() => of(response)) } },
+        { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
+        { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
+      ],
+    }).compileComponents();
+
+    await TestBed.inject(Router).navigateByUrl('/?tab=contributors');
+    fixture = TestBed.createComponent(ContributorsComponent);
+    await settle();
+  });
+
+  it('finds a name stored with lookalike characters or an ideographic space, with or without a space in the query', async () => {
+    const cjkRows = ['p-compat', 'p-ideo-space'];
+
+    expect(await search('王小冷')).toEqual(cjkRows);
+    expect(await search('王小 冷')).toEqual(cjkRows);
+    expect(await search('王小　冷')).toEqual(cjkRows);
+  });
+
+  it('ignores accents and case', async () => {
+    expect(await search('JOSE')).toEqual(['p-accent']);
+  });
+
+  it('matches the job title', async () => {
+    expect(await search('staff engineer')).toEqual(['p-title']);
+  });
+
+  it('lists everyone for a query that is only spaces', async () => {
+    expect(await search('   ')).toEqual(PERSON_KEYS);
+  });
+});

@@ -167,7 +167,7 @@ Select a row on either tab to expand it and see each event, course or certificat
 
 You filter a People tab with the search box and menus above its table. Which menus a tab has depends on the tab. **All Employees** and **Contributors** have the most:
 
-1. Type in the search box to find a person. On **All Employees**, **Search by name, title, email or username...** matches a person's name, job title, email or LF username, and ignores case, accents and spaces, so `jose ramirez` finds **José Ramírez**. On **Contributors**, **Search contributors...** finds a person by name or job title.
+1. Type in the search box to find a person. On **All Employees**, **Search by name, title, email or username...** matches a person's name, job title, email or LF username, and ignores case, accents and spaces, so `jose ramirez` finds **José Ramírez**. On **Contributors**, **Search contributors...**, and on **Event Attendees**, **Search event attendees...**, find a person by name or job title, and also ignore case, accents and spaces.
 2. Open the foundation menu, which starts on **All Foundations**, and select a foundation. On **Contributors**, also pick a project in the menu that starts on **Any project**.
 3. On **All Employees**, pick an activity: **All Activity**, **Board & Committee**, **Code contributions** (or **Commits**, when you count commits), **Events** or **Training**.
 4. Select a time range: **Past 30 days**, **Past 90 days**, **Past 365 days**, **Past 2 years** or **All time**. **Past 2 years** is the default.
