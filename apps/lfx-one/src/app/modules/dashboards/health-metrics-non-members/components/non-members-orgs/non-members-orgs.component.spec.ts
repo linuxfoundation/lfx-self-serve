@@ -150,7 +150,7 @@ describe('NonMembersOrgsComponent', () => {
     );
     expect(note?.querySelector('[data-testid="health-metrics-footnote-note"]')).not.toBeNull();
     expect(note?.querySelector('[data-testid="ui-note-icon"] i')?.classList).toContain('fa-triangle-exclamation');
-    expect(text('non-members-orgs-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
+    expect(text('non-members-orgs-all-time')).toBe('Last engaged is all-time, not limited to the selected period.');
   });
 
   it('flags fewer than five active organizations as too few to rank, between the count line and the table', async () => {

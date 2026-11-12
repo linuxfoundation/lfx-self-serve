@@ -82,6 +82,15 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'Renewals',
     heading: 'Renewals',
     description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
+    note: {
+      tone: 'caution',
+      parts: [
+        { text: 'Organization, tier, dues and renewal date', bold: true },
+        {
+          text: ' come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
+        },
+      ],
+    },
   },
   {
     key: 'board',

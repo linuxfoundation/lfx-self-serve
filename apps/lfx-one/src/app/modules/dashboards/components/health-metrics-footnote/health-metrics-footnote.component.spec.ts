@@ -83,7 +83,7 @@ describe('HealthMetricsFootnoteComponent', () => {
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members');
   });
 
-  it('renders projected content after the parts, as the in-page link footnotes use it', async () => {
+  it('renders projected content after the parts, as the Organizations caution uses it', async () => {
     const host = TestBed.createComponent(ProjectingHostComponent);
     await host.whenStable();
 

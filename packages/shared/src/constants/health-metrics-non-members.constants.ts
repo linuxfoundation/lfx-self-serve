@@ -104,7 +104,7 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
   'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
 
 /** Last-activity dates ignore the period; the Organizations caution note says so instead of the headers. */
-export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged / Last attended are all-time, not limited to the selected period.';
+export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged is all-time, not limited to the selected period.';
 
 /** Fewer active organizations than this is too few to rank by fit, so Company participation flags it. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD = 5;

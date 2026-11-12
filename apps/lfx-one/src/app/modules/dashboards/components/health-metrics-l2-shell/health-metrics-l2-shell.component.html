@@ -42,14 +42,16 @@
             <div class="flex flex-wrap items-center gap-[6px]">
               <h2 class="m-0 text-[18px] font-semibold text-gray-900">{{ section.heading }}</h2>
               @if (section.provisional) {
+                <!-- Focusable for its tooltip, so it carries a role and a name that starts with its visible label. -->
                 <lfx-ui-badge
                   tone="warning"
                   variant="subtle"
                   size="sm"
+                  role="img"
                   tabindex="0"
-                  class="cursor-help"
+                  class="cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
                   [lfxUiTooltip]="provisionalBadge.tip"
-                  [attr.aria-label]="provisionalBadge.tip"
+                  [attr.aria-label]="provisionalBadge.label + ': ' + provisionalBadge.tip"
                   [attr.data-testid]="testIdPrefix() + '-heading-badge-' + section.key"
                   >{{ provisionalBadge.label }}</lfx-ui-badge
                 >
