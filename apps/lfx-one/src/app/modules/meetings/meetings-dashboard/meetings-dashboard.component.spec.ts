@@ -11,7 +11,7 @@ import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, provideRouter,
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { ButtonComponent } from '@components/button/button.component';
-import type { Lens, Meeting, MeetingDashboardView, MeetingResponseFilter, PastMeeting, ProjectContext, User } from '@lfx-one/shared/interfaces';
+import type { Lens, Meeting, MeetingDashboardView, MeetingResponseFilter, PaginatedResponse, PastMeeting, ProjectContext, User } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -20,7 +20,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY, of } from 'rxjs';
+import { EMPTY, of, Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsDashboardComponent } from './meetings-dashboard.component';
@@ -910,13 +910,39 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
     });
 
-    it('treats every project selected as the whole roll-up', () => {
+    it('treats every project selected as the whole roll-up, while keeping the selection shown', () => {
       const component = mount();
       openScope(component);
 
       component.onRollupProjectsFilterChange(['scope', 'child']);
+      flush();
 
-      expect(component.rollupProjectsFilter()).toEqual([]);
+      expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenLastCalledWith('scope', undefined, undefined, undefined, undefined, {
+        includeSubProjects: true,
+        pageSize: 1000,
+      });
+    });
+
+    it('drops a Load More page that returns after the query changed', () => {
+      const component = mount();
+      openScope(component);
+      const late = new Subject<PaginatedResponse<Meeting>>();
+      vi.mocked(meetings.getMeetingsByProjectPaginated).mockImplementation((_uid, _sort, token) =>
+        token ? late : of({ data: [row('fresh')], page_token: 'next' })
+      );
+      component.refreshMeetings(false);
+      flush();
+      component.loadMore();
+
+      component.onGroupTypeFilterChange('Board');
+      flush();
+      late.next({ data: [row('stale')], page_token: 'stale-cursor' });
+      late.complete();
+      flush();
+
+      expect(ids(component)).toEqual(['fresh']);
+      expect(component.hasMore()).toBe(true);
     });
 
     it('offers only the groups and group types of the selected projects and type, and clears a group they no longer offer', () => {

@@ -74,6 +74,7 @@ import {
   distinctUntilChanged,
   EMPTY,
   expand,
+  filter,
   finalize,
   from,
   map,
@@ -186,8 +187,16 @@ export class MeetingsDashboardComponent {
   private scopedGroups: Signal<MeetingRollupGroupOption[]>;
   public groupTypeOptions: Signal<{ label: string; value: string }[]>;
   // What every foundation/project fetch sends: the roll-up plus the filters above.
+  // The project subset actually applied: every project selected is the whole roll-up, so it sends no
+  // subset (also keeping a large tree's "select all" under the server's project_uids cap), while the
+  // picker keeps showing the full selection.
+  private readonly effectiveRollupProjects: Signal<string[]> = computed(() => {
+    const selected = this.rollupProjectsFilter();
+    const all = this.rollupProjectOptions();
+    return all.length > 0 && all.every((option) => selected.includes(option.value)) ? [] : selected;
+  });
   private readonly rollupQueryOptions: Signal<MeetingProjectQueryOptions> = computed(() => {
-    const projectUids = this.rollupProjectsFilter();
+    const projectUids = this.effectiveRollupProjects();
     const committeeUid = this.groupFilter();
     const groupType = this.groupTypeFilter();
     return {
@@ -261,6 +270,9 @@ export class MeetingsDashboardComponent {
   private pastPageToken = signal<string | undefined>(undefined);
   private loadMoreUpcoming$ = new Subject<string>();
   private loadMorePast$ = new Subject<string>();
+  // Bumped whenever a list's first page is requested again, so a Load More page of the previous query is discarded.
+  private upcomingQueryVersion = 0;
+  private pastQueryVersion = 0;
 
   public constructor() {
     // Initialize project context first (needed for reactive data loading)
@@ -450,10 +462,7 @@ export class MeetingsDashboardComponent {
   }
 
   public onRollupProjectsFilterChange(value: string[]): void {
-    // Every project selected is the whole roll-up: send no subset, which also keeps a large tree's
-    // "select all" under the server's project_uids cap.
-    const all = this.rollupProjectOptions();
-    this.rollupProjectsFilter.set(all.length > 0 && all.every((option) => value.includes(option.value)) ? [] : value);
+    this.rollupProjectsFilter.set(value);
     // A group type or group outside the selected projects would match nothing.
     const groupType = this.groupTypeFilter();
     if (groupType && !this.groupTypeOptions().some((option) => option.value === groupType)) {
@@ -595,6 +604,9 @@ export class MeetingsDashboardComponent {
         if (lens === 'me') {
           return EMPTY;
         }
+        // A new query: pages still in flight for the previous one are dropped, and its cursor is void.
+        this.upcomingQueryVersion++;
+        this.upcomingPageToken.set(undefined);
         if (timeFilter !== 'upcoming') {
           this.meetingsLoading.set(false);
           return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
@@ -624,6 +636,7 @@ export class MeetingsDashboardComponent {
     // Next pages: emits when loadMore triggers (appends to accumulator)
     const nextPage$ = this.loadMoreUpcoming$.pipe(
       switchMap((pageToken) => {
+        const version = this.upcomingQueryVersion;
         const projectUid = this.project()?.uid;
         if (!projectUid) {
           return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: false });
@@ -632,6 +645,7 @@ export class MeetingsDashboardComponent {
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
         return this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, searchName, filters, this.rollupQueryOptions()).pipe(
+          filter(() => version === this.upcomingQueryVersion),
           map((r): PageResult<Meeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -703,6 +717,9 @@ export class MeetingsDashboardComponent {
         if (lens === 'me') {
           return EMPTY;
         }
+        // A new query: pages still in flight for the previous one are dropped, and its cursor is void.
+        this.pastQueryVersion++;
+        this.pastPageToken.set(undefined);
         if (timeFilter !== 'past') {
           this.pastMeetingsLoading.set(false);
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true });
@@ -732,6 +749,7 @@ export class MeetingsDashboardComponent {
     // Next pages: emits when loadMore triggers (appends to accumulator)
     const nextPage$ = this.loadMorePast$.pipe(
       switchMap((pageToken) => {
+        const version = this.pastQueryVersion;
         const projectUid = this.project()?.uid;
         if (!projectUid) {
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false });
@@ -740,6 +758,7 @@ export class MeetingsDashboardComponent {
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
         return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, searchName, filters, true, this.rollupQueryOptions()).pipe(
+          filter(() => version === this.pastQueryVersion),
           map((r): PageResult<PastMeeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -1265,7 +1284,7 @@ export class MeetingsDashboardComponent {
       return;
     }
     const params = computed(() => {
-      const projects = this.rollupProjectsFilter();
+      const projects = this.effectiveRollupProjects();
       return {
         projects: projects.length > 0 ? projects.join(',') : null,
         group: this.groupFilter(),
@@ -1352,7 +1371,7 @@ export class MeetingsDashboardComponent {
         !!this.meetingTypeFilter() ||
         !!this.foundationFilter() ||
         !!this.projectFilter() ||
-        this.rollupProjectsFilter().length > 0 ||
+        this.effectiveRollupProjects().length > 0 ||
         !!this.groupFilter() ||
         !!this.groupTypeFilter() ||
         (this.activeLens() === 'me' && this.timeFilter() === 'upcoming' && (this.responseFilter() !== 'all' || this.organizedByMe() || this.hideDeclined()))
