@@ -36,6 +36,7 @@ import {
   stubMentorViewDetail,
   stubTaskFile,
   TaskFileAnswer,
+  VIEW_TEXT_BODY,
 } from './helpers/mentorship-task-file-view.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -82,6 +83,10 @@ test.describe('Admin task rows — View structure', () => {
 
     const tab = await popup;
     await expect.poll(() => blobTypes(page)).toEqual(['text/plain;charset=utf-8']);
+    // The tab moves to the blob right after it is made; read the opener once it has landed, not mid-navigation.
+    await tab.waitForURL(/^blob:/);
+    await tab.waitForLoadState();
+    await expect(tab.locator('body')).toContainText(VIEW_TEXT_BODY);
     expect(await tab.evaluate(() => window.opener)).toBeNull();
   });
 
