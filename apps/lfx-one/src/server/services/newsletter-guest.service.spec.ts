@@ -223,6 +223,8 @@ describe('NewsletterGuestService', () => {
 
       deps.emailService.sendEmail.mockReturnValueOnce(new Promise<void>(() => undefined));
       expect((await service.requestSharedAccess(req, 'acme-foundation', issueId, 'bob@acme-motors.example')).issue.confirmation_sent).toBe(true);
+      await settleDetachedWork();
+      expect(deps.emailService.sendEmail).toHaveBeenCalledTimes(1);
     });
   });
 
