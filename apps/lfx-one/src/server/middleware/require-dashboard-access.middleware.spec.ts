@@ -18,7 +18,7 @@ vi.mock('../utils/persona-helper', () => ({
   },
 }));
 
-const { requireDashboardAccess } = await import('./require-dashboard-access.middleware');
+const { requireDashboardAccess, requireExecutiveOrLFStaff } = await import('./require-dashboard-access.middleware');
 
 interface PersonaResult {
   personas: string[];
@@ -229,5 +229,31 @@ describe('requireDashboardAccess', () => {
     await requireDashboardAccess(req, {} as Response, next);
     expect(verdict(next)).toBe(allowed ? 'allow' : 'deny');
     expect(checkProjectWriter).toHaveBeenCalledWith(req, 'synthetic-foreign');
+  });
+});
+
+describe('requireExecutiveOrLFStaff', () => {
+  beforeEach(() => {
+    getPersonas.mockReset();
+  });
+
+  it.each([
+    ['an executive director', { personas: ['executive-director'], isLFStaff: false }, 'allow'],
+    ['LF staff', { personas: ['contributor'], isLFStaff: true }, 'allow'],
+    ['a board member', { personas: ['board-member'], isLFStaff: false }, 'deny'],
+    ['a project writer', { personas: ['maintainer'], isRootWriter: true, isLFStaff: false }, 'deny'],
+    ['a plain viewer', { personas: ['contributor'], isLFStaff: false }, 'deny'],
+  ])('%s -> %s', async (_label, persona, expected) => {
+    getPersonas.mockResolvedValue({ personaProjects: {}, ...persona });
+    const next = vi.fn();
+    await requireExecutiveOrLFStaff(buildReq(), {} as Response, next as unknown as NextFunction);
+    expect(verdict(next)).toBe(expected);
+  });
+
+  it('forwards a persona lookup failure instead of allowing', async () => {
+    getPersonas.mockRejectedValue(new Error('boom'));
+    const next = vi.fn();
+    await requireExecutiveOrLFStaff(buildReq(), {} as Response, next as unknown as NextFunction);
+    expect(verdict(next)).toBe('deny');
   });
 });

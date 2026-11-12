@@ -77,3 +77,34 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
     next(error);
   }
 }
+
+// Role-only variant for routes keyed by a *project* slug (e.g. `/api/projects/:slug/participating-orgs*`), where
+// `foundationSlug` is absent so `requireDashboardAccess` would skip scoping. It admits the same callers
+// (EDs and LF Staff, via server-verified personas) and leaves per-project scoping to the route's own
+// project `viewer` check, which runs after this gate.
+export async function requireExecutiveOrLFStaff(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await personaDetectionService.getPersonas(req);
+
+    if (result.personas.includes(ED) || result.isLFStaff) {
+      next();
+      return;
+    }
+
+    logger.warning(req, 'require_executive_or_lf_staff', 'User without dashboard access attempted an executive-only project endpoint', {
+      path: req.path,
+      personas: result.personas,
+    });
+
+    next(
+      new AuthorizationError('Executive dashboard access required for this resource', {
+        operation: 'require_executive_or_lf_staff',
+        service: 'authorization',
+        path: req.path,
+        code: 'DASHBOARD_ACCESS_REQUIRED',
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+}
