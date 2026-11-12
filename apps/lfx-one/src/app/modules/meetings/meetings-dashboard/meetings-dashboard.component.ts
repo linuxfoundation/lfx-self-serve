@@ -645,9 +645,10 @@ export class MeetingsDashboardComponent {
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
         return this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, searchName, filters, this.rollupQueryOptions()).pipe(
-          filter(() => version === this.upcomingQueryVersion),
           map((r): PageResult<Meeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: false })),
+          // After catchError, so a late failure for an older query is dropped too and cannot clear the new cursor.
+          filter(() => version === this.upcomingQueryVersion),
           finalize(() => this.loadingMore.set(false))
         );
       })
@@ -758,9 +759,10 @@ export class MeetingsDashboardComponent {
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
         return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, searchName, filters, true, this.rollupQueryOptions()).pipe(
-          filter(() => version === this.pastQueryVersion),
           map((r): PageResult<PastMeeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false })),
+          // After catchError, so a late failure for an older query is dropped too and cannot clear the new cursor.
+          filter(() => version === this.pastQueryVersion),
           finalize(() => this.loadingMore.set(false))
         );
       })

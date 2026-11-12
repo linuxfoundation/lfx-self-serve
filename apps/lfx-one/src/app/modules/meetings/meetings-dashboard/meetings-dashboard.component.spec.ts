@@ -11,7 +11,16 @@ import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, provideRouter,
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { ButtonComponent } from '@components/button/button.component';
-import type { Lens, Meeting, MeetingDashboardView, MeetingResponseFilter, PaginatedResponse, PastMeeting, ProjectContext, User } from '@lfx-one/shared/interfaces';
+import type {
+  Lens,
+  Meeting,
+  MeetingDashboardView,
+  MeetingResponseFilter,
+  PaginatedResponse,
+  PastMeeting,
+  ProjectContext,
+  User,
+} from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -939,6 +948,26 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       flush();
       late.next({ data: [row('stale')], page_token: 'stale-cursor' });
       late.complete();
+      flush();
+
+      expect(ids(component)).toEqual(['fresh']);
+      expect(component.hasMore()).toBe(true);
+    });
+
+    it('drops a Load More failure that returns after the query changed, keeping the new cursor', () => {
+      const component = mount();
+      openScope(component);
+      const late = new Subject<PaginatedResponse<Meeting>>();
+      vi.mocked(meetings.getMeetingsByProjectPaginated).mockImplementation((_uid, _sort, token) =>
+        token ? late : of({ data: [row('fresh')], page_token: 'next' })
+      );
+      component.refreshMeetings(false);
+      flush();
+      component.loadMore();
+
+      component.onGroupTypeFilterChange('Board');
+      flush();
+      late.error(new Error('late failure'));
       flush();
 
       expect(ids(component)).toEqual(['fresh']);
