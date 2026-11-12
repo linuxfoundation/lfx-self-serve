@@ -3,9 +3,10 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import { LFX_CACHE_BYPASS_HEADER } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
-import { API_GW_TIMEOUT_MS, LFX_CACHE_BYPASS_HEADER, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
+import { API_GW_TIMEOUT_MS, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 
