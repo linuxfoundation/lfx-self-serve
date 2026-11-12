@@ -157,6 +157,8 @@ export class ImportMembersDialogComponent {
   public statusFilter = signal<MemberImportStatusFilter>('all');
   /** Index of the first table row shown, so a filter change can return to page 1. */
   public tableFirst = signal(0);
+  /** Distinguishes the manager's Stop action from fatal errors and automatic recovery limits. */
+  private readonly manualStopRequested = signal(false);
   /** Ends the current pause early; in-flight requests are never cancelled. */
   private readonly stopRequested = new Subject<void>();
   private retryDeadlineTimer?: Subscription;
@@ -172,8 +174,8 @@ export class ImportMembersDialogComponent {
   public readonly notSubmittedCount = computed(() => this.countRows('not_submitted'));
   public readonly retryableCount = computed(() => this.rows().filter((row) => this.isRetryable(row)).length);
   public readonly paused = computed(() => this.resumeAt() !== null);
-  /** A stop was requested outside a pause; the in-flight batch settles before the run ends. */
-  public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.stopReason() !== null);
+  /** The manager requested a stop outside a pause; the in-flight batch settles before the run ends. */
+  public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.manualStopRequested());
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
   public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0);
@@ -315,6 +317,7 @@ export class ImportMembersDialogComponent {
     if (this.phase() !== 'importing' || this.stopReason()) {
       return;
     }
+    this.manualStopRequested.set(true);
     this.stopReason.set('You stopped the import.');
     this.stopRequested.next();
   }
@@ -495,6 +498,7 @@ export class ImportMembersDialogComponent {
         targets.has(row.rowNumber) ? { ...row, status: row.uncertain ? 'unknown' : 'not_submitted', reason: undefined, retryable: undefined } : row
       )
     );
+    this.manualStopRequested.set(false);
     this.stopReason.set(null);
     this.pauseCount.set(0);
     this.resumeAt.set(null);

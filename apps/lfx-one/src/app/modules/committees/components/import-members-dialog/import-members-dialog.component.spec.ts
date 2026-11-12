@@ -825,6 +825,25 @@ describe('ImportMembersDialogComponent', () => {
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 25, conflicts: 0 });
     });
 
+    it('clears the manual stopping state before retrying unsent rows', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      component.stopImport();
+      respond(0);
+      expect(component.phase()).toBe('results');
+
+      component.retryFailed();
+      await render();
+
+      expect(component.phase()).toBe('importing');
+      expect(component.stopping()).toBe(false);
+      expect(component.stopReason()).toBeNull();
+      expect(query('import-members-progress')?.textContent).toContain('Adding members: 0 of 5 done');
+      expect((query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      respond(1);
+      expect(component.addedCount()).toBe(30);
+    });
+
     it('keeps a lost in-flight response unknown when stopped mid-batch', async () => {
       await upload(`email\n${emails(30)}`);
       vi.useFakeTimers();
@@ -1237,6 +1256,51 @@ describe('ImportMembersDialogComponent', () => {
       respond(1);
       expect(component.phase()).toBe('results');
       expect(component.addedCount()).toBe(30);
+    });
+
+    it.each([
+      [401, 'Your session has expired. Sign in again, then retry.'],
+      [403, 'You no longer have permission to manage this group.'],
+      [404, 'The pending invitation could not be found. Review pending invitations before retrying.'],
+    ])('shows cleanup HTTP %i immediately while another revoke is pending', async (status, reason) => {
+      await setup(
+        OPEN_GROUP,
+        [],
+        [
+          { uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' },
+          { uid: 'invite-2', invitee_email: 'person1@example.com', status: 'pending' },
+        ]
+      );
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      respond(0);
+      expect(revokeResponses).toHaveLength(2);
+
+      revokeResponses[0].error(new HttpErrorResponse({ status }));
+      await render();
+
+      expect(component.phase()).toBe('importing');
+      expect(component.stopping()).toBe(false);
+      expect(component.stopReason()).toBe(reason);
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
+      expect(query('import-members-progress')?.textContent).not.toContain('Stopping after the current batch');
+      expect(component.statusMessage()).not.toContain('Stopping after the current batch');
+      expect((query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(revokeResponses[1].observed).toBe(true);
+      expect(pending).toHaveLength(1);
+      component.stopImport();
+      expect(component.stopReason()).toBe(reason);
+
+      revokeResponses[1].next();
+      revokeResponses[1].complete();
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(pending).toHaveLength(1);
+      expect(component.addedCount()).toBe(25);
+      expect(component.notSubmittedCount()).toBe(5);
+      expect(component.rows()[0].cleanupWarning).toContain('pending invitation could not be revoked');
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
     });
 
     it.each([401, 403, 404])('stops queued chunks after cleanup HTTP %i while retaining the added member', async (status) => {

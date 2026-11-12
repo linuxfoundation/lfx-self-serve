@@ -300,7 +300,7 @@
         icon="fa-light fa-circle-stop"
         size="small"
         severity="secondary"
-        [disabled]="stopping()"
+        [disabled]="stopReason() !== null"
         (onClick)="stopImport()"
         data-testid="import-members-stop-btn">
       </lfx-button>
