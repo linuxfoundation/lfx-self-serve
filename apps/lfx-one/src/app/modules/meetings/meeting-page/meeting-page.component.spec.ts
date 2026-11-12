@@ -82,7 +82,11 @@ describe('MeetingPageComponent', () => {
     });
   });
 
-  it('shows the details of an ended meeting to a non-organizer with full access', () => {
+  it.each([
+    ['a viewer with full access', () => undefined],
+    ['the organizer', () => meeting.set({ ...PAST_MEETING, organizer: true })],
+  ])('shows the details of an ended meeting to %s', (_case, arrange) => {
+    arrange();
     const element = render();
 
     expect(element.querySelector('lfx-meeting-page-details')).not.toBeNull();
@@ -118,7 +122,6 @@ describe('MeetingPageComponent', () => {
   it.each([
     ['an upcoming meeting', () => loadedViaPastMeetingId.set(false)],
     ['a viewer without full access', () => pastMeetingFullAccess.set(false)],
-    ['the organizer', () => meeting.set({ ...PAST_MEETING, organizer: true })],
   ])('hands %s to the legacy page at the same URL', (_case, arrange) => {
     arrange();
     const element = render();
