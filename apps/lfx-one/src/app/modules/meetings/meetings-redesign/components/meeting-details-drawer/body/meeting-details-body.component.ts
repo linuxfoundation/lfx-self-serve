@@ -28,6 +28,8 @@ import {
 import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
@@ -61,6 +63,8 @@ import { MeetingDetailsToolsComponent } from '../tools/meeting-details-tools.com
     MeetingDetailsToolsComponent,
     UiAvatarComponent,
     UiBadgeComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
     UiTabsComponent,
     UiTooltipDirective,
   ],
@@ -73,6 +77,7 @@ export class MeetingDetailsBodyComponent {
   private readonly userService = inject(UserService);
   private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
   private readonly artifacts = inject(MeetingDetailsArtifactsService);
+  protected readonly ownActions = viewChild(MeetingDetailsOwnActionsComponent);
   protected readonly context = inject(MeetingDetailsContext);
 
   /** The big title has scrolled under the sticky header. */

@@ -11,7 +11,7 @@ import { canViewMeetingGuests, getMeetingDetailsState, getPastMeetingResourceId,
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { catchError, filter, fromEvent, interval, map, merge, of, Subscription, take, timer } from 'rxjs';
+import { catchError, EMPTY, filter, fromEvent, interval, map, merge, of, startWith, Subject, Subscription, switchMap, take, tap, timer } from 'rxjs';
 
 import { MeetingDetailsSource } from './meeting-details.source';
 
@@ -33,6 +33,15 @@ export class MeetingDetailsContext {
   private upcomingLoad: Subscription | null = null;
   /** Registered from the drawer; counts as invited before the list catches up. */
   private readonly registered = signal(false);
+  /** Emits on `retryLoad` to fetch the meeting again. */
+  private readonly reload$ = new Subject<void>();
+  private readonly loadErrorState = signal(false);
+  private readonly retryingState = signal(false);
+
+  /** The meeting could not be refreshed; the drawer shows an error with a retry instead of the row's data. */
+  public readonly loadError: Signal<boolean> = this.loadErrorState.asReadonly();
+  /** A retry after a failed load is in flight. */
+  public readonly retrying: Signal<boolean> = this.retryingState.asReadonly();
 
   /** The row the drawer opened on. */
   public readonly row: Signal<MeetingHomeRow> = signal(this.source.row).asReadonly();
@@ -136,6 +145,12 @@ export class MeetingDetailsContext {
     });
   }
 
+  /** Fetches the meeting again after a failed load. */
+  public retryLoad(): void {
+    this.retryingState.set(true);
+    this.reload$.next();
+  }
+
   /** Reloads the home list behind the drawer after an action changed the meeting. */
   public refreshList(): void {
     if (this.state() === 'ended') {
@@ -148,23 +163,29 @@ export class MeetingDetailsContext {
   private initMeeting(): Signal<Meeting> {
     const row = this.source.row;
     if (isPastMeetingCalendarRow(row.meeting)) return signal(row.meeting).asReadonly();
-    const fresh$ = this.meetingService.getMeetingDetail(row.meeting.id, { skipCache: row.meeting.organizer === true }).pipe(
-      // The detail has no feed-only fields (the viewer's RSVP, registrations, counts), so they stay from the row.
-      map((detail): Meeting => ({ ...row.meeting, ...detail })),
-      catchError((error: unknown) => {
-        console.error(`Failed to refresh meeting ${row.meeting.id} for its details drawer:`, error);
-        if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403)) {
-          this.closeUnavailable();
-          return of(row.meeting);
-        }
-        this.toast.show({
-          variant: 'error',
-          position: 'bottom-center',
-          message: 'Meeting details unavailable',
-          description: 'Some details may be out of date. Please try again later.',
-        });
-        return of(row.meeting);
-      })
+    const fresh$ = this.reload$.pipe(
+      startWith(undefined),
+      switchMap(() =>
+        this.meetingService.getMeetingDetail(row.meeting.id, { skipCache: row.meeting.organizer === true }).pipe(
+          // The detail has no feed-only fields (the viewer's RSVP, registrations, counts), so they stay from the row.
+          map((detail): Meeting => ({ ...row.meeting, ...detail })),
+          // Cleared on settle, not finalize: a retry cancelled by a newer one must not clear the newer one's spinner.
+          tap(() => {
+            this.loadErrorState.set(false);
+            this.retryingState.set(false);
+          }),
+          catchError((error: unknown) => {
+            this.retryingState.set(false);
+            console.error(`Failed to refresh meeting ${row.meeting.id} for its details drawer:`, error);
+            if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403)) {
+              this.closeUnavailable();
+              return of(row.meeting);
+            }
+            this.loadErrorState.set(true);
+            return EMPTY;
+          })
+        )
+      )
     );
     return toSignal(fresh$, { initialValue: row.meeting });
   }
