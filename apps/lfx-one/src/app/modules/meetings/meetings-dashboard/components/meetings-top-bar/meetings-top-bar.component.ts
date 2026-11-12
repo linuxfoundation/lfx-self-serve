@@ -10,6 +10,7 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
+import { MEETING_ROLLUP_MAX_PROJECTS } from '@lfx-one/shared/constants';
 import { FilterPillOption, MeetingDashboardView, MeetingResponseFilter } from '@lfx-one/shared/interfaces';
 import { combineLatest } from 'rxjs';
 
@@ -76,6 +77,9 @@ export class MeetingsTopBarComponent {
   });
 
   public readonly organizerLabel = computed(() => this.formatCountLabel('Organized by me', this.organizerCount()));
+
+  // A partial project pick stops here (the server's cap); selecting every project is always allowed and sends no subset.
+  protected readonly maxRollupProjects = MEETING_ROLLUP_MAX_PROJECTS;
 
   public readonly meetingViewOptions: FilterPillOption[] = [
     { id: 'upcoming', label: 'Upcoming' },

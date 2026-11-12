@@ -81,6 +81,7 @@
             [options]="rollupProjectOptions()"
             placeholder="All projects"
             filterPlaceHolder="Search projects"
+            [selectionLimit]="rollupProjectOptions().length > maxRollupProjects ? maxRollupProjects : undefined"
             ariaLabel="Filter by project"
             data-testid="rollup-project-filter"></lfx-multi-select>
         </div>

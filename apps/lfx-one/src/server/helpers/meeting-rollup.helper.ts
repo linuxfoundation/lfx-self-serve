@@ -4,6 +4,7 @@
 // Deep import: the utils barrel pulls Angular-only code that server unit specs cannot load.
 import { isFilterSafeIdentifier } from '@lfx-one/shared/utils/org-selector.utils';
 
+import { MEETING_ROLLUP_MAX_PROJECTS } from '@lfx-one/shared/constants';
 import type { MeetingRollupFilters, MeetingRollupGroupOption } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -44,7 +45,7 @@ export function readRollupFilters(query: Record<string, unknown>, operation: str
   const projectUids = readSingle(query, 'project_uids', operation);
   if (projectUids !== undefined) {
     const uids = [...new Set(projectUids.split(',').map((uid) => uid.trim()))];
-    if (uids.length > 200 || !uids.every(isFilterSafeIdentifier)) {
+    if (uids.length > MEETING_ROLLUP_MAX_PROJECTS || !uids.every(isFilterSafeIdentifier)) {
       throw ServiceValidationError.forField('project_uids', 'project_uids must be a comma-separated list of project identifiers', { operation });
     }
     filters.projectUids = uids;
