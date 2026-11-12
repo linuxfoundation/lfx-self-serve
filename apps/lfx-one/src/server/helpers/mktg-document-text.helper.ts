@@ -108,6 +108,12 @@ export class MktgDocumentText {
   private static readonly maxDocxMarkupBytes = 2 * 1024 * 1024;
 
   /**
+   * Longest start tag the .pptx readers accept. A real `<Relationship …>`, `<p:sldId …>` or `<a:t …>` is
+   * a few hundred characters; a longer one is hostile markup and is skipped, not scanned.
+   */
+  private static readonly maxXmlTagChars = 8 * 1024;
+
+  /**
    * The text of an uploaded file. The format is told from the bytes, not the
    * file name: a PDF by its header, a Word or PowerPoint file by its zip
    * signature (then by the parts inside), and anything else without a NUL
@@ -298,9 +304,7 @@ export class MktgDocumentText {
       const paragraphs = xml
         .split(/<\/a:p>/)
         .map((paragraph) =>
-          Array.from(paragraph.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>|<a:br\b[^>]*>/g), (match) =>
-            match[1] === undefined ? '\n' : MktgDocumentText.decodeXml(match[1])
-          )
+          MktgDocumentText.paragraphRuns(paragraph)
             .join('')
             .split('\n')
             .map((line) => line.trim())
@@ -328,14 +332,14 @@ export class MktgDocumentText {
     const rels = await markup.file(MktgDocumentText.pptxPresentationRels)?.async('string');
     if (presentation !== undefined && rels !== undefined) {
       const targets = new Map<string, string>();
-      for (const [tag] of rels.matchAll(/<Relationship\b[^>]*>/g)) {
+      for (const tag of MktgDocumentText.startTags(rels, 'Relationship')) {
         const id = MktgDocumentText.xmlAttribute(tag, 'Id');
         const target = MktgDocumentText.xmlAttribute(tag, 'Target');
         if (id !== null && target !== null) {
           targets.set(id, target.startsWith('/') ? target.slice(1) : `ppt/${target}`);
         }
       }
-      const ordered = Array.from(presentation.matchAll(/<p:sldId\b[^>]*>/g), ([tag]) => {
+      const ordered = Array.from(MktgDocumentText.startTags(presentation, 'p:sldId'), (tag) => {
         const id = MktgDocumentText.xmlAttribute(tag, 'r:id');
         const part = id === null ? undefined : targets.get(id);
         return part === undefined ? null : markup.file(part);
@@ -351,12 +355,93 @@ export class MktgDocumentText {
       .map((slide) => slide.file);
   }
 
-  /** One attribute's value from a single start tag, or null; the tag is one `<…>` match, so the scan is linear in it. */
-  private static xmlAttribute(tag: string, name: string): string | null {
-    for (const [, attribute, value] of tag.matchAll(/([\w:.-]+)\s*=\s*"([^"]*)"/g)) {
-      if (attribute === name) {
-        return value;
+  /**
+   * The start tags named `name` (`<name …>`, whole tag text), in document order. Linear in `xml`: each tag is
+   * found with `indexOf` and the scan resumes after its `>`, and a `<name` with no `>` after it ends the scan,
+   * since no later tag can close either. A tag over `maxXmlTagChars` is skipped. Not a regex, because
+   * `<name[^>]*>` retried from every `<name` of an unclosed run is quadratic in the part's size.
+   */
+  private static *startTags(xml: string, name: string): Generator<string> {
+    const open = `<${name}`;
+    let at = xml.indexOf(open);
+    while (at !== -1) {
+      const end = xml.indexOf('>', at);
+      if (end === -1) {
+        return;
       }
+      if (end - at < MktgDocumentText.maxXmlTagChars && MktgDocumentText.endsTagName(xml.charAt(at + open.length))) {
+        yield xml.slice(at, end + 1);
+      }
+      at = xml.indexOf(open, end + 1);
+    }
+  }
+
+  /**
+   * One paragraph's text runs in order: the text of each `<a:t>…</a:t>`, and `'\n'` for each `<a:br>` soft line
+   * break. Linear in the paragraph for the same reason as `startTags`: every step moves past the `>` it found,
+   * and an unclosed `<a:t` or `<a:br` ends the walk.
+   */
+  private static paragraphRuns(paragraph: string): string[] {
+    const runs: string[] = [];
+    let at = paragraph.indexOf('<a:');
+    while (at !== -1) {
+      const end = paragraph.indexOf('>', at);
+      if (end === -1) {
+        break;
+      }
+      const within = end - at < MktgDocumentText.maxXmlTagChars;
+      if (within && paragraph.startsWith('<a:br', at) && MktgDocumentText.endsTagName(paragraph.charAt(at + 5))) {
+        runs.push('\n');
+      } else if (within && paragraph.startsWith('<a:t', at) && MktgDocumentText.endsTagName(paragraph.charAt(at + 4))) {
+        const close = paragraph.indexOf('<', end + 1);
+        if (close !== -1 && paragraph.startsWith('</a:t>', close)) {
+          runs.push(MktgDocumentText.decodeXml(paragraph.slice(end + 1, close)));
+          at = paragraph.indexOf('<a:', close + 6);
+          continue;
+        }
+      }
+      at = paragraph.indexOf('<a:', end + 1);
+    }
+    return runs;
+  }
+
+  /** Whether `char`, the one after a tag's name, ends that name: `<a:t>`, `<a:t/>` or `<a:t x="…">`, not `<a:tbl>`. */
+  private static endsTagName(char: string): boolean {
+    return char === '>' || char === '/' || /\s/.test(char);
+  }
+
+  /**
+   * One attribute's value from a single start tag, or null. Linear in the tag: it walks outward from each `=`,
+   * never back past the end of the previous attribute, and an unclosed value ends the scan. Not a regex, because
+   * `([\w:.-]+)\s*=\s*"…"` retried from every position of a long tag with no `=` is quadratic in its length.
+   */
+  private static xmlAttribute(tag: string, name: string): string | null {
+    let at = 0;
+    for (let eq = tag.indexOf('=', at); eq !== -1; eq = tag.indexOf('=', at)) {
+      let nameEnd = eq;
+      while (nameEnd > at && /\s/.test(tag.charAt(nameEnd - 1))) {
+        nameEnd--;
+      }
+      let nameStart = nameEnd;
+      while (nameStart > at && /[\w:.-]/.test(tag.charAt(nameStart - 1))) {
+        nameStart--;
+      }
+      let valueStart = eq + 1;
+      while (valueStart < tag.length && /\s/.test(tag.charAt(valueStart))) {
+        valueStart++;
+      }
+      if (tag.charAt(valueStart) !== '"') {
+        at = eq + 1;
+        continue;
+      }
+      const valueEnd = tag.indexOf('"', valueStart + 1);
+      if (valueEnd === -1) {
+        return null;
+      }
+      if (nameStart < nameEnd && tag.slice(nameStart, nameEnd) === name) {
+        return tag.slice(valueStart + 1, valueEnd);
+      }
+      at = valueEnd + 1;
     }
     return null;
   }

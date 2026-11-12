@@ -199,6 +199,76 @@ describe('MktgDocumentText.read — Word and text', () => {
     expect(await MktgDocumentText.read(deck)).toEqual({ text: 'Revenue: $1m\nPipeline: $2m', truncated: false });
   });
 
+  it('reads a .pptx with hostile markup (one huge tag, or a run of unclosed tags) without stalling the event loop', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slide = (body: string): string =>
+      `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:p>${body}</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+    const text = '<a:r><a:t>Real text</a:t></a:r>';
+    const size = 1_500_000;
+    const hostile: Record<string, string> = {
+      'one multi-megabyte <Relationship> tag with no attributes': 'a'.repeat(size),
+      'a run of <Relationship tags that never close': '<Relationship '.repeat(size / 14),
+      'one multi-megabyte <p:sldId> tag with no attributes': 'a'.repeat(size),
+    };
+
+    for (const [label, filler] of Object.entries(hostile)) {
+      const inRels = label.includes('Relationship');
+      const deck = await zip({
+        'ppt/presentation.xml': inRels ? '<p:presentation/>' : `<p:presentation><p:sldId ${filler}></p:presentation>`,
+        'ppt/_rels/presentation.xml.rels': inRels ? `<Relationships><Relationship ${filler}></Relationships>` : '<Relationships/>',
+        'ppt/slides/slide1.xml': slide(text),
+      });
+
+      let read: Awaited<ReturnType<typeof MktgDocumentText.read>> | undefined;
+      const stall = await longestStall(async () => {
+        read = await MktgDocumentText.read(deck);
+      });
+
+      // A quadratic scan of these takes minutes; the bound is loose so a slow runner never trips it.
+      expect(stall, label).toBeLessThan(2_000);
+      expect(read?.text, label).toBe('Real text');
+    }
+  }, 30_000);
+
+  it('reads a .pptx slide made of unclosed <a:t and <a:br tags without stalling the event loop, and keeps the runs around them', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slide = (body: string): string =>
+      `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:p>${body}</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+    const hostileSlides = ['<a:t '.repeat(300_000), '<a:br '.repeat(250_000), `<a:t ${'a'.repeat(1_500_000)}>`];
+
+    for (const filler of hostileSlides) {
+      const deck = await zip({
+        'ppt/presentation.xml': '<p:presentation/>',
+        'ppt/slides/slide1.xml': slide(`<a:r><a:t>Before</a:t></a:r>${filler}`),
+      });
+
+      let read: Awaited<ReturnType<typeof MktgDocumentText.read>> | undefined;
+      const stall = await longestStall(async () => {
+        read = await MktgDocumentText.read(deck);
+      });
+
+      expect(stall).toBeLessThan(2_000);
+      expect(read?.text).toBe('Before');
+    }
+  }, 30_000);
+
+  it('reads .pptx relationship attributes in any order and spacing, and ignores a tag whose value is never closed', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const slide = (text: string): string =>
+      `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+    const deck = await zip({
+      'ppt/presentation.xml':
+        '<p:presentation><p:sldIdLst><p:sldId id="1" r:id = "rId2"/><p:sldId r:id="rId1" id="2"/><p:sldId r:id="rId9"/></p:sldIdLst></p:presentation>',
+      'ppt/_rels/presentation.xml.rels':
+        '<Relationships><Relationship Target="slides/slide1.xml" Type="x" Id="rId1"/><Relationship Id = "rId2"\n Target = "slides/slide2.xml"/><Relationship Id="rId9" Target="slides/slide3.xml/></Relationships>',
+      'ppt/slides/slide1.xml': slide('One'),
+      'ppt/slides/slide2.xml': slide('Two'),
+      'ppt/slides/slide3.xml': slide('Three'),
+    });
+
+    expect((await MktgDocumentText.read(deck)).text).toBe('Two\n\nOne');
+  });
+
   it('refuses a .docx whose markup inflates past the cap (a compression bomb) before mammoth reads it', async () => {
     const parse = vi.spyOn(mammoth, 'extractRawText');
     const bomb = await zip({ 'word/document.xml': `<w:document>${' '.repeat(40 * 1024 * 1024)}</w:document>` });
