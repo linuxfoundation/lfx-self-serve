@@ -77,6 +77,7 @@ import {
   filter,
   finalize,
   interval,
+  last,
   map,
   merge,
   Observable,
@@ -431,6 +432,8 @@ export class NewsletterManageComponent {
   private rebuildRequestAbandoned = false;
   // The resolve pipeline stops when the author leaves, but an email add can still finish afterwards.
   private pageDestroyed = false;
+  // The last resolve request failed, so nothing is preparing the recipient list until the page resolves again.
+  private readonly audienceRequestFailed = signal(false);
 
   // === Audience email adds ===
   // Owned here (not by the audience step) because the stepper destroys the step
@@ -542,13 +545,19 @@ export class NewsletterManageComponent {
     const audience = this.audience();
     return audience?.status === 'ready' && this.uidsEqual([...audience.committee_uids].sort(), [...this.committeeUidsValue()].sort());
   });
+  // A saved draft whose snapshot isn't ready yet, so the Send step explains why Send and Schedule are waiting.
+  // A failed snapshot or a failed request shows its own error instead.
+  protected readonly audiencePreparing = computed(
+    () =>
+      !!this.newsletterId() &&
+      this.newsletterStatus() === 'draft' &&
+      this.audienceFilled() &&
+      !this.audienceReady() &&
+      this.audience()?.status !== 'failed' &&
+      !this.audienceRequestFailed()
+  );
   // The Recipients list reads the snapshot once it is ready, so it shows exactly who the send will reach and
   // doesn't depend on the live committee read. Until then it reads the committees live, as before.
-  // A saved draft whose snapshot isn't ready yet, so the Send step explains why Send and Schedule are waiting.
-  // A failed snapshot shows its own error instead.
-  protected readonly audiencePreparing = computed(
-    () => !!this.newsletterId() && this.newsletterStatus() === 'draft' && this.audienceFilled() && !this.audienceReady() && this.audience()?.status !== 'failed'
-  );
   protected readonly recipientsNewsletterUid = computed(() => (this.audience()?.status === 'ready' && this.audienceReady() ? this.newsletterId() : null));
   public readonly canSend = computed(
     () =>
@@ -938,6 +947,8 @@ export class NewsletterManageComponent {
     this.audienceEmailAdds.update((entries) => [...entries.filter((e) => !(e.committeeUid === committeeUid && e.email === email)), entry]);
 
     if (entry.status === 'invalid') return;
+    // The draft's project, captured now: once the author leaves, projectUid() can follow a different project.
+    const projectUid = this.projectUid();
 
     // Intentionally NOT takeUntilDestroyed: HttpClient aborts the request on
     // unsubscribe, which would silently cancel in-flight adds if the user left
@@ -951,7 +962,7 @@ export class NewsletterManageComponent {
         // a switch doesn't replace the new group's count.
         this.audienceRebuildNeeded.add(committeeUid);
         if (this.pageDestroyed) {
-          this.rebuildAudienceAfterLeaving(committeeUid);
+          this.rebuildAudienceAfterLeaving(projectUid, committeeUid);
         } else if (this.committeeUidsValue().includes(committeeUid)) {
           this.fetchRecipientCountFor(this.committeeUidsValue(), true);
         }
@@ -1145,14 +1156,31 @@ export class NewsletterManageComponent {
   /**
    * An add that finishes after the author left the page starts the rebuild itself. The page's resolve pipeline
    * has stopped, and the next visit would otherwise reuse a snapshot without this email.
+   *
+   * The service hands back a read that is already running rather than start another, and that read may have
+   * started before this add. So when the first request gets a running read back, this waits for it to end and
+   * asks once more, which starts a read that includes the add.
    */
-  private rebuildAudienceAfterLeaving(committeeUid: string): void {
+  private rebuildAudienceAfterLeaving(projectUid: string, committeeUid: string): void {
     const id = this.newsletterId();
     const saved = this.lastSavedSnapshot()?.committeeUids ?? [];
     if (!id || this.newsletterStatus() !== 'draft' || !saved.includes(committeeUid)) return;
-    // Intentionally not takeUntilDestroyed: the page is already gone. The service runs the read in the
-    // background, so only the request itself has to complete.
-    this.newsletterService.resolveAudience(this.projectUid(), id, { committee_uids: saved, refresh: true }).subscribe({ error: () => undefined });
+    const rebuild = () => this.newsletterService.resolveAudience(projectUid, id, { committee_uids: saved, refresh: true });
+    // Intentionally not takeUntilDestroyed: the page is already gone, and each request completes on its own.
+    rebuild()
+      .pipe(
+        switchMap((audience) =>
+          audience.status !== 'processing'
+            ? EMPTY
+            : defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
+                repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
+                takeWhile((polled) => polled.status === 'processing', true),
+                last(),
+                switchMap((polled) => (polled.status === 'processing' ? EMPTY : rebuild()))
+              )
+        )
+      )
+      .subscribe({ error: () => undefined });
   }
 
   private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
@@ -1212,6 +1240,7 @@ export class NewsletterManageComponent {
     const rebuild = refresh || uids.some((uid) => this.audienceRebuildNeeded.has(uid));
     // Send and Schedule wait from now until this resolve answers, so neither can use a snapshot it replaces.
     this.audience.set(null);
+    this.audienceRequestFailed.set(false);
     this.recipientCountLoading.set(true);
     let lastStatus: NewsletterAudience['status'] | null = null;
     let reusedRead = false;
@@ -1277,6 +1306,7 @@ export class NewsletterManageComponent {
       catchError(() => {
         if (this.uidsEqual(uids, this.committeeUidsValue())) {
           this.audience.set(null);
+          this.audienceRequestFailed.set(true);
           this.recipientCount.set(null);
           this.messageService.add({
             severity: 'error',

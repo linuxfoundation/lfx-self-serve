@@ -204,6 +204,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     const api = openDraft();
 
     expect(api.audienceReady()).toBe(false);
+    expect(api.audiencePreparing()).toBe(false);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Could not build the recipient list' }));
   });
 
@@ -320,10 +321,14 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     newsletterService.resolveAudience.mockClear();
     newsletterService.resolveAudience.mockReturnValue(of(audience({ status: 'processing' })));
 
+    newsletterService.getAudience.mockReturnValue(of(audience({ recipient_count: 1580 })));
+
     destroyPage();
     add.next({});
     add.complete();
 
-    expect(newsletterService.resolveAudience).toHaveBeenCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: true });
+    // The first request got a running read back, which may predate the add, so it waited and asked again.
+    expect(newsletterService.resolveAudience).toHaveBeenCalledTimes(2);
+    expect(newsletterService.resolveAudience).toHaveBeenNthCalledWith(2, 'p-1', 'n-1', { committee_uids: ['c-1'], refresh: true });
   });
 });
