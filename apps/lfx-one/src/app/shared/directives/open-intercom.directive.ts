@@ -29,7 +29,11 @@ export class OpenIntercomDirective {
   @HostListener('click', ['$event'])
   public onClick(event: MouseEvent): void {
     event.preventDefault();
+    this.open();
+  }
 
+  /** Opens the messenger; for a trigger that does not click, such as a keyboard-chosen menu item. */
+  public open(): void {
     const { intercomAppId } = getRuntimeConfig(this.transferState);
     if (!intercomAppId) {
       this.showSupportUnavailableToast();

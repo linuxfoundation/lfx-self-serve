@@ -1,0 +1,48 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. Edge to edge up to 1080px, then 1016px wide. -->
+<footer
+  class="mx-auto flex w-full max-w-[1016px] flex-col items-start border-t border-gray-200 px-[16px] py-[32px] text-[12px] leading-[1.7] text-gray-500 sm:px-[32px] sm:pt-[48px] min-[1081px]:px-0"
+  data-testid="meeting-page-footer">
+  <img src="/images/logo_lf_horizontal_color.png" alt="The Linux Foundation" class="mb-[28px] h-[16px] w-auto opacity-85" />
+  <p class="mb-[14px] [text-wrap:pretty]">
+    Copyright © {{ year }} The Linux Foundation®. All rights reserved.<br />
+    The Linux Foundation has registered trademarks and uses trademarks.<br />
+    For more information, including terms of use,
+    <a
+      [href]="links.platformUsage"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="meeting-page-footer-platform-usage-link"
+      class="text-gray-700 underline"
+      >Platform Usage</a
+    >,
+    <a
+      [href]="links.privacyPolicy"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="meeting-page-footer-privacy-policy-link"
+      class="text-gray-700 underline"
+      >Privacy Policy</a
+    >, and
+    <a
+      [href]="links.trademarkUsage"
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="meeting-page-footer-trademark-usage-link"
+      class="text-gray-700 underline"
+      >Trademark Usage</a
+    >, please see our
+    <a [href]="links.policies" target="_blank" rel="noopener noreferrer" data-testid="meeting-page-footer-policies-link" class="underline">Policies</a> page.
+  </p>
+  <!-- Hidden, not removed, inside an iframe: the server always renders it, so hydration keeps the node. -->
+  <button
+    type="button"
+    class="cursor-pointer border-0 bg-transparent p-0 text-gray-700 underline"
+    [class.hidden]="!cookieSettingsAvailable"
+    (click)="openCookieSettings()"
+    data-testid="meeting-page-footer-cookies">
+    Manage cookie preferences.
+  </button>
+</footer>
