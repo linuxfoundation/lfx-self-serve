@@ -8,9 +8,10 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
-import { PROJECT_PERMISSION_ROLE_OPTIONS } from '@lfx-one/shared/constants';
+import { PROJECT_PERMISSION_ROLE_OPTIONS, PROJECT_USER_ALREADY_ON_PROJECT_CODE, PROJECT_USER_ALREADY_ON_PROJECT_MESSAGE } from '@lfx-one/shared/constants';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -102,7 +103,7 @@ export class UserFormComponent {
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
-              detail: error.error?.message || 'Failed to update user. Please try again.',
+              detail: getHttpErrorDetail(error, 'Failed to update user. Please try again.'),
             });
             this.submitting.set(false);
           },
@@ -133,12 +134,7 @@ export class UserFormComponent {
             if (error.status === 404 && error.error?.code === 'NOT_FOUND') {
               this.handleUserNotFound(formValue);
             } else {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: error.error?.message || 'Failed to add user. Please try again.',
-              });
-              this.submitting.set(false);
+              this.handleAddUserError(error);
             }
           },
         });
@@ -230,15 +226,21 @@ export class UserFormComponent {
           });
           this.dialogRef.close(true);
         },
-        error: (error: HttpErrorResponse) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: error.error?.message || 'Failed to add user. Please try again.',
-          });
-          this.submitting.set(false);
-        },
+        error: (error: HttpErrorResponse) => this.handleAddUserError(error),
       });
+  }
+
+  /**
+   * Shows why an add failed. The BFF's error body carries its reason under `error`, never `message`, so
+   * the shared reader is used rather than `error.error?.message`, which is always empty here and left every
+   * failure on the generic text. Someone already on the project gets the way to change their role.
+   */
+  private handleAddUserError(error: HttpErrorResponse): void {
+    const alreadyOnProject = error.status === 409 && error.error?.code === PROJECT_USER_ALREADY_ON_PROJECT_CODE;
+    const detail = alreadyOnProject ? PROJECT_USER_ALREADY_ON_PROJECT_MESSAGE : getHttpErrorDetail(error, 'Failed to add user. Please try again.');
+
+    this.messageService.add({ severity: 'error', summary: 'Error', detail });
+    this.submitting.set(false);
   }
 
   private createUserFormGroup(): FormGroup {

@@ -20,3 +20,14 @@ export const PROJECT_PERMISSION_ROLE_COLOR: Record<ProjectPermissionRole, Filter
   view: 'blue',
   meeting_coordinator: 'purple',
 };
+
+/**
+ * `code` the BFF answers an add-user request with (a 409) when the person is already listed on the
+ * project. Add is not an upsert, so a role change goes through the row's Edit action instead.
+ * Mirrors the code thrown in `ProjectService.updateProjectPermissions`.
+ */
+export const PROJECT_USER_ALREADY_ON_PROJECT_CODE = 'ALREADY_ON_PROJECT';
+
+/** What an admin reads when Add User is used for someone already on the project: why it failed, and where the role is changed. */
+export const PROJECT_USER_ALREADY_ON_PROJECT_MESSAGE =
+  'This person is already on the project. To change their role, use the Actions (⋮) menu on their row and choose Edit.';
