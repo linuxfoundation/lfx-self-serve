@@ -196,6 +196,7 @@ export class ImportMembersDialogComponent {
   public readonly statusMessage: Signal<string> = this.initStatusMessage();
 
   public constructor() {
+    this.initStatusFilterReset();
     this.initTablePageBounds();
   }
 
@@ -397,6 +398,15 @@ export class ImportMembersDialogComponent {
     });
   }
 
+  /** Keep All selected after a disappearing status triggers the fallback. */
+  private initStatusFilterReset(): void {
+    toObservable(this.activeStatusFilter)
+      .pipe(takeUntilDestroyed())
+      .subscribe((filter) => {
+        if (filter === 'all' && this.statusFilter() !== 'all') this.statusFilter.set('all');
+      });
+  }
+
   /** Preserve valid pages, but keep live status-filter results within the current page bounds. */
   private initTablePageBounds(): void {
     toObservable(this.filteredRowViews)
@@ -405,17 +415,6 @@ export class ImportMembersDialogComponent {
         const lastPageFirst = Math.max(0, Math.ceil(rows.length / this.tablePageSize) - 1) * this.tablePageSize;
         if (this.tableFirst() > lastPageFirst) this.tableFirst.set(lastPageFirst);
       });
-  }
-
-  /** Problem statuses read red and added rows green; the rest keep the default pill style. */
-  private statusFilterColor(severity: MemberImportRowView['statusSeverity']): FilterPillColor | undefined {
-    if (severity === 'danger') {
-      return 'red';
-    }
-    if (severity === 'success') {
-      return 'green';
-    }
-    return undefined;
   }
 
   private initStatusMessage(): Signal<string> {
@@ -439,6 +438,17 @@ export class ImportMembersDialogComponent {
           return this.fileErrors().length > 0 ? 'The file could not be imported. See the errors below.' : '';
       }
     });
+  }
+
+  /** Problem statuses read red and added rows green; the rest keep the default pill style. */
+  private statusFilterColor(severity: MemberImportRowView['statusSeverity']): FilterPillColor | undefined {
+    if (severity === 'danger') {
+      return 'red';
+    }
+    if (severity === 'success') {
+      return 'green';
+    }
+    return undefined;
   }
 
   private applyFileText(text: string): void {

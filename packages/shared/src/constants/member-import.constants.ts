@@ -13,7 +13,10 @@ export const MEMBER_IMPORT_MAX_RECORDS = 500;
 
 export const MEMBER_IMPORT_TEMPLATE_FILENAME = 'member-import-template.csv';
 
-/** File name of the invalid-rows download: original values plus an `errors` column, ready to fix and re-import. */
+/**
+ * File name of the invalid-rows recovery CSV: reversibly encoded member values plus
+ * `lfx_import_encoding` and `errors` columns, ready to fix and re-import.
+ */
 export const MEMBER_IMPORT_INVALID_ROWS_FILENAME = 'member-import-invalid-rows.csv';
 
 /** Reserved recovery metadata is never projected into member data. */

@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 intercom_collection: Committees
 ---
 
@@ -84,6 +84,8 @@ If you can manage a group's members, you can add many people at once from a CSV 
 6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. Select a status pill above the table, such as **Invalid (3)**, to show only those rows, or **All** to show every row again. Invalid rows don't block the import: they are skipped and nothing is sent for them. To fix them, select **Download invalid rows** to save a CSV with their original values and an **errors** column describing each problem, or correct your file and choose it again. You can also remove a row from the preview.
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
 8. Select **Add _N_ members**. If the file has invalid rows, the button says how many are skipped, for example **Add 27 members (skip 3 invalid)**. Rows are added in batches, one batch at a time. While the import runs, each row shows **Not yet submitted**, **Adding…**, or **Waiting to resume** until it settles. A retry run preserves **Outcome unknown** for an unconfirmed earlier attempt until that row is sent again.
+
+Status filters stay available while the import runs and in the results. If the selected status no longer has rows, the table returns to **All** and keeps showing all rows until you select another status.
 
 ### Fix and re-import downloaded rows
 

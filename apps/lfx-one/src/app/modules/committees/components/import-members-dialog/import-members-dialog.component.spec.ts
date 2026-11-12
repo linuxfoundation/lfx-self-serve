@@ -648,6 +648,31 @@ describe('ImportMembersDialogComponent', () => {
       expect(visibleRowNumbers()).toEqual(['2', '4']);
     });
 
+    it('keeps All selected when a vanished status returns during automatic recovery', async () => {
+      await upload('email\nada@example.com');
+      vi.useFakeTimers();
+      component.startImport();
+      failBulk(0, 429, { 'Retry-After': '1' });
+      fixture.detectChanges();
+
+      query('filter-pill-waiting')?.click();
+      fixture.detectChanges();
+      expect(component.activeStatusFilter()).toBe('waiting');
+
+      vi.advanceTimersByTime(1_000);
+      fixture.detectChanges();
+      expect(pending).toHaveLength(2);
+      expect(component.activeStatusFilter()).toBe('all');
+      expect(query('filter-pill-all')?.getAttribute('aria-pressed')).toBe('true');
+
+      failBulk(1, 429, { 'Retry-After': '1' });
+      fixture.detectChanges();
+      expect(component.waitingCount()).toBe(1);
+      expect(component.activeStatusFilter()).toBe('all');
+      expect(query('filter-pill-all')?.getAttribute('aria-pressed')).toBe('true');
+      expect(query('filter-pill-waiting')?.getAttribute('aria-pressed')).toBe('false');
+    });
+
     it('returns to page 1 when the filter changes', async () => {
       const invalid = Array.from({ length: 12 }, (_, i) => `bad-${i}`).join('\n');
       await upload(`email\n${emails(13)}\n${invalid}`);
