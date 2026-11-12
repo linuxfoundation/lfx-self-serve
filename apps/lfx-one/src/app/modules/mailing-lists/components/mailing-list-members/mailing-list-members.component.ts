@@ -60,6 +60,7 @@ export class MailingListMembersComponent {
   public members = signal<MailingListMember[]>([]);
   public loading = signal<boolean>(true);
   public error = signal<boolean>(false);
+  public deletingUid = signal<string | null>(null);
 
   // Computed
   public memberCount = computed(() => this.members().length);
@@ -114,7 +115,7 @@ export class MailingListMembersComponent {
 
   public deleteMember(member: MailingListMember): void {
     const ml = this.mailingList();
-    if (!ml) return;
+    if (!ml || this.deletingUid() !== null) return;
 
     const memberName = this.fullNamePipe.transform(member);
     const listName = ml.title || ml.group_name;
@@ -127,26 +128,31 @@ export class MailingListMembersComponent {
       acceptButtonStyleClass: 'p-button-sm p-button-danger',
       rejectButtonStyleClass: 'p-button-sm p-button-secondary',
       accept: () => {
-        this.mailingListService.deleteMember(ml.uid, member.uid).subscribe({
-          next: () => {
-            // Remove from local state
-            const updatedMembers = this.members().filter((m) => m.uid !== member.uid);
-            this.members.set(updatedMembers);
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: `${this.memberLabel.singular} removed successfully`,
-            });
-          },
-          error: (err) => {
-            console.error('Failed to delete member', err);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: `Failed to remove ${this.memberLabel.singular.toLowerCase()}`,
-            });
-          },
-        });
+        this.deletingUid.set(member.uid);
+
+        this.mailingListService
+          .deleteMember(ml.uid, member.uid)
+          .pipe(finalize(() => this.deletingUid.set(null)))
+          .subscribe({
+            next: () => {
+              // Remove from local state
+              const updatedMembers = this.members().filter((m) => m.uid !== member.uid);
+              this.members.set(updatedMembers);
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `${this.memberLabel.singular} removed successfully`,
+              });
+            },
+            error: (err) => {
+              console.error('Failed to delete member', err);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `Failed to remove ${this.memberLabel.singular.toLowerCase()}`,
+              });
+            },
+          });
       },
     });
   }
