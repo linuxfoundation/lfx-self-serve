@@ -189,5 +189,7 @@ test.describe('Campaigns Implement tab — LinkedIn targeting profile (#5546)', 
     await expect(page.getByTestId('implementation-linkedin-targeting-groups-empty')).toBeVisible();
     await expect(page.getByTestId('implementation-linkedin-targeting-skills-empty')).toBeVisible();
     await expect(page.getByTestId('implementation-linkedin-targeting-empty-warning')).toBeVisible();
+    // The warning does not block: no blocked-reason text mentions targeting (Create may be blocked for unrelated reasons here).
+    await expect(page.getByTestId('implementation-submit-blocked-reason').filter({ hasText: /targeting/i })).toHaveCount(0);
   });
 });

@@ -63,25 +63,31 @@ export interface LinkedInTargetingProfileConfig {
 }
 
 /**
- * The facet URNs an operator took OUT of the selected LinkedIn targeting profile on the Implement tab
- * (#5546). Removal only: nothing can be added until campaign-service offers a name-to-URN lookup
- * (linuxfoundation/lfx-v2-campaign-service#585). Empty lists mean the profile as configured.
+ * A set of LinkedIn targeting facet URNs, with no claim about which side of an edit it is on (#5546).
+ * Empty lists mean no entries in the set, so what that implies depends on the extending type or the
+ * value holding it: the KEPT facets of an edited profile, or the REMOVED ones.
  */
-export interface LinkedInTargetingRemovals {
+export interface LinkedInTargetingFacets {
   skills: string[];
   groups: string[];
 }
 
 /**
+ * The facet URNs an operator took OUT of the selected LinkedIn targeting profile on the Implement tab
+ * (#5546). Removal only: nothing can be added until campaign-service offers a name-to-URN lookup
+ * (linuxfoundation/lfx-v2-campaign-service#585). Empty lists mean nothing was removed, i.e. the
+ * profile as configured. For the entries that are KEPT, use `LinkedInTargetingFacets`.
+ */
+export interface LinkedInTargetingRemovals extends LinkedInTargetingFacets {}
+
+/**
  * The selected profile as edited, sent as `linkedInConfig.targetingProfileEdit` (#5546) only when
  * the operator removed something. `id` is the profile campaign-service resolves the selection to
- * (`custom` resolves to `cloud-native`); the BFF accepts it only when every URN is one the
- * configured profile already carries.
+ * (`custom` resolves to `cloud-native`); `skills` and `groups` are the entries KEPT, not removed. The
+ * BFF accepts it only when every URN is one the configured profile already carries.
  */
-export interface LinkedInTargetingProfileEdit {
+export interface LinkedInTargetingProfileEdit extends LinkedInTargetingFacets {
   id: LinkedInTargetingProfile;
-  skills: string[];
-  groups: string[];
 }
 
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';

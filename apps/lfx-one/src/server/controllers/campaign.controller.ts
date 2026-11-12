@@ -3891,8 +3891,16 @@ export class CampaignController {
    * `getLinkedInAccounts` and `buildLinkedInConfig` read, so the Implement tab shows exactly the
    * facets a create would send. Each entry is a URN only: the ConfigMap carries no display names.
    */
-  public getLinkedInTargetingProfiles(_req: Request, res: Response): void {
-    res.json(getLinkedInConfig().targetingProfiles);
+  public getLinkedInTargetingProfiles(req: Request, res: Response, next: NextFunction): void {
+    const operation = 'get_linkedin_targeting_profiles';
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const profiles = getLinkedInConfig().targetingProfiles;
+      logger.success(req, operation, startTime, { count: profiles.length });
+      res.json(profiles);
+    } catch (error) {
+      next(error);
+    }
   }
 
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {

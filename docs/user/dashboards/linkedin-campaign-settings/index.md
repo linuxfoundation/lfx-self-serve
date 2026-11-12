@@ -72,7 +72,7 @@ In the chosen locations, LinkedIn shows the ads to members who are in any of the
 When targeting changes are available on your deployment, each group and skill has a remove button (×). Removing one takes it out of this campaign only. The profile itself does not change.
 
 - **Reset to profile** puts back everything you removed. It appears once you have removed something.
-- Choosing the other profile starts again from that profile's full list, so anything you removed is put back.
+- Choosing the other profile starts again from that profile's full list, so anything you removed is put back. If the brief chose a custom profile, it is shown as Cloud Native / CNCF. Choosing Cloud Native / CNCF then keeps your removals.
 - If you remove every group and skill, a note says the campaign reaches everyone in those job functions in the chosen locations. You can still create the campaign.
 - You can't add groups or skills. Only entries already in the profile can be kept or removed.
 

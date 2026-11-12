@@ -650,7 +650,12 @@ export class CampaignService {
 
   /** The configured LinkedIn targeting profiles and the facet URNs each one targets (#5546). */
   public getLinkedInTargetingProfiles(projectSlug: string): Observable<LinkedInTargetingProfileConfig[]> {
-    return this.http.get<LinkedInTargetingProfileConfig[]>('/api/campaigns/linkedin/targeting-profiles', { params: { project: projectSlug } });
+    return this.http.get<LinkedInTargetingProfileConfig[]>('/api/campaigns/linkedin/targeting-profiles', { params: { project: projectSlug } }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load the LinkedIn targeting profiles:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public getLinkedInMonitorData(

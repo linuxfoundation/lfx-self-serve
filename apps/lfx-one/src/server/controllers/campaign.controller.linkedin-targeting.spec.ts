@@ -121,10 +121,26 @@ describe('CampaignController LinkedIn targeting edit (#5546)', () => {
 
   it('serves the configured profiles for the Implement tab', () => {
     const res = buildRes();
+    const next = vi.fn();
+    const req = {} as Request;
 
-    new CampaignController().getLinkedInTargetingProfiles({} as Request, res);
+    new CampaignController().getLinkedInTargetingProfiles(req, res, next);
 
     expect(res.json).toHaveBeenCalledWith(CONFIG.targetingProfiles);
+    expect(next).not.toHaveBeenCalled();
+    expect(logger.startOperation).toHaveBeenCalledWith(req, 'get_linkedin_targeting_profiles', {});
+    expect(logger.success).toHaveBeenCalledWith(req, 'get_linkedin_targeting_profiles', 0, { count: CONFIG.targetingProfiles.length });
+  });
+
+  it('hands a failed profile read to the error handler instead of throwing', () => {
+    linkedInConfig.current = undefined as never;
+    const res = buildRes();
+    const next = vi.fn();
+
+    new CampaignController().getLinkedInTargetingProfiles({} as Request, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   it('forwards the configured catalogue unchanged when the request carries no edit', async () => {

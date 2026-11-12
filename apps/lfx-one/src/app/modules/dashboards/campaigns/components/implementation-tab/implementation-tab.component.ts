@@ -369,6 +369,7 @@ import type {
   LinkedInTargetingProfile,
   LinkedInTargetingProfileConfig,
   LinkedInTargetingProfileEdit,
+  LinkedInTargetingFacets,
   LinkedInTargetingRemovals,
   LinkedInVariantDraft,
   LinkedInVariantView,
@@ -2351,8 +2352,8 @@ export class ImplementationTabComponent implements OnInit {
     return this.linkedInTargetingProfiles().find((profile) => profile.id === id) ?? null;
   });
 
-  /** The selected profile's member groups and skills after the operator's removals; `null` until it loads. */
-  protected readonly linkedInEffectiveTargeting = computed<LinkedInTargetingRemovals | null>(() => {
+  /** The selected profile's member groups and skills that are KEPT after the operator's removals; `null` until it loads. */
+  protected readonly linkedInEffectiveTargeting = computed<LinkedInTargetingFacets | null>(() => {
     const profile = this.linkedInSelectedTargetingProfile();
     return profile ? linkedInTargetingAfterRemovals(profile, this.linkedInTargetingRemovals() ?? { skills: [], groups: [] }) : null;
   });
@@ -4775,7 +4776,10 @@ export class ImplementationTabComponent implements OnInit {
     // runs the initial load, so only later foundation switches should refetch the ad-account list.
     toObservable(this.activeFoundationSlug)
       .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => this.loadLinkedInAccounts());
+      .subscribe(() => {
+        this.loadLinkedInAccounts();
+        this.loadLinkedInTargetingProfiles();
+      });
   }
 
   public ngOnInit(): void {
@@ -8121,22 +8125,33 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The targeting profile catalogue (#5546). Loaded once: the BFF serves the mounted ConfigMap and
-   * ignores the project, so a foundation switch would fetch the same list. A failure leaves it empty
-   * and says so; `canSubmit` then blocks a create only if removals are held.
+   * The targeting profile catalogue (#5546). The BFF serves the mounted ConfigMap and ignores the
+   * project, but the route sits behind `requireCampaignManager`, which reads the project and can
+   * answer 403 for a foundation the caller doesn't manage. So it reloads on a foundation switch
+   * too, clearing an earlier failure. A failure leaves the list empty and says so; `canSubmit` then
+   * blocks a create only if removals are held.
    */
   private loadLinkedInTargetingProfiles(): void {
+    // Stamp the slug as `loadLinkedInAccounts` does: a late answer for the previous foundation must
+    // not overwrite (or fail) the load made for the current one.
+    const requestedSlug = this.activeFoundationSlug();
     this.linkedInTargetingProfilesLoading.set(true);
     this.linkedInTargetingProfilesFailed.set(false);
     this.campaignService
-      .getLinkedInTargetingProfiles(this.activeFoundationSlug())
+      .getLinkedInTargetingProfiles(requestedSlug)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (profiles) => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
           this.linkedInTargetingProfiles.set(profiles);
           this.linkedInTargetingProfilesLoading.set(false);
         },
         error: () => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
           this.linkedInTargetingProfilesFailed.set(true);
           this.linkedInTargetingProfilesLoading.set(false);
         },

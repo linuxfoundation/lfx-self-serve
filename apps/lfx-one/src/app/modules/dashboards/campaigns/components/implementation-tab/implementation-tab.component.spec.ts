@@ -22558,6 +22558,15 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     return Array.from(host?.querySelectorAll('span.font-mono') ?? []).map((el) => (el.textContent ?? '').trim());
   }
 
+  /** The Reset control stays in the layout and is hidden with `invisible`, so the chips don't shift (frontend-checklist §8). */
+  function resetHidden(f: ComponentFixture<ImplementationTabComponent>): boolean {
+    const el = q(f, 'implementation-linkedin-targeting-reset')!;
+    const hidden = el.classList.contains('invisible');
+    expect(el.getAttribute('aria-hidden')).toBe(hidden ? 'true' : 'false');
+    expect(el.getAttribute('tabindex')).toBe(hidden ? '-1' : null);
+    return hidden;
+  }
+
   function removeChip(f: ComponentFixture<ImplementationTabComponent>, urn: string): void {
     const button = f.nativeElement.querySelector(`[data-testid^="implementation-linkedin-targeting-remove-"][aria-label="Remove ${urn}"]`) as HTMLButtonElement;
     button.click();
@@ -22598,7 +22607,7 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
     expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
     expect(q(fixture, 'implementation-linkedin-targeting-groups-count')?.textContent).toContain('2 of 2');
-    expect(q(fixture, 'implementation-linkedin-targeting-reset')).toBeNull();
+    expect(resetHidden(fixture)).toBe(true);
   });
 
   it("shows cloud-native's facets for a custom selection, which campaign-service reads as cloud-native", async () => {
@@ -22614,12 +22623,13 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
 
     expect(chips(fixture, 'groups')).toEqual(['urn:li:group:202']);
     expect(q(fixture, 'implementation-linkedin-targeting-groups-count')?.textContent).toContain('1 of 2');
+    expect(resetHidden(fixture)).toBe(false);
 
     q(fixture, 'implementation-linkedin-targeting-reset')!.click();
     fixture.detectChanges();
 
     expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
-    expect(q(fixture, 'implementation-linkedin-targeting-reset')).toBeNull();
+    expect(resetHidden(fixture)).toBe(true);
   });
 
   it('reseeds from the newly picked profile, dropping removals made against the old one', async () => {
@@ -22782,6 +22792,58 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     q(fixture, 'implementation-linkedin-targeting-reset')!.click();
     fixture.detectChanges();
     expect(at(fixture).createBlockedReason()).toBeNull();
+  });
+
+  it('reloads the catalogue on a foundation switch, clearing an earlier failure (a 403 on mount must not stick)', async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const calls: string[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: (slug: string) => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = (slug: string) => {
+      calls.push(slug);
+      return calls.length === 1 ? throwError(() => new HttpErrorResponse({ status: 403 })) : of(PROFILES);
+    };
+    const { fixture } = await mount({});
+
+    expect(calls).toEqual(['a']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(chips(fixture, 'groups')).toEqual([]);
+
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(calls).toEqual(['a', 'b']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).toBeNull();
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+  });
+
+  it("drops the previous foundation's late profile answer after a foundation switch", async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const answers: Subject<unknown>[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => {
+      const subject = new Subject<unknown>();
+      answers.push(subject);
+      return subject.asObservable();
+    };
+    const { fixture } = await mount({});
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    expect(answers).toHaveLength(2);
+
+    answers[0].error(new Error('late 403 for a'));
+    fixture.detectChanges();
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).toBeNull();
+
+    answers[1].next(PROFILES);
+    answers[1].complete();
+    fixture.detectChanges();
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
   });
 
   it('carries the removals through a tab round-trip and into the request', async () => {

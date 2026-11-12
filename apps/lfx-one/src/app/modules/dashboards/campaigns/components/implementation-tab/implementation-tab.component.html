@@ -3914,16 +3914,17 @@
 
             <!-- What the selected profile targets (#5546): its member groups and skills, each removable. -->
             <div class="mt-3 flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="implementation-linkedin-targeting">
-              <!-- Reset is offered whenever removals are held, loaded or not: the create gate can ask for it before the profile loads. -->
-              @if (linkedInTargetingRemovalsHeld()) {
-                <button
-                  type="button"
-                  (click)="resetLinkedInTargeting()"
-                  class="self-end text-xs font-medium text-blue-600 hover:text-blue-800"
-                  data-testid="implementation-linkedin-targeting-reset">
-                  Reset to profile
-                </button>
-              }
+              <!-- Reset is offered whenever removals are held, loaded or not: the create gate can ask for it before the profile loads. Hidden with `invisible`, not removed, so the chips don't shift when the first removal is made. -->
+              <button
+                type="button"
+                (click)="resetLinkedInTargeting()"
+                [class.invisible]="!linkedInTargetingRemovalsHeld()"
+                [attr.aria-hidden]="!linkedInTargetingRemovalsHeld()"
+                [attr.tabindex]="linkedInTargetingRemovalsHeld() ? null : -1"
+                class="self-end text-xs font-medium text-blue-600 hover:text-blue-800"
+                data-testid="implementation-linkedin-targeting-reset">
+                Reset to profile
+              </button>
               @if (linkedInEffectiveTargeting(); as effective) {
                 <p class="text-xs text-gray-600" data-testid="implementation-linkedin-targeting-summary">
                   In the chosen locations, LinkedIn shows these ads to members in any of these groups, with any of these skills, or in one of the job functions
