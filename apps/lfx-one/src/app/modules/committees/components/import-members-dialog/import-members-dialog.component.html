@@ -128,11 +128,15 @@
           resume is scheduled for {{ resumeAt() | date: 'mediumTime' }}. Select Stop import to end the import here; rows that were not sent stay Not yet
           submitted.
         </p>
+      } @else if (stopping()) {
+        <p class="text-sm text-gray-600" data-testid="import-members-progress">
+          Stopping after the current batch: {{ batchSettled() }} of {{ batchTotal() }} done… Rows after this batch will not be sent.
+        </p>
       } @else if (phase() === 'importing') {
         <p class="text-sm text-gray-600" data-testid="import-members-progress">Adding members: {{ batchSettled() }} of {{ batchTotal() }} done…</p>
       }
 
-      @if (stopReason()) {
+      @if (stopReason() && !stopping()) {
         <p role="alert" class="text-sm text-red-700" data-testid="import-members-stop-reason">
           The import stopped: {{ stopReason() }} Rows that were not sent are marked Not yet submitted and can be retried. Rows with an unconfirmed earlier
           attempt are marked Outcome unknown; review the roster before retrying them.
@@ -291,6 +295,15 @@
         data-testid="import-members-stop-btn">
       </lfx-button>
     } @else if (phase() === 'importing') {
+      <lfx-button
+        [label]="stopping() ? 'Stopping…' : 'Stop import'"
+        icon="fa-light fa-circle-stop"
+        size="small"
+        severity="secondary"
+        [disabled]="stopReason() !== null"
+        (onClick)="stopImport()"
+        data-testid="import-members-stop-btn">
+      </lfx-button>
       <lfx-button label="Adding members…" size="small" severity="info" [loading]="true" [disabled]="true" data-testid="import-members-submitting-btn">
       </lfx-button>
     } @else if (canRetry()) {
