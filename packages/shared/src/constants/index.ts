@@ -57,6 +57,7 @@ export * from './active-contributors-drawer.constants';
 export * from './maintainers-drawer.constants';
 export * from './events-drawer.constants';
 export * from './events.constants';
+export * from './openprofile-redirects.constants';
 export * from './meetups.constants';
 export * from './links.config';
 export * from './copilot.constants';

@@ -5,6 +5,8 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type {
+  FormationPipelineFoundationKind,
+  FormationPipelineFoundationKindFilter,
   FormationPipelineSort,
   FormationPipelineSortKey,
   FormationPipelineStage,
@@ -92,8 +94,42 @@ export const FORMATION_PIPELINE_STAT_CARD_STYLE: Record<string, Pick<StatCardIte
 export const FORMATION_PIPELINE_STAT_CAPTIONS = {
   prospect: 'Created in PCC, not yet exploring',
   on_hold: 'Paused by the formation team',
-  archived: 'Did not launch',
+  archived: 'No longer active',
 } as const;
+
+/** Formations tab copy that names the stage range, so the Formations and Pipeline tabs both call a v2 `Prospect` "Draft" (#5619). */
+export const FORMATION_QUEUE_COPY = {
+  emptySubtitle: `Formations between ${FORMATION_PIPELINE_PROSPECT_LABEL} and Active will appear here.`,
+  allSubtitle: `Every foundation, project, and child project between ${FORMATION_PIPELINE_PROSPECT_LABEL} and Active.`,
+  foundationSubtitle: (foundationName: string): string => `${foundationName}'s formations between ${FORMATION_PIPELINE_PROSPECT_LABEL} and Active.`,
+} as const;
+
+/** Foundation-type filter values in display order (#5619), and the selection the page opens on. */
+export const FORMATION_PIPELINE_FOUNDATION_KINDS: readonly FormationPipelineFoundationKind[] = ['under_lf', 'under_foundation', 'no_parent'];
+export const FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND: FormationPipelineFoundationKindFilter = 'all';
+
+/** Foundation-type filter option labels. */
+export const FORMATION_PIPELINE_FOUNDATION_KIND_LABELS: Record<FormationPipelineFoundationKind, string> = {
+  under_lf: 'Directly under LF',
+  under_foundation: 'Under an existing foundation',
+  no_parent: 'No parent yet',
+};
+
+/**
+ * Query params that carry the Pipeline's filter and sort state (#5619). Defaults are omitted from the URL. Kept apart from
+ * `tab` and `project`, which the Formations page already owns.
+ */
+export const FORMATION_PIPELINE_QUERY_PARAMS = {
+  stage: 'stage',
+  foundation: 'foundation',
+  foundationKind: 'type',
+  search: 'q',
+  sort: 'sort',
+  direction: 'dir',
+} as const;
+
+/** What a foundation (project) uid may look like: query-service `parent`'s uid segment. Read by the BFF's `foundation_uid` validation and by the Pipeline's URL parser, so the two cannot drift. */
+export const FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** A launch inside this many days is flagged amber. */
 export const FORMATION_PIPELINE_LAUNCH_SOON_DAYS = 30;
@@ -112,12 +148,14 @@ export const FORMATION_PIPELINE_COPY = {
   inPipeline: 'In pipeline',
   overdue: 'Overdue',
   allFoundations: 'All foundations',
+  allFoundationKinds: 'All projects',
+  foundationKindLabel: 'Foundation type',
   searchPlaceholder: 'Search projects',
   exportLabel: 'Export CSV',
   emptyTitle: 'No pipeline projects yet',
   emptySubtitle: 'Projects between Draft and Active will appear here.',
   filteredEmptyTitle: 'No projects match',
-  filteredEmptySubtitle: 'Try a different stage, foundation or search.',
+  filteredEmptySubtitle: 'Try a different stage, foundation, foundation type or search.',
   errorMessage: "Couldn't load the pipeline. Try again.",
   forbiddenMessage: 'Only the formation team can see the pipeline.',
   retry: 'Retry',
@@ -131,6 +169,7 @@ export const FORMATION_PIPELINE_COLUMNS: readonly { key: FormationPipelineSortKe
   { key: 'project', label: 'Project' },
   { key: 'stage', label: 'Stage' },
   { key: 'expected_launch', label: 'Expected launch' },
+  { key: 'formation_lead', label: 'Formation lead' },
   { key: 'formation_date', label: 'Formation date' },
   { key: 'legal_entity', label: 'Legal entity' },
   { key: 'ed_pm', label: 'ED / PM' },

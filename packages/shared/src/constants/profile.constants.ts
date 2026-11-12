@@ -321,6 +321,7 @@ export const PROFILE_SETTINGS_PATH = '/profile/settings';
 export const PROFILE_EMAIL_PATH = '/profile/email';
 export const PROFILE_EMAILS_PATH = '/profile/emails';
 export const PROFILE_PASSWORD_PATH = '/profile/password';
+export const PROFILE_DEVELOPER_SETTINGS_PATH = '/profile/developer-settings';
 
 /**
  * AccountSettingsComponent's TOC section ids, doubling as the DOM element ids the deep-link

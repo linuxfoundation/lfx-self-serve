@@ -25,7 +25,7 @@ import { MeetingDetailsOwnActionsComponent } from '../tools/own-actions/meeting-
 
 /**
  * Sticky top row of the meeting details drawer: the compact project and title once the big title scrolls away, Copy Link,
- * the ⋯ menu (organizer actions, and the viewer's own actions on phones) and Close.
+ * the ⋯ menu (organizer actions, and the viewer's own actions on phones) and Close. On a page it leads with the project instead.
  */
 @Component({
   selector: 'lfx-meeting-details-header',

@@ -16,16 +16,16 @@ The People page lists the selected company's employees and how each one takes pa
 
 The page heading is **People —** followed by the company's name. The line under it is **All employee involvement with the Linux Foundation — board, committees, maintainership, code, training, and events.** The page has eight tabs:
 
-| Tab                     | What it lists                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **All Employees**       | Everyone with recorded activity, a seat, a contact role or Company Lens access, with all of it in one row (the default) |
-| **Board**               | Employees who hold a seat on a foundation's governing board                                                             |
-| **Committee**           | Employees who sit on foundation committees                                                                              |
-| **Key Contacts**        | Employees named as contacts on the company's foundation memberships                                                     |
-| **Contributors**        | Employees who contributed code, and whether they are maintainers                                                        |
-| **Event Attendees**     | People who registered for, attended or spoke at events                                                                  |
-| **Trainees**            | Employees who enrolled in courses or earned certifications                                                              |
-| **Company Lens Access** | Who can open the company, covered in [Manage Company Lens Access](../manage-company-lens-access/)                       |
+| Tab                 | What it lists                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **All Employees**   | Everyone with recorded activity, a seat, a contact role or Company Lens access, with all of it in one row (the default) |
+| **Board**           | Employees who hold a seat on a foundation's governing board                                                         |
+| **Committee**       | Employees who sit on foundation committees                                                                          |
+| **Key Contacts**    | Employees named as contacts on the company's foundation memberships                                            |
+| **Contributors**    | Employees who contributed code, and whether they are maintainers                                                    |
+| **Event Attendees** | People who registered for, attended or spoke at events                                                              |
+| **Trainees**        | Employees who enrolled in courses or earned certifications                                                          |
+| **Company Lens Access** | Who can open the company, covered in [Manage Company Lens Access](../manage-company-lens-access/)                      |
 
 Select a person's name on any tab to open their details. On **Event Attendees**, only people with a roster profile have a selectable name; for anyone else, select the row to see their events.
 
@@ -33,13 +33,13 @@ Select a person's name on any tab to open their details. On **Event Attendees**,
 
 Under the person's name, their details list the email addresses they have on one of the company's own domains, the primary one first. Personal addresses and addresses at other employers are never shown. Former employees keep the addresses they had, and the **Former employee** badge still marks them. A key contact with no LF account shows the email on their key contact record, marked **from key contact record**. When no address is shown, the line says why:
 
-| Message                                                                   | What it means                                                                                                                                                   |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Message                                                                   | What it means                                                                                                                                                        |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **No verified company email associated with this LF profile**             | The person has an LF account, and it holds no verified address on the company's domains                                                                         |
-| **This profile isn't linked to an LF profile - no company email on file** | This profile (a contributor profile, or a key contact with no LF username on their record) isn't linked to an LF profile, so there is no company email to show  |
-| **We can't tell whether this person has an email at** _company_           | The LF username could not be matched to one LF account, so we can't tell whether they have an address on the company's domains; it does not mean they have none |
-| **Emails aren't shown on this page**                                      | The page you opened them from carries nothing to look their addresses up with                                                                                   |
-| **Couldn't load emails.**                                                 | The lookup failed. Select **Try again**                                                                                                                         |
+| **This profile isn't linked to an LF profile - no company email on file** | This profile (a contributor profile, or a key contact with no LF username on their record) isn't linked to an LF profile, so there is no company email to show       |
+| **We can't tell whether this person has an email at** _company_      | The LF username could not be matched to one LF account, so we can't tell whether they have an address on the company's domains; it does not mean they have none |
+| **Emails aren't shown on this page**                                      | The page you opened them from carries nothing to look their addresses up with                                                                                        |
+| **Couldn't load emails.**                                                 | The lookup failed. Select **Try again**                                                                                                                              |
 
 ## How do I open People?
 
@@ -60,15 +60,15 @@ The **All Employees** tab shows the company's people in one table, one row per p
 
 Five cards at the top count **Employees Active in Open Source**, **In Governance**, **Code Contributors**, **Event Attendees** and **Trainees**. The table has these columns:
 
-| Column                  | What it shows                                                                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Employee**            | The person's name and job title. **Former** marks someone who no longer works at the company                                                     |
-| **Board & Committee**   | How many board and committee seats they hold, such as **2 seats**                                                                                |
-| **Key Contact**         | The key contact roles they hold on the company's memberships, such as **Billing Contact** or **2 roles**                                         |
-| **Code contributions**  | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts             |
-| **Events**              | How many events they attended                                                                                                                    |
-| **Training**            | How many courses they took                                                                                                                       |
-| **Company Lens Access** | **Admin** or **Viewer** when they can open the company in the Company lens, or **Invited** when they have been invited and have not accepted yet |
+| Column                 | What it shows                                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Employee**           | The person's name and job title. **Former** marks someone who no longer works at the company                                                          |
+| **Board & Committee**  | How many board and committee seats they hold, such as **2 seats**                                                                                          |
+| **Key Contact**        | The key contact roles they hold on the company's memberships, such as **Billing Contact** or **2 roles**                                              |
+| **Code contributions** | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts                       |
+| **Events**             | How many events they attended                                                                                                                              |
+| **Training**           | How many courses they took                                                                                                                                 |
+| **Company Lens Access**    | **Admin** or **Viewer** when they can open the company in the Company lens, or **Invited** when they have been invited and have not accepted yet |
 
 A dash (**—**) means none. Select a row with a chevron to expand it. Rows without one, such as a person listed only for a seat or Company Lens access, have no detail to show. The expanded row lists the person's **Governance — Board Seats**, **Meetings — Committee Seats**, **Code Contributions**, **Events**, and **Training & Certifications**. When a person has nothing recorded there, it says **No LF activity detail recorded for this employee.**
 
@@ -172,12 +172,14 @@ You filter a People tab with the search box and menus above its table. Which men
 3. On **All Employees**, pick an activity: **All Activity**, **Board & Committee**, **Code contributions** (or **Commits**, when you count commits), **Events** or **Training**.
 4. Select a time range: **Past 30 days**, **Past 90 days**, **Past 365 days**, **Past 2 years** or **All time**. **Past 2 years** is the default.
 5. Select a project type: **LF and non-LF projects** (the default), **LF projects** or **Non-LF projects**. LF projects are Linux Foundation (LF) projects.
-6. Select **More filters** to show the code count, **Employment**, **Company email** (All Employees only), **Team members** and **Company scope**. The link counts how many of them are set to something other than their default, such as **More filters (1)**.
+6. Select **More filters** to show the code count, **Employment**, **Company email** (All Employees only), **Key Contact** (All Employees only), **Team members** and **Company scope**. The link counts how many of them are set to something other than their default, such as **More filters (1)**.
 7. On **All Employees** and **Contributors**, select **Clear filters** to put every filter back to its default, the time range included. It shows once a filter is changed.
 
 **Employment** offers **Current employees**, **Former employees** and **All employees** (the default). On **All Employees** under **Current employees**, the **Code Contributors** card leaves out people who have since left. With **All employees** it shows the same number as the **Contributors** tab's **Contributors** card for the same time range, project type, company scope and team members choice.
 
 **Company email**, on **All Employees**, offers **All email statuses** (the default), **Has company email**, **No verified company email** and **Unlinked profile**. **No verified company email** means the person has an LF account with no verified address on the company's domains. **Has company email** includes a key contact with no LF account whose key contact record carries an address on the company's domains. **Unlinked profile** means their emails could not be checked: mostly contributor profiles and key contacts with no LF account behind them, plus people whose LF username could not be matched to one LF account. These match the answer a person's details give (see [Which emails do a person's details show?](#which-emails-do-a-persons-details-show)). The filter is kept in the page address (`?companyEmail=`). The statuses are refreshed with the company data, so a just-added address can take up to a day to count. When they cannot be read, everyone is listed under **All email statuses** only.
+
+**Key Contact**, on **All Employees**, offers **All key contact roles** (the default), **Any key contact role**, **Not a key contact**, and each of the nine roles: Representative/Voting Contact, Authorized Signatory, Billing Contact, Marketing Contact, Technical Contact, PO Contact, PR Contact, Legal Contact and Event Sponsorship Contact. Choosing a role lists everyone who holds it, including people who hold other roles too. **Any key contact role** and **Not a key contact** split the list in two. A role that is not one of the nine is matched only by **Any key contact role**. It uses the same roles as the Key Contact column and is kept in the page address (`?keyContact=`).
 
 The code count offers **All code contributions** (the default), **All commits** and **Only main branch commits**. It changes the code numbers, not who is listed, with one exception: when the **All Employees** activity filter is on **Code contributions** (or **Commits**), only people whose count under the chosen option is above zero are shown. Someone with reviews or comments but no commits drops out when you switch to **All commits**. What each option counts is in [What do All code contributions, All commits and Only main branch commits count?](../code-contributions/#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count).
 
@@ -209,15 +211,15 @@ See [Code Contributions](../code-contributions/) for that page.
 
 A tab that finds nobody says so in its table, and a tab that fails to load names what failed and offers **Retry**. An empty tab is not the same as a failed load.
 
-| What you see                                                                                     | Where                                      | What to do                                             |
-| ------------------------------------------------------------------------------------------------ | ------------------------------------------ | ------------------------------------------------------ |
-| **No employees match the current filters.**, and the same for other tabs                         | Any tab, with filters set                  | Clear the search or change the menus                   |
-| **No employees found for this company.**                                                         | **All Employees**                          | The company has no recorded activity in the time range |
-| **No contributors found for this company in the** time range                                     | **Contributors**                           | **Choose All time to include older contributions.**    |
+| What you see                                                                                     | Where                                      | What to do                                                  |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------ | ----------------------------------------------------------- |
+| **No employees match the current filters.**, and the same for other tabs                         | Any tab, with filters set                  | Clear the search or change the menus                        |
+| **No employees found for this company.**                                                    | **All Employees**                          | The company has no recorded activity in the time range |
+| **No contributors found for this company in the** time range                                | **Contributors**                           | **Choose All time to include older contributions.**         |
 | **No board members found.**, **No committee members found.**, **No key contact data available.** | **Board**, **Committee**, **Key Contacts** | The company has no seats or contacts on record         |
-| **Former employees couldn't be loaded, so only current employees are shown.**                    | **All Employees**                          | The list is incomplete. Reload the page later          |
-| **Failed to load employees**, **Failed to load contributors**, and so on                         | Any tab                                    | Select **Retry**                                       |
-| **Failed to load activity detail.**                                                              | An expanded **All Employees** row          | Select **Retry** in the row                            |
+| **Former employees couldn't be loaded, so only current employees are shown.**                    | **All Employees**                          | The list is incomplete. Reload the page later               |
+| **Failed to load employees**, **Failed to load contributors**, and so on                         | Any tab                                    | Select **Retry**                                            |
+| **Failed to load activity detail.**                                                              | An expanded **All Employees** row          | Select **Retry** in the row                                 |
 
 ## Related sections
 
