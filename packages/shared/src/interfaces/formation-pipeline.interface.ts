@@ -12,6 +12,12 @@ export type FormationPipelineStage = 'prospect' | 'exploratory' | 'engaged' | 'o
 /** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages: Draft, Exploratory, Engaged, On hold), or `all`. */
 export type FormationPipelineStageFilter = FormationPipelineStage | 'in_pipeline' | 'all';
 
+/** Where a project stands against foundations (#5619): `new_foundation` is itself one (`computeIsFoundation`, test projects excluded), `under_foundation` has a foundation ancestor, `no_foundation` is neither. */
+export type FormationPipelineFoundationKind = 'new_foundation' | 'under_foundation' | 'no_foundation';
+
+/** Foundation-type selection: one kind, or `all`. */
+export type FormationPipelineFoundationKindFilter = FormationPipelineFoundationKind | 'all';
+
 /** Per-stage row counts plus the total, taken before any stage selection or UI search. */
 export type FormationPipelineCounts = Record<FormationPipelineStage, number> & { total: number };
 
@@ -32,6 +38,8 @@ export interface FormationPipelineRow {
   stage: FormationPipelineStage;
   /** The nearest foundation ancestor, or `null` when the project has none (top-level, or an ancestor query-service did not return). */
   parent: FormationPipelineParent | null;
+  /** A row that is itself a foundation is `new_foundation` whatever its ancestors; otherwise `under_foundation` when `parent` is set, else `no_foundation`. */
+  foundation_kind: FormationPipelineFoundationKind;
   announcement_date: string | null;
   formation_date: string | null;
   legal_entity_name: string | null;

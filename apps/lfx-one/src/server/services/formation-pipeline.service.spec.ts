@@ -453,4 +453,50 @@ describe('FormationPipelineService.getPipeline', () => {
       expect(rows.map((row) => row.uid)).toEqual(['real']);
     });
   });
+
+  // #5619 D7: new foundation (the row itself is one) / under a foundation (a foundation ancestor) / no foundation.
+  describe('foundation kind', () => {
+    const FUNDED = { legal_entity_type: 'Non-profit', funding: ProjectFunding.Funded, funding_model: ['Membership'] };
+
+    it('classifies a foundation row, a sub-project, a project with no foundation, and a root-level separate entity', async () => {
+      natsRequest.mockResolvedValue({ data: 'root-uid' });
+      mockUpstream({
+        projects: [
+          project({ uid: 'fund', name: 'New Fund', stage: 'Formation - Engaged', parent_uid: 'root-uid', ...FUNDED }),
+          project({ uid: 'entity', name: 'Separate Entity', stage: 'Formation - Engaged', parent_uid: '', ...FUNDED }),
+          project({ uid: 'sub', name: 'Sub Project', parent_uid: 'F' }),
+          project({ uid: 'lone', name: 'Lone Project', parent_uid: 'plain' }),
+          project({ uid: 'root', name: 'Rootless', parent_uid: 'root-uid' }),
+        ],
+        parents: {
+          F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS },
+          plain: { uid: 'plain', name: 'Plain Active', parent_uid: '', ...PLAIN_FIELDS },
+        },
+      });
+
+      const { rows } = await service.getPipeline(req, allStages);
+      const kind = (uid: string) => rows.find((row) => row.uid === uid)?.foundation_kind;
+
+      expect(kind('fund')).toBe('new_foundation');
+      expect(kind('entity')).toBe('new_foundation');
+      expect(kind('sub')).toBe('under_foundation');
+      expect(kind('lone')).toBe('no_foundation');
+      expect(kind('root')).toBe('no_foundation');
+    });
+
+    it('calls a foundation row new even when it sits under another foundation, and a Draft one is not a foundation', async () => {
+      mockUpstream({
+        projects: [
+          project({ uid: 'nested', name: 'Nested Fund', stage: 'Formation - Engaged', parent_uid: 'F', ...FUNDED }),
+          project({ uid: 'draft', name: 'Draft Fund', stage: 'Prospect', parent_uid: '', ...FUNDED }),
+        ],
+        parents: { F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS } },
+      });
+
+      const { rows } = await service.getPipeline(req, allStages);
+
+      expect(rows.find((row) => row.uid === 'nested')?.foundation_kind).toBe('new_foundation');
+      expect(rows.find((row) => row.uid === 'draft')?.foundation_kind).toBe('no_foundation');
+    });
+  });
 });

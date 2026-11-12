@@ -19,6 +19,7 @@ import {
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   FormationPipelineCounts,
+  FormationPipelineFoundationKindFilter,
   FormationPipelineLaunch,
   FormationPipelinePerson,
   FormationPipelineRow,
@@ -79,6 +80,11 @@ export function filterPipelineRowsByStage(rows: readonly FormationPipelineRow[],
   if (stage === 'all') return [...rows];
   if (stage === 'in_pipeline') return rows.filter((row) => FORMATION_PIPELINE_LIVE_STAGES.includes(row.stage));
   return rows.filter((row) => row.stage === stage);
+}
+
+/** Rows of one foundation kind; `all` keeps every row (#5619). */
+export function filterPipelineRowsByFoundationKind(rows: readonly FormationPipelineRow[], kind: FormationPipelineFoundationKindFilter): FormationPipelineRow[] {
+  return kind === 'all' ? [...rows] : rows.filter((row) => row.foundation_kind === kind);
 }
 
 /** Rows in the live pipeline (Draft, Exploratory, Engaged, On hold). */

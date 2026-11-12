@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
-import type { FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
+import type { FormationPipelineFoundationKindFilter, FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
 import { countPipelineRows } from '@lfx-one/shared/utils';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,6 +27,7 @@ function row(overrides: Partial<FormationPipelineRow>): FormationPipelineRow {
     program_manager: null,
     opportunity_owner: null,
     formation_lead: null,
+    foundation_kind: 'under_foundation',
     created_at: null,
     updated_at: null,
     has_checklist: false,
@@ -155,6 +156,91 @@ describe('FormationsPipelineComponent (#5475)', () => {
     await click(q('formations-pipeline-sort-project')!.querySelector('button'));
     expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
     expect(rowIds()).toEqual(['d', 'b', 'a', 'c']);
+  });
+
+  // #5619 D7
+  describe('foundation type filter', () => {
+    const KIND_ROWS = [
+      row({ uid: 'n', name: 'New Fund', stage: 'engaged', foundation_kind: 'new_foundation', parent: null }),
+      row({ uid: 'u', name: 'Under One', stage: 'engaged', foundation_kind: 'under_foundation' }),
+      row({ uid: 'x', name: 'Loner', stage: 'exploratory', foundation_kind: 'no_foundation', parent: null }),
+      row({ uid: 'a', name: 'Archived Fund', stage: 'archived', foundation_kind: 'new_foundation', parent: null }),
+    ];
+    const pick = async (kind: FormationPipelineFoundationKindFilter): Promise<void> => {
+      fixture.componentInstance['filterForm'].controls.foundationKind.setValue(kind);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('narrows rows, counts and pills to the chosen kind without another read', async () => {
+      await render(of(response(KIND_ROWS)));
+      expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
+      const reads = getFormationPipeline.mock.calls.length;
+
+      await pick('new_foundation');
+      expect(rowIds()).toEqual(['n']);
+      expect(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-in_pipeline"]')?.textContent).toContain('(1)');
+
+      await pick('under_foundation');
+      expect(rowIds()).toEqual(['u']);
+      await pick('no_foundation');
+      expect(rowIds()).toEqual(['x']);
+      await pick('all');
+      expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
+      expect(getFormationPipeline.mock.calls.length).toBe(reads);
+    });
+
+    it('combines with the stage pill and the name search', async () => {
+      await render(of(response(KIND_ROWS)));
+      await pick('new_foundation');
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      expect(rowIds()).toEqual(['a']);
+
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-engaged"]'));
+      expect(rowIds()).toEqual(['n']);
+      fixture.componentInstance['filterForm'].controls.search.setValue('zzz');
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      fixture.detectChanges();
+      expect(rowIds()).toEqual([]);
+    });
+
+    it('exports only the filtered rows and resets with the other filters', async () => {
+      await render(of(response(KIND_ROWS)));
+      let captured: Blob | null = null;
+      URL.createObjectURL = vi.fn((blob: Blob) => {
+        captured = blob;
+        return 'blob:x';
+      });
+      URL.revokeObjectURL = vi.fn();
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+      await pick('under_foundation');
+      fixture.componentInstance['exportCsv']();
+      const text = await (captured as unknown as Blob).text();
+      expect(text).toContain('Under One');
+      expect(text).not.toContain('New Fund');
+      expect(text).not.toContain('Loner');
+
+      await pick('no_foundation');
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      expect(rowIds()).toEqual([]);
+      await click(q('formations-pipeline-filtered-empty')!.querySelector('button'));
+      expect(fixture.componentInstance['filterForm'].controls.foundationKind.value).toBe('all');
+      expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
+    });
+
+    it('has an accessible name and the three kind options plus All', async () => {
+      await render(of(response(KIND_ROWS)));
+
+      expect(q('formations-pipeline-foundation-kind')?.querySelector('[aria-label="Foundation type"]')).not.toBeNull();
+      expect(fixture.componentInstance['foundationKindOptions']().map((option: { label: string }) => option.label)).toEqual([
+        'All projects',
+        'New foundation',
+        'Under a foundation',
+        'No foundation',
+      ]);
+    });
   });
 
   it('shows the formation lead with the email on hover and focus, and "Not set" when there is none', async () => {

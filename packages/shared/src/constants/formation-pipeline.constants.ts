@@ -5,6 +5,8 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type {
+  FormationPipelineFoundationKind,
+  FormationPipelineFoundationKindFilter,
   FormationPipelineSort,
   FormationPipelineSortKey,
   FormationPipelineStage,
@@ -102,6 +104,17 @@ export const FORMATION_QUEUE_COPY = {
   foundationSubtitle: (foundationName: string): string => `${foundationName}'s formations between ${FORMATION_PIPELINE_PROSPECT_LABEL} and Active.`,
 } as const;
 
+/** Foundation-type filter values in display order (#5619), and the selection the page opens on. */
+export const FORMATION_PIPELINE_FOUNDATION_KINDS: readonly FormationPipelineFoundationKind[] = ['new_foundation', 'under_foundation', 'no_foundation'];
+export const FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND: FormationPipelineFoundationKindFilter = 'all';
+
+/** Foundation-type filter option labels. */
+export const FORMATION_PIPELINE_FOUNDATION_KIND_LABELS: Record<FormationPipelineFoundationKind, string> = {
+  new_foundation: 'New foundation',
+  under_foundation: 'Under a foundation',
+  no_foundation: 'No foundation',
+};
+
 /** A launch inside this many days is flagged amber. */
 export const FORMATION_PIPELINE_LAUNCH_SOON_DAYS = 30;
 
@@ -119,12 +132,14 @@ export const FORMATION_PIPELINE_COPY = {
   inPipeline: 'In pipeline',
   overdue: 'Overdue',
   allFoundations: 'All foundations',
+  allFoundationKinds: 'All projects',
+  foundationKindLabel: 'Foundation type',
   searchPlaceholder: 'Search projects',
   exportLabel: 'Export CSV',
   emptyTitle: 'No pipeline projects yet',
   emptySubtitle: 'Projects between Draft and Active will appear here.',
   filteredEmptyTitle: 'No projects match',
-  filteredEmptySubtitle: 'Try a different stage, foundation or search.',
+  filteredEmptySubtitle: 'Try a different stage, foundation, foundation type or search.',
   errorMessage: "Couldn't load the pipeline. Try again.",
   forbiddenMessage: 'Only the formation team can see the pipeline.',
   retry: 'Retry',

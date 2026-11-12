@@ -19,13 +19,17 @@ import { FormationService } from '@services/formation.service';
 import {
   FORMATION_PIPELINE_COLUMNS,
   FORMATION_PIPELINE_COPY,
+  FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
   FORMATION_PIPELINE_DEFAULT_SORT,
   FORMATION_PIPELINE_DEFAULT_STAGE,
+  FORMATION_PIPELINE_FOUNDATION_KIND_LABELS,
+  FORMATION_PIPELINE_FOUNDATION_KINDS,
   FORMATION_PIPELINE_PAGE_SIZE,
   FORMATION_PIPELINE_STAGES,
 } from '@lfx-one/shared/constants';
 import type {
   FilterPillOption,
+  FormationPipelineFoundationKindFilter,
   FormationPipelineResponse,
   FormationPipelineSort,
   FormationPipelineSortKey,
@@ -41,6 +45,7 @@ import {
   comparePipelineText,
   countPipelineRows,
   emptyPipelineCounts,
+  filterPipelineRowsByFoundationKind,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
   matchesPipelineSearch,
@@ -87,6 +92,7 @@ export class FormationsPipelineComponent {
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
     foundation: new FormControl<string | null>(null),
+    foundationKind: new FormControl<FormationPipelineFoundationKindFilter>(FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND, { nonNullable: true }),
   });
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
@@ -99,13 +105,26 @@ export class FormationsPipelineComponent {
 
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly foundationUid: Signal<string | null> = this.initFoundationUid();
+  private readonly foundationKind: Signal<FormationPipelineFoundationKindFilter> = this.initFoundationKind();
   private readonly response: Signal<FormationPipelineResponse> = this.initResponse();
 
-  /** The foundation's rows narrowed by the name search, client-side: no refetch while the rows are already loaded. */
-  private readonly searchedRows = computed(() => this.response().rows.filter((row) => matchesPipelineSearch(row.name, this.searchTerm())));
+  /** The foundation's rows narrowed by the foundation type and the name search, client-side: no refetch while the rows are already loaded. */
+  private readonly searchedRows = computed(() =>
+    filterPipelineRowsByFoundationKind(this.response().rows, this.foundationKind()).filter((row) => matchesPipelineSearch(row.name, this.searchTerm()))
+  );
   /** Stage counts over the searched rows, so the pills and stat cards agree with the table. */
   protected readonly counts = computed(() => countPipelineRows(this.searchedRows()));
-  protected readonly isFiltered = computed(() => this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE || !!this.searchTerm().trim() || !!this.foundationUid());
+  protected readonly isFiltered = computed(
+    () =>
+      this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE ||
+      !!this.searchTerm().trim() ||
+      !!this.foundationUid() ||
+      this.foundationKind() !== FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND
+  );
+  protected readonly foundationKindOptions = computed(() => [
+    { label: this.copy.allFoundationKinds, value: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND },
+    ...FORMATION_PIPELINE_FOUNDATION_KINDS.map((value) => ({ label: FORMATION_PIPELINE_FOUNDATION_KIND_LABELS[value], value })),
+  ]);
   protected readonly foundationOptions = computed(() => [
     { label: this.copy.allFoundations, value: null },
     ...[...this.knownFoundations()].map(([value, label]) => ({ label, value })).sort((a, b) => comparePipelineText(a.label, b.label)),
@@ -168,7 +187,7 @@ export class FormationsPipelineComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({ search: '', foundation: null });
+    this.filterForm.reset({ search: '', foundation: null, foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND });
     this.stage.set(FORMATION_PIPELINE_DEFAULT_STAGE);
   }
 
@@ -204,6 +223,12 @@ export class FormationsPipelineComponent {
   private initFoundationUid(): Signal<string | null> {
     return toSignal(this.filterForm.controls.foundation.valueChanges.pipe(startWith(null), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef)), {
       initialValue: null,
+    });
+  }
+
+  private initFoundationKind(): Signal<FormationPipelineFoundationKindFilter> {
+    return toSignal(this.filterForm.controls.foundationKind.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef)), {
+      initialValue: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
     });
   }
 

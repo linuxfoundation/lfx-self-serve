@@ -12,6 +12,7 @@ import {
   buildPipelineStatCards,
   comparePipelineText,
   countPipelineRows,
+  filterPipelineRowsByFoundationKind,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
   getFormationStageDisplayLabel,
@@ -42,6 +43,7 @@ function row(overrides: Partial<FormationPipelineRow> = {}): FormationPipelineRo
     program_manager: null,
     opportunity_owner: null,
     formation_lead: null,
+    foundation_kind: 'under_foundation',
     created_at: null,
     updated_at: null,
     has_checklist: false,
@@ -327,5 +329,26 @@ describe('getPipelineFormationLead (#5619)', () => {
     expect(tableRow.formationLeadLabel).toBe('Lee Lead');
     expect(tableRow.formationLeadEmail).toBe('lee@example.com');
     expect(toPipelineTableRow(row(), NOW)).toMatchObject({ formationLeadLabel: 'Not set', formationLeadEmail: '' });
+  });
+});
+
+describe('filterPipelineRowsByFoundationKind (#5619)', () => {
+  const rows = [
+    row({ uid: 'n', foundation_kind: 'new_foundation', parent: null }),
+    row({ uid: 'u', foundation_kind: 'under_foundation' }),
+    row({ uid: 'x', foundation_kind: 'no_foundation', parent: null }),
+  ];
+
+  it('keeps every row for "all" and exactly one kind otherwise', () => {
+    expect(filterPipelineRowsByFoundationKind(rows, 'all').map((r) => r.uid)).toEqual(['n', 'u', 'x']);
+    expect(filterPipelineRowsByFoundationKind(rows, 'new_foundation').map((r) => r.uid)).toEqual(['n']);
+    expect(filterPipelineRowsByFoundationKind(rows, 'under_foundation').map((r) => r.uid)).toEqual(['u']);
+    expect(filterPipelineRowsByFoundationKind(rows, 'no_foundation').map((r) => r.uid)).toEqual(['x']);
+  });
+
+  it('does not mutate its input', () => {
+    const copy = [...rows];
+    filterPipelineRowsByFoundationKind(rows, 'new_foundation');
+    expect(rows).toEqual(copy);
   });
 });

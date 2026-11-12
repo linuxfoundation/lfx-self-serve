@@ -10,6 +10,7 @@ import {
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
 import type {
+  FormationPipelineFoundationKind,
   FormationPipelineParent,
   FormationPipelinePerson,
   FormationPipelineQuery,
@@ -311,13 +312,23 @@ export class FormationPipelineService {
     return false;
   }
 
+  /** `new_foundation` when the project is itself a foundation (`computeIsFoundation`; test projects never get here), else `under_foundation` with a foundation ancestor, else `no_foundation`. */
+  private foundationKind(project: UpstreamPipelineProject, parent: FormationPipelineParent | null): FormationPipelineFoundationKind {
+    if (this.isFoundation(project)) {
+      return 'new_foundation';
+    }
+    return parent ? 'under_foundation' : 'no_foundation';
+  }
+
   private toRow(project: UpstreamPipelineProject, parents: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): FormationPipelineRow {
+    const parent = this.nearestFoundation(project, parents, rootUid);
     return {
       uid: project.uid,
       slug: project.slug,
       name: project.name,
       stage: getPipelineStageKey(project.stage) as FormationPipelineRow['stage'],
-      parent: this.nearestFoundation(project, parents, rootUid),
+      parent,
+      foundation_kind: this.foundationKind(project, parent),
       announcement_date: null,
       formation_date: project.formation_date || null,
       legal_entity_name: project.legal_entity_name || null,

@@ -39,6 +39,16 @@
               size="small"
               data-testid="formations-pipeline-foundation" />
           </div>
+          <div class="w-full min-[600px]:w-52 max-[599px]:[&_.p-select]:min-h-11">
+            <lfx-select
+              [form]="filterForm"
+              control="foundationKind"
+              [options]="foundationKindOptions()"
+              [ariaLabel]="copy.foundationKindLabel"
+              styleClass="w-full"
+              size="small"
+              data-testid="formations-pipeline-foundation-kind" />
+          </div>
           <div class="w-full min-[600px]:w-64">
             <lfx-input-text
               [form]="filterForm"
