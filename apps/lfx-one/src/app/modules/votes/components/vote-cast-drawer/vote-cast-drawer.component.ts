@@ -109,8 +109,6 @@ export class VoteCastDrawerComponent {
 
   // === Outputs ===
   public readonly voteSubmitted = output<string>();
-  /** Authoritative rejection, not a successful submission; keyed to the attempted vote. */
-  public readonly voteChangeBlocked = output<string>();
 
   // === Forms ===
   public readonly form = new FormGroup({});
@@ -703,7 +701,6 @@ export class VoteCastDrawerComponent {
           if (err instanceof HttpErrorResponse && err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
             this.messageService.add({ severity: 'warn', summary: "This vote doesn't allow changes", detail: VOTE_BALLOT_FINAL_STATE, life: 5000 });
             this.changeBlockedFor.update((ids) => new Set(ids).add(voteUid));
-            this.voteChangeBlocked.emit(voteUid);
             this.visible.set(false);
             return;
           }

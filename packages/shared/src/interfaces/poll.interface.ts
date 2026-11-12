@@ -1431,7 +1431,7 @@ export interface MyVoteBallot {
   can_change_vote?: boolean;
 }
 
-/** Inputs to `canChangeSubmittedBallot` (#4723), shared by the vote-link page and the vote detail page. */
+/** Inputs to `canChangeSubmittedBallot` (#4723), shared by the vote-link page and the Me-lens Review drawer. */
 export interface VoteBallotChangeEligibility {
   /** ITX's own answer when reported; it wins over the derived fallback */
   canChangeVote?: boolean;

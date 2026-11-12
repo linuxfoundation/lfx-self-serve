@@ -1126,16 +1126,13 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
       .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'this poll does not allow changing a submitted vote' } })));
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
     const component = fixture.componentInstance;
-    const blocked: string[] = [];
     const success = vi.fn();
-    component.voteChangeBlocked.subscribe((uid) => blocked.push(uid));
     component.voteSubmitted.subscribe(success);
 
     component['onSubmit']();
 
     expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: "This vote doesn't allow changes" }));
     expect(component.visible()).toBe(false);
-    expect(blocked).toEqual([VOTE.uid]);
     expect(success).not.toHaveBeenCalled();
 
     await fixture.whenStable();
@@ -1151,14 +1148,17 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
   it('keeps the drawer open with an error toast for any other update failure', async () => {
     const updateMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
-    const blocked = vi.fn();
-    fixture.componentInstance.voteChangeBlocked.subscribe(blocked);
+    const success = vi.fn();
+    fixture.componentInstance.voteSubmitted.subscribe(success);
 
     fixture.componentInstance['onSubmit']();
 
     expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to update vote' }));
     expect(fixture.componentInstance.visible()).toBe(true);
-    expect(blocked).not.toHaveBeenCalled();
+    expect(success).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['submitDisabled']()).toBe(false);
+    fixture.componentInstance['onSubmit']();
+    expect(updateMyResponse).toHaveBeenCalledTimes(2);
   });
 
   it('shows the pre-submit final notice on a first ballot of a locked vote', async () => {

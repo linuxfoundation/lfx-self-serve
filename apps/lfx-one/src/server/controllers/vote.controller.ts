@@ -555,7 +555,7 @@ export class VoteController {
     }
   }
 
-  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for read-only review and "Your ballot" (#4331). */
+  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for Me-lens Review (editable when allowed) and "Your ballot" (#4331, #4723). */
   public async getMyVoteBallot(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = logger.startOperation(req, 'get_my_vote_ballot', { vote_uid: uid });
