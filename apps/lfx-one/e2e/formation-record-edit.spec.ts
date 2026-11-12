@@ -99,7 +99,7 @@ test.describe('Formation record edit drawer (#5134)', () => {
     await page.getByRole('option', { name: 'Active' }).click();
     await page.getByTestId('formation-record-save').click();
 
-    await expect(page.getByTestId('formation-record-confirmation')).toContainText('completes its formation items');
+    await expect(page.getByTestId('formation-record-confirmation')).toContainText('completes its formation.');
     expect(puts).toHaveLength(0);
 
     await page.getByTestId('formation-record-confirm').click();

@@ -171,7 +171,7 @@ describe('FormationRecordEditDrawerComponent', () => {
     await save();
 
     const confirmation = query('[data-testid="formation-record-confirmation"]');
-    expect(confirmation?.textContent).toContain('completes its formation items');
+    expect(confirmation?.textContent).toContain('completes its formation.');
     expect(confirmation?.textContent).toContain('3 required items are still open');
     expect(updateFormationRecord).not.toHaveBeenCalled();
 
