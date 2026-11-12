@@ -482,6 +482,27 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
         expect(getApplications).not.toHaveBeenCalled();
       });
 
+      it('rewrites an ignored ?tab=proposals to the Pipeline tab in the address bar, replacing the history entry', async () => {
+        const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+        try {
+          await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true, tab: 'proposals' });
+          expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+        } finally {
+          navigate.mockRestore();
+        }
+      });
+
+      it('leaves the address alone for the formation team on ?tab=proposals, and for staff on the default tab', async () => {
+        const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+        try {
+          await render({ slug: 'tlf', isFormationTeam: true, isLfStaff: true, tab: 'proposals' });
+          await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true });
+          expect(navigate).not.toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: null } }));
+        } finally {
+          navigate.mockRestore();
+        }
+      });
+
       it('still opens ?tab=formations', async () => {
         const fixture = await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true, tab: 'formations' });
         expect(query(fixture, 'formations-queue-pipeline')).toBeNull();

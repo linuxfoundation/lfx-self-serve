@@ -88,6 +88,10 @@ export class FormationsQueueComponent {
    * `showProposalsTab` is unchanged.
    */
   protected readonly showPipelineTab = computed(() => this.isLfRoot() && (this.isFormationTeam() === true || this.access()?.isLfStaff === true));
+  /** A `?tab=proposals` link opened by someone who sees Pipeline but not the proposals tab (LF staff). */
+  private readonly ignoredProposalsLink = computed(
+    () => this.requestedTab() === PROJECT_APPLICATION_TABS.proposals && this.showPipelineTab() && !this.showProposalsTab()
+  );
   /**
    * The page tabs, with the pending-proposals count (#5229) on the Project proposals tab once the shared staff read
    * has landed. No count while it is unread, failed or zero — never a guessed "(0)".
@@ -160,6 +164,12 @@ export class FormationsQueueComponent {
     toObservable(this.showProposalsTab)
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe(() => this.projectApplicationService.refreshStaff());
+
+    // `?tab=proposals` is the formation team's. For staff it is ignored and Pipeline shows, so the address bar says so too (#5544);
+    // Pipeline is the default and carries no param.
+    toObservable(this.ignoredProposalsLink)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.router.navigate([], { relativeTo: this.route, queryParams: { tab: null }, queryParamsHandling: 'merge', replaceUrl: true }));
   }
 
   protected onPageTabChange(tab: string): void {
