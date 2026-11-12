@@ -47,8 +47,10 @@
         [menu]="moreMenu"
         data-testid="meeting-details-more" />
     }
-    <span class="mx-[6px] h-[20px] w-px bg-gray-200" aria-hidden="true"></span>
-    <lfx-ui-button variant="tertiary" icon="fa-light fa-xmark" ariaLabel="Close" iconOnly (click)="close()" data-testid="meeting-details-close" />
+    @if (drawer) {
+      <span class="mx-[6px] h-[20px] w-px bg-gray-200" aria-hidden="true"></span>
+      <lfx-ui-button variant="tertiary" icon="fa-light fa-xmark" ariaLabel="Close" iconOnly (click)="close()" data-testid="meeting-details-close" />
+    }
   </div>
 </div>
 

@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingHomeAttendance, MeetingRegistrant } from '@lfx-one/shared/interfaces';
@@ -22,8 +21,9 @@ import { MeetingsHomeEditService } from '../../../../services/meetings-home-edit
 import { MeetingAttendeeGridComponent } from '../../../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingHomeAttendanceComponent } from '../../../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingDetailsContext } from '../../meeting-details.context';
+import { MeetingDetailsSource } from '../../meeting-details.source';
 
-/** The organizer's RSVP counts for the date the meeting details drawer shows, and Invite people. */
+/** RSVP counts for the date the meeting details drawer shows; organizers also get Invite people. */
 @Component({
   selector: 'lfx-meeting-details-rsvp',
   imports: [MeetingAttendeeGridComponent, MeetingHomeAttendanceComponent, UiButtonComponent, UiSkeletonComponent],
@@ -35,7 +35,7 @@ export class MeetingDetailsRsvpComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly dialogRef = inject(DialogRef);
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   protected readonly context = inject(MeetingDetailsContext);
 
   protected readonly responsesOn: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.context.meeting()));
@@ -50,7 +50,7 @@ export class MeetingDetailsRsvpComponent {
 
   protected invitePeople(): void {
     // As Edit Meeting at its Guests step: the drawer stays open under the scope question and closes once the editor opens.
-    this.editService.edit(this.context.shownRow(), 'guests', this.dialogRef);
+    this.editService.edit(this.context.shownRow(), 'guests', this.hostRef);
   }
 
   private initRoster(): Signal<MeetingRegistrant[] | null | undefined> {
@@ -58,13 +58,18 @@ export class MeetingDetailsRsvpComponent {
       const meeting = this.context.meeting();
       const occurrenceId = this.context.shownRow().occurrenceId ?? undefined;
       const responsesOn = this.responsesOn();
+      const organizer = this.context.organizer();
       // A series row without a date counts only answers for all dates, as the meeting page does.
-      return { id: meeting.id, occurrenceId, responsesOn, allDatesOnly: responsesOn && !!meeting.recurrence && !occurrenceId };
+      return { id: meeting.id, occurrenceId, responsesOn, organizer, allDatesOnly: responsesOn && !!meeting.recurrence && !occurrenceId };
     });
     const roster$ = toObservable(key).pipe(
       distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
       switchMap((params) =>
-        this.meetingService.getMeetingRegistrants(params.id, params.responsesOn, params.occurrenceId, true, undefined, false, params.allDatesOnly).pipe(
+        // Guests read the roster the Guests tab reads; the BFF shares it only when the meeting does.
+        (params.organizer
+          ? this.meetingService.getMeetingRegistrants(params.id, params.responsesOn, params.occurrenceId, true, undefined, false, params.allDatesOnly)
+          : this.meetingService.getMyMeetingRegistrants(params.id, params.responsesOn, params.occurrenceId, false, params.allDatesOnly)
+        ).pipe(
           map((registrants): MeetingRegistrant[] | null => registrants),
           catchError((error: unknown) => {
             console.error('Failed to load the meeting registrants:', error);
@@ -83,7 +88,7 @@ export class MeetingDetailsRsvpComponent {
       const meeting = this.context.meeting();
       const occurrenceId = this.context.shownRow().occurrenceId;
       const allDatesOnly = !!meeting.recurrence && !occurrenceId;
-      // Answers the organizer saved here can be newer than the roster.
+      // Answers saved here can be newer than the roster.
       const confirmed = this.userService.confirmedMeetingRsvps(meeting.id).filter((rsvp) => !allDatesOnly || rsvp.scope === 'all');
       if (confirmed.length === 0) return roster;
       return roster.map((registrant) => {

@@ -10,6 +10,7 @@ Key files:
 
 - `meeting-join.component.ts` — signals, join flow logic, attachment/registrant gating
 - `meeting-join.component.html` — template: badge row, content, join section, signed-out branch
+- `../services/meeting-page-data.service.ts` — page-scoped `MeetingPageDataService`: the public meeting load (`{id}-{ms}` past ids, upcoming-then-past fallback), SSR seed and TransferState, password (`?password=` or router state), not-found and error routing, `?occurrence=` and the page clock
 
 **Backend contracts:** See [Public Meetings](../backend/public-meetings.md) for the server-side M2M auth, controller, and route allowlist details.
 
@@ -130,6 +131,17 @@ The attendance stats (attended, absent, rate) come from the participant rows whe
 
 ---
 
+## 🧭 Redesigned page behind `meetings-redesign`
+
+`app.routes.ts` pairs `meetings/:id`: `MeetingPageComponent` (`modules/meetings/meeting-page/`) first, behind the `meetingPageRedesignGuard` CanMatch, then this legacy page unguarded.
+
+- **Server decision.** `server.ts` evaluates `meetings-redesign` for a signed-in viewer on `/meetings/:id` only (`resolveSsrFlags`), keyed like the browser's `FeatureFlagService` context, including impersonation, into `ServerRequestContext.flags`. Anonymous visitors get the default, the legacy page. The guard records its decision in TransferState (`MEETING_PAGE_REDESIGN_KEY`), and the browser's first match reuses it, so hydration never swaps pages. Later client navigations ask `FeatureFlagService`.
+- **QA override.** Outside production the guard mirrors the `lfx-feature-flag-overrides` local storage entry into a cookie of the same name, which the server-side guard reads, so an override applies to SSR from the next full load.
+- **Fallback rule.** The guard skips the page for anonymous viewers, for `?password=` or `?action=` links, and for the legacy page's navigations to its own URL. Once loaded, the page serves only an ended meeting (`{id}-{ms}` or the past fallback) that a non-organizer with full access opens; anything else re-navigates the same URL with `MEETING_PAGE_LEGACY_STATE`, on the server too, and renders this page.
+- **Shared loading.** Both pages use `MeetingPageDataService` (one instance per page), and `MeetingPageComponent` hosts `MeetingDetailsBodyComponent` with a page `MeetingDetailsSource`: no dialog, no list, and another date opens at its own `/meetings/...` URL.
+
+---
+
 ## 🧱 Component Structure
 
 **Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join/meeting-join.component.ts`
@@ -138,9 +150,9 @@ Key signals and their gating:
 
 | Signal               | Type                            | Gate                                                                                                                                                                              |
 | -------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `meeting`            | `Signal<Meeting & { project }>` | `toSignal` of `getPublicMeeting` / `getPublicPastMeeting` fallback chain                                                                                                          |
+| `meeting`            | `Signal<Meeting & { project }>` | `MeetingPageDataService.load()`: `toSignal` of the `getPublicMeeting` / `getPublicPastMeeting` fallback chain                                                                     |
 | `authenticated`      | `WritableSignal<boolean>`       | set from `UserService`                                                                                                                                                            |
-| `password`           | `WritableSignal<string\|null>`  | set from URL `?password` query param                                                                                                                                              |
+| `password`           | `Signal<string\|null>`          | `MeetingPageDataService.password`: the URL `?password` query param, else the composer's router state                                                                              |
 | `attachments`        | `Signal<MeetingAttachment[]>`   | `initializeAttachments` — only fetches when `authenticated()`                                                                                                                     |
 | `materialFiles`      | `Signal<MeetingAttachment[]>`   | filtered from `attachments`, after dropping materials scoped to other occurrences (`filterAttachmentsForOccurrence` against `currentOccurrence()`)                                |
 | `registrants`        | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited\|\|optimisticInvited) && !isPastMeeting`; empty `[]` on any other branch                               |

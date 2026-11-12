@@ -1,17 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { NO_ERRORS_SCHEMA, Signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FundType } from '@lfx-one/shared/enums';
 import { CrowdfundingInitiativeStatus, InitiativeDetail } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject } from 'rxjs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { InitiativeDetailComponent } from './initiative-detail.component';
 
@@ -140,5 +142,61 @@ describe('InitiativeDetailComponent creator (lfx-crowdfunding#452)', () => {
     const page = setup('org');
     page.onInitiativeSaved({ ...detail(), isOwner: false, name: 'Renamed' });
     expect(page.initiative()).toMatchObject({ name: 'Renamed', creator: 'Synthetic Owner' });
+  });
+});
+
+describe('InitiativeDetailComponent load errors (lfx-crowdfunding#363)', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  const fail = (status: number): Observable<never> => throwError(() => new HttpErrorResponse({ status }));
+
+  const setup = (getInitiativeBySlug: () => Observable<InitiativeDetail>) => {
+    TestBed.configureTestingModule({
+      imports: [InitiativeDetailComponent],
+      providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { data: { lens: 'me' }, queryParams: {} }, paramMap: of(convertToParamMap({ slug: 'synthetic-initiative' })) },
+        },
+        { provide: CrowdfundingService, useValue: { getInitiativeBySlug } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: () => ['/org', 'initiatives'] } },
+        { provide: DialogService, useValue: { open: () => ({ onClose: new Subject() }) } },
+        { provide: MessageService, useValue: { add: () => undefined } },
+      ],
+    });
+    // Render the real template, but only the empty states; the loaded page's children are out of scope here.
+    TestBed.overrideComponent(InitiativeDetailComponent, { set: { imports: [EmptyStateComponent], schemas: [NO_ERRORS_SCHEMA] } });
+    const fixture = TestBed.createComponent(InitiativeDetailComponent);
+    fixture.detectChanges();
+    const shown = (): string[] =>
+      Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid^="initiative-detail-error-"]')).map((el) =>
+        el.getAttribute('data-testid')
+      ) as string[];
+    return { fixture, shown };
+  };
+
+  it.each([
+    [404, 'initiative-detail-error-not-found'],
+    [403, 'initiative-detail-error-forbidden'],
+    [502, 'initiative-detail-error-unavailable'],
+    [0, 'initiative-detail-error-unavailable'],
+  ])('shows the matching state for a %s', (status, testId) => {
+    expect(setup(() => fail(status)).shown()).toEqual([testId]);
+  });
+
+  it('shows no error state when the initiative loads', () => {
+    expect(setup(() => of(detail())).shown()).toEqual([]);
+  });
+
+  it('reloads on Try again and clears the error', () => {
+    const load = vi.fn<() => Observable<InitiativeDetail>>().mockReturnValueOnce(fail(502)).mockReturnValue(of(detail()));
+    const { fixture, shown } = setup(load);
+    expect(shown()).toEqual(['initiative-detail-error-unavailable']);
+
+    (fixture.componentInstance as unknown as { onRetry(): void }).onRetry();
+    fixture.detectChanges();
+
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(shown()).toEqual([]);
   });
 });

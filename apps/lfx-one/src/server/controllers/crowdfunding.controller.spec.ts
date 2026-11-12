@@ -44,6 +44,21 @@ function buildReq(query: Record<string, unknown> = {}) {
   return { bearerToken: 'user-token', query } as any;
 }
 
+const SLUG_TO_UID = '/crowdfunding/initiatives/slug-to-uid/my-fund';
+
+// Answers each CF path with its own [status, body]; any other path is a 500 so an unexpected call fails loudly.
+function respondByPath(fetchMock: ReturnType<typeof vi.fn>, routes: Record<string, [number, unknown?]>) {
+  fetchMock.mockImplementation(async (url: string) => {
+    const [status, body = {}] = routes[url.replace('https://cf.example', '')] ?? [500];
+    return { ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' };
+  });
+}
+
+async function getDetail(slug: string, res = buildRes(), next = vi.fn()) {
+  await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug } }, res, next);
+  return { res, next };
+}
+
 describe('CrowdfundingController initiatives scope (#347, #348)', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -267,6 +282,8 @@ describe('CrowdfundingController initiative writer routes (#259)', () => {
   const respondWith = (status: number, body: unknown = {}) =>
     fetchMock.mockResolvedValue({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' });
   const lastCall = (): [string, RequestInit] => fetchMock.mock.calls.at(-1) as [string, RequestInit];
+  const requestedUrls = (): string[] => fetchMock.mock.calls.map(([url]) => url as string);
+  const MANAGE = `/crowdfunding/initiatives/${INITIATIVE_ID}/manage`;
 
   beforeEach(() => {
     vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
@@ -279,25 +296,56 @@ describe('CrowdfundingController initiative writer routes (#259)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reads initiative details from /manage and maps a 404 to not-found', async () => {
-    respondWith(404);
-    const res = buildRes();
-    const next = vi.fn();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, next);
+  it('resolves the route slug with slug-to-uid, then reads /manage by UUID (#363)', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'published' }] });
+    const { res, next } = await getDetail('my-fund');
 
-    expect(lastCall()[0]).toBe('https://cf.example/crowdfunding/initiatives/my-fund/manage');
-    expect(lastCall()[1].headers).toMatchObject({ Authorization: 'Bearer user-token' });
+    expect(next).not.toHaveBeenCalled();
+    expect(requestedUrls()).toEqual([`https://cf.example${SLUG_TO_UID}`, `https://cf.example${MANAGE}`]);
+    for (const [, init] of fetchMock.mock.calls as [string, RequestInit][]) {
+      expect(init.headers).toMatchObject({ Authorization: 'Bearer user-token' });
+    }
+    expect(res.json.mock.calls[0][0]).toMatchObject({ id: INITIATIVE_ID, slug: 'my-fund' });
+  });
+
+  it('reports not-found when slug-to-uid 404s, without calling /manage', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [404] });
+    const { res, next } = await getDetail('my-fund');
+
+    expect(requestedUrls()).toEqual([`https://cf.example${SLUG_TO_UID}`]);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('propagates a non-writer 403 from /manage instead of reporting not-found', async () => {
-    respondWith(403);
-    const res = buildRes();
-    const next = vi.fn();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, next);
+  it('reads /manage directly when the route param is already a UUID', async () => {
+    respondByPath(fetchMock, { [MANAGE]: [200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'published' }] });
+    const { next } = await getDetail(INITIATIVE_ID);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(requestedUrls()).toEqual([`https://cf.example${MANAGE}`]);
+  });
+
+  it('propagates a 403 from /manage instead of reporting not-found', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [403] });
+    const { res, next } = await getDetail('my-fund');
 
     expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('reports not-found when /manage 404s after the slug resolves (gateway bypassed)', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [404] });
+    const { res, next } = await getDetail('my-fund');
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a slug-to-uid failure other than 404', async () => {
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [502] });
+    const { res, next } = await getDetail('my-fund');
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 502 });
     expect(res.status).not.toHaveBeenCalled();
   });
 
@@ -356,6 +404,7 @@ describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)',
     fetchMock.mockResolvedValue({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' });
   const lastCall = (): [string, RequestInit] => fetchMock.mock.calls.at(-1) as [string, RequestInit];
   const sentBody = (): Record<string, unknown> => JSON.parse(lastCall()[1].body as string);
+  const MANAGE = `/crowdfunding/initiatives/${INITIATIVE_ID}/manage`;
   const putReq = (body: Record<string, unknown>, id = INITIATIVE_ID) => ({ ...buildReq(), params: { id }, body }) as any;
 
   beforeEach(() => {
@@ -500,15 +549,20 @@ describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)',
   });
 
   it('maps is_owner and attribution from the manage read', async () => {
-    respondWith(200, {
-      id: INITIATIVE_ID,
-      slug: 'my-fund',
-      status: 'submitted',
-      is_owner: true,
-      attribution: { type: 'project', entity_uid: PROJECT_UID, name: 'Vendor Project' },
+    respondByPath(fetchMock, {
+      [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }],
+      [MANAGE]: [
+        200,
+        {
+          id: INITIATIVE_ID,
+          slug: 'my-fund',
+          status: 'submitted',
+          is_owner: true,
+          attribution: { type: 'project', entity_uid: PROJECT_UID, name: 'Vendor Project' },
+        },
+      ],
     });
-    const res = buildRes();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, vi.fn());
+    const { res } = await getDetail('my-fund');
 
     expect(res.json.mock.calls[0][0]).toMatchObject({
       isOwner: true,
@@ -517,9 +571,8 @@ describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)',
   });
 
   it('reads a missing is_owner as false', async () => {
-    respondWith(200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'submitted' });
-    const res = buildRes();
-    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, vi.fn());
+    respondByPath(fetchMock, { [SLUG_TO_UID]: [200, { uid: INITIATIVE_ID }], [MANAGE]: [200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'submitted' }] });
+    const { res } = await getDetail('my-fund');
 
     expect(res.json.mock.calls[0][0].isOwner).toBe(false);
   });

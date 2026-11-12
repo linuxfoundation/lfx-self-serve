@@ -22,6 +22,7 @@ import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
+import { resolveSsrFlags } from './helpers/ssr-flags.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
@@ -594,6 +595,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
+  // After the impersonation override, so the flag context is the identity the browser evaluates.
+  const flags = auth.authenticated ? await resolveSsrFlags(req, auth.user) : {};
+
   const runtimeConfig: RuntimeConfig = {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
     dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
@@ -617,6 +621,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const renderContext: ServerRequestContext = {
     auth,
     runtimeConfig,
+    flags,
     notFound: false,
     unavailable: false,
     providers: [

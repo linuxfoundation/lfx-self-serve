@@ -99,7 +99,9 @@
               [groupLinkState]="groupLinkState"
               [loading]="loading()"
               [showFoundation]="false"
+              [canManage]="canUpload()"
               (folderOpen)="onFolderOpen($event)"
+              (documentDelete)="onDocumentDelete($event)"
               testIdPrefix="documents-dashboard"
               [emptyMessage]="projectEmptyMessage()">
             </lfx-documents-table>

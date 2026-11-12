@@ -33,5 +33,32 @@
     } @else {
       <lfx-initiative-financials [initiative]="detail" />
     }
+  } @else {
+    @switch (loadError()) {
+      @case ('not-found') {
+        <lfx-empty-state
+          icon="fa-light fa-magnifying-glass"
+          title="Initiative not found"
+          subtitle="This initiative doesn't exist. The link may be out of date, or the initiative was renamed or deleted."
+          data-testid="initiative-detail-error-not-found" />
+      }
+      @case ('forbidden') {
+        <lfx-empty-state
+          icon="fa-light fa-lock"
+          title="You don't have access to this initiative"
+          subtitle="Only its creator and writers on the project or company it's attributed to can manage it."
+          data-testid="initiative-detail-error-forbidden" />
+      }
+      @default {
+        <lfx-empty-state
+          icon="fa-light fa-triangle-exclamation"
+          title="Initiative couldn't be loaded"
+          subtitle="LFX Crowdfunding is unavailable right now. Try again in a moment."
+          ctaLabel="Try again"
+          ctaIcon="fa-light fa-rotate-right"
+          (ctaClick)="onRetry()"
+          data-testid="initiative-detail-error-unavailable" />
+      }
+    }
   }
 </div>

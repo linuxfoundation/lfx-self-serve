@@ -25,6 +25,7 @@ const {
   success,
   fetchWithETag,
   updateWithETag,
+  deleteWithETag,
   natsRequest,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
@@ -44,6 +45,7 @@ const {
   success: vi.fn(),
   fetchWithETag: vi.fn(),
   updateWithETag: vi.fn(),
+  deleteWithETag: vi.fn(),
   natsRequest: vi.fn(),
 }));
 
@@ -62,8 +64,15 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const formationRecordConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-formation.constants')>(
     '../../../../../packages/shared/src/constants/project-formation.constants'
   );
+  // Real values for the document delete types/paths/message, not hand copies.
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
   return {
     ...formationRecordConstants,
+    DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
+    DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE: documentConstants.DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
     FORMATION_TEAM_NAME: 'formation',
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
     ACCESS_CHECK_BATCH_SIZE: apiConstants.ACCESS_CHECK_BATCH_SIZE,
@@ -209,6 +218,7 @@ vi.mock('./etag.service', () => ({
   ETagService: class {
     public fetchWithETag = fetchWithETag;
     public updateWithETag = updateWithETag;
+    public deleteWithETag = deleteWithETag;
   },
 }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }), isMissingObjectError: vi.fn(() => false) } }));
@@ -3172,5 +3182,121 @@ describe('ProjectService.updateFormationRecord', () => {
     updateWithETag.mockRejectedValue(outage);
 
     await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toBe(outage);
+  });
+});
+
+describe('ProjectService.deleteProjectDocument', () => {
+  let service: ProjectService;
+
+  /** Answers the two query-service lookups the folder-empty check makes, keyed by resource type. */
+  function mockChildren(children: { links?: unknown[]; files?: unknown[]; failOn?: string }): void {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === children.failOn) {
+        return Promise.reject(new Error('query service down'));
+      }
+      const rows = params?.type === 'project_link' ? (children.links ?? []) : (children.files ?? []);
+      return Promise.resolve({ resources: rows.map((data, i) => ({ id: `${params?.type}:${i}`, data })) });
+    });
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    deleteWithETag.mockReset();
+    fetchWithETag.mockResolvedValue({ data: {}, etag: 'etag-1' });
+    deleteWithETag.mockResolvedValue(undefined);
+    service = new ProjectService();
+  });
+
+  it.each([
+    ['link', '/projects/project-1/links/doc-1'],
+    ['file', '/projects/project-1/documents/doc-1'],
+  ] as const)('deletes a %s through its own upstream path with the fetched ETag', async (type, path) => {
+    await service.deleteProjectDocument(req, 'project-1', 'doc-1', type);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'delete_project_document');
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', 'delete_project_document');
+    // Only folders are checked for children.
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('deletes an empty folder', async () => {
+    mockChildren({ links: [{ uid: 'link-1', folder_uid: 'other-folder' }], files: [{ uid: 'file-1' }] });
+
+    await service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder');
+
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1/folders/folder-1', 'etag-1', 'delete_project_document');
+  });
+
+  it.each([
+    ['link', { links: [{ uid: 'link-1', folder_uid: 'folder-1' }] }],
+    ['file', { files: [{ uid: 'file-1', folder_uid: 'folder-1' }] }],
+  ])('rejects a folder that still holds a %s with a 409 and deletes nothing', async (_kind, children) => {
+    mockChildren(children);
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FOLDER_NOT_EMPTY',
+    });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a children lookup fails instead of treating the folder as empty', async () => {
+    mockChildren({ failOn: 'project_document' });
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toThrow('query service down');
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it("looks links and files up by the folder's own folder_uid tag, not by listing every link and file of the project", async () => {
+    mockChildren({});
+
+    await service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder');
+
+    const queries = proxyRequest.mock.calls.map((call) => call[4]);
+    expect(queries).toHaveLength(2);
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        { type: 'project_link', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+        { type: 'project_document', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+      ])
+    );
+  });
+
+  // The query service checks access after it paginates, so a page can have no visible rows while more remain.
+  it('follows the page token past a page with no visible rows and refuses when a later page holds a file', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string; page_token?: string }) => {
+      if (params?.type === 'project_document' && !params.page_token) {
+        return Promise.resolve({ resources: [], page_token: 'page-2' });
+      }
+      if (params?.type === 'project_document') {
+        return Promise.resolve({ resources: [{ id: 'project_document:f', data: { uid: 'file-1', folder_uid: 'folder-1' } }] });
+      }
+      return Promise.resolve({ resources: [] });
+    });
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409, code: 'FOLDER_NOT_EMPTY' });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('stops at the first match instead of paging on', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      Promise.resolve(
+        params?.type === 'project_link'
+          ? { resources: [{ id: 'project_link:l', data: { uid: 'link-1', folder_uid: 'folder-1' } }], page_token: 'more' }
+          : { resources: [] }
+      )
+    );
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409 });
+
+    const linkPages = proxyRequest.mock.calls.filter((call) => call[4]?.type === 'project_link');
+    expect(linkPages).toHaveLength(1);
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.deleteProjectDocument(req, 'project-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
   });
 });

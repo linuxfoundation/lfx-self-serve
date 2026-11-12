@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, input, Signal, viewChild } from '@angular/core';
 import { environment } from '@environments/environment';
 import { PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
@@ -20,6 +19,7 @@ import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { MeetingsHomeDeleteService } from '../../../services/meetings-home-delete.service';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsProjectLinkComponent } from '../project-link/meeting-details-project-link.component';
 import { MeetingDetailsOwnActionsComponent } from '../tools/own-actions/meeting-details-own-actions.component';
 
@@ -36,8 +36,9 @@ import { MeetingDetailsOwnActionsComponent } from '../tools/own-actions/meeting-
 export class MeetingDetailsHeaderComponent {
   private readonly clipboard = inject(Clipboard);
   private readonly toast = inject(UiToastService);
-  private readonly drawer = inject(UiDrawerContext);
-  private readonly dialogRef = inject(DialogRef);
+  /** Null outside a drawer, which drops Close. */
+  protected readonly drawer = inject(UiDrawerContext, { optional: true });
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   private readonly editService = inject(MeetingsHomeEditService);
   private readonly deleteService = inject(MeetingsHomeDeleteService);
   protected readonly context = inject(MeetingDetailsContext);
@@ -94,7 +95,7 @@ export class MeetingDetailsHeaderComponent {
 
   protected editMeeting(): void {
     // A recurring meeting's scope question opens over the drawer, which closes only once the editor opens.
-    this.editService.edit(this.context.shownRow(), undefined, this.dialogRef);
+    this.editService.edit(this.context.shownRow(), undefined, this.hostRef);
   }
 
   protected cancelOccurrence(): void {
@@ -102,11 +103,11 @@ export class MeetingDetailsHeaderComponent {
     if (!occurrence) return;
     // The page's flow cancels the date and reloads the list; the drawer then closes on a date that no longer exists.
     this.deleteService.cancelOccurrence(this.context.shownRow(), occurrence, 'drawer').subscribe((cancelled) => {
-      if (cancelled) this.drawer.requestClose();
+      if (cancelled) this.drawer?.requestClose();
     });
   }
 
   protected close(): void {
-    this.drawer.requestClose();
+    this.drawer?.requestClose();
   }
 }

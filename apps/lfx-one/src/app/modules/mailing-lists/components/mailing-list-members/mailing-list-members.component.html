@@ -150,6 +150,8 @@
                 size="small"
                 [text]="true"
                 styleClass="h-8 w-8 text-gray-500 hover:text-red-600 hover:bg-red-50"
+                [loading]="deletingUid() === member.uid"
+                [disabled]="deletingUid() !== null"
                 (onClick)="deleteMember(member)"
                 [attr.data-testid]="'member-delete-' + member.uid">
               </lfx-button>

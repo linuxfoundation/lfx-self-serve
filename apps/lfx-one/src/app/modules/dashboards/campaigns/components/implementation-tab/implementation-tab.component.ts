@@ -367,6 +367,10 @@ import type {
   LinkedInCreativeVariant,
   LinkedInGeoTarget,
   LinkedInTargetingProfile,
+  LinkedInTargetingProfileConfig,
+  LinkedInTargetingProfileEdit,
+  LinkedInTargetingFacets,
+  LinkedInTargetingRemovals,
   LinkedInVariantDraft,
   LinkedInVariantView,
   MetaAdVariant,
@@ -450,8 +454,10 @@ import {
   isReversedCampaignFlight,
   joinAsSentenceList,
   linkedInCreativeTextLength,
+  linkedInTargetingAfterRemovals,
   linkedInVariantTextError,
   parseNegativeKeywordInput,
+  resolveLinkedInTargetingProfileId,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -773,6 +779,16 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInAssetUploadEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInAssetUploadAvailable = computed<boolean>(() => this.linkedInAssetUploadEnabled() === true);
+
+  /**
+   * Whether the LinkedIn section may offer removing entries from the selected targeting profile
+   * (`CampaignListResult.linkedInTargetingEditEnabled`, #5546). `null` (unknown) shows the profile
+   * read-only, as for the image controls.
+   */
+  public readonly linkedInTargetingEditEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTargetingEditEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTargetingEditAvailable = computed<boolean>(() => this.linkedInTargetingEditEnabled() === true);
 
   /**
    * Whether the Microsoft section may offer an image UPLOAD (`CampaignListResult.microsoftAssetUploadEnabled`),
@@ -1394,6 +1410,10 @@ export class ImplementationTabComponent implements OnInit {
     linkedInAccountId: [''],
     linkedInGeoTargets: [[] as LinkedInGeoTarget[]],
     linkedInTargetingProfile: [DEFAULT_LINKEDIN_TARGETING_PROFILE as LinkedInTargetingProfile],
+    // What the operator took out of that profile (#5546), on the form so the draft carries it like
+    // the profile itself. Removals rather than the kept set, so "nothing removed" is the profile as
+    // configured whatever the catalogue holds when it loads.
+    linkedInTargetingRemovals: [{ skills: [], groups: [] } as LinkedInTargetingRemovals],
     // The X section's two typed fields, on the FORM so the `lfx-input-text` / `lfx-textarea`
     // wrappers can bind them and `valueChanges` drives the draft, as for the LinkedIn controls
     // above. Both RAW strings: a blank budget is "not entered", which 0 cannot say. No validators,
@@ -1577,6 +1597,10 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInLifetimeBudget = signal(false);
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
+  /** The configured targeting profiles (#5546), from the mounted ConfigMap; the same list for every foundation. */
+  protected readonly linkedInTargetingProfiles = signal<LinkedInTargetingProfileConfig[]>([]);
+  protected readonly linkedInTargetingProfilesLoading = signal(false);
+  protected readonly linkedInTargetingProfilesFailed = signal(false);
   protected readonly redditVariants = signal<RedditAdVariant[]>([]);
   protected readonly redditSubreddits = signal<string[]>([]);
   protected readonly redditInterests = signal<string[]>([]);
@@ -2313,6 +2337,38 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignForm.controls.linkedInTargetingProfile.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInTargetingProfile.value)),
     { initialValue: this.campaignForm.controls.linkedInTargetingProfile.value }
   );
+
+  private readonly linkedInTargetingRemovals = toSignal(
+    this.campaignForm.controls.linkedInTargetingRemovals.valueChanges.pipe(startWith(this.campaignForm.controls.linkedInTargetingRemovals.value)),
+    { initialValue: this.campaignForm.controls.linkedInTargetingRemovals.value }
+  );
+
+  /**
+   * The configured profile the selection resolves to (#5546) — `custom` reads `cloud-native`, as
+   * campaign-service does — or `null` until the catalogue has it.
+   */
+  protected readonly linkedInSelectedTargetingProfile: Signal<LinkedInTargetingProfileConfig | null> = this.initLinkedInSelectedTargetingProfile();
+
+  /** The selected profile's member groups and skills that are KEPT after the operator's removals; `null` until it loads. */
+  protected readonly linkedInEffectiveTargeting: Signal<LinkedInTargetingFacets | null> = this.initLinkedInEffectiveTargeting();
+
+  /**
+   * The edit a create sends as `linkedInConfig.targetingProfileEdit`, or `null` when nothing the
+   * profile carries was removed — so an untouched profile sends exactly what it always did.
+   */
+  protected readonly linkedInTargetingProfileEdit: Signal<LinkedInTargetingProfileEdit | null> = this.initLinkedInTargetingProfileEdit();
+
+  /** Whether the operator holds removals at all, loaded or not — what the create gate and the reset control read. */
+  protected readonly linkedInTargetingRemovalsHeld: Signal<boolean> = this.initLinkedInTargetingRemovalsHeld();
+
+  /**
+   * Shown, not blocking, when every member group and skill is removed. campaign-service accepts it:
+   * it refuses a profile only when skills, groups AND its fixed job functions are all empty
+   * (`internal/platform/linkedin/client.go` `validatePrerequisites`), and those job functions are a
+   * constant it always adds (`internal/platform/linkedin/config.go` `jobFunctions`). The audience is
+   * then everyone in those job functions in the chosen locations, which is worth saying.
+   */
+  protected readonly linkedInTargetingEmptyWarning: Signal<boolean> = this.initLinkedInTargetingEmptyWarning();
 
   /**
    * The geo targets a Reddit dispatch will actually carry.
@@ -3690,6 +3746,14 @@ export class ImplementationTabComponent implements OnInit {
       return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
     // An intro text or headline campaign-service would refuse (blank) or cut short (over its limit).
     if (linkedInSelected && this.linkedInVariantTextInvalid()) return 'LinkedIn Ads: fix the ad variant text.';
+    // Removals the create cannot carry (#5546) — the legacy creator would drop them, and without the
+    // profile catalogue they cannot be applied — are a block rather than a silent revert to the
+    // profile as configured.
+    if (linkedInSelected && this.linkedInTargetingRemovalsHeld()) {
+      if (!this.linkedInTargetingEditAvailable()) return 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.';
+      if (!this.linkedInSelectedTargetingProfile())
+        return "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.";
+    }
     // The account must be one the CATALOG confirms, not merely a non-empty string.
     //
     // `ngOnInit`'s reconciliation only runs on a successful response, so it cannot cover the two
@@ -4694,11 +4758,15 @@ export class ImplementationTabComponent implements OnInit {
     // runs the initial load, so only later foundation switches should refetch the ad-account list.
     toObservable(this.activeFoundationSlug)
       .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => this.loadLinkedInAccounts());
+      .subscribe(() => {
+        this.loadLinkedInAccounts();
+        this.loadLinkedInTargetingProfiles();
+      });
   }
 
   public ngOnInit(): void {
     this.loadLinkedInAccounts();
+    this.loadLinkedInTargetingProfiles();
   }
 
   // === Public Methods ===
@@ -4782,7 +4850,23 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected setLinkedInTargetingProfile(profile: LinkedInTargetingProfile): void {
+    // Another profile reseeds the facets: removals were made against the one being left. Compared
+    // as campaign-service resolves them, so `custom` to `cloud-native` (the same facets) keeps them.
+    const current = this.campaignForm.controls.linkedInTargetingProfile.value;
+    if (resolveLinkedInTargetingProfileId(profile) !== resolveLinkedInTargetingProfileId(current)) this.resetLinkedInTargeting();
     this.campaignForm.controls.linkedInTargetingProfile.setValue(profile);
+  }
+
+  /** Takes one member group or skill out of the selected profile (#5546). */
+  protected removeLinkedInTargetingFacet(kind: keyof LinkedInTargetingRemovals, urn: string): void {
+    const current = this.campaignForm.controls.linkedInTargetingRemovals.value;
+    if (current[kind].includes(urn)) return;
+    this.campaignForm.controls.linkedInTargetingRemovals.setValue({ ...current, [kind]: [...current[kind], urn] });
+  }
+
+  /** Back to the selected profile as configured. */
+  protected resetLinkedInTargeting(): void {
+    this.campaignForm.controls.linkedInTargetingRemovals.setValue({ skills: [], groups: [] });
   }
 
   // `setLinkedInBudget` and `setLinkedInLifetimeBudget` were removed here (LFXV2-3230), for the
@@ -6327,6 +6411,8 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
               targetingProfile: this.linkedInTargetingProfile(),
+              // Only when something was removed, so an untouched profile sends what it always did.
+              ...this.linkedInTargetingEditField(),
               variants: this.linkedInVariantsForCreate(),
               adAccountId: this.linkedInAccountId(),
               ...this.biddingField('linkedin-ads'),
@@ -7273,6 +7359,44 @@ export class ImplementationTabComponent implements OnInit {
     return this.linkedInImageUploadStatus() === 'error' && briefId !== '' && this.linkedInImageUploadFailedBriefId() === briefId;
   }
 
+  private initLinkedInSelectedTargetingProfile(): Signal<LinkedInTargetingProfileConfig | null> {
+    return computed(() => {
+      const id = resolveLinkedInTargetingProfileId(this.linkedInTargetingProfile());
+      return this.linkedInTargetingProfiles().find((profile) => profile.id === id) ?? null;
+    });
+  }
+
+  private initLinkedInEffectiveTargeting(): Signal<LinkedInTargetingFacets | null> {
+    return computed(() => {
+      const profile = this.linkedInSelectedTargetingProfile();
+      return profile ? linkedInTargetingAfterRemovals(profile, this.linkedInTargetingRemovals() ?? { skills: [], groups: [] }) : null;
+    });
+  }
+
+  private initLinkedInTargetingProfileEdit(): Signal<LinkedInTargetingProfileEdit | null> {
+    return computed(() => {
+      const profile = this.linkedInSelectedTargetingProfile();
+      const effective = this.linkedInEffectiveTargeting();
+      if (!profile || !effective) return null;
+      if (effective.skills.length === profile.skills.length && effective.groups.length === profile.groups.length) return null;
+      return { id: profile.id, skills: effective.skills, groups: effective.groups };
+    });
+  }
+
+  private initLinkedInTargetingRemovalsHeld(): Signal<boolean> {
+    return computed(() => {
+      const removals = this.linkedInTargetingRemovals();
+      return !!removals && removals.skills.length + removals.groups.length > 0;
+    });
+  }
+
+  private initLinkedInTargetingEmptyWarning(): Signal<boolean> {
+    return computed(() => {
+      const effective = this.linkedInEffectiveTargeting();
+      return !!effective && this.linkedInTargetingProfileEdit() !== null && effective.skills.length === 0 && effective.groups.length === 0;
+    });
+  }
+
   private initLinkedInVariantViews(): Signal<LinkedInVariantView[]> {
     return computed(() => {
       const slotKey = this.linkedInImageUploadVariantKey();
@@ -8020,6 +8144,49 @@ export class ImplementationTabComponent implements OnInit {
     return serverAuthoredMessage(err, `The image could not be uploaded. Try again, or ${alternative}.`);
   }
 
+  /**
+   * The targeting profile catalogue (#5546). The BFF serves the mounted ConfigMap and ignores the
+   * project, but the route sits behind `requireCampaignManager`, which reads the project and can
+   * answer 403 for a foundation the caller doesn't manage. So it reloads on a foundation switch
+   * too, clearing an earlier failure. A failure leaves the list empty and says so; `canSubmit` then
+   * blocks a create only if removals are held.
+   */
+  private loadLinkedInTargetingProfiles(): void {
+    // Stamp the slug as `loadLinkedInAccounts` does: a late answer for the previous foundation must
+    // not overwrite (or fail) the load made for the current one.
+    const requestedSlug = this.activeFoundationSlug();
+    // Drop the previous foundation's catalogue too: left in place, a failed reload would still show
+    // its profiles and hide the failure (lfx-one review 3 on #5631).
+    this.linkedInTargetingProfiles.set([]);
+    this.linkedInTargetingProfilesLoading.set(true);
+    this.linkedInTargetingProfilesFailed.set(false);
+    this.campaignService
+      .getLinkedInTargetingProfiles(requestedSlug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (profiles) => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInTargetingProfiles.set(profiles);
+          this.linkedInTargetingProfilesLoading.set(false);
+        },
+        error: () => {
+          if (requestedSlug !== this.activeFoundationSlug()) {
+            return;
+          }
+          this.linkedInTargetingProfilesFailed.set(true);
+          this.linkedInTargetingProfilesLoading.set(false);
+        },
+      });
+  }
+
+  /** `{ targetingProfileEdit }` when the operator removed something from the selected profile, else nothing. */
+  private linkedInTargetingEditField(): { targetingProfileEdit?: LinkedInTargetingProfileEdit } {
+    const edit = this.linkedInTargetingProfileEdit();
+    return edit ? { targetingProfileEdit: edit } : {};
+  }
+
   private loadLinkedInAccounts(): void {
     // Stamp the slug this request was made for — a foundation switch fires a new request before
     // the previous one resolves, and `takeUntilDestroyed` alone doesn't cancel it (the component
@@ -8150,6 +8317,8 @@ export class ImplementationTabComponent implements OnInit {
       linkedInAccountId: draft.linkedInAccountId,
       linkedInGeoTargets: draft.linkedInGeoTargets,
       linkedInTargetingProfile: draft.linkedInTargetingProfile,
+      // Absent on a draft saved before #5546, which removed nothing.
+      linkedInTargetingRemovals: draft.linkedInTargetingRemovals ?? { skills: [], groups: [] },
     });
 
     // The copy arrays stay silent: nothing derives a display from them, and rebuilding a FormArray
@@ -8811,6 +8980,7 @@ export class ImplementationTabComponent implements OnInit {
       linkedInAccountId: form.linkedInAccountId,
       linkedInGeoTargets: form.linkedInGeoTargets,
       linkedInTargetingProfile: form.linkedInTargetingProfile,
+      linkedInTargetingRemovals: form.linkedInTargetingRemovals,
       eventSlug: form.eventSlug,
       // Every creative group, raw: each channel's image creative and Demand Gen's video ad. Named here
       // for the same reason every field above is: this emit is an object literal, so a nested group
@@ -9182,6 +9352,7 @@ export class ImplementationTabComponent implements OnInit {
       // `valueChanges` subscription returns early rather than snapshotting a half-built form.
       this.campaignForm.controls.linkedInGeoTargets.setValue(brief.linkedInCopy.recommendedGeoTargets);
       this.campaignForm.controls.linkedInTargetingProfile.setValue(brief.linkedInCopy.recommendedTargetingProfile);
+      this.resetLinkedInTargeting();
       // `budgetRecommendation` is guarded as well as `strategy`. Until LFXV2-3108 every brief
       // reaching here came straight from the generator, which always emits both; a RESTORED
       // brief is replayed from stored JSON, where `asVariantCopy` validates only the `variants`
@@ -9319,6 +9490,7 @@ export class ImplementationTabComponent implements OnInit {
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],
       linkedInTargetingProfile: DEFAULT_LINKEDIN_TARGETING_PROFILE,
+      linkedInTargetingRemovals: { skills: [], groups: [] },
     });
   }
 

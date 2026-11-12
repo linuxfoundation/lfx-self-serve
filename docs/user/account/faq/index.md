@@ -121,6 +121,7 @@ Your transaction history includes all purchases made through the LFX platform un
 Not from LFX Self Serve — the **Transactions** tab (`/profile/transactions`) lists your purchases but has no receipt or invoice download.
 
 - **Training courses, certification exams, bundles, and subscriptions** — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include your order ID.
+- **Individual Supporter memberships** — Individual Supporter purchases are paid by credit card at checkout, so we don’t issue separate invoices for them. A receipt is emailed to you automatically when the payment goes through, and it serves as your proof of payment.
 - **Event registrations** — download the invoice receipt PDF from the **Payment Information** section of your registration confirmation email; turn off any pop-up blockers first. If you can't find the email, contact LFX support.
 - **Anything else** — contact LFX support.
 

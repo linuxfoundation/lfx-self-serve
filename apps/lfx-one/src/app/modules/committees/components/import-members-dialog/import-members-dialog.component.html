@@ -99,30 +99,16 @@
 
   @if (rows().length > 0 || phase() !== 'select') {
     <div #resultSummary tabindex="-1" class="flex flex-col gap-2 outline-none" data-testid="import-members-summary">
-      <div class="flex flex-wrap items-center gap-2">
-        @if (phase() === 'preview') {
-          <lfx-tag [value]="readyCount() + ' ready'" severity="info" data-testid="import-members-ready-count" />
-          <lfx-tag [value]="invalidCount() + ' invalid'" [severity]="invalidCount() > 0 ? 'danger' : 'secondary'" data-testid="import-members-invalid-count" />
-          <lfx-tag [value]="skippedCount() + ' skipped'" severity="secondary" data-testid="import-members-skipped-count" />
-        } @else {
-          <lfx-tag [value]="addedCount() + ' added'" severity="success" data-testid="import-members-added-count" />
-          <lfx-tag [value]="skippedCount() + ' skipped'" severity="secondary" data-testid="import-members-skipped-count" />
-          <lfx-tag [value]="failedCount() + ' failed'" [severity]="failedCount() > 0 ? 'danger' : 'secondary'" data-testid="import-members-failed-count" />
-          @if (unknownCount() > 0) {
-            <lfx-tag [value]="unknownCount() + ' outcome unknown'" severity="warn" data-testid="import-members-unknown-count" />
-          }
-          @if (paused()) {
-            <lfx-tag [value]="waitingCount() + ' waiting'" severity="warn" data-testid="import-members-waiting-count" />
-          }
-          @if (notSubmittedCount() > 0) {
-            <lfx-tag [value]="notSubmittedCount() + ' not yet submitted'" severity="secondary" data-testid="import-members-not-submitted-count" />
-          }
-        }
-      </div>
+      <lfx-filter-pills
+        [options]="statusFilterOptions()"
+        [selectedFilter]="activeStatusFilter()"
+        (filterChange)="onStatusFilterChange($event)"
+        data-testid="import-members-status-filter" />
 
       @if (phase() === 'preview' && invalidCount() > 0) {
         <p class="text-sm text-red-700" data-testid="import-members-invalid-help">
-          Fix the invalid rows in your file and choose it again, or remove them below. Nothing has been added yet.
+          {{ invalidCount() }} invalid {{ invalidCount() === 1 ? 'row' : 'rows' }} will be skipped. Download them to fix and import them later, or remove them
+          below. In downloads, keep the lfx_import_encoding column and any lfx-text: safety prefixes; they are restored automatically on import.
         </p>
       } @else if (phase() === 'preview' && readyCount() === 0) {
         <p class="text-sm text-gray-600" data-testid="import-members-nothing-help">
@@ -161,6 +147,19 @@
           Rows the service rejected as invalid need a corrected file.
         </p>
       }
+      @if ((phase() === 'preview' || phase() === 'results') && invalidCount() > 0) {
+        <div>
+          <lfx-button
+            label="Download invalid rows"
+            icon="fa-light fa-file-arrow-down"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="downloadInvalidRows()"
+            data-testid="import-members-download-invalid-btn">
+          </lfx-button>
+        </div>
+      }
       @if (cleanupWarningCount() > 0) {
         <p class="text-sm text-amber-700" data-testid="import-members-cleanup-warning">
           {{ cleanupWarningCount() }} added {{ cleanupWarningCount() === 1 ? 'member still has' : 'members still have' }} a pending invitation that could not be
@@ -169,7 +168,14 @@
       }
     </div>
 
-    <lfx-table [value]="rowViews()" [paginator]="rowViews().length > 10" [rows]="10" styleClass="p-datatable-sm" data-testid="import-members-table">
+    <lfx-table
+      [value]="filteredRowViews()"
+      [paginator]="filteredRowViews().length > tablePageSize"
+      [rows]="tablePageSize"
+      [first]="tableFirst()"
+      (onPage)="onTablePage($event)"
+      styleClass="p-datatable-sm"
+      data-testid="import-members-table">
       <ng-template #header>
         <tr>
           <th scope="col"><span class="text-sm text-gray-500">Row</span></th>
@@ -267,7 +273,7 @@
     </lfx-button>
     @if (phase() === 'preview') {
       <lfx-button
-        [label]="(collectOnly ? 'Import ' : 'Add ') + readyCount() + (readyCount() === 1 ? ' member' : ' members')"
+        [label]="submitLabel()"
         icon="fa-light fa-user-plus"
         size="small"
         severity="info"

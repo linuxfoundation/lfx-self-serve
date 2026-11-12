@@ -991,6 +991,54 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       expect(rowKeys()).toEqual(['org-people-all-employees-row-p-9']);
     });
 
+    describe('searching', () => {
+      const search = async (term: string): Promise<string[]> => {
+        (fixture.componentInstance as unknown as { searchTerm: WritableSignal<string> }).searchTerm.set(term);
+        await settle();
+        return rowKeys().sort();
+      };
+
+      beforeEach(async () => {
+        await mount('browser', '/?employment=current');
+        snowflake$.next(
+          response(
+            [
+              // A CJK compatibility ideograph (U+F92E) that renders like 冷 (U+51B7).
+              row('p-compat', '王小\uF92E', { commitsCount: 1 }),
+              row('p-ideo-space', '王小\u3000冷', { commitsCount: 1 }),
+              row('p-accent', 'José Ramírez', { commitsCount: 1 }),
+              row('p-username', 'Ada Lovelace', { lfUsername: 'gracehopper', commitsCount: 1 }),
+              row('p-other', 'Alan Turing', { commitsCount: 1 }),
+            ],
+            5
+          )
+        );
+        snowflake$.complete();
+        former$.next(response([], 0));
+        former$.complete();
+        await settle();
+      });
+
+      it('finds a name stored with lookalike characters or an ideographic space, with or without a space in the query', async () => {
+        const cjkRows = ['org-people-all-employees-row-p-compat', 'org-people-all-employees-row-p-ideo-space'];
+
+        expect(await search('王小冷')).toEqual(cjkRows);
+        expect(await search('王小 冷')).toEqual(cjkRows);
+      });
+
+      it('ignores accents and case', async () => {
+        expect(await search('JOSE')).toEqual(['org-people-all-employees-row-p-accent']);
+      });
+
+      it('matches the LF username, which the row does not show', async () => {
+        expect(await search('gracehopper')).toEqual(['org-people-all-employees-row-p-username']);
+      });
+
+      it('lists everyone for a query that is only spaces or invisible characters', async () => {
+        expect(await search(' \u200B ')).toHaveLength(5);
+      });
+    });
+
     it('never joins a key contact on username: the key-contact row and the former row both stay, under "All"', async () => {
       await mount('browser', '/?employment=all');
       await answerCurrent();

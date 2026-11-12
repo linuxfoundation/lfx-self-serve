@@ -3911,6 +3911,93 @@
                 AI / MCP
               </button>
             </div>
+
+            <!-- What the selected profile targets (#5546): its member groups and skills, each removable. -->
+            <div class="mt-3 flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="implementation-linkedin-targeting">
+              <!-- Reset is offered whenever removals are held, loaded or not: the create gate can ask for it before the profile loads. Hidden with `invisible`, not removed, so the chips don't shift when the first removal is made. -->
+              <button
+                type="button"
+                (click)="resetLinkedInTargeting()"
+                [class.invisible]="!linkedInTargetingRemovalsHeld()"
+                [attr.aria-hidden]="!linkedInTargetingRemovalsHeld()"
+                [attr.tabindex]="linkedInTargetingRemovalsHeld() ? null : -1"
+                class="self-end text-xs font-medium text-blue-600 hover:text-blue-800"
+                data-testid="implementation-linkedin-targeting-reset">
+                Reset to profile
+              </button>
+              @if (linkedInEffectiveTargeting(); as effective) {
+                <p class="text-xs text-gray-600" data-testid="implementation-linkedin-targeting-summary">
+                  In the chosen locations, LinkedIn shows these ads to members in any of these groups, with any of these skills, or in one of the job functions
+                  the campaign service adds.
+                </p>
+                <div class="flex flex-col gap-1" data-testid="implementation-linkedin-targeting-groups">
+                  <span class="text-xs font-medium text-gray-700" data-testid="implementation-linkedin-targeting-groups-count">
+                    Member groups ({{ effective.groups.length }} of {{ linkedInSelectedTargetingProfile()?.groups?.length ?? 0 }})
+                  </span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    @for (urn of effective.groups; track urn) {
+                      <span class="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-mono text-xs text-gray-700 ring-1 ring-gray-200">
+                        {{ urn }}
+                        @if (linkedInTargetingEditAvailable()) {
+                          <button
+                            type="button"
+                            (click)="removeLinkedInTargetingFacet('groups', urn)"
+                            class="ml-0.5 text-gray-500 hover:text-gray-800"
+                            [attr.aria-label]="'Remove ' + urn"
+                            data-testid="implementation-linkedin-targeting-remove-group">
+                            <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                          </button>
+                        }
+                      </span>
+                    } @empty {
+                      <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-groups-empty">No member groups</span>
+                    }
+                  </div>
+                </div>
+                <div class="flex flex-col gap-1" data-testid="implementation-linkedin-targeting-skills">
+                  <span class="text-xs font-medium text-gray-700" data-testid="implementation-linkedin-targeting-skills-count">
+                    Skills ({{ effective.skills.length }} of {{ linkedInSelectedTargetingProfile()?.skills?.length ?? 0 }})
+                  </span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    @for (urn of effective.skills; track urn) {
+                      <span class="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 font-mono text-xs text-gray-700 ring-1 ring-gray-200">
+                        {{ urn }}
+                        @if (linkedInTargetingEditAvailable()) {
+                          <button
+                            type="button"
+                            (click)="removeLinkedInTargetingFacet('skills', urn)"
+                            class="ml-0.5 text-gray-500 hover:text-gray-800"
+                            [attr.aria-label]="'Remove ' + urn"
+                            data-testid="implementation-linkedin-targeting-remove-skill">
+                            <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                          </button>
+                        }
+                      </span>
+                    } @empty {
+                      <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-skills-empty">No skills</span>
+                    }
+                  </div>
+                </div>
+                <p class="text-xs text-gray-500" data-testid="implementation-linkedin-targeting-fixed">
+                  The campaign service adds the same job functions to every LinkedIn campaign; they can't be changed here.
+                </p>
+                @if (linkedInTargetingEmptyWarning()) {
+                  <p class="text-xs text-amber-700" data-testid="implementation-linkedin-targeting-empty-warning">
+                    With no member groups or skills, this campaign reaches everyone in those job functions in the chosen locations.
+                  </p>
+                }
+              } @else if (linkedInTargetingProfilesLoading()) {
+                <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-loading">Loading what this profile targets…</span>
+              } @else if (linkedInTargetingProfilesFailed()) {
+                <span class="text-xs text-red-600" data-testid="implementation-linkedin-targeting-error">
+                  Couldn't load what this profile targets. Reload the page to see it.
+                </span>
+              } @else {
+                <span class="text-xs text-gray-400" data-testid="implementation-linkedin-targeting-unconfigured"
+                  >This profile isn't configured on this deployment.</span
+                >
+              }
+            </div>
           </div>
 
           <!-- LinkedIn Budget -->
