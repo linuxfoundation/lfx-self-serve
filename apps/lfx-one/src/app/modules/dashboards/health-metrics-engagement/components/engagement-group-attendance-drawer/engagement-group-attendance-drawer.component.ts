@@ -9,6 +9,7 @@ import { formatIsoDateLabel } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 import { filter } from 'rxjs';
 
+import { HealthMetricsTruncationTipDirective } from '../../../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { EngagementAttendanceBarComponent } from '../engagement-attendance-bar/engagement-attendance-bar.component';
 
 import type { HealthMetricsEngagementGroupRow } from '@lfx-one/shared/interfaces';
@@ -19,7 +20,7 @@ import type { HealthMetricsEngagementGroupRow } from '@lfx-one/shared/interfaces
  */
 @Component({
   selector: 'lfx-engagement-group-attendance-drawer',
-  imports: [DrawerModule, EngagementAttendanceBarComponent],
+  imports: [DrawerModule, EngagementAttendanceBarComponent, HealthMetricsTruncationTipDirective],
   templateUrl: './engagement-group-attendance-drawer.component.html',
 })
 export class EngagementGroupAttendanceDrawerComponent {

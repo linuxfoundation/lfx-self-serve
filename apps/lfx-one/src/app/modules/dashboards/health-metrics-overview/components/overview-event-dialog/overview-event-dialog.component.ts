@@ -15,6 +15,7 @@ import { downloadCardAsImage } from '@shared/utils/download-card.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, forkJoin, map, Observable, of, tap } from 'rxjs';
 
+import { HealthMetricsTruncationTipDirective } from '../../../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { OverviewEventSnapshotComponent } from '../overview-event-snapshot/overview-event-snapshot.component';
 import { OverviewEventTrendComponent } from '../overview-event-trend/overview-event-trend.component';
 
@@ -34,7 +35,14 @@ import type {
  */
 @Component({
   selector: 'lfx-overview-event-dialog',
-  imports: [OverviewEventSnapshotComponent, OverviewEventTrendComponent, UiBadgeComponent, UiButtonComponent, UiTabsComponent],
+  imports: [
+    HealthMetricsTruncationTipDirective,
+    OverviewEventSnapshotComponent,
+    OverviewEventTrendComponent,
+    UiBadgeComponent,
+    UiButtonComponent,
+    UiTabsComponent,
+  ],
   templateUrl: './overview-event-dialog.component.html',
 })
 export class OverviewEventDialogComponent {

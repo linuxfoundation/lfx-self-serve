@@ -16,6 +16,7 @@ import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.comp
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { EMPTY, filter, Observable, switchMap } from 'rxjs';
 
+import { HealthMetricsTruncationTipDirective } from '../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 
@@ -57,6 +58,7 @@ import type { HealthMetricsTab, HealthMetricsTabKey } from '@lfx-one/shared/inte
     RouterOutlet,
     AppFooterComponent,
     HealthMetricsComponent,
+    HealthMetricsTruncationTipDirective,
     UiOptionComponent,
     UiSelectComponent,
     UiSwitchComponent,
