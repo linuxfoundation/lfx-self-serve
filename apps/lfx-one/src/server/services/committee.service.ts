@@ -4,6 +4,8 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
+  COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
   QUERY_SERVICE_MAX_PAGE_SIZE,
@@ -41,6 +43,7 @@ import {
   PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
+  ProjectDocumentType,
   ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
@@ -2214,11 +2217,24 @@ export class CommitteeService {
   }
 
   /**
-   * Deletes a committee folder or link using ETag for concurrency control.
-   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   * Deletes a committee folder, link or uploaded file using ETag for concurrency control.
+   * A folder is only deleted when it is empty.
+   * @param documentType 'link' or 'file' — determines which upstream endpoint to call
    */
-  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: string): Promise<void> {
-    const resourcePath = documentType === 'folder' ? `/committees/${committeeId}/folders/${documentId}` : `/committees/${committeeId}/links/${documentId}`;
+  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path on a destructive route.
+    if (!COMMITTEE_DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField(
+        'type',
+        `Unsupported document type: ${documentType}. Must be one of: ${COMMITTEE_DOCUMENT_DELETE_TYPES.join(', ')}.`,
+        {
+          operation: 'delete_committee_document',
+          service: 'committee_service',
+        }
+      );
+    }
+
+    const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
 
     // Step 1: Fetch resource with ETag
     const { etag } = await this.etagService.fetchWithETag<CommitteeDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_committee_document');

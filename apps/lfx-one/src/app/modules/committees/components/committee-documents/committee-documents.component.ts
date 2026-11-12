@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -13,6 +14,8 @@ import { Committee, CommitteeDocument, FilterPillOption, MyDocumentItem, MyDocum
 import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { DocumentService } from '@services/document.service';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 
@@ -33,6 +36,7 @@ export class CommitteeDocumentsComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly documentService = inject(DocumentService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
 
   // === Inputs ===
   public readonly committee = input.required<Committee>();
@@ -56,6 +60,8 @@ export class CommitteeDocumentsComponent {
   protected readonly loading = signal<boolean>(true);
   protected readonly relatedLoading = signal<boolean>(true);
   protected readonly refreshTrigger = signal<number>(0);
+  /** Uids of group documents deleted in this session, hidden from the list even if a reload still returns them. */
+  private readonly deletedDocumentUids = signal<ReadonlySet<string>>(new Set());
   /** Selected source pill: 'all' or a source bucket (link, file, meeting, mailing_list). */
   protected readonly sourceTab = signal<string>('all');
   /** UID of the folder the user has drilled into; null means the root view. */
@@ -73,6 +79,9 @@ export class CommitteeDocumentsComponent {
   // === Computed Signals ===
   protected readonly isLoading: Signal<boolean> = computed(() => this.loading() || this.relatedLoading());
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
+  /** The list as last fetched, including rows deleted in this session that the file index may still return. */
+  private readonly fetchedCommitteeDocuments: Signal<CommitteeDocument[]> = this.initFetchedCommitteeDocuments();
+  /** The group's own folders, links and files, leaving out rows deleted in this session. */
   protected readonly committeeDocuments: Signal<CommitteeDocument[]> = this.initCommitteeDocuments();
   /** Meeting and mailing list documents associated with the committee (committee links are excluded; they come from committeeDocuments). */
   protected readonly relatedDocuments: Signal<MyDocumentItem[]> = this.initRelatedDocuments();
@@ -156,6 +165,33 @@ export class CommitteeDocumentsComponent {
         }
       },
     });
+  }
+
+  /** Deletes a group document the user already confirmed in the table, then refreshes the list. */
+  public onDocumentDelete(doc: MyDocumentItem): void {
+    const type = doc.manageableType;
+    if (!type) return;
+
+    // Row ids are `committee_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+
+    this.committeeService
+      .deleteCommitteeDocument(this.committee().uid, documentUid, type)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${doc.name}" was deleted.` });
+          this.deletedDocumentUids.update((uids) => new Set(uids).add(documentUid));
+          this.onDocumentsChanged();
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Delete failed',
+            detail: getHttpErrorDetail(err, `Failed to delete "${doc.name}". Please try again.`),
+          });
+        },
+      });
   }
 
   public openUploadFileDialog(): void {
@@ -338,7 +374,19 @@ export class CommitteeDocumentsComponent {
     return doc.source === 'mailing_list' ? 'mailing_list' : 'meeting';
   }
 
+  /**
+   * The fetched list without the rows deleted in this session. Files are read through an index that updates after the
+   * delete returns, so the refetch right after a delete can still contain the row; hiding it by id keeps it gone (and
+   * the folder's child count right) until the index catches up.
+   */
   private initCommitteeDocuments(): Signal<CommitteeDocument[]> {
+    return computed(() => {
+      const deleted = this.deletedDocumentUids();
+      return deleted.size === 0 ? this.fetchedCommitteeDocuments() : this.fetchedCommitteeDocuments().filter((doc) => !deleted.has(doc.uid));
+    });
+  }
+
+  private initFetchedCommitteeDocuments(): Signal<CommitteeDocument[]> {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.refreshTrigger)]).pipe(
         filter(([committee]) => !!committee?.uid),
@@ -402,6 +450,8 @@ export class CommitteeDocumentsComponent {
       isChild,
       downloadUrl: isFile && ownerCommitteeUid ? `/api/committees/${ownerCommitteeUid}/documents/${doc.uid}/download` : undefined,
       uploadedBy: doc.uploaded_by,
+      // Folders have no delete yet (see COMMITTEE_DOCUMENT_DELETE_TYPES), so their rows get no actions menu.
+      manageableType: doc.type === 'folder' ? undefined : doc.type,
     };
   }
 
