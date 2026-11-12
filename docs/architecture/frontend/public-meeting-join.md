@@ -10,6 +10,7 @@ Key files:
 
 - `meeting-join.component.ts` — signals, join flow logic, attachment/registrant gating
 - `meeting-join.component.html` — template: badge row, content, join section, signed-out branch
+- `../services/meeting-page-data.service.ts` — page-scoped `MeetingPageDataService`: the public meeting load (`{id}-{ms}` past ids, upcoming-then-past fallback), SSR seed and TransferState, password (`?password=` or router state), not-found and error routing, `?occurrence=` and the page clock
 
 **Backend contracts:** See [Public Meetings](../backend/public-meetings.md) for the server-side M2M auth, controller, and route allowlist details.
 
@@ -138,9 +139,9 @@ Key signals and their gating:
 
 | Signal               | Type                            | Gate                                                                                                                                                                              |
 | -------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `meeting`            | `Signal<Meeting & { project }>` | `toSignal` of `getPublicMeeting` / `getPublicPastMeeting` fallback chain                                                                                                          |
+| `meeting`            | `Signal<Meeting & { project }>` | `MeetingPageDataService.load()`: `toSignal` of the `getPublicMeeting` / `getPublicPastMeeting` fallback chain                                                                     |
 | `authenticated`      | `WritableSignal<boolean>`       | set from `UserService`                                                                                                                                                            |
-| `password`           | `WritableSignal<string\|null>`  | set from URL `?password` query param                                                                                                                                              |
+| `password`           | `Signal<string\|null>`          | `MeetingPageDataService.password`: the URL `?password` query param, else the composer's router state                                                                              |
 | `attachments`        | `Signal<MeetingAttachment[]>`   | `initializeAttachments` — only fetches when `authenticated()`                                                                                                                     |
 | `materialFiles`      | `Signal<MeetingAttachment[]>`   | filtered from `attachments`, after dropping materials scoped to other occurrences (`filterAttachmentsForOccurrence` against `currentOccurrence()`)                                |
 | `registrants`        | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited\|\|optimisticInvited) && !isPastMeeting`; empty `[]` on any other branch                               |
