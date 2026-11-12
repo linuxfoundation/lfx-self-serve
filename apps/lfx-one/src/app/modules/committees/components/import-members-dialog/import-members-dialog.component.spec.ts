@@ -777,14 +777,116 @@ describe('ImportMembersDialogComponent', () => {
 
       component.close();
       component.removeRow(2);
-      component.stopImport();
       expect(dialogRef.close).not.toHaveBeenCalled();
       expect(component.stopReason()).toBeNull();
       expect(component.rows()).toHaveLength(2);
       expect(component.canChooseFile()).toBe(false);
       expect(component.form.controls.send_notification.disabled).toBe(true);
       expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('stops after the in-flight batch and leaves later rows unsent for Retry', async () => {
+      await upload(`email\n${emails(60)}`);
+      component.startImport();
+      await render();
+
+      const stopButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
+      expect(stopButton.textContent).toContain('Stop import');
+      expect(stopButton.disabled).toBe(false);
+      expect(query('import-members-submitting-btn')).not.toBeNull();
+      stopButton.click();
+      await render();
+
+      expect(component.stopping()).toBe(true);
+      expect(component.phase()).toBe('importing');
+      expect(component.statusMessage()).toBe('Stopping after the current batch: 0 of 60 done.');
+      expect(query('import-members-progress')?.textContent).toContain('Stopping after the current batch: 0 of 60 done…');
+      expect(query('import-members-stop-reason')).toBeNull();
+      const stoppingButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
+      expect(stoppingButton.textContent).toContain('Stopping…');
+      expect(stoppingButton.disabled).toBe(true);
+      expect((query('import-members-close-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      component.stopImport();
+      expect(component.stopReason()).toBe('You stopped the import.');
+
+      respond(0);
+      await render();
+
+      expect(pending).toHaveLength(1);
+      expect(component.phase()).toBe('results');
+      expect(component.stopping()).toBe(false);
+      expect(component.addedCount()).toBe(25);
+      expect(component.notSubmittedCount()).toBe(35);
+      expect(component.rows()[25].reason).toBe('Not sent: You stopped the import.');
+      expect(query('import-members-stop-reason')?.textContent).toContain('The import stopped: You stopped the import.');
       expect(query('import-members-stop-btn')).toBeNull();
+      expect(query('import-members-retry-btn')?.textContent).toContain('Retry 35');
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledWith({ added: 25, conflicts: 0 });
+    });
+
+    it('clears the manual stopping state before retrying unsent rows', async () => {
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      component.stopImport();
+      respond(0);
+      expect(component.phase()).toBe('results');
+
+      component.retryFailed();
+      await render();
+
+      expect(component.phase()).toBe('importing');
+      expect(component.stopping()).toBe(false);
+      expect(component.stopReason()).toBeNull();
+      expect(query('import-members-progress')?.textContent).toContain('Adding members: 0 of 5 done');
+      expect((query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+      respond(1);
+      expect(component.addedCount()).toBe(30);
+    });
+
+    it('keeps a lost in-flight response unknown when stopped mid-batch', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      component.stopImport();
+      failBulk(0, 0);
+      fixture.detectChanges();
+
+      expect(component.phase()).toBe('results');
+      expect(component.paused()).toBe(false);
+      expect(
+        component
+          .rows()
+          .slice(0, 25)
+          .every((row) => row.status === 'unknown' && row.uncertain)
+      ).toBe(true);
+      expect(component.rows()[0].reason).toContain('outcome of an earlier attempt is unknown');
+      expect(
+        component
+          .rows()
+          .slice(25)
+          .every((row) => row.status === 'not_submitted')
+      ).toBe(true);
+      vi.advanceTimersByTime(120_000);
+      expect(pending).toHaveLength(1);
+    });
+
+    it('does not start a pause when the in-flight batch is throttled after Stop', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      component.stopImport();
+      failBulk(0, 429, { 'Retry-After': '30' });
+      fixture.detectChanges();
+
+      expect(component.paused()).toBe(false);
+      expect(component.pauseCount()).toBe(0);
+      expect(query('import-members-paused-notice')).toBeNull();
+      expect(component.phase()).toBe('results');
+      expect(component.notSubmittedCount()).toBe(30);
+      expect(component.stopReason()).toBe('You stopped the import.');
+      vi.advanceTimersByTime(120_000);
+      expect(pending).toHaveLength(1);
     });
 
     it('records added, existing and invalid rows, and never retries invalid rows', async () => {
@@ -1030,21 +1132,31 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each([
-      [401, 'Your session has expired. Sign in again, then retry.'],
-      [403, 'You no longer have permission to manage this group.'],
-      [404, 'This group could not be found.'],
-    ])('stops sending after HTTP %i and keeps unsent rows retryable', async (status, reason) => {
+      [401, false, 'Your session has expired. Sign in again, then retry.'],
+      [403, false, 'You no longer have permission to manage this group.'],
+      [404, false, 'This group could not be found.'],
+      [401, true, 'Your session has expired. Sign in again, then retry.'],
+      [403, true, 'You no longer have permission to manage this group.'],
+      [404, true, 'This group could not be found.'],
+    ])('stops sending after HTTP %i with manual stop %s and keeps unsent rows retryable', async (status, manualStop, reason) => {
       await upload(`email\n${emails(30)}`);
       component.startImport();
+      if (manualStop) {
+        component.stopImport();
+        expect(component.stopping()).toBe(true);
+      }
       failBulk(0, status);
       await render();
 
       expect(pending).toHaveLength(1);
       expect(component.phase()).toBe('results');
       expect(component.stopReason()).toBe(reason);
+      expect(component.stopping()).toBe(false);
       expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import chunk failed', { status });
       expect(component.rows().every((row) => row.status === 'not_submitted')).toBe(true);
       expect(component.rows()[0].reason).toBe(`Not sent: ${reason}`);
+      expect(component.rows()[25].reason).toBe(`Not sent: ${reason}`);
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
       expect(query('import-members-stop-reason')?.textContent).toContain('marked Not yet submitted');
       expect(component.retryableCount()).toBe(30);
 
@@ -1154,6 +1266,60 @@ describe('ImportMembersDialogComponent', () => {
       respond(1);
       expect(component.phase()).toBe('results');
       expect(component.addedCount()).toBe(30);
+    });
+
+    it.each([
+      [401, false, 'Your session has expired. Sign in again, then retry.'],
+      [403, false, 'You no longer have permission to manage this group.'],
+      [404, false, 'The pending invitation could not be found. Review pending invitations before retrying.'],
+      [401, true, 'Your session has expired. Sign in again, then retry.'],
+      [403, true, 'You no longer have permission to manage this group.'],
+      [404, true, 'The pending invitation could not be found. Review pending invitations before retrying.'],
+    ])('shows cleanup HTTP %i immediately with manual stop %s while another revoke is pending', async (status, manualStop, reason) => {
+      await setup(
+        OPEN_GROUP,
+        [],
+        [
+          { uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' },
+          { uid: 'invite-2', invitee_email: 'person1@example.com', status: 'pending' },
+        ]
+      );
+      await upload(`email\n${emails(30)}`);
+      component.startImport();
+      respond(0);
+      expect(revokeResponses).toHaveLength(2);
+      if (manualStop) {
+        component.stopImport();
+        await render();
+        expect(component.stopping()).toBe(true);
+        expect(query('import-members-stop-reason')).toBeNull();
+      }
+
+      revokeResponses[0].error(new HttpErrorResponse({ status }));
+      await render();
+
+      expect(component.phase()).toBe('importing');
+      expect(component.stopping()).toBe(false);
+      expect(component.stopReason()).toBe(reason);
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
+      expect(query('import-members-progress')?.textContent).not.toContain('Stopping after the current batch');
+      expect(component.statusMessage()).not.toContain('Stopping after the current batch');
+      expect((query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      expect(revokeResponses[1].observed).toBe(true);
+      expect(pending).toHaveLength(1);
+      component.stopImport();
+      expect(component.stopReason()).toBe(reason);
+
+      revokeResponses[1].error(new HttpErrorResponse({ status: status === 404 ? 403 : 404 }));
+      await render();
+
+      expect(component.phase()).toBe('results');
+      expect(pending).toHaveLength(1);
+      expect(component.addedCount()).toBe(25);
+      expect(component.notSubmittedCount()).toBe(5);
+      expect(component.rows()[0].cleanupWarning).toContain('pending invitation could not be revoked');
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
+      expect(component.stopReason()).toBe(reason);
     });
 
     it.each([401, 403, 404])('stops queued chunks after cleanup HTTP %i while retaining the added member', async (status) => {

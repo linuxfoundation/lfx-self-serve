@@ -148,10 +148,7 @@ export function buildHealthMetricsEngagementSparkBars(series: readonly (number |
   }));
 }
 
-/**
- * Sub-nav badges per the design's `counts()`. A note is dropped at zero, and a section whose total
- * has not resolved renders no badge at all.
- */
+/** Sub-nav entries per the design's `counts()`; a note is dropped at zero. */
 export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEngagementSubNavCounts): HealthMetricsEngagementSubNavItem[] {
   const lowPct = Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100);
   const groupNotes = [
@@ -163,24 +160,8 @@ export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEng
     orgs: counts.lapsedOrgs > 0 ? `${counts.lapsedOrgs} inactive ${HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS} days` : '',
     reps: counts.neverAttendedReps > 0 ? `${counts.neverAttendedReps} never attended` : '',
   };
-  const totals: Record<HealthMetricsEngagementSectionKey, number | null> = {
-    // The design gives these two no badge — neither is a countable list.
-    participation: null,
-    trend: null,
-    committees: counts.groups,
-    orgs: counts.orgs,
-    reps: counts.reps,
-    nonmem: counts.nonMemberOrgs,
-    newsletters: counts.newsletters,
-    recipients: counts.recipients,
-  };
 
-  return HEALTH_METRICS_ENGAGEMENT_SECTIONS.map((section) => ({
-    key: section.key,
-    label: section.label,
-    count: totals[section.key],
-    note: totals[section.key] === null ? '' : (notes[section.key] ?? ''),
-  }));
+  return HEALTH_METRICS_ENGAGEMENT_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
 }
 
 /**
@@ -442,7 +423,6 @@ export function buildHealthMetricsEngagementNewsletterView(
 
   return {
     isEmpty: !performance.measured || !period?.newslettersSent,
-    newslettersSent: performance.measured && period ? (period.newslettersSent ?? 0) : null,
     headline: {
       ...newsletterKpi('subscribers', 'Subscribers', formatHealthMetricsEngagementCount(period?.subscribers ?? null)),
       delta:

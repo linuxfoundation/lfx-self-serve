@@ -5,14 +5,14 @@ import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { NgClass } from '@angular/common';
-import { SelectComponent } from '@components/select/select.component';
+import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import type { FormControl, FormGroup } from '@angular/forms';
-import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 import { HealthMetricsGateComponent } from './health-metrics-gate.component';
@@ -24,6 +24,10 @@ class LegacyStubComponent {}
 
 @Component({ selector: 'lfx-route-stub', template: '' })
 class RouteStubComponent {}
+
+// Stand-in for the app footer, which pulls in the consent manager.
+@Component({ selector: 'lfx-app-footer', template: '' })
+class FooterStubComponent {}
 
 describe('HealthMetricsGateComponent', () => {
   let fixture: ComponentFixture<HealthMetricsGateComponent>;
@@ -40,7 +44,19 @@ describe('HealthMetricsGateComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsGateComponent, {
-        set: { imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, SelectComponent, LegacyStubComponent] },
+        set: {
+          imports: [
+            RouterLink,
+            RouterLinkActive,
+            RouterOutlet,
+            FooterStubComponent,
+            LegacyStubComponent,
+            UiOptionComponent,
+            UiSelectComponent,
+            UiSwitchComponent,
+            UiSwitchOptionComponent,
+          ],
+        },
       })
       .compileComponents();
 
@@ -67,8 +83,12 @@ describe('HealthMetricsGateComponent', () => {
     fixture.detectChanges();
   }
 
-  function periodForm(): FormGroup<{ range: FormControl<HealthMetricsRange> }> {
-    return (fixture.componentInstance as unknown as { periodForm: FormGroup<{ range: FormControl<HealthMetricsRange> }> }).periodForm;
+  function periodSwitch(): UiSwitchComponent {
+    return fixture.debugElement.query((el) => el.attributes['data-testid'] === 'health-metrics-period-switch').componentInstance as UiSwitchComponent;
+  }
+
+  function select(testId: string): UiSelectComponent {
+    return fixture.debugElement.query((el) => el.attributes['data-testid'] === testId).componentInstance as UiSelectComponent;
   }
 
   function currentUrl(): string {
@@ -130,7 +150,7 @@ describe('HealthMetricsGateComponent', () => {
 
     expect(query('health-metrics-page')?.classList).toContain('max-w-[1384px]');
     for (const cls of ['font-display', 'font-light', 'text-[24px]', 'text-gray-900']) expect(query('health-metrics-title')?.classList).toContain(cls);
-    for (const cls of ['text-[13px]', 'text-gray-500']) expect(query('health-metrics-subtitle')?.classList).toContain(cls);
+    for (const cls of ['text-[12px]', 'text-gray-500']) expect(query('health-metrics-subtitle')?.classList).toContain(cls);
     expect(query('health-metrics-subtitle')?.textContent?.trim()).toBe('Operational health across your foundation. Data updated every 24-48 hours.');
   });
 
@@ -192,74 +212,109 @@ describe('HealthMetricsGateComponent', () => {
     expect(constructed).toBe(0);
   });
 
+  // The design's `.hm-head` sticks at every width, bled to the page edges, with the fade under it and no rule.
+  it('pins the header at every width, bled 40px (20px on phones), with the fade below it', async () => {
+    await render(signal(true));
+
+    const header = query('health-metrics-sticky-header') as HTMLElement;
+    for (const cls of ['sticky', 'bg-gray-50', '-mx-[40px]', 'px-[40px]', 'max-[640px]:-mx-[20px]', 'max-[640px]:px-[20px]'])
+      expect(header.classList).toContain(cls);
+    expect(header.className).not.toMatch(/lg:sticky|border-b/);
+    expect(header.style.top).toBe('0px');
+    expect(query('health-metrics-header-fade')?.className).not.toMatch(/hidden|lg:block/);
+  });
+
   it('pins the header below the fixed impersonation banner while impersonating', async () => {
     impersonating.set(true);
     await render(signal(true));
 
-    const header = query('health-metrics-sticky-header');
-    expect(header?.className).toContain('lg:top-[36px]');
-    expect(header?.className).not.toContain('lg:top-0');
+    expect(query('health-metrics-sticky-header')?.style.top).toBe('36px');
+  });
+
+  it('pads the page column 40px, and 20px on phones', async () => {
+    await render(signal(true));
+
+    for (const cls of ['max-md:-mx-5', 'max-md:px-[40px]', 'max-[640px]:px-[20px]', 'md:px-[12px]'])
+      expect(query('health-metrics-page')?.classList).toContain(cls);
+  });
+
+  it('renders the app footer itself while the redesign shows, and hands it back to the layout otherwise', async () => {
+    const overviewEnabled = signal(true);
+    await render(overviewEnabled);
+    const appService = TestBed.inject(AppService);
+
+    expect(appService.pageOwnsFooter()).toBe(true);
+    for (const cls of ['px-[32px]', 'max-[640px]:px-[20px]']) expect(query('health-metrics-footer')?.classList).toContain(cls);
+
+    overviewEnabled.set(false);
+    await settle();
+    expect(appService.pageOwnsFooter()).toBe(false);
+    expect(query('health-metrics-footer')).toBeNull();
   });
 
   describe('period', () => {
-    it('offers the four periods as a pill and as the narrow-width dropdown, with YTD selected', async () => {
+    it('offers the four periods as a small switch and as the narrow-width small dropdown, with YTD selected', async () => {
       await render(signal(true));
 
-      const pills = Array.from(query('health-metrics-overview-period-selector')?.querySelectorAll('button') ?? []);
       const chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
-      expect(pills.map((pill) => pill.textContent?.trim())).toEqual(chrome.periods.map((period) => period.label));
-      expect(pills).toHaveLength(4);
-      expect(pills.find((pill) => pill.getAttribute('aria-pressed') === 'true')?.textContent?.trim()).toBe('YTD');
-      expect(query('health-metrics-period-select')).not.toBeNull();
-      expect(periodForm().controls.range.value).toBe('YTD');
+      const options = Array.from(query('health-metrics-period-switch')?.querySelectorAll('[data-testid^="health-metrics-period-"]') ?? []);
+      expect(options.map((option) => option.textContent?.trim())).toEqual(chrome.periods.map((period) => period.label));
+      expect(query('health-metrics-period-switch')?.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Period');
+      expect(periodSwitch().size()).toBe('small');
+      expect(periodSwitch().value()).toBe('YTD');
+      expect(select('health-metrics-period-select').size()).toBe('small');
+      expect(select('health-metrics-period-select').ariaLabel()).toBe('Period');
+      expect(select('health-metrics-period-select').value()).toBe('YTD');
     });
 
     it('shows the year-to-date span only while YTD is selected', async () => {
       await render(signal(true));
       expect(query('health-metrics-period-range')?.textContent?.trim()).toMatch(/^Jan 1 – [A-Z][a-z]{2} \d{1,2}, \d{4}$/);
 
-      (query('health-metrics-overview-period-selector')?.querySelector('button') as HTMLButtonElement).click();
+      const chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
+      periodSwitch().select(chrome.periods[0].range);
       await settle();
 
       expect(query('health-metrics-period-range')).toBeNull();
     });
 
-    it('sets the period from the dropdown, and keeps the dropdown in step with the pill', async () => {
+    it('sets the period from either control and keeps the other in step', async () => {
       await render(signal(true));
       const chrome = fixture.debugElement.injector.get(HealthMetricsChromeService);
 
-      periodForm().controls.range.setValue(chrome.periods[0].range);
+      select('health-metrics-period-select').value.set(chrome.periods[0].range);
       await settle();
       expect(chrome.selectedRange()).toBe(chrome.periods[0].range);
+      expect(periodSwitch().value()).toBe(chrome.periods[0].range);
 
-      (query('health-metrics-overview-period-selector')?.querySelectorAll('button')[1] as HTMLButtonElement).click();
+      periodSwitch().select(chrome.periods[1].range);
       await settle();
-      expect(periodForm().controls.range.value).toBe(chrome.periods[1].range);
+      expect(chrome.selectedRange()).toBe(chrome.periods[1].range);
+      expect(select('health-metrics-period-select').value()).toBe(chrome.periods[1].range);
     });
   });
 
-  describe('tab dropdown', () => {
-    function tabForm(): FormGroup<{ tab: FormControl<string> }> {
-      return (fixture.componentInstance as unknown as { tabForm: FormGroup<{ tab: FormControl<string> }> }).tabForm;
-    }
-
+  describe('view dropdown', () => {
     it('offers every tab as the narrowest header’s dropdown, on the routed tab', async () => {
       await render(signal(true), '/foundation/health-metrics/events?project=acme');
 
-      expect(query('health-metrics-tabs-select')).not.toBeNull();
-      expect(tabForm().controls.tab.value).toBe('events');
+      const view = select('health-metrics-tabs-select');
+      expect(view.ariaLabel()).toBe('Health Metrics view');
+      expect(view.size()).toBe('medium');
+      expect(view.value()).toBe('events');
+      expect(query('health-metrics-tabs-select')?.className).toContain('[&_[role=combobox]]:h-[38px]');
     });
 
     it('opens the picked tab, keeping the query, and follows later navigations', async () => {
       await render(signal(true), '/foundation/health-metrics?project=acme');
 
-      tabForm().controls.tab.setValue('training');
+      select('health-metrics-tabs-select').value.set('training');
       await settle();
       expect(currentUrl()).toBe('/foundation/health-metrics/training?project=acme');
 
       await TestBed.inject(Router).navigateByUrl('/foundation/health-metrics/members?project=acme');
       await settle();
-      expect(tabForm().controls.tab.value).toBe('members');
+      expect(select('health-metrics-tabs-select').value()).toBe('members');
     });
   });
 

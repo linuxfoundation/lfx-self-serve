@@ -62,19 +62,7 @@ import {
 } from './health-metrics-engagement.utils';
 
 function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): HealthMetricsEngagementSubNavCounts {
-  return {
-    groups: 12,
-    dormantGroups: 0,
-    lowAttendanceGroups: 0,
-    orgs: 40,
-    lapsedOrgs: 0,
-    reps: 88,
-    neverAttendedReps: 0,
-    nonMemberOrgs: 6,
-    newsletters: 11,
-    recipients: 1490,
-    ...overrides,
-  };
+  return { dormantGroups: 0, lowAttendanceGroups: 0, lapsedOrgs: 0, neverAttendedReps: 0, ...overrides };
 }
 
 describe('formatHealthMetricsEngagementAttendance', () => {
@@ -160,13 +148,6 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
     expect(items.map((item) => item.key)).toEqual(HEALTH_METRICS_ENGAGEMENT_SECTIONS.map((section) => section.key));
   });
 
-  it('gives participation and trend no badge — neither is a countable list', () => {
-    const items = buildHealthMetricsEngagementSubNavItems(counts());
-
-    expect(items.find((item) => item.key === 'participation')?.count).toBeNull();
-    expect(items.find((item) => item.key === 'trend')?.count).toBeNull();
-  });
-
   it('spells the dormant and below-50% group notes together, dropping each at zero', () => {
     const note = (overrides: Partial<HealthMetricsEngagementSubNavCounts>) =>
       buildHealthMetricsEngagementSubNavItems(counts(overrides)).find((item) => item.key === 'committees')?.note;
@@ -184,29 +165,10 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
     expect(items.find((item) => item.key === 'reps')?.note).toBe('3 never attended');
   });
 
-  it('suppresses the note for a section whose total has not resolved yet', () => {
-    const items = buildHealthMetricsEngagementSubNavItems(counts({ groups: null, dormantGroups: 2, lowAttendanceGroups: 1 }));
-    const committees = items.find((item) => item.key === 'committees');
+  it('notes only committees, orgs and reps; every other section stays bare', () => {
+    const items = buildHealthMetricsEngagementSubNavItems(counts({ dormantGroups: 2, lapsedOrgs: 7, neverAttendedReps: 3 }));
 
-    expect(committees?.count).toBeNull();
-    expect(committees?.note).toBe('');
-  });
-
-  it('carries the non-member count with no note of its own', () => {
-    const items = buildHealthMetricsEngagementSubNavItems(counts());
-    const nonmem = items.find((item) => item.key === 'nonmem');
-
-    expect(nonmem?.count).toBe(6);
-    expect(nonmem?.note).toBe('');
-  });
-
-  it('badges recipient engagement with the latest newsletter’s recipients', () => {
-    expect(buildHealthMetricsEngagementSubNavItems(counts()).find((item) => item.key === 'recipients')?.count).toBe(1490);
-  });
-
-  it('badges newsletter performance with the newsletters sent, and none while unread', () => {
-    expect(buildHealthMetricsEngagementSubNavItems(counts()).find((item) => item.key === 'newsletters')?.count).toBe(11);
-    expect(buildHealthMetricsEngagementSubNavItems(counts({ newsletters: null })).find((item) => item.key === 'newsletters')?.count).toBeNull();
+    expect(items.filter((item) => item.note !== '').map((item) => item.key)).toEqual(['committees', 'orgs', 'reps']);
   });
 });
 
@@ -866,7 +828,6 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
     const view = buildHealthMetricsEngagementNewsletterView(performance, 'YTD');
 
     expect(view.isEmpty).toBe(false);
-    expect(view.newslettersSent).toBe(3);
     expect(view.headline).toMatchObject({ value: '1,490', delta: '+21% since Aug', deltaDirection: 'up' });
     expect(view.side.map((kpi) => [kpi.label, kpi.value])).toEqual([
       ['Newsletters sent', '3'],
@@ -915,9 +876,9 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
   });
 
   it('is empty for a period with no newsletter sent, or a foundation the view has never measured', () => {
-    expect(buildHealthMetricsEngagementNewsletterView(performance, 'COMPLETED_YEAR')).toMatchObject({ isEmpty: true, newslettersSent: 0 });
-    expect(buildHealthMetricsEngagementNewsletterView({ ...performance, measured: false }, 'YTD')).toMatchObject({ isEmpty: true, newslettersSent: null });
-    expect(buildHealthMetricsEngagementNewsletterView(performance, 'COMPLETED_YEAR_4')).toMatchObject({ isEmpty: true, newslettersSent: null, rows: [] });
+    expect(buildHealthMetricsEngagementNewsletterView(performance, 'COMPLETED_YEAR')).toMatchObject({ isEmpty: true });
+    expect(buildHealthMetricsEngagementNewsletterView({ ...performance, measured: false }, 'YTD')).toMatchObject({ isEmpty: true });
+    expect(buildHealthMetricsEngagementNewsletterView(performance, 'COMPLETED_YEAR_4')).toMatchObject({ isEmpty: true, rows: [] });
   });
 
   it('names the baseline year when it is not the period’s, and draws no delta without growth', () => {

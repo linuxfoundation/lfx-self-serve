@@ -48,7 +48,6 @@ class ForecastStubComponent {
 /** Stands in for Past events, whose reads its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-past-events', template: '<div data-testid="events-past-stub"></div>' })
 class PastStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
   public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
@@ -87,7 +86,6 @@ class SpeakersStubComponent {
 /** Stands in for Organizations at events, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-organizations', template: '<div data-testid="events-orgs-stub"></div>' })
 class OrganizationsStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -95,7 +93,6 @@ class OrganizationsStubComponent {
 /** Stands in for Geographic distribution, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-geography', template: '<div data-testid="events-geo-stub"></div>' })
 class GeographyStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -161,19 +158,12 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
   }
 
-  async function sectionsReport(
-    note: string,
-    pastCount: number | null = null,
-    speakersNote = '',
-    orgsCount: number | null = null,
-    geoCount: number | null = null
-  ): Promise<void> {
+  async function sectionsReport(note: string, speakersNote = ''): Promise<void> {
     const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
     const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
     atAGlanceStub().settled.emit(false);
     forecast.countsChange.emit(note);
     forecast.settled.emit(false);
-    pastStub.countChange.emit(pastCount);
     pastStub.settled.emit(false);
     (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit(false);
     (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit(false);
@@ -182,10 +172,8 @@ describe('HealthMetricsEventsComponent', () => {
     speakersStub.noteChange.emit(speakersNote);
     speakersStub.settled.emit(false);
     const orgsStub = fixture.debugElement.query(By.directive(OrganizationsStubComponent)).componentInstance as OrganizationsStubComponent;
-    orgsStub.countChange.emit(orgsCount);
     orgsStub.settled.emit(false);
     const geoStub = fixture.debugElement.query(By.directive(GeographyStubComponent)).componentInstance as GeographyStubComponent;
-    geoStub.countChange.emit(geoCount);
     geoStub.settled.emit(false);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -249,14 +237,14 @@ describe('HealthMetricsEventsComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge before a read', async () => {
+  it('lists every section in the sub-nav, with no note before a read', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]');
 
     for (const section of HEALTH_METRICS_EVENTS_SECTIONS) {
       expect(fixture.nativeElement.querySelector(`[data-testid="events-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('shows the note the forecast reports on its sub-nav item', async () => {
@@ -268,33 +256,9 @@ describe('HealthMetricsEventsComponent', () => {
 
   it('shows the note Speakers & proposals reports on its sub-nav item', async () => {
     await setup();
-    await sectionsReport('', null, 'down 30% YoY');
+    await sectionsReport('', 'down 30% YoY');
 
     expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk"]').textContent).toContain('down 30% YoY');
-  });
-
-  it('badges Organizations at events with the in-scope count it reports', async () => {
-    await setup();
-    await sectionsReport('', null, '', 340);
-
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-orgs"]').textContent).toContain('340');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-past"]').textContent).not.toMatch(/\d/);
-  });
-
-  it('badges Geographic distribution with the countries count it reports', async () => {
-    await setup();
-    await sectionsReport('', null, '', null, 42);
-
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-geo"]').textContent).toContain('42');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-orgs"]').textContent).not.toMatch(/\d/);
-  });
-
-  it('badges Past events with the count it reports', async () => {
-    await setup();
-    await sectionsReport('', 12);
-
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-past"]').textContent).toContain('12');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-forecast"]').textContent).not.toMatch(/\d/);
   });
 
   it('scrolls to the section a deep link names', async () => {

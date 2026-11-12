@@ -202,6 +202,7 @@
                     [committeeUidsValue]="committeeUidsValue()"
                     [recipientCount]="recipientCount()"
                     [recipientCountLoading]="recipientCountLoading()"
+                    [recipientsNewsletterUid]="recipientsNewsletterUid()"
                     [emailAdds]="audienceEmailAdds()"
                     (retryCommittees)="retryCommittees()"
                     (addEmail)="onAddAudienceEmail($event)">
@@ -239,6 +240,7 @@
                     [edReplyEmail]="replyToEmail()"
                     [edEmail]="edEmail()"
                     [canSend]="canSend()"
+                    [audiencePreparing]="audiencePreparing()"
                     [liveSendLocked]="liveSendLocked()"
                     [sending]="submitting()"
                     [canSendTest]="canSendTest()"
