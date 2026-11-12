@@ -310,6 +310,7 @@ describe('VoteManageComponent', () => {
         name: 'Board decision 2026',
         project_uid: PROJECT_UID,
         committee_uid: COMMITTEE_UID,
+        allow_vote_change: true, // default Yes, always sent (#4723)
       });
       expect(capturedConfirmation).not.toBeNull();
       expect(fixture.componentInstance.confirmingOpenVote()).toBe(true);
@@ -470,6 +471,7 @@ describe('VoteManageComponent', () => {
               },
             ],
             poll_comment_prompts: [{ prompt_id: 'p1', prompt: 'Any concerns?' }],
+            allow_vote_change: false,
           })
         )
       );
@@ -488,6 +490,7 @@ describe('VoteManageComponent', () => {
       expect((form.get('questions') as FormArray).at(0).get('question')?.value).toBe('Who should join?');
       expect((form.get('commentPrompts') as FormArray).length).toBe(1);
       expect((form.get('commentPrompts') as FormArray).at(0).get('prompt')?.value).toBe('Any concerns?');
+      expect(form.get('allow_vote_change')?.value).toBe(false); // source setting preselected (#4723)
       expect(voteServiceMock.createVote).not.toHaveBeenCalled();
     });
 

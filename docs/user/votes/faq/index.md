@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, voting on, and managing 
 audience: [all]
 product_area: Votes
 tags: [votes, faq, governance, elections, abstain, results, present, clone]
-last_updated: 2026-10-30
+last_updated: 2026-11-11
 intercom_collection: Votes
 ---
 
@@ -18,7 +18,7 @@ The person who creates the vote picks **Eligible Participants** from the vote's 
 
 ## Can I change my vote after submitting?
 
-Not from the signed-in app: ballots are read-only there. (While a vote is active, your personalized ballot link, if you received one, still lets you update your ballot.) From **Votes**, select **Review** on an active vote you've voted on to see the same ballot drawer with your recorded choices, rankings, abstention and comments locked. The signed-in drawer has no submit or change action. The **Your ballot** section on the vote's page also shows what is recorded.
+It depends on the vote. When its creator allows changes (the default), you can change your choices, comment or abstention until the vote ends: open the vote's page and select **Change vote** under **Your ballot**, or use your personalized ballot link if you received one. When the creator turned changes off, your ballot is final once you submit it. You see a notice saying so before you submit, and the vote's page says **Your vote is final and can't be changed.** From **Votes**, **Review** on an active vote you've voted on opens your recorded ballot read-only; it has no change action.
 
 ## Can I follow a description link without leaving my ballot?
 

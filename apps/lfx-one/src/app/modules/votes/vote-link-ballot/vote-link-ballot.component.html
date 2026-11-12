@@ -69,6 +69,7 @@
             [abstained]="abstainedLast()"
             [secret]="b.pseudo_anonymity !== false"
             [answers]="answerLines()"
+            [canChange]="changeAllowed()"
             data-testid="vote-link-submitted" />
         }
       }
@@ -82,6 +83,7 @@
             [abstained]="abstainedLast()"
             [secret]="b.pseudo_anonymity !== false"
             [answers]="answerLines()"
+            [canChange]="changeAllowed()"
             data-testid="vote-link-updated" />
         }
       }
@@ -101,11 +103,16 @@
                 data-testid="vote-link-description"></div>
             }
 
-            @if (errorMessage(); as message) {
+            @if (inlineError(); as message) {
               <p class="text-sm text-red-600" role="alert" data-testid="vote-link-inline-error">{{ message }}</p>
             }
 
-            @if (showUpdatePrompt()) {
+            @if (showFinal()) {
+              <div class="rounded-lg border border-slate-200 bg-white p-4 flex flex-col gap-1" role="status" data-testid="vote-link-ballot-final">
+                <p class="text-sm font-medium text-slate-900">You've already voted.</p>
+                <p class="text-sm text-slate-600">{{ finalStateText }}</p>
+              </div>
+            } @else if (showUpdatePrompt()) {
               <div class="rounded-lg border border-slate-200 bg-white p-4 flex flex-col gap-3" data-testid="vote-link-update-prompt">
                 <p class="text-sm font-medium text-slate-900">You've already voted. Update your ballot?</p>
                 <lfx-button
@@ -123,6 +130,7 @@
                 [prefill]="b.ballot"
                 [submitting]="submitting()"
                 [submitLabel]="updateMode() ? 'Update Vote' : 'Submit Vote'"
+                [finalNotice]="finalNotice()"
                 (submitted)="onSubmit($event)" />
             }
           </div>

@@ -40,6 +40,10 @@ router.post('/responses', blockDuringImpersonation, (req, res, next) => voteCont
 // GET /votes/:uid/my-response - current user's pre-allocated vote_response (Me lens cast drawer)
 router.get('/:uid/my-response', (req, res, next) => voteController.getMyVoteResponse(req, res, next));
 
+// PUT /votes/:uid/my-response - change the current user's own submitted ballot (#4723). The ballot is resolved from the
+// caller's own row server-side; blocked in Admin Mode like the first submission.
+router.put('/:uid/my-response', blockDuringImpersonation, (req, res, next) => voteController.updateMyVoteResponse(req, res, next));
+
 // GET /votes/:uid/my-ballot - current user's submitted ballot (read-only Review and "Your ballot", #4331)
 router.get('/:uid/my-ballot', (req, res, next) => voteController.getMyVoteBallot(req, res, next));
 

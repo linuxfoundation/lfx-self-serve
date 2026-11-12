@@ -43,6 +43,8 @@ export class VoteBallotFormComponent {
   public readonly prefill = input<VoteLinkBallotState | null>(null);
   public readonly submitting = input<boolean>(false);
   public readonly submitLabel = input<string>('Submit Vote');
+  /** Shown above Submit when the vote makes submitted ballots final (#4723); null hides it. */
+  public readonly finalNotice = input<string | null>(null);
   public readonly submitted = output<VoteBallotSubmission>();
 
   // === Forms ===

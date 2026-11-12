@@ -645,6 +645,91 @@ describe('VoteDetailComponent', () => {
     });
   });
 
+  describe('change vote (#4723)', () => {
+    const ballot: MyVoteBallot = { vote_response_uid: 'resp-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+
+    async function submittedVoter(vote: Partial<Vote>, myBallot: MyVoteBallot | null = ballot): Promise<ComponentFixture<VoteDetailComponent>> {
+      voteService.fetchVote.mockReturnValue(of(makeVote(vote)));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+      voteService.getMyVoteBallot.mockReturnValue(of(myBallot));
+      return setup();
+    }
+
+    it.each([
+      ['an allowed vote', { allow_vote_change: true }, ballot],
+      ['a legacy vote without the setting', {}, ballot],
+      ['ITX reporting the ballot changeable', { allow_vote_change: false }, { ...ballot, can_change_vote: true }],
+    ])('offers Change vote on %s', async (_label, vote, myBallot) => {
+      const fixture = await submittedVoter(vote, myBallot);
+
+      expect(read(fixture, 'canChangeVote')).toBe(true);
+      expect(testId(fixture, 'vote-detail-voter-change-vote')).not.toBeNull();
+    });
+
+    it('opens the cast drawer in change mode, and a later first-ballot open resets it', async () => {
+      const fixture = await submittedVoter({ allow_vote_change: true });
+
+      call(fixture, 'onChangeVote');
+      expect(read(fixture, 'castDrawerVisible')).toBe(true);
+      expect(read(fixture, 'castDrawerChangeMode')).toBe(true);
+
+      call(fixture, 'onCastVote');
+      expect(read(fixture, 'castDrawerChangeMode')).toBe(false);
+    });
+
+    it('re-reads the ballot and leaves change mode after a change is saved', async () => {
+      const fixture = await submittedVoter({ allow_vote_change: true });
+      call(fixture, 'onChangeVote');
+      voteService.getMyVoteBallot.mockClear();
+
+      call(fixture, 'onVoteSubmitted', 'vote-1');
+      TestBed.tick();
+      fixture.detectChanges();
+
+      expect(read(fixture, 'castDrawerChangeMode')).toBe(false);
+      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
+    });
+
+    it('marks a locked ballot final, with no Change vote action', async () => {
+      const fixture = await submittedVoter({ allow_vote_change: false });
+
+      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      call(fixture, 'onChangeVote');
+      expect(read(fixture, 'castDrawerVisible')).toBe(false);
+    });
+
+    it('hides Change vote when ITX reports can_change_vote: false on an allowed vote', async () => {
+      const fixture = await submittedVoter({ allow_vote_change: true }, { ...ballot, can_change_vote: false });
+
+      expect(read(fixture, 'canChangeVote')).toBe(false);
+      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    });
+
+    it('hides Change vote until the ballot loads', async () => {
+      const fixture = await submittedVoter({ allow_vote_change: true }, null);
+
+      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    });
+
+    it('hides Change vote while impersonating', async () => {
+      impersonating.set(true);
+      const fixture = await submittedVoter({ allow_vote_change: true, pseudo_anonymity: false });
+
+      expect(read(fixture, 'canChangeVote')).toBe(false);
+      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    });
+
+    it('offers no Change vote or final text to a voter who has not voted', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: false })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+      expect(testId(fixture, 'vote-detail-voter-ballot-final')).toBeNull();
+    });
+  });
+
   describe('participation card', () => {
     const participationCard = (fixture: ComponentFixture<VoteDetailComponent>): Element | null =>
       fixture.nativeElement.querySelector('lfx-vote-participation-card');

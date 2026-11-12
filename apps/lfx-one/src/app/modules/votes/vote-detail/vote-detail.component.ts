@@ -20,6 +20,7 @@ import {
   VOTE_DETAIL_TABS,
   VOTE_DETAIL_VALID_TABS,
   VOTE_VOTERS_ABSTAINED_CHOICE_KEY,
+  VOTE_BALLOT_FINAL_STATE,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
   VOTE_DETAIL_SUMMARY_CARD_SUB_LINE_CLASS,
@@ -53,11 +54,13 @@ import {
   buildRankedQuestionViews,
   buildVoteResultsQuestions,
   buildVoteResultsSummary,
+  canChangeSubmittedBallot,
   canVoterFetchVoteResults,
   computeParticipationSegments,
   computeVoteParticipationStats,
   getRecentCommentResponses,
   isRankedPollType,
+  isVoteChangeAllowed,
   mergeCommentResults,
   normalizePollStatus,
   resolveVoterResultsState,
@@ -187,11 +190,14 @@ export class VoteDetailComponent {
 
   // === Writable Signals ===
   protected readonly castDrawerVisible = signal<boolean>(false);
+  /** Opens the cast drawer prefilled with the voter's submitted ballot for a change (#4723). */
+  protected readonly castDrawerChangeMode = signal<boolean>(false);
   protected readonly votersRefreshTick = signal<number>(0);
   protected readonly slideBusy = signal<boolean>(false);
   protected readonly impersonating = this.userService.impersonating;
   protected readonly impersonationReadOnlyNotice = VOTE_IMPERSONATION_READ_ONLY_NOTICE;
   protected readonly impersonationPrivateNotice = VOTE_IMPERSONATION_PRIVATE_NOTICE;
+  protected readonly ballotFinalText = VOTE_BALLOT_FINAL_STATE;
   protected readonly myResponseLoading = signal<boolean>(false);
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
@@ -298,6 +304,21 @@ export class VoteDetailComponent {
     () => !this.impersonating() && !this.hasSubmittedBallot() && this.isAwaitingBallot(this.vote(), this.myResponse())
   );
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE);
+  /** A loaded submitted ballot the voter may still change (#4723): ITX's answer when reported, otherwise derived from the vote. */
+  protected readonly canChangeVote: Signal<boolean> = computed(() => {
+    const ballot = this.myBallot();
+    const vote = this.vote();
+    if (this.impersonating() || this.voterState() !== 'submitted' || !ballot || !vote) return false;
+    return canChangeSubmittedBallot({
+      canChangeVote: ballot.can_change_vote,
+      allowVoteChange: vote.allow_vote_change,
+      status: vote.status,
+      submitted: true,
+      voterRemoved: !!this.myResponse()?.voter_removed,
+    });
+  });
+  /** The voter's submitted ballot is final because the vote disallows changes (#4723). */
+  protected readonly ballotFinal: Signal<boolean> = computed(() => this.voterState() === 'submitted' && !isVoteChangeAllowed(this.vote()));
   /** Formally ended. A draft (`disabled`) is neither active nor ended, so "closed" copy keys on this, never on `!isActive`. */
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ENDED);
   /** Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality layout — see isRankedPollType. */
@@ -380,12 +401,22 @@ export class VoteDetailComponent {
   }
 
   protected onCastVote(): void {
-    if (!this.impersonating()) this.castDrawerVisible.set(true);
+    if (this.impersonating()) return;
+    this.castDrawerChangeMode.set(false);
+    this.castDrawerVisible.set(true);
+  }
+
+  protected onChangeVote(): void {
+    if (!this.canChangeVote()) return;
+    this.castDrawerChangeMode.set(true);
+    this.castDrawerVisible.set(true);
   }
 
   protected onVoteSubmitted(voteId: string): void {
     // A delayed completion belongs to the ballot it submitted, not a vote reached since then.
     if (voteId !== this.voteId() || voteId !== this.vote()?.uid) return;
+    // A change re-reads the ballot through the same refresh tick as a first submission (#4723).
+    this.castDrawerChangeMode.set(false);
     this.submittedBallotFor.set(voteId);
     this.refreshTick.update((tick) => tick + 1);
     this.reload$.next('refresh');
@@ -888,7 +919,10 @@ export class VoteDetailComponent {
         filter((uid): uid is string => !!uid),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.castDrawerVisible.set(true));
+      .subscribe(() => {
+        this.castDrawerChangeMode.set(false);
+        this.castDrawerVisible.set(true);
+      });
   }
 
   // === Private Helpers ===

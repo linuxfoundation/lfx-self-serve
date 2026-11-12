@@ -312,4 +312,24 @@ describe('VoteBallotFormComponent (#4363)', () => {
       expect(el().querySelector('textarea')).not.toBeNull();
     });
   });
+
+  describe('final notice (#4723)', () => {
+    it('renders no notice by default', async () => {
+      await render(baseBallot());
+
+      expect(byId('vote-link-final-notice')).toBeNull();
+    });
+
+    it('renders the notice in the pinned footer when set', async () => {
+      fixture = TestBed.createComponent(VoteBallotFormComponent);
+      fixture.componentRef.setInput('ballot', baseBallot());
+      fixture.componentRef.setInput('finalNotice', "Once you submit, your vote can't be changed.");
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const notice = byId('vote-link-footer')?.querySelector('[data-testid="vote-link-final-notice"]');
+      expect(notice?.textContent?.trim()).toBe("Once you submit, your vote can't be changed.");
+      expect(notice?.getAttribute('role')).toBe('note');
+    });
+  });
 });

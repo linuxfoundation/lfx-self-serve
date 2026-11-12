@@ -227,7 +227,12 @@
       }
     </div>
 
-    <lfx-vote-cast-drawer [(visible)]="castDrawerVisible" [voteId]="voteData.uid" [listVote]="voteData" (voteSubmitted)="onVoteSubmitted($event)" />
+    <lfx-vote-cast-drawer
+      [(visible)]="castDrawerVisible"
+      [voteId]="voteData.uid"
+      [listVote]="voteData"
+      [changeMode]="castDrawerChangeMode()"
+      (voteSubmitted)="onVoteSubmitted($event)" />
 
     <!-- Full Results tab breakdown: generic option bars or ranked distributions, plus the vote-level abstain row. -->
     <ng-template #resultsBody>
@@ -409,6 +414,16 @@
                 <lfx-vote-my-ballot [vote]="voteData" [ballot]="ballot" data-testid="vote-detail-my-ballot" class="w-full text-left" />
               } @else if (myBallotError()) {
                 <p class="text-sm text-red-600" data-testid="vote-detail-my-ballot-error">Couldn't load your ballot.</p>
+              }
+              @if (canChangeVote()) {
+                <lfx-button
+                  label="Change vote"
+                  icon="fa-light fa-pen"
+                  severity="secondary"
+                  (onClick)="onChangeVote()"
+                  data-testid="vote-detail-voter-change-vote"></lfx-button>
+              } @else if (ballotFinal()) {
+                <p class="text-sm text-gray-600" data-testid="vote-detail-voter-ballot-final">{{ ballotFinalText }}</p>
               }
             } @else {
               <p class="text-sm text-gray-600 max-w-sm" data-testid="vote-detail-voter-not-voted">

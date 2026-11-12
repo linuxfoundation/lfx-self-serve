@@ -16,11 +16,23 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { PollType } from '@lfx-one/shared';
 import {
   INVITATION_NOT_FOUND,
+  VOTE_BALLOT_FINAL_NOTICE,
+  VOTE_BALLOT_FINAL_STATE,
+  VOTE_CHANGE_NOT_ALLOWED,
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
 } from '@lfx-one/shared/constants';
-import { CommentResponseFormData, MyVoteBallot, PollCommentPrompt, PollQuestion, UserChoice, Vote, VoteAnswerInput } from '@lfx-one/shared/interfaces';
+import {
+  CommentResponseFormData,
+  CommentResponseInput,
+  MyVoteBallot,
+  PollCommentPrompt,
+  PollQuestion,
+  UserChoice,
+  Vote,
+  VoteAnswerInput,
+} from '@lfx-one/shared/interfaces';
 import {
   buildBallotCommentPrompts,
   buildCommentResponses,
@@ -28,6 +40,7 @@ import {
   getCommentPromptsData,
   getUserTimezone,
   isRankedPollType,
+  isVoteChangeAllowed,
   mapMyBallotToCastForm,
   reconcileCommentFormControls,
 } from '@lfx-one/shared/utils';
@@ -87,6 +100,8 @@ export class VoteCastDrawerComponent {
   public readonly listVote = input<Vote | null>(null);
   /** Review mode (#4331): shows the voter's submitted ballot without allowing changes. */
   public readonly readOnly = input<boolean>(false);
+  /** Change mode (#4723): prefills the voter's submitted ballot, keeps it editable, and saves it with PUT. */
+  public readonly changeMode = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -117,6 +132,8 @@ export class VoteCastDrawerComponent {
   private readonly cancelSubmit$ = new Subject<void>();
 
   // === Derived Signals (from API) ===
+  /** Both review and change mode show the voter's recorded ballot; only review locks it. */
+  protected readonly showsRecordedBallot: Signal<boolean> = computed(() => this.readOnly() || this.changeMode());
   protected readonly vote: Signal<Vote | null> = this.initVote();
   protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   protected readonly abstain: Signal<boolean> = toSignal(this.abstainControl.valueChanges, { initialValue: this.abstainControl.value });
@@ -132,6 +149,10 @@ export class VoteCastDrawerComponent {
     this.readOnly() && this.ballotPrivacyRestricted() ? VOTE_IMPERSONATION_PRIVATE_NOTICE : VOTE_IMPERSONATION_READ_ONLY_NOTICE
   );
   protected readonly reviewNotice = 'Your vote has been recorded.';
+  /** Pre-submit notice on a first ballot when the vote makes submitted ballots final (#4723); a missing setting means allowed. */
+  protected readonly finalNotice: Signal<string | null> = computed(() =>
+    !this.readOnly() && !this.changeMode() && !this.impersonating() && !isVoteChangeAllowed(this.vote()) ? VOTE_BALLOT_FINAL_NOTICE : null
+  );
   protected readonly ballotLoadError = "Couldn't load your submitted ballot. Close this panel and try again.";
   // Footer is hidden (not removed) until a ballot exists — see drawer-pattern.md § Sticky footer.
   protected readonly drawerPt: Signal<Record<string, unknown>> = this.initDrawerPt();
@@ -170,7 +191,7 @@ export class VoteCastDrawerComponent {
       .subscribe(() => this.applyBallotPrefill());
 
     // A reused drawer must not carry recorded choices or disabled controls into a first ballot.
-    toObservable(this.readOnly)
+    toObservable(computed(() => `${this.readOnly()}|${this.changeMode()}`))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.appliedPrefillKey = null;
@@ -256,6 +277,11 @@ export class VoteCastDrawerComponent {
     const commentResponses = buildCommentResponses(this.commentPromptsData());
 
     this.submitting.set(true);
+
+    if (this.changeMode()) {
+      this.submitChange(vote.uid, isAbstain, userVoteContent, commentResponses);
+      return;
+    }
 
     this.voteService
       .submitMyResponse(vote.uid, {
@@ -385,9 +411,13 @@ export class VoteCastDrawerComponent {
     );
   }
 
-  /** Loads the recorded ballot only while reviewing; missing content is an error, never an editable form. */
+  /** Loads the recorded ballot only while reviewing or changing it; missing content is an error, never a blank editable form. */
   private initMyBallot(): Signal<MyVoteBallot | null> {
-    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), reviewing: this.readOnly() && !this.ballotPrivacyRestricted() }));
+    const selection = computed(() => ({
+      id: this.voteId(),
+      visible: this.visible(),
+      reviewing: this.showsRecordedBallot() && !this.ballotPrivacyRestricted(),
+    }));
 
     return toSignal(
       toObservable(selection).pipe(
@@ -427,7 +457,7 @@ export class VoteCastDrawerComponent {
       const vote = this.vote();
       const ballot = this.myBallot();
       if (!vote) return [];
-      if (!this.readOnly() || !ballot || ballot.vote_uid !== vote.uid) return vote.poll_questions ?? [];
+      if (!this.showsRecordedBallot() || !ballot || ballot.vote_uid !== vote.uid) return vote.poll_questions ?? [];
       return buildVoteBallotQuestions(vote, ballot).map((question) => ({
         question_id: question.questionId,
         prompt: question.prompt,
@@ -457,6 +487,8 @@ export class VoteCastDrawerComponent {
       this.formVersion(); // re-evaluate when controls are added/removed/disabled via { emitEvent: false }
       if (this.submitting()) return true;
       if (this.readOnly() || this.impersonating()) return true;
+      // Change mode needs the recorded ballot applied before anything can be saved.
+      if (this.changeMode() && !this.myBallot()) return true;
       if (!this.commentForm.valid) return true;
       if (this.abstain()) return false;
       return !this.form.valid;
@@ -467,7 +499,7 @@ export class VoteCastDrawerComponent {
     return computed(() => {
       const vote = this.vote();
       const ballot = this.myBallot();
-      if (!this.readOnly() || !vote || ballot?.vote_uid !== vote.uid) return vote?.poll_comment_prompts ?? [];
+      if (!this.showsRecordedBallot() || !vote || ballot?.vote_uid !== vote.uid) return vote?.poll_comment_prompts ?? [];
       return buildBallotCommentPrompts(vote.poll_comment_prompts, ballot.comment_responses);
     });
   }
@@ -537,7 +569,7 @@ export class VoteCastDrawerComponent {
     for (const question of questions) {
       if (this.form.get(question.question_id)) continue;
       if (pollIsRanked) {
-        const seeded = this.readOnly() ? [] : question.choices.map((c) => c.choice_id);
+        const seeded = this.showsRecordedBallot() ? [] : question.choices.map((c) => c.choice_id);
         this.form.addControl(question.question_id, new FormControl<string[]>(seeded, { nonNullable: true, validators: [Validators.required] }), {
           emitEvent: false,
         });
@@ -560,7 +592,7 @@ export class VoteCastDrawerComponent {
     const vote = this.vote();
     const ballot = this.myBallot();
     this.syncControls();
-    if (!this.readOnly() || !vote || !ballot || ballot.vote_uid !== vote.uid) return;
+    if (!this.showsRecordedBallot() || !vote || !ballot || ballot.vote_uid !== vote.uid) return;
 
     const key = [
       vote.uid,
@@ -581,12 +613,64 @@ export class VoteCastDrawerComponent {
     for (const [questionId, value] of Object.entries(prefill.answers)) {
       this.form.get(questionId)?.setValue(value, { emitEvent: false });
     }
+    // A changed ranked ballot ranks every choice, like a first ballot: keep the recorded order, then append the rest.
+    if (this.changeMode() && this.isRankedPoll()) {
+      for (const question of this.questions()) {
+        const control = this.form.get(question.question_id);
+        const order = Array.isArray(control?.value) ? (control.value as string[]) : [];
+        const rest = question.choices.map((choice) => choice.choice_id).filter((id) => !order.includes(id));
+        control?.setValue([...order, ...rest], { emitEvent: false });
+      }
+    }
     // Emitting updates the displayed abstention while syncControls keeps review locked.
     this.abstainControl.setValue(prefill.abstain);
     for (const [promptId, text] of Object.entries(prefill.comments)) {
       this.commentForm.get(promptId)?.setValue(text, { emitEvent: false });
     }
     this.bumpFormVersion();
+  }
+
+  /** Saves a changed ballot (#4723). Comments are always sent so a cleared comment replaces the stored one. */
+  private submitChange(
+    voteUid: string,
+    abstain: boolean,
+    userVoteContent: VoteAnswerInput[] | undefined,
+    commentResponses: CommentResponseInput[] | undefined
+  ): void {
+    this.voteService
+      .updateMyResponse(voteUid, { abstain, user_vote_content: userVoteContent, comment_responses: commentResponses ?? [] })
+      .pipe(
+        takeUntil(this.cancelSubmit$),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.submitting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Vote updated',
+            detail: `Your ${abstain ? 'abstention' : 'ballot'} has been updated.`,
+            life: 3000,
+          });
+          this.voteSubmitted.emit(voteUid);
+          this.visible.set(false);
+        },
+        error: (err: unknown) => {
+          const body = err instanceof HttpErrorResponse ? (err.error as { error?: unknown } | null) : null;
+          const message = typeof body?.error === 'string' ? body.error.toLowerCase() : '';
+          if (err instanceof HttpErrorResponse && err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
+            this.messageService.add({ severity: 'warn', summary: "This vote doesn't allow changes", detail: VOTE_BALLOT_FINAL_STATE, life: 5000 });
+            this.visible.set(false);
+            return;
+          }
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to update vote',
+            detail: 'Something went wrong updating your ballot. Please try again.',
+            life: 5000,
+          });
+        },
+      });
   }
 
   private syncControls(): void {

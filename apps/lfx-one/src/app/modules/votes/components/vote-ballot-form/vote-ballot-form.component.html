@@ -165,6 +165,9 @@
   <div
     class="sticky bottom-0 mt-auto -mx-4 sm:mx-0 px-4 sm:px-0 py-3 bg-white border-t border-slate-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
     data-testid="vote-link-footer">
+    @if (finalNotice(); as notice) {
+      <p class="pb-2 text-center text-sm font-medium text-amber-700" role="note" data-testid="vote-link-final-notice">{{ notice }}</p>
+    }
     @if (selectionHelper(); as helper) {
       <p class="pb-2 text-center text-sm text-slate-600" data-testid="vote-link-submit-helper">{{ helper }}</p>
     }

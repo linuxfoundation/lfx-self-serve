@@ -4,7 +4,7 @@ description: How to find, edit, delete, vote on, and send reminders for votes in
 audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-11-09
+last_updated: 2026-11-11
 intercom_collection: Votes
 ---
 
@@ -65,9 +65,9 @@ You vote from the **Me** lens, where **Votes** lists the votes you are invited t
 2. Answer each question. Single-selection questions use radio buttons to pick one option. Multiple-selection questions use checkboxes, so select all that apply. For ranked-choice questions, drag the options or use the arrow buttons to put them in your preferred order, with your first choice at the top.
 3. If the vote has comment questions, optionally answer them under **Additional Comments (Optional)**. Each comment can be up to 5,000 characters.
 4. If the vote allows abstaining, you can select **Abstain from this vote** instead. An abstention is recorded as a non-vote and overrides your choices, though any comments are still submitted.
-5. Select **Submit Vote**.
+5. Select **Submit Vote**. If the vote doesn't allow changes, a notice above the button says **Once you submit, your vote can't be changed.**
 
-After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens the same drawer with your recorded choices, rankings, abstention and comments locked. The drawer has no submit or change action, so a ballot is read-only here (a personalized ballot link can still update an active ballot). The **Your ballot** section on the vote's page also shows what is recorded. Results stay hidden until the vote closes.
+After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens the same drawer with your recorded choices, rankings, abstention and comments locked. The drawer has no submit or change action. To change an active ballot, open the vote's page and select **Change vote**, or use your personalized ballot link; both work only when the vote allows changes. The **Your ballot** section on the vote's page also shows what is recorded. Results stay hidden until the vote closes.
 
 ### While impersonating another user
 

@@ -69,6 +69,10 @@
             <span class="text-gray-500">Allow Abstain:</span>
             <span class="text-gray-900 text-right">{{ allowAbstain() ? 'Yes' : 'No' }}</span>
           </div>
+          <div class="flex justify-between gap-4">
+            <span class="text-gray-500">Allow voters to change their vote:</span>
+            <span class="text-gray-900 text-right" data-testid="vote-review-allow-vote-change">{{ allowVoteChange() ? 'Yes' : 'No' }}</span>
+          </div>
         </div>
       </div>
     </div>

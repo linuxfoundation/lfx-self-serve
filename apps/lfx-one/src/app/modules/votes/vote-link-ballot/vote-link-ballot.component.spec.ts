@@ -384,6 +384,98 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     expect(state()).toBe('ready');
   });
 
+  describe('allow vote change (#4723)', () => {
+    const VOTED = { ...BALLOT.ballot, vote_status: 'responded', already_voted: true };
+
+    it('shows a locked submitted ballot as final, with no update action or form', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: false, ballot: { ...VOTED, can_change_vote: false } }));
+
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-update-prompt')).toBeNull();
+      expect(testId('vote-link-update-button')).toBeNull();
+      expect(testId('vote-link-ballot-form')).toBeNull();
+    });
+
+    it("trusts ITX's can_change_vote: false even when the vote reports changes allowed", async () => {
+      await open(of({ ...BALLOT, allow_vote_change: true, ballot: { ...VOTED, can_change_vote: false } }));
+
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+      expect(testId('vote-link-update-prompt')).toBeNull();
+    });
+
+    it('keeps the update prompt on a vote that allows changes', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: true, ballot: { ...VOTED, can_change_vote: true } }));
+
+      expect(testId('vote-link-update-prompt')).not.toBeNull();
+      expect(testId('vote-link-ballot-final')).toBeNull();
+    });
+
+    it('still offers the update when an older backend omits both can_change_vote and allow_vote_change', async () => {
+      await open(of({ ...BALLOT, ballot: VOTED }));
+
+      expect(testId('vote-link-update-prompt')).not.toBeNull();
+      expect(testId('vote-link-ballot-final')).toBeNull();
+    });
+
+    it('shows the final message and reloads the ballot when an update returns 409', async () => {
+      const locked = { ...BALLOT, allow_vote_change: false, ballot: { ...VOTED, can_change_vote: false } };
+      getLinkBallot.mockReturnValueOnce(of({ ...BALLOT, ballot: VOTED })).mockReturnValueOnce(of(locked));
+      submitLinkResponse.mockReturnValue(throwError(() => httpError(409, 'this poll does not allow changing a submitted vote')));
+      window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+      fixture = TestBed.createComponent(VoteLinkBallotComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      testId('vote-link-update-button')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      submit();
+      fixture.detectChanges();
+
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), true);
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      // The final box carries the message, so it is not repeated as an inline error.
+      expect(testId('vote-link-inline-error')).toBeNull();
+    });
+
+    it('does not flip a first submission to PUT on a locked vote; it reloads into the final state', async () => {
+      const locked = { ...BALLOT, allow_vote_change: false };
+      getLinkBallot.mockReturnValueOnce(of(locked)).mockReturnValueOnce(of({ ...locked, ballot: { ...VOTED, can_change_vote: false } }));
+      submitLinkResponse.mockReturnValue(throwError(() => httpError(400, 'vote is not awaiting response')));
+      window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+      fixture = TestBed.createComponent(VoteLinkBallotComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      submit();
+      fixture.detectChanges();
+
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), false);
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+    });
+
+    it('shows the pre-submit notice on a first submission of a locked vote only', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: false }));
+      expect(testId('vote-link-final-notice')?.textContent).toContain("Once you submit, your vote can't be changed.");
+      fixture.destroy();
+
+      await open(of(BALLOT));
+      expect(testId('vote-link-final-notice')).toBeNull();
+    });
+
+    it('says the vote is final on the thank-you screen of a locked vote', async () => {
+      await open(of({ ...BALLOT, allow_vote_change: false }));
+      submit();
+      fixture.detectChanges();
+
+      expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('Your vote is final.');
+      expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
+    });
+  });
+
   it('sets a no-referrer meta tag while mounted', async () => {
     await open(of(BALLOT));
 

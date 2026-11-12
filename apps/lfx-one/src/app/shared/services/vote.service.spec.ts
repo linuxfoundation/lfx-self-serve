@@ -835,6 +835,16 @@ describe('VoteService', () => {
       });
       expect(http.put).not.toHaveBeenCalled();
     });
+
+    it('updateMyResponse PUTs the encoded my-response URL with the body as given (#4723)', () => {
+      http.put.mockReturnValue(of(undefined));
+      const body = { abstain: false, user_vote_content: answers, comment_responses: [] };
+
+      service.updateMyResponse('vote/1', body).subscribe();
+
+      expect(http.put).toHaveBeenCalledExactlyOnceWith('/api/votes/vote%2F1/my-response', body);
+      expect(http.post).not.toHaveBeenCalled();
+    });
   });
 
   describe('vote summary (#3662)', () => {

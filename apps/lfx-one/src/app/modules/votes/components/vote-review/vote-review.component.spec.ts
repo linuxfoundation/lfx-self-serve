@@ -24,6 +24,7 @@ describe('VoteReviewComponent — description formatting (#4727)', () => {
       close_time: new FormControl(''),
       timezone: new FormControl('UTC'),
       allow_abstain: new FormControl(false),
+      allow_vote_change: new FormControl(true),
       questions: new FormArray([]),
       commentPrompts: new FormArray([]),
     });
@@ -147,5 +148,41 @@ describe('VoteReviewComponent — description formatting (#4727)', () => {
     expect(fixture.componentInstance.description()).toBe(raw);
     expect(description()?.textContent).toBe(raw);
     expect(form.get('description')?.value).toBe(raw);
+  });
+});
+
+describe('VoteReviewComponent — allow vote change row (#4723)', () => {
+  let fixture: ComponentFixture<VoteReviewComponent>;
+
+  async function render(allowVoteChange: boolean): Promise<HTMLElement | null> {
+    const form = new FormGroup({
+      title: new FormControl('Charter ratification'),
+      description: new FormControl(''),
+      timezone: new FormControl('UTC'),
+      allow_abstain: new FormControl(false),
+      allow_vote_change: new FormControl(allowVoteChange),
+      questions: new FormArray([]),
+      commentPrompts: new FormArray([]),
+    });
+    fixture = TestBed.createComponent(VoteReviewComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture.nativeElement.querySelector('[data-testid="vote-review-allow-vote-change"]');
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [VoteReviewComponent], providers: [provideNoopAnimations()] });
+  });
+
+  afterEach(() => fixture?.destroy());
+
+  it.each([
+    [true, 'Yes'],
+    [false, 'No'],
+  ])('shows allow_vote_change %s as %s', async (allowVoteChange, label) => {
+    const row = await render(allowVoteChange);
+
+    expect(row?.textContent?.trim()).toBe(label);
   });
 });

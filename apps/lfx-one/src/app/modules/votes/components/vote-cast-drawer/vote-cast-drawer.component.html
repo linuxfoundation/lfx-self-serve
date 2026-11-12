@@ -83,14 +83,17 @@
           <p class="text-sm text-gray-500">This vote has no questions to answer.</p>
         </div>
       } @else {
-        @if (readOnly()) {
+        @if (showsRecordedBallot()) {
           @if (loadingBallot()) {
             <p-skeleton width="100%" height="48px" data-testid="vote-cast-ballot-loading"></p-skeleton>
           } @else if (ballotError()) {
             <p class="text-sm text-red-600" role="alert" data-testid="vote-cast-ballot-error">{{ ballotLoadError }}</p>
-          } @else if (myBallot()) {
+          } @else if (readOnly() && myBallot()) {
             <lfx-message severity="info" [text]="reviewNotice" data-testid="vote-cast-review-notice"></lfx-message>
           }
+        }
+        @if (finalNotice(); as notice) {
+          <lfx-message severity="warn" [text]="notice" data-testid="vote-cast-final-notice"></lfx-message>
         }
 
         @if (voteData.description) {
@@ -110,7 +113,7 @@
           </div>
         }
 
-        @if (!readOnly() || myBallot()) {
+        @if (!showsRecordedBallot() || myBallot()) {
           <form [formGroup]="form" class="flex flex-col gap-6">
             <h2 class="text-lg font-semibold text-slate-900">Questions</h2>
             @for (question of questions(); track question.question_id) {
@@ -296,7 +299,7 @@
       data-testid="vote-cast-footer">
       @if (!readOnly() && !impersonating()) {
         <lfx-button
-          label="Submit Vote"
+          [label]="changeMode() ? 'Update Vote' : 'Submit Vote'"
           icon="fa-light fa-check"
           severity="primary"
           [fluid]="true"
