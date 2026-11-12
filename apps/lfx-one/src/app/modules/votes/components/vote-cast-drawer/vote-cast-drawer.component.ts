@@ -380,7 +380,8 @@ export class VoteCastDrawerComponent {
    *  would seed it with whatever the caller's list row currently holds — if that row is a stale/partial
    *  summary object (or the list hasn't produced one yet), poll_questions drops out and rebuildForm() wipes
    *  the ballot the voter was filling in. Falling back to the last fetched detail for the same vote (instead
-   *  of the raw listVote) and only flipping loadingVote when no fallback exists keeps the ballot intact. */
+   *  of the raw listVote) and only flipping loadingVote when no fallback exists keeps the ballot intact.
+   *  Initial change mode also waits for full detail so edits cannot be overwritten by a later form-shape change. */
   private initVote(): Signal<Vote | null> {
     let prevId: string | null = null;
     let prevDeadlineKey: string | null = null;
@@ -441,7 +442,7 @@ export class VoteCastDrawerComponent {
           if (lastDetail && listVote) {
             fallback = { ...lastDetail, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
           }
-          if (!fallback) {
+          if (!fallback || (this.changeMode() && !lastDetail)) {
             this.loadingVote.set(true);
           }
 

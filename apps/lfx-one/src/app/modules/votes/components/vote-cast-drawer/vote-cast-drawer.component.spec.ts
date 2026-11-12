@@ -842,6 +842,96 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     return el('vote-cast-submit-button')?.querySelector('button') ?? null;
   }
 
+  it.each([PollType.MAJORITY, PollType.INSTANT_RUNOFF_VOTE])(
+    'waits for initial %s detail when the ballot arrives first, then preserves edits across refreshes',
+    async (pollType) => {
+      const detail = new Subject<Vote>();
+      const refresh = new Subject<Vote>();
+      const ballot = new Subject<MyVoteBallot | null>();
+      const vote: Vote = { ...CHANGE_VOTE, poll_type: pollType };
+      const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+      await setup(vi.fn().mockReturnValueOnce(detail.asObservable()).mockReturnValueOnce(refresh.asObservable()), {
+        getMyVoteBallot: vi.fn().mockReturnValue(ballot.asObservable()),
+        updateMyResponse,
+      });
+      fixture.componentRef.setInput('changeMode', true);
+      fixture.componentRef.setInput('voteId', vote.uid);
+      fixture.componentRef.setInput('listVote', vote);
+      fixture.componentRef.setInput('visible', true);
+      await fixture.whenStable();
+      ballot.next(BALLOT);
+      ballot.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const component = fixture.componentInstance;
+
+      expect(component['loadingVote']()).toBe(true);
+      expect(el('vote-cast-question-q1')).toBeNull();
+      expect(el('vote-cast-comment-textarea-p1')).toBeNull();
+      expect(component['drawerPt']()).toEqual({ footer: { class: 'hidden' } });
+      expect(updateMyResponse).not.toHaveBeenCalled();
+
+      detail.next(vote);
+      detail.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const ranked = pollType === PollType.INSTANT_RUNOFF_VOTE;
+      expect(component['loadingVote']()).toBe(false);
+      expect(el('vote-cast-question-q1')).not.toBeNull();
+      expect(component.form.get('q1')?.value).toEqual(ranked ? ['c2'] : 'c2');
+
+      const draft = ranked ? ['c1'] : 'c1';
+      (component.form.get('q1') as unknown as FormControl<string | string[]>).setValue(draft);
+      (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Draft revision');
+      const extended = { ...vote, end_time: '2099-07-01T18:00:00Z' };
+      fixture.componentRef.setInput('listVote', extended);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(component['loadingVote']()).toBe(false);
+      expect(el('vote-cast-question-q1')).not.toBeNull();
+      expect(component.form.get('q1')?.value).toEqual(draft);
+      refresh.next(extended);
+      refresh.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.form.get('q1')?.value).toEqual(draft);
+      expect(component.commentForm.get('p1')?.value).toBe('Draft revision');
+      expect(submitButton()?.disabled).toBe(false);
+      submitButton()!.click();
+      const answer = ranked ? { question_id: 'q1', ranked_choices: [{ choice_id: 'c1', choice_rank: 1 }] } : { question_id: 'q1', choice_ids: ['c1'] };
+      expect(updateMyResponse).toHaveBeenCalledWith(vote.uid, {
+        abstain: false,
+        user_vote_content: [answer],
+        comment_responses: [{ prompt_id: 'p1', comment_text: 'Draft revision' }],
+      });
+    }
+  );
+
+  it('settles initial change-mode loading into the ranked list fallback when detail fails', async () => {
+    const detail = new Subject<Vote>();
+    const vote: Vote = { ...CHANGE_VOTE, poll_type: PollType.INSTANT_RUNOFF_VOTE };
+    await setup(vi.fn().mockReturnValue(detail.asObservable()), { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)) });
+    fixture.componentRef.setInput('changeMode', true);
+    fixture.componentRef.setInput('voteId', vote.uid);
+    fixture.componentRef.setInput('listVote', vote);
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['loadingVote']()).toBe(true);
+    expect(el('vote-cast-question-q1')).toBeNull();
+
+    detail.error(new Error('500'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['loadingVote']()).toBe(false);
+    expect(fixture.componentInstance['isRankedPoll']()).toBe(true);
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c2']);
+    expect(el('vote-cast-question-q1')).not.toBeNull();
+    expect(submitButton()?.disabled).toBe(false);
+  });
+
   it('prefills the submitted ballot, keeps it editable, and saves the change with PUT', async () => {
     const getMyVoteBallot = vi.fn().mockReturnValue(of(BALLOT));
     const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
