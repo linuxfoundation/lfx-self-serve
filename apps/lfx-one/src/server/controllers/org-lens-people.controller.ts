@@ -40,7 +40,7 @@ import { OrgPeopleContributorsService } from '../services/org-people-contributor
 import { OrgPeopleEventAttendeesService } from '../services/org-people-event-attendees.service';
 import { OrgPeopleKeyContactsService } from '../services/org-people-key-contacts.service';
 import { OrgPeopleTraineesService } from '../services/org-people-trainees.service';
-import { uncoveredLiveUsernames, withCompanyEmailStatus } from '../services/org-people-wire.mapper';
+import { liveKeyContactAddresses, uncoveredLiveUsernames, withCompanyEmailStatus } from '../services/org-people-wire.mapper';
 
 /** HTTP boundary for the OrgLensPeopleService — validation, lifecycle logging, error propagation. */
 export class OrgLensPeopleController {
@@ -98,10 +98,15 @@ export class OrgLensPeopleController {
         this.service.getCompanyEmailKeys(req, orgUid),
       ]);
       const withAttendees = this.withEventAttendeesTotal(roster, eventAttendeesTotal);
-      // Live-only rows off the warehouse roster are read by LF account, as the drawer reads them, so the filter agrees with it.
+      // Live-only rows off the warehouse roster are read by LF account, or without one by the key-contact records at their
+      // address, as the drawer reads them, so the filter agrees with it.
       const uncovered = companyEmailKeys ? uncoveredLiveUsernames(withAttendees, companyEmailKeys) : [];
-      const lfUsernames = uncovered.length ? await this.service.getLfUsernameCompanyEmailStatuses(req, orgUid, uncovered) : null;
-      const response = withCompanyEmailStatus(withAttendees, companyEmailKeys, lfUsernames);
+      const keyContactAddresses = companyEmailKeys ? liveKeyContactAddresses(withAttendees) : [];
+      const [lfUsernames, keyContactHolders] = await Promise.all([
+        uncovered.length ? this.service.getLfUsernameCompanyEmailStatuses(req, orgUid, uncovered) : null,
+        keyContactAddresses.length ? this.service.getLiveKeyContactAddressesWithCompanyEmail(req, orgUid, keyContactAddresses) : null,
+      ]);
+      const response = withCompanyEmailStatus(withAttendees, companyEmailKeys, lfUsernames, keyContactHolders);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
@@ -111,6 +116,7 @@ export class OrgLensPeopleController {
         foundation_count: response.foundations.length,
         active_in_oss: response.stats.activeInOss,
         uncovered_usernames: uncovered.length,
+        uncovered_key_contacts: keyContactAddresses.length,
       });
 
       res.setHeader('Cache-Control', 'no-store');
@@ -351,9 +357,8 @@ export class OrgLensPeopleController {
   /**
    * GET /api/orgs/:orgUid/lens/people/:personKey/key-contacts — the key contact roles one person holds,
    * for the drawer's Key Contacts tab. A person key is not a key-contact key, so identity is assembled
-   * here: the roster's username for that key, which is the stronger match, plus the same company-address
-   * lookup the header uses. Both are resolved server-side — a username passed in by the client would
-   * travel in the URL, which the request logger records.
+   * server-side ({@link OrgLensPeopleService.getPersonKeyContactsIdentity}) — a username passed in by the
+   * client would travel in the URL, which the request logger records.
    */
   public async getPersonKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
@@ -365,15 +370,8 @@ export class OrgLensPeopleController {
       this.assertPersonKey(personKey, operation);
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
 
-      const [identity, username] = await Promise.all([
-        this.service.getCompanyEmails(req, orgUid, personKey),
-        this.service.resolveUsernameByPersonKey(req, orgUid, personKey),
-      ]);
-      const response = await this.keyContactsService.getKeyContactsForPerson(req, orgUid, {
-        username,
-        emails: identity.companyEmailsStatus === 'resolved' ? identity.companyEmails : [],
-        emailsStatus: identity.companyEmailsStatus,
-      });
+      const identity = await this.service.getPersonKeyContactsIdentity(req, orgUid, personKey);
+      const response = await this.keyContactsService.getKeyContactsForPerson(req, orgUid, identity);
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,

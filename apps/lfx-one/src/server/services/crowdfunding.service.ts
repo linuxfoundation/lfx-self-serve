@@ -29,6 +29,7 @@ import {
   CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS,
   DEFAULT_CROWDFUNDING_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
+import { isUuid } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import {
@@ -42,6 +43,7 @@ import {
   BackendInitiative,
   BackendMyTransactionListResponse,
   BackendOrgDonationListResponse,
+  BackendSlugToUid,
   BackendSponsorshipTierInput,
   BackendSubscription,
   BackendTransactionList,
@@ -225,10 +227,21 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
+    // The gateway takes only a UUID on /manage (linuxfoundation/lfx-crowdfunding#363), so resolve the route slug first.
+    // slug-to-uid's 404 is the not-found signal.
+    const id = isUuid(slug)
+      ? slug
+      : (await cfFetchNullable<BackendSlugToUid>(req, 'resolveInitiativeSlug', `/crowdfunding/initiatives/slug-to-uid/${encodeURIComponent(slug)}`))?.uid;
+    if (!id) {
+      // Any signed-in user can reach this with a made-up slug, so DEBUG, not WARN.
+      logger.debug(req, 'cf_get_initiative_by_slug', 'No initiative has this slug', { slug });
+      return null;
+    }
+
     // /manage returns the full payload in any status to the creator or a writer on the attributed entity; requires the user's bearer token.
-    // Non-writers are denied at the gateway with 403 (rethrown). An unresolvable slug fails the gateway's slug resolver,
-    // which surfaces as 502 (rethrown, not null) — tracked in linuxfoundation/lfx-crowdfunding#363. 404 → null only if the gateway is bypassed
-    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/initiatives/${encodeURIComponent(slug)}/manage`);
+    // Everyone else gets 403 from the gateway (rethrown), including for a UUID that doesn't exist: the gateway intentionally
+    // doesn't distinguish "doesn't exist" from "not a writer". 404 → null only if the gateway is bypassed.
+    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/initiatives/${encodeURIComponent(id)}/manage`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;

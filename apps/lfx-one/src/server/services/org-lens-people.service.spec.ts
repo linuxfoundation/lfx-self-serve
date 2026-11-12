@@ -749,6 +749,124 @@ describe('OrgLensPeopleService username company emails', () => {
   });
 });
 
+// The directory keys a key contact without an LF username on their address; their All Employees row lists the roles
+// held at it, and the drawer must read them as the Key Contacts tab's drawer does.
+describe('OrgLensPeopleService live key contacts without an LF username', () => {
+  const KEY = 'live-key-contact-ana';
+  const ADDRESS = 'ana.contact@company.example';
+  const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
+  const OTHER_ID = 'a0F000000000009AAA';
+  const assignment = (contactUid: string, email: string, username: string | null = null) => ({ contactUid, email, username, role: 'Legal Contact' });
+  const addRecord = (keyContactId: string, email: string): void =>
+    addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email, source: 'key_contact_record', keyContactId });
+
+  beforeEach(() => {
+    getLive.mockResolvedValue({ rows: [{ personKey: KEY, lfUsername: null, email: ADDRESS }] });
+    getKeyContacts.mockResolvedValue({
+      assignments: [assignment(ids[0], ' Ana.Contact@Company.example '), assignment(ids[1], ADDRESS), assignment(OTHER_ID, 'other@company.example')],
+    });
+  });
+
+  it("reads the drawer's addresses from the records of the assignments at the row's address, still that address", async () => {
+    addRecord(ids[1], 'Ana.Contact@company.example');
+    // A record address that is no longer the contact's own, and another person's record, are never shown.
+    addRecord(ids[0], 'previous@company.example');
+    addRecord(OTHER_ID, 'other@company.example');
+
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual({
+      companyEmails: ['Ana.Contact@company.example'],
+      primaryEmail: null,
+      keyContactRecordEmails: ['Ana.Contact@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+    const [, binds] = (execute.mock.calls as [string, string[]][]).find(([sql]) => /KEY_CONTACT_ID IN/.test(sql))!;
+    expect(binds).toEqual([ACCOUNT, ...ids]);
+  });
+
+  it('answers unlinked when no record names an LF username and none carries the address', async () => {
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual({ ...UNCONFIRMED, companyEmailsReason: 'unlinked_identity' });
+  });
+
+  // The directory merges a key contact into a username-less row by address without its username (DR-010), so the drawer
+  // must not read that username's LF account either: the row's filter status is read from the records alone.
+  it("never reads the LF account of a username the row's records carry, answering unconfirmed without a record address", async () => {
+    addLfUser('lf-someone', 'someone', { [ACCOUNT]: ['someone@company.example'] });
+    getKeyContacts.mockResolvedValue({ assignments: [assignment(ids[0], ADDRESS, 'someone'), assignment(ids[1], ADDRESS, ' Someone ')] });
+
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual(UNCONFIRMED);
+    expect((execute.mock.calls as [string][]).some(([sql]) => sql.includes('ORG_PEOPLE_LF_USERNAMES'))).toBe(false);
+  });
+
+  it('keeps a username-less row holding no assignment at its address unconfirmed, without reading any record', async () => {
+    getKeyContacts.mockResolvedValue({ assignments: [assignment(OTHER_ID, 'other@company.example')] });
+
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual(UNCONFIRMED);
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, KEY)).toEqual({ username: null, emails: [], emailsStatus: 'unavailable' });
+    expect((execute.mock.calls as [string][]).some(([sql]) => /KEY_CONTACT_ID IN/.test(sql))).toBe(false);
+  });
+
+  it("identifies the Key Contacts tab on the row's address, where the roles its row lists are", async () => {
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, KEY)).toEqual({ username: null, emails: [ADDRESS], emailsStatus: 'resolved' });
+  });
+
+  it('identifies a roster person on their roster username and resolved addresses', async () => {
+    addRosterRow(ACCOUNT, 'person-one', ' JDoe ');
+    addPerson(ACCOUNT, 'person-one', 'JDoe', ['first@company.example']);
+
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, 'person-one')).toEqual({
+      username: 'jdoe',
+      emails: ['first@company.example'],
+      emailsStatus: 'resolved',
+    });
+  });
+
+  // The address status decides what an unmatched identity may claim, so a failed lookup must reach the match intact.
+  it('forwards a failed address lookup as failed rather than as an empty address list', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'JDoe');
+    const realExecute = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: string[]) =>
+      query.includes('COMPANY_EMAILS') ? Promise.reject(new Error('warehouse unavailable')) : realExecute(query, binds)
+    );
+
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, 'person-one')).toEqual({ username: 'jdoe', emails: [], emailsStatus: 'failed' });
+  });
+
+  it('lists for the filter exactly the addresses the drawer shows a record address for, caching no address', async () => {
+    getKeyContacts.mockResolvedValue({
+      assignments: [
+        assignment(ids[0], ADDRESS),
+        assignment(ids[1], ' Ana.Contact@Company.example '),
+        assignment('a0F000000000003AAA', 'moved@company.example'),
+        assignment('a0F000000000004AAA', 'unlinked@company.example'),
+      ],
+    });
+    addRecord(ids[1], ADDRESS);
+    addRecord('a0F000000000003AAA', 'previous@company.example');
+    const addresses = [' Ana.Contact@company.example', 'moved@company.example', 'unlinked@company.example', 'nobody@company.example'];
+
+    expect(await service.getLiveKeyContactAddressesWithCompanyEmail(REQ, ACCOUNT, addresses)).toEqual([ADDRESS]);
+
+    const reads = execute.mock.calls.length;
+    expect(await service.getLiveKeyContactAddressesWithCompanyEmail(REQ, ACCOUNT, [...addresses].reverse())).toEqual([ADDRESS]);
+    expect(execute).toHaveBeenCalledTimes(reads);
+    for (const [key, value] of cacheValues) {
+      expect(`${key}${value}`).not.toMatch(/@company\.example/);
+    }
+  });
+
+  it('answers null for the filter, logged, when the record read fails', async () => {
+    execute.mockRejectedValue(new Error('warehouse unavailable'));
+
+    expect(await service.getLiveKeyContactAddressesWithCompanyEmail(REQ, ACCOUNT, [ADDRESS])).toBeNull();
+    expect(logger.warning).toHaveBeenCalledWith(
+      REQ,
+      'get_org_lens_people_key_contact_email_statuses',
+      expect.any(String),
+      expect.objectContaining({ address_count: 1 })
+    );
+  });
+});
+
 describe('OrgLensPeopleService person-key company emails', () => {
   const personKey = 'person-one';
   // The roster's foundation dropdown also reads the training foundations of people-list rows, which the detail fixture
