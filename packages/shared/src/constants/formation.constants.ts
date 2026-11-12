@@ -142,7 +142,7 @@ export const FORMATION_ACTIVITY_ACTION_LABELS = {
   item_reopened: 'reopened this item',
   platform_check_resolved: 'resolved this item automatically',
   template_expanded: 'created the formation items from a template',
-  template_upgraded: 'upgraded the formation items template',
+  template_upgraded: 'upgraded the formation template',
 } as const satisfies Record<FormationActivityAction, string>;
 
 /**

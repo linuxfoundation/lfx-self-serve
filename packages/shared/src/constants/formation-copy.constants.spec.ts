@@ -17,6 +17,11 @@ describe('formation shared copy (#5635)', () => {
     expect(FORMATION_ITEMS_HEADING).toBe('Formation items');
   });
 
+  it('words the manage access level and the template-upgrade activity line', () => {
+    expect(FORMATION_INVITE_ROLE_OPTIONS.find((option) => option.value === 'manage')?.description).toBe('Can also assign and edit formation items.');
+    expect(FORMATION_ACTIVITY_ACTION_LABELS.template_upgraded).toBe('upgraded the formation template');
+  });
+
   it.each([
     ['record success toast', [FORMATION_RECORD_SUCCESS_MESSAGE]],
     ['invite access-level descriptions', FORMATION_INVITE_ROLE_OPTIONS.map((option) => option.description)],
