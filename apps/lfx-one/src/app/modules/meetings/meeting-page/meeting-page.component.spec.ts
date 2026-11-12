@@ -149,6 +149,7 @@ describe('MeetingPageComponent', () => {
     const element = render();
 
     expect(element.querySelector('[data-testid="meeting-page-error"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="meeting-page-error"]')?.textContent).toContain('Please refresh the page to try again.');
     (element.querySelector('[data-testid="meeting-page-refresh"] button') as HTMLButtonElement).click();
     expect(refresh).toHaveBeenCalled();
   });
