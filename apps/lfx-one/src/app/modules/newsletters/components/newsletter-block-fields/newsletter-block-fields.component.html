@@ -133,6 +133,13 @@
                               </lfx-input-text>
                             }
                           }
+                          @if (urlErrors()[entry.key + '.' + itemIdx + '.' + nested.key]; as urlError) {
+                            <p
+                              class="text-xs text-red-600"
+                              [attr.data-testid]="'newsletter-composer-field-error-' + entry.key + '-' + itemIdx + '-' + nested.key">
+                              {{ urlError }}
+                            </p>
+                          }
                         </div>
                       }
                     </div>
@@ -154,6 +161,9 @@
                 <lfx-input-text [form]="fg" [control]="entry.key" styleClass="w-full" [dataTest]="'newsletter-composer-field-input-' + entry.key">
                 </lfx-input-text>
               }
+            }
+            @if (urlErrors()[entry.key]; as urlError) {
+              <p class="text-xs text-red-600" [attr.data-testid]="'newsletter-composer-field-error-' + entry.key">{{ urlError }}</p>
             }
           </div>
         }

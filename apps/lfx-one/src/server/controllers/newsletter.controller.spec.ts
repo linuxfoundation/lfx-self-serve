@@ -58,7 +58,10 @@ vi.mock('@lfx-one/shared/constants', () => ({
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 const { getEffectiveEmail } = vi.hoisted(() => ({ getEffectiveEmail: vi.fn<() => string | null>(() => 'me@example.com') }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail }));
-vi.mock('@lfx-one/shared/utils', () => ({ isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)) }));
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await vi.importActual<object>('@lfx-one/shared/utils/newsletter.utils')),
+  isUuid: vi.fn((v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v)),
+}));
 
 vi.mock('../services/newsletter.service', () => ({
   NewsletterService: class {
@@ -494,6 +497,17 @@ describe('NewsletterController create/update — layout validation', () => {
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(createNewsletter).not.toHaveBeenCalled();
   });
+
+  it('rejects a layout nested deeper than the editor supports (#5296)', async () => {
+    const next = vi.fn();
+    const blocks = [{ block_type: 'card', blocks: [{ block_type: 'card', blocks: [{ block_type: 'text' }] }] }];
+    const payload = { subject: 'Hello', body_layout: { wrapper_key: 'default', blocks }, ed_reply_email: 'ed@example.com', committee_uids: ['committee-1'] };
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: payload as any, path: '/x' } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
 });
 
 describe('NewsletterController.testSend — validateTestSendPayload', () => {
@@ -514,6 +528,13 @@ describe('NewsletterController.testSend — validateTestSendPayload', () => {
 
   it('rejects a present but empty layout (would send a wrapper-only email)', async () => {
     const next = await run({ ...base, body_layout: { wrapper_key: 'default', blocks: [] } });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(testSend).not.toHaveBeenCalled();
+  });
+
+  it('rejects a layout nested deeper than the editor supports (#5296)', async () => {
+    const blocks = [{ block_type: 'card', blocks: [{ block_type: 'card', blocks: [{ block_type: 'text' }] }] }];
+    const next = await run({ ...base, body_layout: { wrapper_key: 'default', blocks } });
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(testSend).not.toHaveBeenCalled();
   });
@@ -590,6 +611,13 @@ describe('NewsletterController.renderPreview — validateRenderPreviewPayload', 
 
   it('rejects a serialized layout over the (mocked) cap', async () => {
     const blocks = Array.from({ length: 200 }, (_, i) => ({ block_type: 'text', content: { body: `block ${i} with filler content` } }));
+    const next = await run({ body_layout: { wrapper_key: 'default', blocks } });
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(renderPreview).not.toHaveBeenCalled();
+  });
+
+  it('rejects a layout nested deeper than the editor supports (#5296)', async () => {
+    const blocks = [{ block_type: 'card', blocks: [{ block_type: 'card', blocks: [{ block_type: 'text' }] }] }];
     const next = await run({ body_layout: { wrapper_key: 'default', blocks } });
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(renderPreview).not.toHaveBeenCalled();

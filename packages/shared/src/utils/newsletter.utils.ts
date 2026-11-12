@@ -9,6 +9,7 @@ import {
   NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH,
   NEWSLETTER_SEND_DATE_PLACEHOLDER,
 } from '../constants/newsletter.constants';
+import { NEWSLETTER_LAYOUT_MAX_DEPTH } from '../constants/newsletter.constants';
 import { EMAIL_DOT_ATOM_REGEX } from '../constants/regex.constants';
 import { NewsletterShareTally } from '../interfaces/newsletter.interface';
 import { SocialShareChannel } from '../interfaces/social-share.interface';
@@ -133,4 +134,41 @@ export function isNewsletterReplyToAddress(address: string): boolean {
   const at = address.lastIndexOf('@');
   if (at <= 0 || at > NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH || at === address.length - 1) return false;
   return EMAIL_DOT_ATOM_REGEX.test(address.slice(0, at)) && EMAIL_DOT_ATOM_REGEX.test(address.slice(at + 1));
+}
+
+/**
+ * How many levels a layout's blocks nest: 1 for top-level blocks only, 2 with container children, 0 for none.
+ * It walks with its own stack rather than recursion, so a very deep layout can't overflow the call stack while
+ * it is measured, and it stops once the depth passes `limit`.
+ */
+export function newsletterLayoutDepth(blocks: unknown, limit = Number.MAX_SAFE_INTEGER): number {
+  let deepest = 0;
+  const pending: { blocks: unknown; depth: number }[] = [{ blocks, depth: 1 }];
+  while (pending.length > 0) {
+    const next = pending.pop();
+    if (!next || !Array.isArray(next.blocks) || next.blocks.length === 0) continue;
+    deepest = Math.max(deepest, next.depth);
+    if (deepest > limit) return deepest;
+    for (const block of next.blocks) {
+      const children = (block as { blocks?: unknown } | null)?.blocks;
+      if (Array.isArray(children) && children.length > 0) pending.push({ blocks: children, depth: next.depth + 1 });
+    }
+  }
+  return deepest;
+}
+
+/** The validation message for a layout nested deeper than the editor supports, or null when it is within the limit. */
+export function newsletterLayoutDepthError(blocks: unknown): string | null {
+  return newsletterLayoutDepth(blocks, NEWSLETTER_LAYOUT_MAX_DEPTH) > NEWSLETTER_LAYOUT_MAX_DEPTH
+    ? `Blocks can be nested at most ${NEWSLETTER_LAYOUT_MAX_DEPTH} levels deep`
+    : null;
+}
+
+/**
+ * Removes `class` and `target` attributes from rich text that has already been through Angular's HTML sanitizer,
+ * which keeps both (#5295). It relies on the sanitizer's output, where attribute values are always double-quoted
+ * and `<`, `>` and `"` inside them are encoded, so every `<...>` is a tag. Don't use it on unsanitized HTML.
+ */
+export function stripRichtextAttributes(html: string): string {
+  return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\s(?:class|target)="[^"]*"/gi, ''));
 }

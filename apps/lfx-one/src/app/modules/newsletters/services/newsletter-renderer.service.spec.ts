@@ -41,6 +41,27 @@ describe('NewsletterRendererService (browser)', () => {
     expect(html).not.toContain('onerror');
   });
 
+  it('strips class and target from a richtext field, so stored content cannot restyle the app page (#5295)', () => {
+    const html = service.renderBlock('<richtext field="body"></richtext>', {
+      body: '<p class="fixed inset-0 z-50 bg-white">Cover</p><a href="https://example.com" target="_top" class="x">Link</a>',
+    });
+    expect(html).toContain('Cover');
+    expect(html).toContain('href="https://example.com"');
+    expect(html).not.toContain('fixed inset-0');
+    expect(html).not.toContain('target="_top"');
+  });
+
+  it('lists the fields a template uses as a whole link or image URL (#5296)', () => {
+    const fields = service.collectUrlFields(
+      '<a href="{{url}}">Read</a><img src="{{image}}" /><a href="https://example.com/{{slug}}">x</a><div each="items"><a href="{{link}}">{{label}}</a></div>'
+    );
+    expect(fields.get('url')).toBe('href');
+    expect(fields.get('image')).toBe('src');
+    expect(fields.get('link')).toBe('href');
+    // A binding that is only part of the URL isn't a whole link the author types.
+    expect(fields.has('slug')).toBe(false);
+  });
+
   it('drops an href bound to a javascript: URL but keeps the visible text', () => {
     const html = service.renderBlock('<a href="{{u}}">Click</a>', { u: 'javascript:alert(1)' });
     expect(html).toContain('Click');
@@ -221,5 +242,6 @@ describe('NewsletterRendererService (server)', () => {
     expect(service.renderNewsletter('<section></section>', [], () => undefined)).toBe('');
     expect(service.renderWrapperChrome('<section></section>')).toEqual({ header: '', footer: '' });
     expect(service.collectEditableFields('<text>{{t}}</text>').size).toBe(0);
+    expect(service.collectUrlFields('<a href="{{u}}">x</a>').size).toBe(0);
   });
 });

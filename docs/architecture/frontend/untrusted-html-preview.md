@@ -83,6 +83,25 @@ tab. Unlike `EmailBodyPreviewComponent` it sets no `default-src 'none'` policy, 
 loads remote images. The document is the body the service renders and sends, not model output.
 `newsletter-preview.component.spec.ts` pins the sandbox value on both routes into the iframe.
 
+### The block canvas is in the app page
+
+The block editor's canvas is the one newsletter surface that is not framed. `NewsletterRendererService`
+renders a draft's blocks to HTML that the composer marks trusted with `bypassSecurityTrustHtml` and
+places in the app page, because the author edits it in place. Other editors of the same draft see
+the same stored content, so the controls are on the content itself:
+
+- Rich text fields go through Angular's HTML sanitizer, which removes scripts, event handlers and
+  `javascript:` URLs. `stripRichtextAttributes` then removes `class` and `target`, which the
+  sanitizer keeps. Without that, a stored class could use the app's own styles to draw over the
+  page, e.g. a full-screen overlay over Save and Send. Pasted and dropped content takes the same
+  path before it reaches the page.
+- Link and image attributes bound from block fields must pass `isSafeUrlForAttr` (http(s), plus
+  `mailto:` for links) or are left out. The fields panel shows an error for a value that would be
+  left out.
+- `.nl-preview` has `contain: paint`, so anything the canvas draws stays inside the preview box.
+- The editor loads at most `NEWSLETTER_LAYOUT_MAX_DEPTH` levels of blocks, and the BFF refuses a
+  deeper layout, so a deeply nested layout from the API can't crash the editor.
+
 ## The second of two controls — except where it is the only one
 
 For **generated** copy, server-side sanitization happens first and is unchanged. The campaign

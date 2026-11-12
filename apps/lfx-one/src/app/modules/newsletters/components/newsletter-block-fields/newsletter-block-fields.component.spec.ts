@@ -38,6 +38,7 @@ describe('NewsletterBlockFieldsComponent', () => {
       removeItem(k: string, i: number): void;
       trackByFormKey(i: number, e: NewsletterFieldEntry): string;
       fieldRows(): NewsletterFieldEntry[];
+      urlErrors(): Record<string, string>;
     };
   const setInputs = (schema: NewsletterFieldSchema | null, b: NewsletterComposerBlock | null): void => {
     fixture.componentRef.setInput('schema', schema);
@@ -135,5 +136,31 @@ describe('NewsletterBlockFieldsComponent', () => {
 
     setInputs(null, null);
     expect(priv().form()).toBeNull();
+  });
+
+  it('flags a link or image field whose value the newsletter would leave out (#5296)', () => {
+    fixture.componentRef.setInput(
+      'urlFields',
+      new Map([
+        ['url', 'href'],
+        ['image', 'src'],
+        ['link', 'href'],
+      ])
+    );
+    setInputs(
+      { url: { type: 'text' }, image: { type: 'image' }, items: { type: 'array', fields: { link: { type: 'text' } } } },
+      block('b1', {
+        url: 'javascript:alert(1)',
+        image: 'https://example.com/a.png',
+        items: [{ link: 'mailto:team@example.com' }, { link: 'data:text/html,x' }],
+      })
+    );
+
+    expect(Object.keys(priv().urlErrors()).sort()).toEqual(['items.1.link', 'url']);
+
+    priv().form()?.get('url')?.setValue('https://example.com');
+    expect(priv().urlErrors()['url']).toBeUndefined();
+    priv().form()?.get('image')?.setValue('mailto:team@example.com');
+    expect(priv().urlErrors()['image']).toContain('https://');
   });
 });

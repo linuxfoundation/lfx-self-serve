@@ -32,11 +32,12 @@ import {
   NEWSLETTER_TEMPLATE_LABELS,
   NEWSLETTER_BODY_HTML_MAX_BYTES,
   NEWSLETTER_GMAIL_WARN_BYTES,
+  NEWSLETTER_LAYOUT_MAX_DEPTH,
   NEWSLETTER_SPACING_DEFAULT,
   NEWSLETTER_SPACING_MARGIN_KEY,
   NEWSLETTER_SPACING_PADDING_KEY,
 } from '@lfx-one/shared/constants';
-import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
+import { humanizeFieldKey, isValidUrl, stripRichtextAttributes } from '@lfx-one/shared/utils';
 import {
   NewsletterBlock,
   NewsletterBlockManifestEntry,
@@ -49,6 +50,7 @@ import {
   NewsletterLayout,
   NewsletterTemplateManifest,
   NewsletterTemplateOption,
+  NewsletterUrlAttr,
 } from '@lfx-one/shared/interfaces';
 import { NewsletterManifestService } from '@services/newsletter-manifest.service';
 import { NewsletterService } from '@services/newsletter.service';
@@ -286,6 +288,12 @@ export class NewsletterBlockComposerComponent implements OnInit {
     const block = this.selectedBlock();
     if (!block) return null;
     return this.manifestService.getBlock(block.block_type)?.schema ?? null;
+  });
+  // The selected block's fields that its template uses as a link or image URL, so the fields panel can flag a
+  // value the canvas and the sent email would drop (#5296).
+  protected readonly selectedUrlFields: Signal<Map<string, NewsletterUrlAttr>> = computed(() => {
+    const block = this.selectedBlock();
+    return this.renderer.collectUrlFields(block ? this.manifestService.getBlock(block.block_type)?.template : undefined);
   });
 
   // The left-rail tab definitions (icons + labels). Fields is NOT a tab — it's
@@ -1213,10 +1221,17 @@ export class NewsletterBlockComposerComponent implements OnInit {
     }
   }
 
-  /** Rehydrate a persisted layout block (and its children) into a canvas block. */
-  private hydrate(block: { block_type: string; content?: Record<string, unknown>; blocks?: unknown[] }): NewsletterComposerBlock {
+  /**
+   * Rehydrate a persisted layout block (and its children) into a canvas block. Levels past
+   * NEWSLETTER_LAYOUT_MAX_DEPTH are left out: the editor can't create them, the BFF refuses to save them, and
+   * walking a very deep layout from the API could crash the editor for everyone who opens the draft.
+   */
+  private hydrate(block: { block_type: string; content?: Record<string, unknown>; blocks?: unknown[] }, depth = 1): NewsletterComposerBlock {
     const entry = this.manifestService.getBlock(block.block_type);
-    const childLayout = Array.isArray(block.blocks) ? (block.blocks as { block_type: string; content?: Record<string, unknown>; blocks?: unknown[] }[]) : [];
+    const childLayout =
+      Array.isArray(block.blocks) && depth < NEWSLETTER_LAYOUT_MAX_DEPTH
+        ? (block.blocks as { block_type: string; content?: Record<string, unknown>; blocks?: unknown[] }[])
+        : [];
     // Container-ness is derived from the persisted layout (a `blocks` array)
     // as well as the manifest. `hydrate` runs synchronously in ngOnInit, which
     // can be BEFORE the manifest resolves on a fresh mount — relying on the
@@ -1229,7 +1244,7 @@ export class NewsletterBlockComposerComponent implements OnInit {
       label: entry?.label ?? humanizeFieldKey(block.block_type),
       isContainer,
       content: block.content ?? {},
-      children: isContainer ? childLayout.map((child) => this.hydrate(child)) : undefined,
+      children: isContainer ? childLayout.map((child) => this.hydrate(child, depth + 1)) : undefined,
     };
   }
 
@@ -1400,7 +1415,10 @@ export class NewsletterBlockComposerComponent implements OnInit {
     // inserts it as text, NOT markup. Passing the raw text/plain payload to
     // insertHTML would parse e.g. `<img src=x onerror=...>` into the live DOM and
     // defeat the sanitization this method exists to provide.
-    const cleanHtml = richtext ? this.sanitizer.sanitize(SecurityContext.HTML, data.getData('text/html') ?? '') : null;
+    // Strip class and target too, as the renderer does: the canvas is part of the app page, so a pasted class
+    // could restyle the app around it (#5295).
+    const sanitized = richtext ? this.sanitizer.sanitize(SecurityContext.HTML, data.getData('text/html') ?? '') : null;
+    const cleanHtml = sanitized ? stripRichtextAttributes(sanitized) : null;
     if (cleanHtml) {
       document.execCommand('insertHTML', false, cleanHtml);
     } else {

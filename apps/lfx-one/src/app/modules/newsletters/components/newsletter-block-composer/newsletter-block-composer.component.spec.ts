@@ -243,6 +243,20 @@ describe('NewsletterBlockComposerComponent — starter blocks and template picke
     expect(resolve(null)).toBe('aaif-member');
   });
 
+  it('loads at most two levels of blocks from a saved layout (#5296)', () => {
+    const f = TestBed.createComponent(NewsletterBlockComposerComponent);
+    f.componentRef.setInput('initialLayout', {
+      wrapper_key: 'w',
+      template_key: 'aaif-member',
+      blocks: [{ block_type: 'card', content: {}, blocks: [{ block_type: 'card', content: {}, blocks: [{ block_type: 'intro', content: {} }] }] }],
+    } as NewsletterLayout);
+    f.componentInstance.ngOnInit();
+    const blocks = (f.componentInstance as unknown as { blocks: () => NewsletterComposerBlock[] }).blocks();
+
+    expect(blocks[0].children?.length).toBe(1);
+    expect(blocks[0].children?.[0].children).toEqual([]);
+  });
+
   it('lists the service templates with curated labels, and keeps the active key when the list lacks it', () => {
     const templates = TestBed.inject(NewsletterManifestService).templates as unknown as { set: (t: { key: string; label: string }[]) => void };
     const options = () => (component as unknown as { templateOptions: () => { label: string; value: string }[] }).templateOptions();

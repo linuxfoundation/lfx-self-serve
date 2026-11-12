@@ -8,6 +8,7 @@ import {
   NEWSLETTER_SUBJECT_MAX_LENGTH,
 } from '@lfx-one/shared/constants';
 import { NewsletterCreateFields } from '@lfx-one/shared/interfaces';
+import { newsletterLayoutDepthError } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
 
@@ -52,6 +53,9 @@ export function validateNewsletterEditionPayload(
     fieldErrors['body_layout'] = 'A block layout must have a blocks array';
   } else if (layoutPresent && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
     fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+  } else if (layoutPresent) {
+    const depthError = newsletterLayoutDepthError(payload.body_layout!.blocks);
+    if (depthError) fieldErrors['body_layout'] = depthError;
   }
   // body_html is capped only on the html path. With a layout the service re-renders it.
   if (payload.body_html !== undefined && typeof payload.body_html !== 'string') {

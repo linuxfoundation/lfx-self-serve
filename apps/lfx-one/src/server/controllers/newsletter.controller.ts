@@ -24,7 +24,7 @@ import {
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isUuid, newsletterLayoutDepthError } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -759,6 +759,9 @@ export class NewsletterController {
     }
     if (layoutValid && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
       fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+    } else if (layoutValid) {
+      const depthError = newsletterLayoutDepthError(payload.body_layout!.blocks);
+      if (depthError) fieldErrors['body_layout'] = depthError;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
@@ -798,6 +801,9 @@ export class NewsletterController {
         fieldErrors['body_layout'] = 'Add at least one block before sending';
       } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
         fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+      } else {
+        const depthError = newsletterLayoutDepthError(layout.blocks);
+        if (depthError) fieldErrors['body_layout'] = depthError;
       }
     } else if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
       fieldErrors['body_html'] = 'Body is required';
@@ -836,6 +842,9 @@ export class NewsletterController {
       fieldErrors['body_layout'] = 'A body_layout with a blocks array is required';
     } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
       fieldErrors['body_layout'] = `body_layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+    } else {
+      const depthError = newsletterLayoutDepthError(layout.blocks);
+      if (depthError) fieldErrors['body_layout'] = depthError;
     }
 
     const wrapperContent: unknown = payload?.wrapper_content;
