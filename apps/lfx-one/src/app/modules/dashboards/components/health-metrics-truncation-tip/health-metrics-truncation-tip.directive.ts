@@ -60,6 +60,8 @@ export class HealthMetricsTruncationTipDirective {
       this.cancelHide();
       return;
     }
+    // Keyboard focus owns the tip until it moves; hovering other cut-off text doesn't take it over.
+    if (this.targetFocused()) return;
     this.hide();
     this.scheduleShow(candidate);
   };
@@ -102,6 +104,9 @@ export class HealthMetricsTruncationTipDirective {
     this.hide();
   };
 
+  // Captured, so a native scroller inside the page (the CDK only watches the viewport and registered ones) also closes it.
+  private readonly onScroll = (): void => this.hide();
+
   /** The nearest element from `start` up to the host whose text is cut off. */
   private truncatedFrom(start: EventTarget | null): HTMLElement | null {
     let element = start instanceof Element ? start : null;
@@ -130,6 +135,7 @@ export class HealthMetricsTruncationTipDirective {
     if (!this.fullText(element)) return;
     this.target = element;
     this.document.addEventListener('keydown', this.onKeydown, true);
+    this.document.addEventListener('scroll', this.onScroll, true);
     this.showTimer = setTimeout(() => {
       this.showTimer = null;
       this.show(element);
@@ -163,6 +169,7 @@ export class HealthMetricsTruncationTipDirective {
     this.showTimer = null;
     this.cancelHide();
     this.document.removeEventListener('keydown', this.onKeydown, true);
+    this.document.removeEventListener('scroll', this.onScroll, true);
     this.target = null;
     const overlayRef = this.overlayRef;
     if (!overlayRef) return;

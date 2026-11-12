@@ -162,6 +162,35 @@ describe('HealthMetricsTruncationTipDirective', () => {
     expect(tooltip()).toBeNull();
   });
 
+  it('keeps a focused target’s tip while the pointer crosses other cut-off text', async () => {
+    await setup();
+    widths('label', 200, 100);
+    widths('cut', 200, 100);
+    el('label').focus();
+    await advance(300);
+    await flush();
+
+    pointer(el('inner'), 'pointerover');
+    await advance(300);
+    await flush();
+
+    expect(tooltip()?.textContent?.trim()).toBe('A long button label');
+  });
+
+  // The CDK only watches the viewport and registered scrollers, so a native scroller in the page is caught here.
+  it('closes when anything inside the page scrolls', async () => {
+    await setup();
+    widths('cut', 200, 100);
+    pointer(el('inner'), 'pointerover');
+    await advance(300);
+    await flush();
+    expect(tooltip()).not.toBeNull();
+
+    el('column').dispatchEvent(new Event('scroll'));
+
+    expect(tooltip()).toBeNull();
+  });
+
   it('closes on Escape, cancels a pending show, and stays closed until the pointer leaves', async () => {
     await setup();
     widths('cut', 200, 100);
