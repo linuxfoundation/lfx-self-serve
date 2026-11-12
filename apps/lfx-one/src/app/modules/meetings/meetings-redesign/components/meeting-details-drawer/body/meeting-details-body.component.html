@@ -1,0 +1,198 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. 68px is the sticky header's height. -->
+<!-- 16px sides on phones. -->
+<div class="flex w-full flex-col gap-[20px] px-[16px] pb-[48px] pt-[24px] text-gray-900 [--md-head:68px] sm:px-[32px]">
+  <div class="sticky top-0 z-[5] -mx-[16px] -mt-[24px] bg-white px-[16px] pb-[12px] pt-[24px] sm:-mx-[32px] sm:px-[32px]">
+    <lfx-meeting-details-header [compact]="compact()" [ownActions]="ownActions" />
+    @if (showFades()) {
+      <span
+        class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
+        aria-hidden="true"></span>
+    }
+  </div>
+
+  <!-- Two columns from a 720px drawer; narrower, the right column moves above the tabs and stops sticking. -->
+  <div
+    class="grid grid-cols-1 gap-x-[32px] gap-y-[24px] @[720px]:grid-cols-[minmax(0,1fr)_minmax(280px,calc((100%-32px)/3))] @[720px]:grid-rows-[auto_1fr]"
+    data-testid="meeting-details-body">
+    <div class="col-start-1 row-start-1 flex min-w-0 flex-col gap-[14px]" data-testid="meeting-details-title-block">
+      @if (project(); as project) {
+        <lfx-meeting-details-project-link class="-mb-[6px]" [project]="project" />
+      }
+      <h2
+        #titleElement
+        class="m-0 font-display text-[30px] font-light leading-[36px] tracking-[-0.01em] text-gray-900 [text-wrap:pretty] break-words"
+        data-testid="meeting-details-title">
+        {{ context.shownRow().title }}
+      </h2>
+
+      <div class="flex flex-wrap items-center gap-x-[10px] gap-y-[8px]" data-testid="meeting-details-badges">
+        @for (badge of visibilityBadges(); track badge.kind) {
+          <!-- The badge keeps only static role and tabindex, so a described badge gets its own branch. -->
+          @if (badge.description; as description) {
+            <lfx-ui-badge
+              class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              role="img"
+              tabindex="0"
+              variant="solid"
+              [tone]="visibilityTones[badge.kind]"
+              [attr.aria-label]="badge.title + ': ' + description"
+              [lfxUiTooltip]="description"
+              [attr.data-testid]="'meeting-details-visibility-' + badge.kind"
+              ><i [class]="badge.icon" aria-hidden="true"></i>{{ badge.title }}</lfx-ui-badge
+            >
+          } @else {
+            <lfx-ui-badge variant="solid" [tone]="visibilityTones[badge.kind]" [attr.data-testid]="'meeting-details-visibility-' + badge.kind"
+              ><i [class]="badge.icon" aria-hidden="true"></i>{{ badge.title }}</lfx-ui-badge
+            >
+          }
+        }
+        @if (meetingType(); as type) {
+          <lfx-ui-badge variant="outline" data-testid="meeting-details-type"><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge>
+        }
+        @for (group of groups(); track group.uid) {
+          <!-- A long group name truncates; the tooltip keeps it whole. -->
+          <lfx-ui-badge
+            class="max-w-full"
+            variant="outline"
+            interactive
+            [attr.aria-label]="'View group: ' + group.name"
+            [lfxUiTooltip]="group.name ?? ''"
+            (activated)="openGroup(group.uid)"
+            data-testid="meeting-details-group"
+            ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group.name }}</span></lfx-ui-badge
+          >
+        }
+        @for (feature of features(); track feature.setting) {
+          <lfx-ui-badge variant="outline" [attr.data-testid]="'meeting-details-feature-' + feature.setting"
+            ><i [class]="feature.icon + ' ' + feature.iconClass" aria-hidden="true"></i>{{ feature.label }}</lfx-ui-badge
+          >
+        }
+      </div>
+
+      @if (organizers().length || scheduledZone()) {
+        <div class="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[13px] leading-[18px] text-gray-600" data-testid="meeting-details-meta">
+          @if (organizers().length) {
+            <div class="flex min-w-0 flex-wrap items-center gap-[6px]" data-testid="meeting-details-organizers">
+              <span>Organized by:</span>
+              <span class="inline-flex flex-none items-center pl-[2px]">
+                <!-- One organizer is named beside the avatar, so only a stack of two or more names each avatar. -->
+                @let stack = organizers().length > 1;
+                @for (organizer of organizers(); track organizer.key) {
+                  @if (stack && organizer.mailto) {
+                    <a
+                      class="inline-flex flex-none rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                      [style.margin-left.px]="$first ? 0 : -5"
+                      [href]="organizer.mailto"
+                      [attr.aria-label]="'Email ' + organizer.name"
+                      [lfxUiTooltip]="organizer.label"
+                      data-testid="meeting-details-organizer-avatar">
+                      <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
+                    </a>
+                  } @else {
+                    <span
+                      class="inline-flex flex-none cursor-default rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
+                      [style.margin-left.px]="$first ? 0 : -5"
+                      [attr.role]="stack ? 'img' : null"
+                      [attr.tabindex]="stack ? 0 : null"
+                      [attr.aria-label]="stack ? organizer.label : null"
+                      [attr.aria-hidden]="stack ? null : 'true'"
+                      [lfxUiTooltip]="organizer.label"
+                      [lfxUiTooltipDisabled]="!stack"
+                      data-testid="meeting-details-organizer-avatar">
+                      <lfx-ui-avatar class="!text-[8px] !font-semibold" [size]="18" [name]="organizer.name" [src]="organizer.photo" decorative stacked />
+                    </span>
+                  }
+                }
+              </span>
+              @if (organizers().length === 1) {
+                @let only = organizers()[0];
+                @if (only.mailto) {
+                  <a
+                    class="min-w-0 break-words text-gray-700 underline decoration-transparent underline-offset-[3px] hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                    [href]="only.mailto"
+                    [attr.title]="'Email ' + only.name"
+                    [attr.aria-label]="'Email ' + only.name"
+                    data-testid="meeting-details-organizer-name"
+                    >{{ only.label }}</a
+                  >
+                } @else {
+                  <span class="min-w-0 break-words text-gray-700" data-testid="meeting-details-organizer-name">{{ only.label }}</span>
+                }
+              }
+            </div>
+          }
+          @if (scheduledZone(); as zone) {
+            @if (organizers().length) {
+              <span class="mx-[4px] text-gray-400" aria-hidden="true">・</span>
+            }
+            <!-- Top-aligned so the globe stays on the first line when the zone wraps. -->
+            <p class="m-0 flex min-w-0 items-start gap-[6px]" data-testid="meeting-details-scheduled-zone">
+              <i class="fa-light fa-globe leading-[18px]" aria-hidden="true"></i><span class="min-w-0">{{ zone }}</span>
+            </p>
+          }
+        </div>
+      }
+    </div>
+
+    <div
+      class="col-start-1 row-start-2 flex min-w-0 flex-col gap-[12px] @[720px]:sticky @[720px]:top-[calc(var(--md-head)+20px)] @[720px]:z-[3] @[720px]:col-start-2 @[720px]:row-span-2 @[720px]:row-start-1 @[720px]:self-start"
+      data-testid="meeting-details-side">
+      <lfx-meeting-details-occurrence-nav />
+      <div class="flex flex-col gap-[16px] rounded-ui-md bg-white p-[20px] shadow-small ring-1 ring-gray-200" data-testid="meeting-details-schedule-card">
+        <!-- Schedule slot: date, RSVP and join. -->
+        <lfx-meeting-details-schedule />
+        <!-- Tools slot: host controls, attendance and artifacts. -->
+        <lfx-meeting-details-tools data-testid="meeting-details-tools" />
+      </div>
+      <lfx-meeting-details-own-actions #ownActions />
+    </div>
+
+    <div class="col-start-1 row-start-3 flex min-w-0 flex-col gap-[24px] @[720px]:row-start-2" data-testid="meeting-details-content">
+      @if (context.canViewGuests()) {
+        <div class="sticky top-[var(--md-head)] z-[6] bg-white">
+          <lfx-ui-tabs
+            ariaLabel="Meeting details"
+            idPrefix="meeting-details"
+            [tabs]="tabs()"
+            [value]="activeTab()"
+            (valueChange)="selectTab($event)"
+            data-testid="meeting-details-tabs" />
+          @if (showFades()) {
+            <span
+              class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
+              aria-hidden="true"></span>
+          }
+        </div>
+      }
+      <!-- Agenda slot: agenda and materials. -->
+      <div
+        class="flex-col gap-[24px]"
+        [class.flex]="activeTab() === 'agenda'"
+        [class.hidden]="activeTab() !== 'agenda'"
+        [attr.inert]="activeTab() === 'agenda' ? null : ''"
+        [attr.role]="context.canViewGuests() ? 'tabpanel' : null"
+        [attr.id]="context.canViewGuests() ? 'meeting-details-panel-agenda' : null"
+        [attr.aria-labelledby]="context.canViewGuests() ? 'meeting-details-tab-agenda' : null"
+        data-testid="meeting-details-agenda">
+        <lfx-meeting-details-agenda />
+      </div>
+      @if (context.canViewGuests()) {
+        <!-- Guests slot: guests, or participants once the date has ended. Kept mounted while hidden, so it loads the hosts and count on open. -->
+        <div
+          class="flex-col gap-[4px]"
+          [class.flex]="activeTab() === 'guests'"
+          [class.hidden]="activeTab() !== 'guests'"
+          [attr.inert]="activeTab() === 'guests' ? null : ''"
+          role="tabpanel"
+          id="meeting-details-panel-guests"
+          aria-labelledby="meeting-details-tab-guests"
+          data-testid="meeting-details-guests">
+          <lfx-meeting-details-guests />
+        </div>
+      }
+    </div>
+  </div>
+</div>
