@@ -7,7 +7,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectService } from '@services/project.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import { FORMATION_ITEMS_HEADING } from '@lfx-one/shared/constants';
+import { FORMATION_ITEMS_HEADING, FORMATION_POST_FORMATION_SUBTITLES } from '@lfx-one/shared/constants';
 import type { FormationChecklistResponse, FormationDetailPageState } from '@lfx-one/shared/interfaces';
 import { isPostFormationStage } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -63,6 +63,11 @@ export class FormationDetailComponent {
    * In-place beats bouncing to the project overview — which would also switch context, the very
    * thing this page avoids.
    */
+  /** "It has completed formation." for Active, "It has been archived." for Archived: an archived project may never have launched (#5635). */
+  protected readonly postFormationSubtitle = computed(
+    () => FORMATION_POST_FORMATION_SUBTITLES[this.project()?.stage ?? ''] ?? FORMATION_POST_FORMATION_SUBTITLES['Active']
+  );
+
   protected readonly postFormation = computed(() => {
     const project = this.project();
     return !!project && isPostFormationStage(project.stage);

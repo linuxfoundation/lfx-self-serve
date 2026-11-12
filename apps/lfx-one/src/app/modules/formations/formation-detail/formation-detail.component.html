@@ -27,7 +27,7 @@
     <lfx-empty-state
       icon="fa-light fa-list-check"
       title="This project is no longer in formation"
-      subtitle="It has completed formation."
+      [subtitle]="postFormationSubtitle()"
       data-testid="formation-detail-not-in-formation" />
   } @else if (project(); as project) {
     <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>
@@ -42,6 +42,7 @@
           #checklistSection
           [projectSlug]="project.slug"
           [heading]="sectionHeading"
+          [stage]="project.stage"
           (responseLoaded)="onChecklistLoaded($event)" />
       </div>
       @if (activeChecklist(); as checklist) {

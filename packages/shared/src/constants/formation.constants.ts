@@ -476,3 +476,20 @@ export const FORMATION_NO_CHECKLIST_COPY = {
   title: 'Nothing to track for this project yet',
   subtitle: 'Formation items start when the project moves into a formation stage.',
 } as const;
+
+/** The empty state for a Disengaged project with no items: it already is a formation stage, so the default subtitle would be wrong. */
+export const FORMATION_NO_CHECKLIST_DISENGAGED_COPY = {
+  title: FORMATION_NO_CHECKLIST_COPY.title,
+  subtitle: "This project is disengaged, so there's nothing to track.",
+} as const;
+
+/** The not-found empty state for a project in the stage given; the default copy for Draft, an unknown stage or none. */
+export function getFormationNoChecklistCopy(stage: string | null | undefined): { readonly title: string; readonly subtitle: string } {
+  return stage === ProjectStage.FormationDisengaged ? FORMATION_NO_CHECKLIST_DISENGAGED_COPY : FORMATION_NO_CHECKLIST_COPY;
+}
+
+/** Subtitle of the "no longer in formation" state, by stage: an Archived project may never have launched, so it is not said to have completed formation. */
+export const FORMATION_POST_FORMATION_SUBTITLES: Record<string, string> = {
+  [ProjectStage.Active]: 'It has completed formation.',
+  [ProjectStage.Archived]: 'It has been archived.',
+};
