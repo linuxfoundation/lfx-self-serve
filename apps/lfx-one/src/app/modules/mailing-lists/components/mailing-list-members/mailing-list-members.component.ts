@@ -115,7 +115,7 @@ export class MailingListMembersComponent {
 
   public deleteMember(member: MailingListMember): void {
     const ml = this.mailingList();
-    if (!ml) return;
+    if (!ml || this.deletingUid() !== null) return;
 
     const memberName = this.fullNamePipe.transform(member);
     const listName = ml.title || ml.group_name;

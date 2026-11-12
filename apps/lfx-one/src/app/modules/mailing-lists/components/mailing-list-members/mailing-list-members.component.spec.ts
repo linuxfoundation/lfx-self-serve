@@ -98,6 +98,14 @@ describe('MailingListMembersComponent deleteMember (#5644)', () => {
     updated_at: '2026-01-01T00:00:00.000Z',
   };
 
+  const MEMBER_2: MailingListMember = {
+    ...MEMBER,
+    uid: 'member-2',
+    email: 'john@example.com',
+    first_name: 'John',
+    last_name: 'Smith',
+  };
+
   const getMembers = vi.fn();
   const deleteMember = vi.fn();
   let messageService: { add: ReturnType<typeof vi.fn> };
@@ -127,13 +135,13 @@ describe('MailingListMembersComponent deleteMember (#5644)', () => {
     return fixture;
   };
 
-  const confirmAndClickDelete = (fixture: Awaited<ReturnType<typeof mount>>) => {
+  const confirmAndClickDelete = (fixture: Awaited<ReturnType<typeof mount>>, uid = 'member-1') => {
     vi.spyOn(TestBed.inject(ConfirmationService), 'confirm').mockImplementation((confirmation: Confirmation) => {
       confirmation.accept?.();
       return TestBed.inject(ConfirmationService);
     });
     const element = fixture.nativeElement as HTMLElement;
-    element.querySelector<HTMLButtonElement>('[data-testid="member-delete-member-1"] button')!.click();
+    element.querySelector<HTMLButtonElement>(`[data-testid="member-delete-${uid}"] button`)!.click();
   };
 
   it('shows the trash button in a loading state while the removal request is in flight', async () => {
@@ -178,5 +186,40 @@ describe('MailingListMembersComponent deleteMember (#5644)', () => {
     expect(fixture.componentInstance.members()).toHaveLength(1);
     expect(fixture.componentInstance.deletingUid()).toBeNull();
     expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+
+  // Pins the overlapping-removal review feedback caught (PR #5645): a single deletingUid meant
+  // confirming row B's removal while row A was still pending overwrote it, and whichever request
+  // settled first then cleared the OTHER row's spinner and re-enabled its button mid-flight.
+  it('disables every delete button while one removal is pending, so a second cannot overlap the first', async () => {
+    getMembers.mockReturnValue(of([MEMBER, MEMBER_2]));
+    const pendingA = new Subject<void>();
+    deleteMember.mockReturnValueOnce(pendingA);
+    const fixture = await mount();
+    const element = fixture.nativeElement as HTMLElement;
+
+    confirmAndClickDelete(fixture, 'member-1');
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.deletingUid()).toBe('member-1');
+    const rowBButton = element.querySelector('[data-testid="member-delete-member-2"]');
+    expect(rowBButton?.querySelector('button')?.disabled).toBe(true);
+
+    // Clicking row B's disabled button must not start a second overlapping removal.
+    rowBButton?.querySelector<HTMLButtonElement>('button')!.click();
+    await fixture.whenStable();
+    expect(deleteMember).toHaveBeenCalledTimes(1);
+
+    // The component-level guard must also hold even if something bypasses the disabled DOM button.
+    fixture.componentInstance.deleteMember(MEMBER_2);
+    await fixture.whenStable();
+    expect(deleteMember).toHaveBeenCalledTimes(1);
+
+    pendingA.next();
+    pendingA.complete();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.deletingUid()).toBeNull();
+    expect(rowBButton?.querySelector('button')?.disabled).toBe(false);
   });
 });
