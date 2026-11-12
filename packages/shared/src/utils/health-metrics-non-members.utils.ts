@@ -74,7 +74,6 @@ export function buildHealthMetricsNonMembersPeopleCountLabel(count: number | nul
 export function buildHealthMetricsNonMembersConversionView(conversion: HealthMetricsNonMembersConversion): HealthMetricsNonMembersConversionView {
   const pipeline = conversion.estimatedPipelineUsd;
   const hasEstimate = pipeline !== null;
-  const tier = conversion.entryTierName?.trim();
   return {
     measured: conversion.measured,
     summary:
@@ -89,11 +88,6 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
       { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
     ],
     warmest: buildWarmestRows(conversion.warmest),
-    footnote: [
-      { text: `Estimated pipeline multiplies high-fit companies by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only. The ` },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ],
   };
 }
 

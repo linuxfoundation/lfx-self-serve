@@ -16,7 +16,7 @@ describe('HEALTH_METRICS_TRAINING_SECTIONS', () => {
   });
 
   it('badges both sections provisional until LF Education signs the figures off', () => {
-    expect(HEALTH_METRICS_TRAINING_SECTIONS.map((section) => section.headingBadge)).toEqual(['Provisional', 'Provisional']);
+    expect(HEALTH_METRICS_TRAINING_SECTIONS.map((section) => section.provisional)).toEqual([true, true]);
   });
 });
 

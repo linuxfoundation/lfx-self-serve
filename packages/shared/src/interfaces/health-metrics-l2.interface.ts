@@ -14,17 +14,31 @@ export interface HealthMetricsFootnotePart {
   route?: string;
 }
 
+/** A Health Metrics note's kind: a caution, or a verdict (healthy, needs attention, needs action, or a plain summary). */
+export type HealthMetricsNoteTone = 'caution' | 'healthy' | 'attention' | 'action' | 'summary';
+
+/** A note under a section: a caution or a verdict, with its text in runs. */
+export interface HealthMetricsNote {
+  tone: HealthMetricsNoteTone;
+  parts: readonly HealthMetricsFootnotePart[];
+}
+
+/** How a note tone renders: the `lfx-ui-note` variant, and the verdict label before the text (empty for a caution). */
+export interface HealthMetricsNoteStyle {
+  variant: 'secondary' | 'success' | 'warning' | 'error';
+  label: string;
+}
+
 /** One anchored section of a Health Metrics Level 2 tab; the key doubles as its URL fragment. */
 export interface HealthMetricsL2Section {
   key: string;
   label: string;
   heading: string;
   description: string;
-  /** Empty renders no footnote. */
-  footnote: readonly HealthMetricsFootnotePart[];
-  footnoteCaution: boolean;
-  /** A pill beside the heading, e.g. for figures still pending validation. */
-  headingBadge?: string;
+  /** A caution or verdict under the section's body. */
+  note?: HealthMetricsNote;
+  /** Marks figures still pending validation with a Provisional badge beside the heading. */
+  provisional?: boolean;
   /** What the section shows once it settles with nothing for the period. */
   empty: HealthMetricsL2SectionEmpty;
 }

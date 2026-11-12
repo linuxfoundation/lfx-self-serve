@@ -313,7 +313,6 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   rows: HealthMetricsEventsRegistrationsGrowthRowView[];
   /** Years spanned, gap years included, so the count matches the table. */
   yearCount: number;
-  hasPartialYear: boolean;
   /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
   pandemicNote: string | null;
 }

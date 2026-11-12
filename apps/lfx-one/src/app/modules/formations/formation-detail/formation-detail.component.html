@@ -27,7 +27,7 @@
     <lfx-empty-state
       icon="fa-light fa-list-check"
       title="This project is no longer in formation"
-      subtitle="It has completed formation, so its checklist is no longer available."
+      [subtitle]="postFormationSubtitle()"
       data-testid="formation-detail-not-in-formation" />
   } @else if (project(); as project) {
     <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>
@@ -38,7 +38,12 @@
          card's own list read (#2724) probe separately, and both fail closed/quiet. -->
     <div class="flex flex-col xl:flex-row xl:items-start gap-10" data-testid="formation-detail-columns">
       <div class="flex-1 min-w-0">
-        <lfx-formation-checklist-section #checklistSection [projectSlug]="project.slug" (responseLoaded)="onChecklistLoaded($event)" />
+        <lfx-formation-checklist-section
+          #checklistSection
+          [projectSlug]="project.slug"
+          [heading]="sectionHeading"
+          [stage]="project.stage"
+          (responseLoaded)="onChecklistLoaded($event)" />
       </div>
       @if (activeChecklist(); as checklist) {
         <aside class="flex flex-col gap-8 w-full shrink-0 xl:w-64" data-testid="formation-detail-sidebar">

@@ -697,9 +697,7 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
   it('flags a partial year', () => {
     const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear(), growthYear({ year: 2024, isPartialYear: true })] }, 'registrations');
 
-    expect(view.hasPartialYear).toBe(true);
     expect(view.rows.map((row) => row.isPartialYear)).toEqual([false, true]);
-    expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations').hasPartialYear).toBe(false);
   });
 
   it('explains the pandemic years only when one was mostly virtual for the metric', () => {
@@ -736,7 +734,6 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
     expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [] }, 'registrations')).toEqual({
       rows: [],
       yearCount: 0,
-      hasPartialYear: false,
       pandemicNote: null,
     });
   });

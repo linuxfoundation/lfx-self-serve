@@ -169,7 +169,7 @@ describe('buildHealthMetricsNonMembersPeopleCountLabel', () => {
 });
 
 describe('buildHealthMetricsNonMembersConversionView', () => {
-  it('qualifies the estimate, counts the side stats and names the tier in the footnote', () => {
+  it('qualifies the estimate and counts the side stats', () => {
     const view = buildHealthMetricsNonMembersConversionView(CONVERSION);
 
     expect(view).toMatchObject({
@@ -179,11 +179,6 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
       pipelineLabel: 'Estimated pipeline',
       hasEstimate: true,
     });
-    expect(view.footnote).toEqual([
-      { text: 'Estimated pipeline multiplies high-fit companies by the Silver fee and is indicative only. The ' },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ]);
     expect(view.side).toEqual([
       { key: 'high-fit', label: 'High-fit companies', value: '2' },
       { key: 'new', label: 'New this period', value: '37' },
@@ -203,11 +198,6 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
     expect(view.pipelineValue).toBe('—');
     expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
     expect(view.hasEstimate).toBe(false);
-    expect(view.footnote).toEqual([
-      { text: 'Estimated pipeline multiplies high-fit companies by an entry-tier fee and is indicative only. The ' },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ]);
   });
 
   it('renders a NULL count as not available but keeps a real zero', () => {

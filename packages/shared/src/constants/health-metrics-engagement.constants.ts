@@ -53,14 +53,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Meeting participation',
     description:
       'The complete picture of who shows up — every meeting type this foundation runs, board and groups included. This is the foundation-wide whole; the Members section adds the governance-accurate cut (board & voting, voting reps only, per member).',
-    footnote: [
-      { text: 'Board & voting are included in this foundation-wide view. The ' },
-      { text: 'Members', route: 'members' },
-      {
-        text: ' section adds the governance-accurate cut — voting reps only, per member, next to dues and renewals — using the same board number, not a different one.',
-      },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'committees',
@@ -69,10 +61,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Group attendance',
     description:
       'Every group — governance bodies, working groups, SIGs and TAGs — lowest attendance first. Dormant groups rank above every percentage: a group that has not met at all is worse than one attending badly.',
-    footnote: [
-      { text: 'Ranked by default rather than filtered — the ED sees the failing group without configuring anything. Filters narrow, they are not required.' },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'trend',
@@ -81,12 +69,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Attendance trend',
     description:
       'All-meeting attendance over time. Level and direction are separate signals — attendance can be improving and still sit below where it needs to be.',
-    footnote: [
-      {
-        text: 'Empty and low-confidence states matter here — a foundation with two periods of history gets the numbers without a trend line implying a pattern.',
-      },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'orgs',
@@ -95,15 +77,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Company participation',
     description:
       'Which member companies actually turn up, and when they were last seen. Last engaged is the stronger churn signal — recency beats rate, and it is not surfaced anywhere in PCC today.',
-    footnote: [
-      { text: 'Avg reps per meeting', bold: true },
-      { text: ' and ' },
-      { text: '% of meetings attended', bold: true },
-      {
-        text: ' are surfaced from PCC Level 4, where they sit behind an org-by-org drilldown. Here the ED scans every org at once. Row opens the meeting record.',
-      },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'reps',
@@ -111,10 +84,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     label: 'Representatives',
     heading: 'Representatives',
     description: 'The people behind the companies. A seat that is never filled is a paid benefit going unused — and an early churn signal.',
-    footnote: [
-      { text: 'Duplicate-identity records are a known data issue — the same person appears twice under different titles in both PCC and Self Serve today.' },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'nonmem',
@@ -123,12 +92,14 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Non-member participation',
     description:
       'Companies turning up to meetings without paying for membership. Showing up is a stronger buying signal than contributing code — they are already spending staff time.',
-    footnote: [
-      {
-        text: 'Company matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
-      },
-    ],
-    footnoteCaution: true,
+    note: {
+      tone: 'caution',
+      parts: [
+        {
+          text: 'Company matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
+        },
+      ],
+    },
   },
   {
     key: 'newsletters',
@@ -137,8 +108,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     heading: 'Newsletter performance',
     description:
       'Every newsletter sent to this foundation’s audience. Open rate shows reach; click-to-open rate shows how compelling the content was to the people who opened it.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'recipients',
@@ -147,12 +116,6 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     label: 'Newsletter recipient engagement',
     heading: 'Newsletter recipient engagement',
     description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and companies surface first.',
-    footnote: [
-      {
-        text: 'Some recipients clicked without a recorded open — their mail client blocks tracking images, so opens are undercounted. Treat open rate as a floor.',
-      },
-    ],
-    footnoteCaution: false,
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 

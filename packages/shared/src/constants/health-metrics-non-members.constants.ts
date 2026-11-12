@@ -15,7 +15,7 @@ import type {
 
 /**
  * The three Non-Members sections in render order. `key` is the section's URL fragment and the
- * scroll-spy allowlist; the DOM id is `sec-non-<key>`. Footnotes land with each section's data.
+ * scroll-spy allowlist; the DOM id is `sec-non-<key>`.
  */
 export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
   {
@@ -25,8 +25,6 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     heading: 'Company participation',
     description:
       'Companies engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'people',
@@ -34,8 +32,6 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'People',
     heading: 'People',
     description: 'The individuals behind those companies — the actual contact to reach out to. A company is a lead; a person is a conversation.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'conversion',
@@ -43,8 +39,6 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
     description: 'What the pipeline is worth if the warmest companies convert. Framed as upside — this section carries no risk badges, only opportunity.',
-    footnote: [],
-    footnoteCaution: false,
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -109,12 +103,8 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
   'Company matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
 
-/** Under the People table: each person's organization comes from the same unvalidated match. */
-export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE =
-  "People are matched to companies by the same process, so treat each person's company as provisional too.";
-
-/** Both tables' last-activity dates ignore the period; the footnotes say so instead of the headers. */
-export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged / Last attended are all-time, not limited to the selected period.';
+/** Last-activity dates ignore the period; the Organizations caution note says so instead of the headers. */
+export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged is all-time, not limited to the selected period.';
 
 /** Fewer active organizations than this is too few to rank by fit, so Company participation flags it. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD = 5;

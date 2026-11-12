@@ -583,7 +583,7 @@ export const routes: Routes = [
       // `?item=<template_item_key>` opens that item's panel on arrival here too (#2732).
       {
         path: 'foundation/formations/:projectSlug',
-        title: 'Formation Checklist',
+        title: 'Formation',
         data: { lens: 'foundation' },
         canMatch: [formationEnabledGuard],
         canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],

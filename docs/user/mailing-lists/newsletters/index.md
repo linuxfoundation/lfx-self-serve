@@ -4,7 +4,7 @@ description: Write, send, and schedule newsletters to a Newsletter group, see ho
 audience: [all]
 product_area: Mailing Lists
 tags: [newsletters, newsletter, newsletter group, email, communication, schedule, analytics, personalization, share, views, invite, member benefit]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Mailing Lists
 ---
 
@@ -43,6 +43,8 @@ Once you have picked an audience and entered both a subject and a body, your dra
 ### Audience
 
 Under **Group**, pick the Newsletter group to send to. The recipient count opens a **Recipients** list so you can check who will receive it.
+
+Once the draft is saved, LFX prepares its recipient list from the group in the background. While it does, the recipient count shows as loading and **Send** and **Schedule** stay unavailable. A large group can take a minute or two. If you change the group or add someone to it, the list is prepared again.
 
 If someone is missing, enter their email under **Someone missing? Add them to this group** and select **Add**. They are added to the group, so they also receive future newsletters sent to it.
 

@@ -157,6 +157,8 @@ export class ImportMembersDialogComponent {
   public statusFilter = signal<MemberImportStatusFilter>('all');
   /** Index of the first table row shown, so a filter change can return to page 1. */
   public tableFirst = signal(0);
+  /** Distinguishes the manager's Stop action from fatal errors and automatic recovery limits. */
+  private readonly manualStopRequested = signal(false);
   /** Ends the current pause early; in-flight requests are never cancelled. */
   private readonly stopRequested = new Subject<void>();
   private retryDeadlineTimer?: Subscription;
@@ -172,6 +174,8 @@ export class ImportMembersDialogComponent {
   public readonly notSubmittedCount = computed(() => this.countRows('not_submitted'));
   public readonly retryableCount = computed(() => this.rows().filter((row) => this.isRetryable(row)).length);
   public readonly paused = computed(() => this.resumeAt() !== null);
+  /** The manager requested a stop outside a pause; the in-flight batch settles before the run ends. */
+  public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.manualStopRequested());
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
   public readonly cleanupWarningCount = computed(() => this.rows().filter((row) => row.cleanupWarning).length);
   public readonly canImport = computed(() => this.phase() === 'preview' && this.readyCount() > 0);
@@ -305,11 +309,15 @@ export class ImportMembersDialogComponent {
     this.submitRows(this.rows().filter((row) => this.isRetryable(row)));
   }
 
-  /** Ends a pause without losing unknown outcomes; genuinely unsent rows remain Not yet submitted. */
+  /**
+   * Ends the run after the in-flight batch settles, or ends a pause immediately, without losing
+   * unknown outcomes; genuinely unsent rows remain Not yet submitted.
+   */
   public stopImport(): void {
-    if (!this.paused()) {
+    if (this.phase() !== 'importing' || this.stopReason()) {
       return;
     }
+    this.manualStopRequested.set(true);
     this.stopReason.set('You stopped the import.');
     this.stopRequested.next();
   }
@@ -428,6 +436,9 @@ export class ImportMembersDialogComponent {
           if (this.paused()) {
             return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
           }
+          if (this.stopping()) {
+            return `Stopping after the current batch: ${this.batchSettled()} of ${this.batchTotal()} done.`;
+          }
           return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
         case 'results': {
           const notSubmitted = this.notSubmittedCount() > 0 ? `, ${this.notSubmittedCount()} not yet submitted` : '';
@@ -487,6 +498,7 @@ export class ImportMembersDialogComponent {
         targets.has(row.rowNumber) ? { ...row, status: row.uncertain ? 'unknown' : 'not_submitted', reason: undefined, retryable: undefined } : row
       )
     );
+    this.manualStopRequested.set(false);
     this.stopReason.set(null);
     this.pauseCount.set(0);
     this.resumeAt.set(null);
@@ -611,7 +623,7 @@ export class ImportMembersDialogComponent {
     }
     if (httpError && MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(status)) {
       const reason = this.failureReason(httpError);
-      this.stopReason.set(this.stopReason() ?? reason);
+      this.stopForFatalError(httpError, reason);
       this.markUnsubmitted(rows, reason);
       return EMPTY;
     }
@@ -723,9 +735,10 @@ export class ImportMembersDialogComponent {
     );
   }
 
-  /** Share stop handling across creation and cleanup without changing an already-added row's outcome. */
+  /** Fatal guidance overrides a manual stop without replacing an earlier fatal reason or an added row's outcome. */
   private stopForFatalError(err: HttpErrorResponse, reason: string): void {
-    if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && !this.stopReason()) {
+    if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && (!this.stopReason() || this.manualStopRequested())) {
+      this.manualStopRequested.set(false);
       this.stopReason.set(reason);
     }
   }

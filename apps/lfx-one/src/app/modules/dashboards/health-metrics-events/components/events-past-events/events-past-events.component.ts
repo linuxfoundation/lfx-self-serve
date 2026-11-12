@@ -13,15 +13,9 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type {
-  HealthMetricsEventsPast,
-  HealthMetricsEventsPastQuery,
-  HealthMetricsEventsPastView,
-  HealthMetricsEventsSectionKey,
-} from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsPast, HealthMetricsEventsPastQuery, HealthMetricsEventsPastView } from '@lfx-one/shared/interfaces';
 
 /**
  * `#past` — how each closed event finished against its goal. One read carries all four periods,
@@ -29,7 +23,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-past-events',
-  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
+  imports: [EmptyStateComponent, Skeleton, TableComponent],
   templateUrl: './events-past-events.component.html',
 })
 export class EventsPastEventsComponent {
@@ -42,8 +36,6 @@ export class EventsPastEventsComponent {
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** The cross-link back to the forecast; the L2 shell owns scrolling, so a repeat click still lands. */
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
@@ -68,10 +60,6 @@ export class EventsPastEventsComponent {
         .pipe(skip(1), takeUntilDestroyed())
         .subscribe(() => this.onRangeChange());
     }
-  }
-
-  protected onViewForecast(): void {
-    this.sectionPicked.emit('forecast');
   }
 
   private initResponse(): Signal<HealthMetricsEventsPast> {

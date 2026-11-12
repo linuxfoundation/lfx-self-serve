@@ -3,7 +3,6 @@
 
 import {
   ApiRequestOptions,
-  NewsletterSharePreview,
   CommitteeNewsletter,
   CommitteeNewsletterFeedResult,
   CreateNewsletterRequest,
@@ -11,6 +10,7 @@ import {
   MyNewslettersResponse,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
@@ -21,8 +21,10 @@ import {
   NewsletterRecipientsResponse,
   NewsletterRenderPreviewPayload,
   NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterSharePreview,
   NewsletterShareRequest,
   NewsletterStatusCounts,
   NewsletterTemplateManifest,
@@ -309,6 +311,14 @@ export class NewsletterService {
 
   public cancelScheduleNewsletter(req: Request, projectUid: string, newsletterUid: string, ifMatchVersion: number): Promise<NewsletterCancelScheduleResult> {
     return this.newsletterClient.cancelScheduleNewsletter(req, projectUid, newsletterUid, ifMatchVersion);
+  }
+
+  public resolveAudience(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterResolveAudiencePayload): Promise<NewsletterAudience> {
+    return this.newsletterClient.resolveAudience(req, projectUid, newsletterUid, payload);
+  }
+
+  public getAudience(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAudience> {
+    return this.newsletterClient.getAudience(req, projectUid, newsletterUid);
   }
 
   public recipientCount(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientCount> {

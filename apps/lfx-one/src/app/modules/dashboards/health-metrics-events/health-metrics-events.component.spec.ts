@@ -24,7 +24,7 @@ import { EventsSpeakersComponent } from './components/events-speakers/events-spe
 import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSectionKey } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
 
 const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, hasEvents: true };
 
@@ -50,7 +50,6 @@ class ForecastStubComponent {
 class PastStubComponent {
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Registrations & growth, whose read its own spec covers; the test drives its outputs. */
@@ -58,7 +57,6 @@ class PastStubComponent {
 class RegistrationsGrowthStubComponent {
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Revenue, whose read its own spec covers; the test drives its outputs. */
@@ -270,20 +268,6 @@ describe('HealthMetricsEventsComponent', () => {
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-spon');
-  });
-
-  it('scrolls to the forecast on every pick from Past events, not only when the URL changes', async () => {
-    await setup('forecast');
-    await sectionsReport('');
-    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
-    scrollIntoView.mockClear();
-    const stub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
-    stub.sectionPicked.emit('forecast');
-    stub.sectionPicked.emit('forecast');
-    fixture.detectChanges();
-
-    expect(scrollIntoView).toHaveBeenCalledTimes(2);
-    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-forecast');
   });
 
   it('reads the foundation at a glance once and hands the result to the section', async () => {
