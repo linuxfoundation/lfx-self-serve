@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthorizationError } from '../errors';
 import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from '../services/logger.service';
+import { ProjectService } from '../services/project.service';
 
 const ED: PersonaType = 'executive-director';
 
@@ -78,23 +79,50 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
   }
 }
 
-// Role-only variant for routes keyed by a *project* slug (e.g. `/api/projects/:slug/participating-orgs*`), where
-// `foundationSlug` is absent so `requireDashboardAccess` would skip scoping. It admits the same callers
-// (EDs and LF Staff, via server-verified personas) and leaves per-project scoping to the route's own
-// project `viewer` check, which runs after this gate.
+// Variant for routes keyed by a *project* slug (e.g. `/api/projects/:slug/participating-orgs*`), where
+// `foundationSlug` is absent so `requireDashboardAccess` would skip scoping. It admits LF Staff outright, and an
+// executive director only for a project that is, or sits under, a foundation they direct: the project's parent
+// chain is resolved server-side and matched against the ED's scoped projects. The route's own project `viewer`
+// check still runs after this gate.
+const MAX_PARENT_DEPTH = 6;
+const projectService = new ProjectService();
+
 export async function requireExecutiveOrLFStaff(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await personaDetectionService.getPersonas(req);
 
-    if (result.personas.includes(ED) || result.isLFStaff) {
+    if (result.isLFStaff) {
       next();
       return;
     }
 
-    logger.warning(req, 'require_executive_or_lf_staff', 'User without dashboard access attempted an executive-only project endpoint', {
-      path: req.path,
-      personas: result.personas,
-    });
+    if (result.personas.includes(ED)) {
+      const edProjects = result.personaProjects?.[ED] ?? [];
+      const edUids = new Set(edProjects.map((project) => project.projectUid));
+      const edSlugs = new Set(edProjects.map((project) => project.projectSlug.toLowerCase()));
+      const slug = String(req.params['slug'] ?? '');
+
+      // Walk project -> parent -> ... until an ED-scoped project is found or the chain ends.
+      let project = slug ? await projectService.getProjectBySlug(req, slug) : null;
+      for (let depth = 0; project && depth < MAX_PARENT_DEPTH; depth++) {
+        if (edUids.has(project.uid) || edSlugs.has(String(project.slug ?? '').toLowerCase())) {
+          next();
+          return;
+        }
+        project = project.parent_uid ? await projectService.getProjectById(req, project.parent_uid) : null;
+      }
+
+      logger.warning(req, 'require_executive_or_lf_staff', 'ED requested a project outside their foundation scope', {
+        path: req.path,
+        requested_slug: slug,
+        scoped_slugs: [...edSlugs],
+      });
+    } else {
+      logger.warning(req, 'require_executive_or_lf_staff', 'User without dashboard access attempted an executive-only project endpoint', {
+        path: req.path,
+        personas: result.personas,
+      });
+    }
 
     next(
       new AuthorizationError('Executive dashboard access required for this resource', {

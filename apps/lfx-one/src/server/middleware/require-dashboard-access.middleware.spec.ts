@@ -18,6 +18,15 @@ vi.mock('../utils/persona-helper', () => ({
   },
 }));
 
+const getProjectBySlug = vi.fn();
+const getProjectById = vi.fn();
+vi.mock('../services/project.service', () => ({
+  ProjectService: class {
+    public getProjectBySlug = (...args: unknown[]) => getProjectBySlug(...args);
+    public getProjectById = (...args: unknown[]) => getProjectById(...args);
+  },
+}));
+
 const { requireDashboardAccess, requireExecutiveOrLFStaff } = await import('./require-dashboard-access.middleware');
 
 interface PersonaResult {
@@ -233,27 +242,57 @@ describe('requireDashboardAccess', () => {
 });
 
 describe('requireExecutiveOrLFStaff', () => {
+  const projectReq = (slug = 'child') => ({ method: 'GET', path: '/api/projects/x/participating-orgs', query: {}, params: { slug } }) as unknown as Request;
+  const run = async (req: Request) => {
+    const next = vi.fn();
+    await requireExecutiveOrLFStaff(req, {} as Response, next as unknown as NextFunction);
+    return next;
+  };
+
   beforeEach(() => {
     getPersonas.mockReset();
+    getProjectBySlug.mockReset();
+    getProjectById.mockReset();
+  });
+
+  it('allows LF staff without resolving the project', async () => {
+    getPersonas.mockResolvedValue({ personas: ['contributor'], isLFStaff: true });
+    expect(verdict(await run(projectReq()))).toBe('allow');
+    expect(getProjectBySlug).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['an executive director', { personas: ['executive-director'], isLFStaff: false }, 'allow'],
-    ['LF staff', { personas: ['contributor'], isLFStaff: true }, 'allow'],
-    ['a board member', { personas: ['board-member'], isLFStaff: false }, 'deny'],
-    ['a project writer', { personas: ['maintainer'], isRootWriter: true, isLFStaff: false }, 'deny'],
-    ['a plain viewer', { personas: ['contributor'], isLFStaff: false }, 'deny'],
-  ])('%s -> %s', async (_label, persona, expected) => {
-    getPersonas.mockResolvedValue({ personaProjects: {}, ...persona });
-    const next = vi.fn();
-    await requireExecutiveOrLFStaff(buildReq(), {} as Response, next as unknown as NextFunction);
-    expect(verdict(next)).toBe(expected);
+    ['a board member', ['board-member']],
+    ['a project writer', ['maintainer']],
+    ['a plain viewer', ['contributor']],
+  ])('denies %s', async (_label, personas) => {
+    getPersonas.mockResolvedValue({ personas, personaProjects: {}, isLFStaff: false });
+    expect(verdict(await run(projectReq()))).toBe('deny');
+    expect(getProjectBySlug).not.toHaveBeenCalled();
+  });
+
+  it('allows an ED for a project directly in their scope', async () => {
+    getPersonas.mockResolvedValue(edFor(['child']));
+    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-parent' });
+    expect(verdict(await run(projectReq()))).toBe('allow');
+  });
+
+  it('allows an ED for a project under a foundation they direct', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a']));
+    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-foundation-a' });
+    getProjectById.mockResolvedValue({ uid: 'uid-foundation-a', slug: 'foundation-a', parent_uid: '' });
+    expect(verdict(await run(projectReq()))).toBe('allow');
+  });
+
+  it('denies an ED for a project under a different foundation', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a']));
+    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-foundation-b' });
+    getProjectById.mockResolvedValue({ uid: 'uid-foundation-b', slug: 'foundation-b', parent_uid: '' });
+    expect(verdict(await run(projectReq()))).toBe('deny');
   });
 
   it('forwards a persona lookup failure instead of allowing', async () => {
     getPersonas.mockRejectedValue(new Error('boom'));
-    const next = vi.fn();
-    await requireExecutiveOrLFStaff(buildReq(), {} as Response, next as unknown as NextFunction);
-    expect(verdict(next)).toBe('deny');
+    expect(verdict(await run(projectReq()))).toBe('deny');
   });
 });
