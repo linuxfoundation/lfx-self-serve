@@ -4,8 +4,9 @@
 <!-- A fixed 36px bar; the pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX. -->
 <lfx-impersonation-banner />
 
-<div class="flex min-h-screen flex-col bg-white" [class]="userService.impersonating() ? 'pt-[36px]' : ''" data-testid="meeting-page">
-  <lfx-header />
+<!-- --mp-offset is the banner's height; --md-head is where the details' tabs stick, under the top bar. Plain px: the guests tab parses it. -->
+<div class="flex min-h-screen flex-col bg-white" [class]="pageOffsets()" data-testid="meeting-page">
+  <lfx-meeting-page-top-bar [row]="row()" [past]="past()" />
 
   <main class="@container mx-auto flex w-full max-w-[1080px] flex-auto flex-col">
     @switch (view()) {
@@ -39,4 +40,6 @@
       }
     }
   </main>
+
+  <lfx-meeting-page-footer />
 </div>
