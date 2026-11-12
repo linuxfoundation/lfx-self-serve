@@ -79,7 +79,7 @@
             [form]="searchForm"
             control="rollupProjects"
             [options]="rollupProjectOptions()"
-            placeholder="All projects"
+            [placeholder]="rollupProjectsPlaceholder()"
             filterPlaceHolder="Search projects"
             ariaLabel="Filter by project"
             data-testid="rollup-project-filter"></lfx-multi-select>

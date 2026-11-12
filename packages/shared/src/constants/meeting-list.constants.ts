@@ -127,3 +127,18 @@ export const MEETING_DETAILS_OPENED_EVENT = 'Meeting Details Opened';
  * project sends no subset at all, so only a hand-picked partial selection of a very large tree can reach it.
  */
 export const MEETING_ROLLUP_MAX_PROJECTS = 200;
+
+/** User-service preference app name for the meetings roll-up project selection (GH-5566). */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME = 'LFXOne';
+
+/** User-service preference name: a JSON map of roll-up root project UID to the project UIDs the user selected under it. */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME = 'MeetingsRollupProjects';
+
+/** Most roll-up roots the preference remembers; the least recently saved root is dropped first. */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_MAX_ROOTS = 25;
+
+/** Largest stored preference value; least recently saved roots are dropped until it fits. Same budget as favorite projects. */
+export const MEETING_ROLLUP_PROJECTS_PREFERENCE_VALUE_MAX_LENGTH = 16_000;
+
+/** `projects` URL value (and saved-choice marker) for every project of a meetings roll-up; the root alone is the default. */
+export const MEETING_ROLLUP_ALL_PROJECTS = 'all';

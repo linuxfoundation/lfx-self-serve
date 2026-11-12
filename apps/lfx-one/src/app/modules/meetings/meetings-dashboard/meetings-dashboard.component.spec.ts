@@ -140,6 +140,8 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.spyOn(meetings, 'getPastMeetingsByProjectPaginated').mockReturnValue(of({ data: [], page_token: undefined }));
     vi.spyOn(meetings, 'getMeetingsCountByProject').mockReturnValue(of(0));
     vi.spyOn(meetings, 'getPastMeetingsCountByProject').mockReturnValue(of(0));
+    vi.spyOn(meetings, 'getRollupProjectsPreference').mockReturnValue(of(null));
+    vi.spyOn(meetings, 'saveRollupProjectsPreference').mockReturnValue(of(undefined));
     vi.spyOn(meetings, 'getRollupFilterOptions').mockReturnValue(
       of({
         projects: [
@@ -977,6 +979,12 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     it('offers only the groups and group types of the selected projects and type, and clears a group they no longer offer', () => {
       const component = mount();
       openScope(component);
+      // The default shows only the root's own meetings, so only its own groups are offered.
+      expect(component.groupOptions().map((o) => o.label)).toEqual(['Board']);
+      expect(component.groupTypeOptions().map((o) => o.value)).toEqual(['Board']);
+
+      component.onRollupProjectsFilterChange(['scope', 'child']);
+      flush();
       expect(component.groupOptions().map((o) => o.label)).toEqual(['Board', 'Working group (Child project)']);
       expect(component.groupTypeOptions().map((o) => o.value)).toEqual(['Board', 'Working Group']);
 
@@ -994,6 +1002,66 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       flush();
       expect(component.groupOptions().map((o) => o.value)).toEqual(['board']);
       expect(component.groupFilter()).toBeNull();
+    });
+
+    describe('default and saved project selection', () => {
+      const lastOptions = (): unknown => vi.mocked(meetings.getMeetingsByProjectPaginated).mock.calls.at(-1)?.[5];
+
+      it("shows only the root's own meetings by default, with no projects param", () => {
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual([]);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, rootOnly: true, pageSize: 1000 });
+        expect(location.replaceState).not.toHaveBeenCalledWith(expect.stringContaining('projects='));
+      });
+
+      it('applies the saved selection once the options load', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(['child', 'gone']));
+        const component = mount();
+        openScope(component);
+
+        expect(meetings.getRollupProjectsPreference).toHaveBeenCalledWith('scope');
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, projectUids: ['child'], pageSize: 1000 });
+      });
+
+      it('checks every project for a saved choice of all projects', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of([]));
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
+      it('lets a link with projects win over the saved choice', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ projects: 'child' });
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of([]));
+        const component = mount();
+        openScope(component);
+
+        expect(meetings.getRollupProjectsPreference).not.toHaveBeenCalled();
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+      });
+
+      it('saves a change for the root after a pause, and Reset filters saves the default', () => {
+        const component = mount();
+        openScope(component);
+
+        component.onRollupProjectsFilterChange(['child']);
+        vi.advanceTimersByTime(600);
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', ['child']);
+
+        component.onRollupProjectsFilterChange(['scope', 'child']);
+        vi.advanceTimersByTime(600);
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', []);
+
+        component.resetFilters();
+        vi.advanceTimersByTime(600);
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', ['scope']);
+        expect(component.rollupProjectsFilter()).toEqual([]);
+      });
     });
 
     it('clears the roll-up filters on the Me lens, which has no controls for them', () => {
@@ -1048,7 +1116,10 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     component.loadMore();
     expect(ids(component)).toEqual(['scoped-first', 'scoped-second']);
     expect(component.hasMore()).toBe(false);
-    expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, 'next', undefined, undefined, { includeSubProjects: true });
+    expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, 'next', undefined, undefined, {
+      includeSubProjects: true,
+      rootOnly: true,
+    });
     component.viewMode.set('calendar');
     flush();
     expect(component.isCalendarView()).toBe(true);
@@ -1062,7 +1133,10 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.mocked(meetings.getPastMeetingsByProjectPaginated).mockReturnValue(of({ data: [past] }));
     select(component, 'past');
     expect(ids(component)).toEqual(['past-other']);
-    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, true, { includeSubProjects: true });
+    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, true, {
+      includeSubProjects: true,
+      rootOnly: true,
+    });
     lens.set('me');
     flush();
     http.expectOne('/api/user/past-meetings').flush([past]);
