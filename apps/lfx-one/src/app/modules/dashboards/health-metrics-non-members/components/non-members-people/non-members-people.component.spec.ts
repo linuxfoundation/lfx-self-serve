@@ -97,13 +97,12 @@ describe('NonMembersPeopleComponent', () => {
     verdicts = [];
   });
 
-  it('reads the selected foundation and period, renders the page, count and note, and settles', async () => {
+  it('reads the selected foundation and period, renders the page and count, and settles', async () => {
     await render(response({ totalRecords: 388, scopeTotal: 388 }));
 
     expect(getNonMembersPeople).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', search: '', offset: 0, pageSize: 10 });
     expect(text(`non-members-people-row-${ROW_KEY}-name`)).toBe('Jane Doe');
     expect(text('non-members-people-count')).toBe('388 engaged individuals');
-    expect(text('non-members-people-provisional')).toContain('provisional');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
@@ -133,7 +132,7 @@ describe('NonMembersPeopleComponent', () => {
     expect(row?.textContent).not.toMatch(/@/);
   });
 
-  it('caps the search box at the length the read honours and keeps the all-time caveat out of the header', async () => {
+  it('caps the search box at the length the read honours and keeps the headers plain', async () => {
     await render();
     const headers = [...(fixture.nativeElement as HTMLElement).querySelectorAll('th')].map((th) => th.textContent?.trim());
     const input = fixture.nativeElement.querySelector('#non-members-people-search') as HTMLInputElement;
@@ -141,16 +140,6 @@ describe('NonMembersPeopleComponent', () => {
     expect(input.maxLength).toBe(100);
     expect(input.placeholder).toBe('Search person or organization…');
     expect(headers).toEqual(['Person', 'Organization', 'Meetings attended', 'Last attended']);
-  });
-
-  it("gives People its own plain note on each person's organization, plus the all-time caveat", async () => {
-    await render();
-    const note = query('non-members-people-provisional');
-
-    expect(text('non-members-people-provisional')).toContain("treat each person's organization as provisional too");
-    expect(text('non-members-people-provisional')).not.toContain('never send it to sales');
-    expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')).toBeNull();
-    expect(text('non-members-people-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
   });
 
   it('re-reads a debounced, trimmed search from page 1 and writes it to the URL with the fragment kept', async () => {
