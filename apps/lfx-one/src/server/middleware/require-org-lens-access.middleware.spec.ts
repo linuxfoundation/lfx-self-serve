@@ -394,6 +394,20 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     expect(getAccessAwareOrgs).not.toHaveBeenCalled();
   });
 
+  it('picks the addressed family when another family is listed before it', async () => {
+    const addressed = rollUpSet();
+    getRollUpSet.mockResolvedValue({
+      ...addressed,
+      families: [{ rootUid: OTHER_ROOT, rootName: 'Other', rootLogoUrl: null, orgs: [org(OTHER_ROOT, 'Other')] }, ...addressed.families],
+    });
+    const req = buildRollUpReq();
+
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')]);
+  });
+
   it('refuses when every organization in the family fails its read check', async () => {
     getAccessAwareOrgs.mockResolvedValue(grants([]));
     checkSingleAccessStrict.mockResolvedValue(false);
@@ -438,6 +452,13 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     expect(errorOf(next)).toMatchObject({ path: undefined });
   });
 
+  it('admits a HEAD on a roll-up key as a read', async () => {
+    const { next } = await runRollUp(buildRollUpReq('HEAD'));
+
+    expect(statusOf(next)).toBe('allow');
+    expect(getRollUpSet).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('refuses a %s on a roll-up key before asking any upstream', async (method) => {
     const { next } = await runRollUp(buildRollUpReq(method));
 
@@ -464,6 +485,10 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     );
 
     expect(statusOf(next)).toBe(400);
+  });
+
+  it('rejects a key without a valid top account id before loading the roll-up set', async () => {
+    await expect(resolveOrgLensRollUp(buildRollUpReq(), 'family-123', 'handler')).rejects.toMatchObject({ statusCode: 400 });
     expect(getRollUpSet).not.toHaveBeenCalled();
   });
 });
