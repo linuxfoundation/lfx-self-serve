@@ -7,7 +7,7 @@ import type { HealthMetricsFootnotePart, HealthMetricsL2Range, HealthMetricsL2Su
 /** Section key from the design's `N2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsNonMembersSectionKey = (typeof HEALTH_METRICS_NON_MEMBERS_SECTIONS)[number]['key'];
 
-/** Non-Members' sub-nav badge, keyed to its own sections. */
+/** Non-Members' sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsNonMembersSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsNonMembersSectionKey;
 }
@@ -45,7 +45,7 @@ export interface HealthMetricsNonMembersOrgs {
   rows: HealthMetricsNonMembersOrg[];
   /** Organizations matching the filter and search. */
   totalRecords: number;
-  /** Every organization active in the period; the sub-nav badge and the unfiltered count. */
+  /** Every organization active in the period; the unfiltered count. */
   scopeTotal: number;
   /** Organizations new this period across the whole foundation, whatever the filter. */
   newCount: number;

@@ -66,11 +66,9 @@ const PERFORMANCE: HealthMetricsEngagementNewsletterPerformance = {
 
 describe('EngagementNewsletterPerformanceComponent', () => {
   let fixture: ComponentFixture<EngagementNewsletterPerformanceComponent>;
-  let counts: (number | null)[];
   let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEngagementNewsletterPerformance | Error = PERFORMANCE): Promise<void> {
-    counts = [];
     verdicts = [];
     await TestBed.configureTestingModule({
       imports: [EngagementNewsletterPerformanceComponent],
@@ -89,7 +87,6 @@ describe('EngagementNewsletterPerformanceComponent', () => {
       .compileComponents();
 
     fixture = TestBed.createComponent(EngagementNewsletterPerformanceComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     fixture.detectChanges();
     await fixture.whenStable();
@@ -129,7 +126,6 @@ describe('EngagementNewsletterPerformanceComponent', () => {
         .join(' ')
     );
     expect(latest).toEqual([`Monthly: Latest Sent Oct 26, ${YEAR}`, '1,490 61 failed', '647 997 total', '43%', '76 1,462 total', '5%', '12%']);
-    expect(counts.at(-1)).toBe(2);
     expect(verdicts).toEqual([false]);
   });
 
@@ -162,23 +158,21 @@ describe('EngagementNewsletterPerformanceComponent', () => {
     expect(query('engagement-newsletter-performance-row-n2')).not.toBeNull();
   });
 
-  it('settles empty and badges zero for a period with no newsletter sent', async () => {
+  it('settles empty for a period with no newsletter sent', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(counts.at(-1)).toBe(0);
     expect(verdicts.at(-1)).toBe(true);
     expect(query('engagement-newsletter-performance-table')).toBeNull();
   });
 
-  it('says the read failed rather than reporting nothing sent, and badges nothing', async () => {
+  it('says the read failed rather than reporting nothing sent', async () => {
     await render(new Error('boom'));
 
     expect(query('engagement-newsletter-performance-error')).not.toBeNull();
-    expect(counts.at(-1)).toBeNull();
     expect(verdicts).toEqual([false]);
   });
 });

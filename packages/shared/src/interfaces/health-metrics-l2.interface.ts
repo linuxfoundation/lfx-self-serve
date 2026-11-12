@@ -83,12 +83,10 @@ export interface HealthMetricsL2SectionView extends HealthMetricsL2Section {
   headingId: string;
 }
 
-/** Sub-nav badge for one section: a count plus an optional qualifier note. */
+/** Sub-nav entry for one section, with an optional warning note. */
 export interface HealthMetricsL2SubNavItem {
   key: string;
   label: string;
-  /** `null` renders no badge — an unresolved total, or a section the design gives none. */
-  count: number | null;
   /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
 }
