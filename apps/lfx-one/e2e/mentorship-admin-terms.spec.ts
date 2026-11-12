@@ -116,9 +116,13 @@ test.describe('Admin Terms tab — manage terms', () => {
   test('deletes a term that has no applications, and offers no Delete for one that has', async ({ page }) => {
     await open(page, state);
 
-    await page.getByTestId(`mentorship-term-actions-${TERM_CLOSED_ID}`).getByRole('button').click();
+    const closedActions = page.getByTestId(`mentorship-term-actions-${TERM_CLOSED_ID}`).getByRole('button');
+    await closedActions.click();
+    await expect(page.getByRole('menuitem', { name: 'Re-Open', exact: true })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Delete', exact: true })).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    // Escape leaves the popup open, so the trigger closes it before the next row's menu opens.
+    await closedActions.click();
+    await expect(page.getByRole('menuitem')).toHaveCount(0);
 
     await chooseAction(page, TERM_EMPTY_ID, 'Delete');
     await confirm(page, 'Delete Term');
@@ -142,7 +146,7 @@ test.describe('Admin Terms tab — manage terms', () => {
     state = newTermStubState(newTermRows().map((term) => ({ ...term, status: 'open' as const })));
     await open(page, state);
 
-    await expect(page.getByTestId('mentorship-terms-create')).toBeDisabled();
+    await expect(page.getByTestId('mentorship-terms-create').getByRole('button')).toBeDisabled();
     await expect(page.getByTestId('mentorship-terms-tab')).toContainText(MENTORSHIP_MAX_OPEN_TERMS_MESSAGE);
     expect(state.writes).toEqual([]);
   });

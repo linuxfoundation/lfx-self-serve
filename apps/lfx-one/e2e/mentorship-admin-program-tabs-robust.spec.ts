@@ -66,8 +66,9 @@ test.describe('Admin program detail — structure', () => {
   test('nests the filters, the download control, the rows and the paginator inside the Current Mentees tab', async ({ page }) => {
     const tab = page.getByTestId('mentorship-current-mentees-tab');
 
-    await expect(tab.getByTestId('mentorship-current-mentees-status')).toBeVisible();
-    await expect(tab.getByTestId('mentorship-current-mentees-term')).toBeVisible();
+    // The select wrapper names its control with `data-test`, not `data-testid`.
+    await expect(tab.locator('[data-test="mentorship-current-mentees-status"]')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-current-mentees-term"]')).toBeVisible();
     await expect(tab.getByTestId('mentorship-current-mentees-download')).toBeVisible();
     await expect(tab.locator('[data-test="mentorship-current-mentees-search"]')).toBeVisible();
     await expect(tab.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(10);
@@ -100,8 +101,8 @@ test.describe('Admin program detail — live tab structure', () => {
     await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
     const tab = page.getByTestId('mentorship-past-mentees-tab');
 
-    await expect(tab.getByTestId('mentorship-past-mentees-status')).toBeVisible();
-    await expect(tab.getByTestId('mentorship-past-mentees-term')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-past-mentees-status"]')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-past-mentees-term"]')).toBeVisible();
     await expect(tab.locator('[data-test="mentorship-past-mentees-search"]')).toBeVisible();
     await expect(tab.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(ADMIN_PAST_APPLICATIONS.length);
     await expect(tab.getByTestId('mentorship-past-mentees-download')).toBeVisible();
@@ -113,7 +114,7 @@ test.describe('Admin program detail — live tab structure', () => {
     const tab = page.getByTestId('mentorship-mentors-tab');
 
     await expect(tab.locator('[data-test="mentorship-mentors-search"]')).toBeVisible();
-    await expect(tab.getByTestId('mentorship-mentors-status')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-mentors-status"]')).toBeVisible();
     await expect(tab.getByTestId('mentorship-mentors-invitee')).toBeVisible();
     await expect(tab.getByTestId('mentorship-mentors-invite')).toBeVisible();
     await expect(tab.getByTestId(`mentorship-mentor-row-${ADMIN_MENTORS[0].id}`)).toBeVisible();
