@@ -156,6 +156,17 @@ describe('MeetingPageDataService', () => {
       expect(host.data.claimJoinOnLoad()).toBe(false);
     });
 
+    it('decides again for another meeting the page moves to', async () => {
+      openNow();
+      const host = await create();
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: '456' }));
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+    });
+
     it('never allows it when the window opened after load', async () => {
       const host = await create();
 

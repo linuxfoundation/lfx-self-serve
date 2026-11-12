@@ -243,6 +243,10 @@ export class MeetingPageDataService {
         // Only a real navigation to a different meeting clears a stale failure, not a same-route re-emission (#2046).
         if (meetingId !== previousRouteId) {
           this.meetingLoadFailedState.set(false);
+          // Another meeting's load decides its own join window, and may open Zoom once.
+          this.joinWindowChecked = false;
+          this.joinWindowOpenAtLoadState = false;
+          this.joinOnLoadClaimed = false;
           onRouteChange?.();
         }
       }),
