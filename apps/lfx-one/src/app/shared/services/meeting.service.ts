@@ -34,6 +34,7 @@ import {
   MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
   MeetingProjectQueryOptions,
+  MeetingRollupFilterOptions,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
@@ -189,6 +190,20 @@ export class MeetingService {
 
   public getPastMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
     return this.getCount('/api/past-meetings/count', this.projectScopeParams(uid, options));
+  }
+
+  /**
+   * Options for the roll-up filters of a foundation or parent project's meetings list: the projects in
+   * its tree and their groups. An error yields no options, so the list still loads without the filters.
+   */
+  public getRollupFilterOptions(rootUid: string): Observable<MeetingRollupFilterOptions> {
+    const params = new HttpParams().set('root_project_uid', rootUid);
+    return this.http.get<MeetingRollupFilterOptions>('/api/meetings/rollup-filters', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load meeting roll-up filter options:', error);
+        return of({ projects: [], groups: [] });
+      })
+    );
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -1025,11 +1040,30 @@ export class MeetingService {
   /**
    * Scopes a project meetings query: the project alone (`tags=project_uid:`), or, with
    * `includeSubProjects`, the project and every project beneath it (`root_project_uid`, resolved
-   * server-side under the caller's own access). `pageSize` is passed through as `page_size`.
+   * server-side under the caller's own access) narrowed by any roll-up filters. `pageSize` is passed
+   * through as `page_size`.
    */
   private projectScopeParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
-    const params = options.includeSubProjects ? new HttpParams().set('root_project_uid', uid) : new HttpParams().set('tags', `project_uid:${uid}`);
-    return options.pageSize ? params.set('page_size', String(options.pageSize)) : params;
+    let params = options.includeSubProjects ? this.rollupFilterParams(uid, options) : new HttpParams().set('tags', `project_uid:${uid}`);
+    if (options.pageSize) {
+      params = params.set('page_size', String(options.pageSize));
+    }
+    return params;
+  }
+
+  /** `root_project_uid` plus the roll-up filters that are set (project subset, group, group type). */
+  private rollupFilterParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
+    let params = new HttpParams().set('root_project_uid', uid);
+    if (options.projectUids?.length) {
+      params = params.set('project_uids', options.projectUids.join(','));
+    }
+    if (options.committeeUid) {
+      params = params.set('committee_uid', options.committeeUid);
+    }
+    if (options.groupType) {
+      params = params.set('group_type', options.groupType);
+    }
+    return params;
   }
 
   /**

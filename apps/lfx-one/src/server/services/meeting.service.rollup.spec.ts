@@ -5,11 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Covers the GH-5566 roll-up wiring only: that `root_project_uid` resolves the project tree with the
 // caller's own request and reaches query-service as a `filters_or` scope, for both meeting indexes.
-const { proxyRequest, getFoundationProjectUids, withPerUserCache, storeDecisions } = vi.hoisted(() => {
+const { proxyRequest, getFoundationProjectUids, getProjectsByIds, withPerUserCache, storeDecisions } = vi.hoisted(() => {
   const decisions: boolean[] = [];
   return {
     proxyRequest: vi.fn(),
     getFoundationProjectUids: vi.fn(),
+    getProjectsByIds: vi.fn(),
     storeDecisions: decisions,
     // Runs the fetcher (args[4]) and records what the `storable` gate (args[6]) decides right after it, while
     // the flight is still in progress — the same point the real cache asks before writing.
@@ -36,6 +37,7 @@ vi.mock('./microservice-proxy.service', () => ({
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getFoundationProjectUids = getFoundationProjectUids;
+    public getProjectsByIds = getProjectsByIds;
     public enrichWithProjectData = async (_req: unknown, meetings: unknown[]) => meetings;
   },
 }));
@@ -162,5 +164,83 @@ describe('MeetingService roll-up scope', () => {
     await expect(service.getMeetingsCount(req, { root_project_uid: 'a:b' }, 'v1_meeting')).rejects.toBeInstanceOf(ServiceValidationError);
     expect(getFoundationProjectUids).not.toHaveBeenCalled();
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  describe('roll-up filters', () => {
+    const committees = {
+      resources: [
+        { id: 'committee:b1', data: { uid: 'b1', name: ' Board One ', category: 'Board', project_uid: ROOT } },
+        { id: 'committee:b2', data: { uid: 'b2', name: 'Board Two', category: 'Board', project_uid: 'child-uid' } },
+        { id: 'committee:w1', data: { uid: 'w1', name: 'Working Group', category: 'Working Group', project_uid: 'child-uid' } },
+      ],
+      page_token: undefined,
+    };
+    const countCall = (): Record<string, unknown> => proxyRequest.mock.calls.find((call) => call[2] === '/query/resources/count')?.[4];
+
+    it('limits the scope to the selected projects inside the tree', async () => {
+      proxyRequest.mockResolvedValue({ count: 2 });
+
+      await service.getMeetingsCount(req, { root_project_uid: ROOT, project_uids: 'child-uid,outside' }, 'v1_meeting');
+
+      expect(countCall()).toEqual({ filters_or: ['project_uid:child-uid'], type: 'v1_meeting' });
+    });
+
+    it('answers empty without querying when no selected project is in the tree', async () => {
+      const count = await service.getMeetingsCount(req, { root_project_uid: ROOT, project_uids: 'outside' }, 'v1_meeting');
+      const list = await service.getMeetings(req, { root_project_uid: ROOT, project_uids: 'outside' }, 'v1_meeting', false);
+
+      expect(count).toBe(0);
+      expect(list).toEqual({ data: [], page_token: undefined });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('resolves a group type to the groups of that category in scope', async () => {
+      proxyRequest.mockImplementation(async (_req: unknown, _svc: string, path: string) => (path === '/query/resources/count' ? { count: 4 } : committees));
+
+      await service.getMeetingsCount(req, { root_project_uid: ROOT, group_type: 'Board' }, 'v1_meeting');
+
+      expect(countCall()).toEqual({
+        tags: ['committee_uid:b1', 'committee_uid:b2'],
+        filters_or: [`project_uid:${ROOT}`, 'project_uid:child-uid'],
+        type: 'v1_meeting',
+      });
+    });
+
+    it('answers empty when the selected group is not of the selected type', async () => {
+      proxyRequest.mockResolvedValue(committees);
+
+      const count = await service.getMeetingsCount(req, { root_project_uid: ROOT, group_type: 'Board', committee_uid: 'w1' }, 'v1_meeting');
+
+      expect(count).toBe(0);
+      expect(countCall()).toBeUndefined();
+    });
+
+    it('filters by one group without looking up groups', async () => {
+      proxyRequest.mockResolvedValue({ count: 1 });
+
+      await service.getMeetingsCount(req, { root_project_uid: ROOT, committee_uid: 'w1' }, 'v1_meeting');
+
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(countCall()).toEqual({ tags: ['committee_uid:w1'], filters_or: [`project_uid:${ROOT}`, 'project_uid:child-uid'], type: 'v1_meeting' });
+    });
+
+    it('returns the tree projects and their groups as filter options, sorted and trimmed', async () => {
+      proxyRequest.mockResolvedValue(committees);
+      getProjectsByIds.mockResolvedValue(
+        new Map([
+          ['child-uid', { uid: 'child-uid', name: 'Zenith', slug: 'zenith' }],
+          [ROOT, { uid: ROOT, name: 'FINOS', slug: 'finos' }],
+        ])
+      );
+
+      const options = await service.getRollupFilterOptions(req, ROOT);
+
+      expect(options.projects).toEqual([
+        { uid: ROOT, name: 'FINOS', slug: 'finos' },
+        { uid: 'child-uid', name: 'Zenith', slug: 'zenith' },
+      ]);
+      expect(options.groups.map((group) => group.name)).toEqual(['Board One', 'Board Two', 'Working Group']);
+      expect(options.groups[0]).toEqual({ uid: 'b1', name: 'Board One', category: 'Board', project_uid: ROOT });
+    });
   });
 });

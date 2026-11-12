@@ -72,6 +72,50 @@
       </div>
     }
 
+    @if (showRollupFilters()) {
+      @if (rollupProjectOptions().length > 1) {
+        <div class="min-w-0 w-full sm:w-56 sm:max-w-full">
+          <lfx-multi-select
+            [form]="searchForm"
+            control="rollupProjects"
+            [options]="rollupProjectOptions()"
+            placeholder="All projects"
+            filterPlaceHolder="Search projects"
+            ariaLabel="Filter by project"
+            data-testid="rollup-project-filter"></lfx-multi-select>
+        </div>
+      }
+      @if (groupOptions().length > 0) {
+        <div class="min-w-0 w-full sm:w-56 sm:max-w-full">
+          <lfx-select
+            [form]="searchForm"
+            control="group"
+            size="small"
+            [options]="groupOptions()"
+            placeholder="All groups"
+            [filter]="true"
+            [showClear]="true"
+            styleClass="w-full"
+            (onChange)="onGroupFilterChange($event.value)"
+            data-testid="rollup-group-filter"></lfx-select>
+        </div>
+      }
+      @if (groupTypeOptions().length > 0) {
+        <div class="min-w-0 w-full sm:w-48 sm:max-w-full">
+          <lfx-select
+            [form]="searchForm"
+            control="groupType"
+            size="small"
+            [options]="groupTypeOptions()"
+            placeholder="All group types"
+            [showClear]="true"
+            styleClass="w-full"
+            (onChange)="onGroupTypeFilterChange($event.value)"
+            data-testid="rollup-group-type-filter"></lfx-select>
+        </div>
+      }
+    }
+
     <div class="min-w-0 w-full sm:w-64 sm:max-w-full">
       <lfx-select
         [form]="searchForm"

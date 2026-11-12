@@ -116,6 +116,18 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.spyOn(meetings, 'getPastMeetingsByProjectPaginated').mockReturnValue(of({ data: [], page_token: undefined }));
     vi.spyOn(meetings, 'getMeetingsCountByProject').mockReturnValue(of(0));
     vi.spyOn(meetings, 'getPastMeetingsCountByProject').mockReturnValue(of(0));
+    vi.spyOn(meetings, 'getRollupFilterOptions').mockReturnValue(
+      of({
+        projects: [
+          { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+          { uid: 'child', name: 'Child project', slug: 'child' },
+        ],
+        groups: [
+          { uid: 'board', name: 'Board', category: 'Board', project_uid: 'scope' },
+          { uid: 'wg', name: 'Working group', category: 'Working Group', project_uid: 'child' },
+        ],
+      })
+    );
     composer = TestBed.inject(MeetingComposerService);
     http = TestBed.inject(HttpTestingController);
     flush();
@@ -840,6 +852,86 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     expect(component.meetingView()).toBe(view);
     expect(component.isCalendarView()).toBe(false);
     personalSubscription.unsubscribe();
+  });
+
+  describe('roll-up filters', () => {
+    const openScope = (component: MeetingsDashboardComponent): void => {
+      context.set({ uid: 'scope', name: 'Synthetic scope' } as ProjectContext);
+      lens.set('foundation');
+      flush();
+      expect(component).toBeTruthy();
+    };
+
+    it('seeds the filters and view from the URL and sends them with every roll-up fetch', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ projects: 'child', group: 'wg', group_type: 'Working Group', type: 'Technical', view: 'calendar' });
+      const component = mount();
+      openScope(component);
+
+      const expected = { includeSubProjects: true, projectUids: ['child'], committeeUid: 'wg', groupType: 'Working Group' };
+      expect(component.meetingTypeFilter()).toBe('Technical');
+      expect(component.isCalendarView()).toBe(true);
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, ['meeting_type:Technical'], expected);
+      expect(meetings.getMeetingsCountByProject).toHaveBeenCalledWith('scope', expected);
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, undefined, { ...expected, pageSize: 1000 });
+    });
+
+    it('drops a meeting type the URL names that does not exist', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ type: 'Nonsense' });
+      const component = mount();
+
+      expect(component.meetingTypeFilter()).toBeNull();
+    });
+
+    it('writes filter changes back to the URL', () => {
+      const component = mount();
+      openScope(component);
+
+      component.onRollupProjectsFilterChange(['child']);
+      component.onGroupTypeFilterChange('Working Group');
+      flush();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenLastCalledWith([], {
+        relativeTo: route,
+        queryParams: { projects: 'child', group: null, group_type: 'Working Group', type: null, view: null },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+    });
+
+    it('offers only the groups and group types of the selected projects and type, and clears a group they no longer offer', () => {
+      const component = mount();
+      openScope(component);
+      expect(component.groupOptions().map((o) => o.label)).toEqual(['Board', 'Working group (Child project)']);
+      expect(component.groupTypeOptions().map((o) => o.value)).toEqual(['Board', 'Working Group']);
+
+      component.groupFilter.set('board');
+      component.onRollupProjectsFilterChange(['child']);
+      flush();
+
+      expect(component.groupOptions().map((o) => o.value)).toEqual(['wg']);
+      expect(component.groupTypeOptions().map((o) => o.value)).toEqual(['Working Group']);
+      expect(component.groupFilter()).toBeNull();
+
+      component.groupFilter.set('wg');
+      component.onRollupProjectsFilterChange([]);
+      component.onGroupTypeFilterChange('Board');
+      flush();
+      expect(component.groupOptions().map((o) => o.value)).toEqual(['board']);
+      expect(component.groupFilter()).toBeNull();
+    });
+
+    it('clears the roll-up filters when the foundation or project changes', () => {
+      const component = mount();
+      openScope(component);
+      component.onRollupProjectsFilterChange(['child']);
+      component.onGroupTypeFilterChange('Working Group');
+
+      context.set({ uid: 'other', name: 'Other scope' } as ProjectContext);
+      flush();
+
+      expect(component.rollupProjectsFilter()).toEqual([]);
+      expect(component.groupTypeFilter()).toBeNull();
+    });
   });
 
   it.each([
