@@ -163,9 +163,9 @@ export function normalizeOrgSegment(raw: string): string {
 
 /**
  * The return address the BFF mints while the `ORG_EASYCLA_RETURN_IN_PATH` gate is off:
- * `/company/easycla/{claGroupId}`, with the organization carried in `?company=` (`ORG_EASYCLA_RETURN_ORG_PARAM`)
- * rather than in the path. Every release routes and reads this shape, which is what makes it the
- * safe default across a rolling deploy or a rollback. Sibling of `orgEasyclaReturnPath`.
+ * the path below, with the organization carried in the query (`?org=`, `ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM`) rather
+ * than in the path. Every release routes and reads this shape, which is what makes it the safe default across a
+ * rolling deploy or a rollback; this release 301s it to `/company/easycla/…?company=`. Sibling of `orgEasyclaReturnPath`.
  */
 export function legacyOrgEasyclaReturnPath(claGroupId: string): string {
   // Minted with the pre-rename `/org` root on purpose: a return URL is fixed when signing starts and is used days

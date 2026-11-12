@@ -289,11 +289,13 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
- * Legacy query parameter naming the organization a corporate signing session was opened for, on
- * return addresses of the leftover shape (`legacyOrgEasyclaReturnPath`). Spec 050 moves the
+ * Current name of the query parameter naming the organization a corporate signing session was opened for, on
+ * return addresses of the leftover shape (`legacyOrgEasyclaReturnPath`). This is the READ-side name: the BFF does
+ * not write it yet. It still mints {@link ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM} (`?org=`) on `/org/easycla/…`, so a
+ * previous-release replica or a rollback can adopt the named company; this release 301s that to `?company=`. Spec 050 moves the
  * organization into the path (`orgEasyclaReturnPath`, lfx-self-serve#2743) behind the
  * `ORG_EASYCLA_RETURN_IN_PATH` rollout gate (`ServerFeatureFlag.OrgEasyclaReturnInPath`); until that
- * gate is on, the BFF still writes this parameter. The Org Lens page reads it on the leftover
+ * gate is on, the BFF writes the legacy `?org=` form. The Company Lens page reads this one (and the legacy one) on the leftover
  * `/org/easycla/…` mount only — never under `/org/:orgSegment/easycla`, where the path is the
  * authority — and keeps reading it for one release after the gate flips, so a signing trip opened
  * against the old shape lands on the right organization when it comes back.
