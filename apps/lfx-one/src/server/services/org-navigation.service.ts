@@ -16,7 +16,7 @@ import { Request } from 'express';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { claOnlyEntryApplies, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
+import { ClaOnlyOrg, claOnlyEntryApplies, claOnlyListApplies, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
@@ -54,8 +54,9 @@ export class OrgNavigationService {
     }
 
     const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
+    const rosterAnswered = !access.upstreamFailed && !access.degraded && access.staffCheck !== 'failed';
 
-    if (claOnlyEntryApplies(access.isStaff, access.resolved.size, !access.upstreamFailed && !access.degraded && access.staffCheck !== 'failed')) {
+    if (claOnlyEntryApplies(access.isStaff, access.resolved.size, rosterAnswered)) {
       return this.getClaOnlyItems(req, access.upstreamFailed, params, selectedUid);
     }
 
@@ -79,9 +80,24 @@ export class OrgNavigationService {
       return { items: [], next_page_token: null, upstream_failed: access.upstreamFailed, total: 0 };
     }
 
+    // CLA-only companies follow the held organizations. Like them they are complete on page one, and
+    // nothing the caller already holds is looked up: a held organization must never open CLA-only.
+    const claOnly =
+      !pageToken && claOnlyListApplies(access.isStaff, rosterAnswered)
+        ? await this.claOnlyOrgs.listOrgs(req, new Set([...access.resolved.keys(), ...items.map((item) => item.uid)]))
+        : { orgs: [], failed: false };
+    const claOnlyItems = this.toClaOnlyItems(claOnly.orgs);
+
     // The assigned population is complete on page one and never repeats on a continuation page,
     // which only exists for catalogue paging.
-    const assignedItems = pageToken ? [] : this.applySelectedUidPin(this.applySort(this.applySearch(items, name), name), items, selectedUid, pageToken);
+    const assignedItems = pageToken
+      ? []
+      : this.applySelectedUidPin(
+          [...this.applySort(this.applySearch(items, name), name), ...this.applySort(this.applySearch(claOnlyItems, name), name)],
+          [...items, ...claOnlyItems],
+          selectedUid,
+          pageToken
+        );
 
     const catalogueResult = catalogueTerm
       ? await this.fetchCatalogueMatches(req, catalogueTerm, pageToken, items)
@@ -96,6 +112,8 @@ export class OrgNavigationService {
       discovered_count: discoveredItems.length,
       direct_count: this.countByPrefix(access.resolved, 'direct-'),
       cascading_count: this.countByPrefix(access.resolved, 'inherited-'),
+      cla_only_count: claOnlyItems.length,
+      cla_only_failed: claOnly.failed,
     });
 
     return {
@@ -103,8 +121,9 @@ export class OrgNavigationService {
       next_page_token: nextPageToken,
       // A failed catalogue search is reported rather than folded into an empty result: for a staff
       // caller with nothing assigned the two are indistinguishable in the list, and "no organizations
-      // found" would blame the search term for an outage.
-      upstream_failed: catalogueResult.failed,
+      // found" would blame the search term for an outage. A failed CLA-only lookup is a lower bound
+      // on the list in the same way.
+      upstream_failed: catalogueResult.failed || claOnly.failed,
       // No count is claimed for the catalogue — the caller sees what it has loaded so far.
       total: catalogueTerm ? null : assignedItems.length,
     };
@@ -123,7 +142,17 @@ export class OrgNavigationService {
     }
 
     const { orgs, failed } = await this.claOnlyOrgs.listOrgs(req);
-    const items = orgs.map(
+    const items = this.toClaOnlyItems(orgs);
+    const shown = this.applySelectedUidPin(this.applySort(this.applySearch(items, name), name), items, selectedUid, pageToken);
+
+    logger.debug(req, 'build_org_items', 'Built CLA-only org items', { item_count: shown.length, cla_only_count: items.length, cla_only_failed: failed });
+
+    return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
+  }
+
+  /** Selector rows for CLA-only organizations: no logo, slug or membership is known for them. */
+  private toClaOnlyItems(orgs: ClaOnlyOrg[]): OrgItem[] {
+    return orgs.map(
       (org): OrgItem => ({
         uid: org.uid,
         accountId: org.uid,
@@ -137,11 +166,6 @@ export class OrgNavigationService {
         claOnly: true,
       })
     );
-    const shown = this.applySelectedUidPin(this.applySort(this.applySearch(items, name), name), items, selectedUid, pageToken);
-
-    logger.debug(req, 'build_org_items', 'Built CLA-only org items', { item_count: shown.length, cla_only_count: items.length, cla_only_failed: failed });
-
-    return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
   }
 
   /**

@@ -19,7 +19,7 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'contributo
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('./valkey.service', () => ({ buildUserCacheKey: () => null, valkeyService: { withCache: vi.fn() } }));
 
-const { OrgClaOnlyOrgsService, claOnlyEntryApplies } = await import('./org-cla-only-orgs.service');
+const { OrgClaOnlyOrgsService, claOnlyEntryApplies, claOnlyListApplies } = await import('./org-cla-only-orgs.service');
 const { ORG_CLA_ONLY_ORGS_MAX } = await import('@lfx-one/shared/constants');
 
 const COMPANY_A = '0014100000Te2ovAAB';
@@ -54,6 +54,14 @@ describe('claOnlyEntryApplies', () => {
 
   it('never applies while the roster or the staff check has not answered', () => {
     expect(claOnlyEntryApplies(false, 0, false)).toBe(false);
+  });
+});
+
+describe('claOnlyListApplies', () => {
+  it('applies to any non-staff caller whose roster answered, grants or not', () => {
+    expect(claOnlyListApplies(false, true)).toBe(true);
+    expect(claOnlyListApplies(true, true)).toBe(false);
+    expect(claOnlyListApplies(false, false)).toBe(false);
   });
 });
 
@@ -117,6 +125,15 @@ describe('OrgClaOnlyOrgsService.listOrgs', () => {
     expect(result.failed).toBe(true);
   });
 
+  it('never looks up a company the caller already holds', async () => {
+    gatewayFetch.mockImplementation(async (_req: Request, url: string) => company(url.split('/').pop() as string));
+
+    const result = await service(scopesOf(COMPANY_A, COMPANY_B)).listOrgs(req(), new Set([COMPANY_A]));
+
+    expect(result.orgs.map((org) => org.uid)).toEqual([COMPANY_B]);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('lists nothing and reports the outage when the scopes cannot be read', async () => {
     const scopes = { getCompanySfids: vi.fn().mockRejectedValue(new Error('user-service down')) };
 
@@ -161,14 +178,39 @@ describe('OrgClaOnlyOrgsService.getRoleGrantClaManagerOrgs', () => {
     });
   });
 
+  it('answers a grant holder’s CLA-manager companies too, without one they hold', async () => {
+    expect(await service(scopesOf(COMPANY_A, COMPANY_B, COMPANY_C)).getRoleGrantClaManagerOrgs(req(), { ...grants, writers: [COMPANY_A] })).toEqual({
+      claManagerOrgs: [COMPANY_B, COMPANY_C],
+      claManagerLookup: 'ok',
+    });
+  });
+
   it.each([
     ['a writer grant', { writers: [COMPANY_C] }],
     ['an auditor grant', { auditors: [COMPANY_C] }],
     ['a cascading writer grant', { cascadingWriters: cascading }],
     ['a cascading auditor grant', { cascadingAuditors: cascading }],
+  ])('never answers a company held through %s as CLA-only', async (_label, overrides) => {
+    expect(await service(scopesOf(COMPANY_A, COMPANY_C)).getRoleGrantClaManagerOrgs(req(), { ...grants, ...overrides })).toEqual({
+      claManagerOrgs: [COMPANY_A],
+      claManagerLookup: 'ok',
+    });
+  });
+
+  it('marks a grant holder’s unreadable scopes as failed, keeping their grants authoritative', async () => {
+    const scopes = { getCompanySfids: vi.fn().mockRejectedValue(new Error('user-service down')) };
+
+    expect(await service(scopes).getRoleGrantClaManagerOrgs(req(), { ...grants, writers: [COMPANY_C] })).toEqual({
+      claManagerOrgs: [],
+      claManagerLookup: 'failed',
+    });
+  });
+
+  it.each([
     ['staff', { isStaff: true }],
     ['a roster that never loaded', { lookupOutcome: 'failed' as const }],
     ['a partial roster, which is only a lower bound', { lookupOutcome: 'partial' as const }],
+    ['a partial roster that already holds an organization', { lookupOutcome: 'partial' as const, writers: [COMPANY_C] }],
     ['a failed staff check', { staffCheck: 'failed' as const }],
   ])('never asks user-service for a caller with %s', async (_label, overrides) => {
     const scopes = scopesOf(COMPANY_A);
