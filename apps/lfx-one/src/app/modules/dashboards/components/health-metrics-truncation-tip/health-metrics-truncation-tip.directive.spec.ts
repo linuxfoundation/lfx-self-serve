@@ -191,6 +191,20 @@ describe('HealthMetricsTruncationTipDirective', () => {
     expect(tooltip()).toBeNull();
   });
 
+  // Focusing cut-off text can scroll its container to bring it into view; the tip must survive that.
+  it('keeps a focused target’s tip through a scroll, pending or open', async () => {
+    await setup();
+    widths('label', 200, 100);
+    el('label').focus();
+    el('column').dispatchEvent(new Event('scroll'));
+    await advance(300);
+    await flush();
+    expect(tooltip()?.textContent?.trim()).toBe('A long button label');
+
+    el('column').dispatchEvent(new Event('scroll'));
+    expect(tooltip()).not.toBeNull();
+  });
+
   it('closes on Escape, cancels a pending show, and stays closed until the pointer leaves', async () => {
     await setup();
     widths('cut', 200, 100);

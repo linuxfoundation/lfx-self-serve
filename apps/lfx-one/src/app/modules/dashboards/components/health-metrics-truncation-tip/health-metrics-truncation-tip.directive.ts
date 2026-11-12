@@ -104,8 +104,12 @@ export class HealthMetricsTruncationTipDirective {
     this.hide();
   };
 
-  // Captured, so a native scroller inside the page (the CDK only watches the viewport and registered ones) also closes it.
-  private readonly onScroll = (): void => this.hide();
+  // Captured, so a native scroller in the page counts too: a hover tip closes, while a focused target's tip follows its text,
+  // since focusing it can scroll it into view.
+  private readonly onScroll = (): void => {
+    if (this.targetFocused()) this.overlayRef?.updatePosition();
+    else this.hide();
+  };
 
   /** The nearest element from `start` up to the host whose text is cut off. */
   private truncatedFrom(start: EventTarget | null): HTMLElement | null {
@@ -177,11 +181,11 @@ export class HealthMetricsTruncationTipDirective {
     overlayRef.dispose();
   }
 
-  // The uikit tooltip's overlay and panel, anchored to the cut-off element; scrolling closes it rather than following the text.
+  // The uikit tooltip's overlay and panel, anchored to the cut-off element. Scrolls are handled in `onScroll`.
   private show(element: HTMLElement): void {
     const overlayRef = this.overlay.create({
       positionStrategy: this.overlay.position().flexibleConnectedTo(element).withFlexibleDimensions(false).withPush(true).withPositions(this.positions()),
-      scrollStrategy: this.overlay.scrollStrategies.close(),
+      scrollStrategy: this.overlay.scrollStrategies.noop(),
       disposeOnNavigation: true,
     });
     this.overlayRef = overlayRef;
@@ -197,7 +201,7 @@ export class HealthMetricsTruncationTipDirective {
     panelElement.addEventListener('pointerleave', (event) => {
       if ((event as PointerEvent).pointerType !== 'touch') this.scheduleHide();
     });
-    // The CDK disposes the overlay itself on scroll and navigation; drop the stale state when it does.
+    // The CDK disposes the overlay itself on navigation; drop the stale state when it does.
     overlayRef
       .detachments()
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
