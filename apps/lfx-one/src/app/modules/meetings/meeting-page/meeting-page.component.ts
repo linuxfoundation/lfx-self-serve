@@ -7,7 +7,7 @@ import { Router } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeRow, MeetingPageView, PublicMeetingProject } from '@lfx-one/shared/interfaces';
-import { isPastMeetingCalendarRow, toPastMeetingHomeRow } from '@lfx-one/shared/utils';
+import { isPastMeetingCalendarRow, toPastMeetingHomeRow, toUpcomingMeetingHomeRow } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
@@ -23,8 +23,9 @@ import { MeetingPageTopBarComponent } from './top-bar/meeting-page-top-bar.compo
 /**
  * The redesigned `/meetings/:id` page, matched by `meetingPageRedesignGuard`: the meeting details for a signed-in viewer
  * with full access, with loading and error states. Not-found goes to `/meetings/not-found` like the legacy page.
- * @description Fallback rule: only an ended meeting, opened by a viewer with full access, renders here; anything
- * else re-navigates the same URL to the legacy page, on the server too, so hydration keeps the page it rendered.
+ * @description Fallback rule: a meeting the signed-in viewer fully sees renders here, upcoming, live or ended; a viewer
+ * without full access (such as a password-only guest) and a series with no date left re-navigate the same URL to the
+ * legacy page, on the server too, so hydration keeps the page it rendered.
  */
 @Component({
   selector: 'lfx-meeting-page',
@@ -58,6 +59,11 @@ export class MeetingPageComponent implements MeetingPageRowHost {
   );
   /** Loaded as a past date, which greys the top bar's date tile. */
   protected readonly past: Signal<boolean> = this.pageData.loadedViaPastMeetingId;
+  /** One key while a row shows: the row's, and the reload count, so the details are re-created only when either changes. */
+  protected readonly detailsKey: Signal<string[]> = computed(() => {
+    const row = this.row();
+    return row ? [`${row.key}:${this.pageData.reloadsDone()}`] : [];
+  });
 
   public constructor() {
     bindLfxDocumentTitle(computed(() => this.row()?.title ?? ''));
@@ -80,16 +86,21 @@ export class MeetingPageComponent implements MeetingPageRowHost {
 
   private initRow(): Signal<MeetingHomeRow | null> {
     return computed(() => {
-      const meeting = this.meeting();
-      if (!meeting || !this.pageData.meetingMatchesRoute() || !this.serves() || !isPastMeetingCalendarRow(meeting)) return null;
+      const loaded = this.meeting();
+      if (!loaded || !this.pageData.meetingMatchesRoute()) return null;
       // The public payload carries its project apart; the details read the flattened fields.
-      const { project } = meeting;
-      return toPastMeetingHomeRow({
-        ...meeting,
-        project_name: meeting.project_name || project?.name,
-        project_slug: meeting.project_slug || project?.slug,
-        project_logo_url: meeting.project_logo_url || project?.logo_url,
-      });
+      const { project } = loaded;
+      const meeting = {
+        ...loaded,
+        project_name: loaded.project_name || project?.name,
+        project_slug: loaded.project_slug || project?.slug,
+        project_logo_url: loaded.project_logo_url || project?.logo_url,
+      };
+      if (this.pageData.loadedViaPastMeetingId()) {
+        return this.pageData.pastMeetingFullAccess() && isPastMeetingCalendarRow(meeting) ? toPastMeetingHomeRow(meeting) : null;
+      }
+      if (!this.pageData.liveMeetingFullAccess()) return null;
+      return toUpcomingMeetingHomeRow(meeting, this.pageData.resolveOccurrence(meeting));
     });
   }
 
@@ -101,11 +112,6 @@ export class MeetingPageComponent implements MeetingPageRowHost {
       if (!meeting || !matches) return 'loading';
       return this.row() ? 'details' : 'fallback';
     });
-  }
-
-  /** An ended meeting the viewer fully sees; live join stays on the legacy page. */
-  private serves(): boolean {
-    return this.pageData.loadedViaPastMeetingId() && this.pageData.pastMeetingFullAccess();
   }
 
   // The guard skips this page for a navigation carrying the legacy state, and records that for hydration on the server.

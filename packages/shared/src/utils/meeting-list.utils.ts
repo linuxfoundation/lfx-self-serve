@@ -96,6 +96,11 @@ export function expandMeetingOccurrences(meetings: readonly Meeting[], now: Date
   return rows.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
 }
 
+/** One date of an upcoming meeting as a home row, as the list builds it; null when it has no valid start or is cancelled. */
+export function toUpcomingMeetingHomeRow(meeting: Meeting, occurrence: MeetingOccurrence | null): MeetingHomeRow | null {
+  return buildUpcomingRow(meeting, occurrence, true);
+}
+
 /** A past meeting as a home row, or null when it has no valid start. */
 export function toPastMeetingHomeRow(meeting: PastMeeting): MeetingHomeRow | null {
   const startMs = getPastMeetingStartTimeMs(meeting);

@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { BreakpointObserver } from '@angular/cdk/layout';
+import { OverlayContainer } from '@angular/cdk/overlay';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
+import { RecurrenceType } from '@lfx-one/shared/enums';
+import { Meeting, MeetingHomeRow, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -53,44 +55,49 @@ const ROW: MeetingHomeRow = {
   durationMinutes: 30,
 };
 
+const configure = (row: MeetingHomeRow, extra: Partial<MeetingDetailsSource> = {}, cancelOccurrence = vi.fn()): void => {
+  const source: MeetingDetailsSource = {
+    row,
+    tab: 'agenda',
+    now: signal(new Date('2049-12-31T09:00:00.000Z')),
+    upcomingRows: signal([]),
+    hostRef: null,
+    open: vi.fn(),
+    applySummaryChange: vi.fn(),
+    ...extra,
+  };
+  TestBed.configureTestingModule({
+    providers: [
+      MeetingDetailsContext,
+      { provide: MeetingDetailsSource, useValue: source },
+      { provide: MeetingDetailsArtifactsService, useValue: { flags: signal(null) } },
+      { provide: MeetingService, useValue: { getMeetingDetail: () => of(row.meeting), removedRegistrationMeetingIds: signal(new Set<string>()) } },
+      { provide: UserService, useValue: { viewerUsername: signal('synthetic-viewer') } },
+      { provide: UiToastService, useValue: { show: vi.fn() } },
+      { provide: MeetingsHomeEditService, useValue: { edit: vi.fn() } },
+      { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence } },
+      { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }) } },
+      provideRouter([]),
+    ],
+  });
+  TestBed.overrideComponent(MeetingDetailsBodyComponent, {
+    remove: {
+      imports: [
+        MeetingDetailsAgendaComponent,
+        MeetingDetailsGuestsComponent,
+        MeetingDetailsOccurrenceNavComponent,
+        MeetingDetailsOwnActionsComponent,
+        MeetingDetailsScheduleComponent,
+        MeetingDetailsToolsComponent,
+      ],
+    },
+    add: { imports: [OwnActionsStubComponent, SectionStubComponent] },
+  });
+};
+
 describe('MeetingDetailsBodyComponent', () => {
   it('renders as a page from a source alone, outside a drawer: an h1, and the project leading the header row', async () => {
-    const source: MeetingDetailsSource = {
-      row: ROW,
-      tab: 'agenda',
-      now: signal(new Date('2049-12-31T09:00:00.000Z')),
-      upcomingRows: signal([]),
-      hostRef: null,
-      open: vi.fn(),
-      applySummaryChange: vi.fn(),
-    };
-    TestBed.configureTestingModule({
-      providers: [
-        MeetingDetailsContext,
-        { provide: MeetingDetailsSource, useValue: source },
-        { provide: MeetingDetailsArtifactsService, useValue: { flags: signal(null) } },
-        { provide: MeetingService, useValue: { getMeetingDetail: () => of(MEETING), removedRegistrationMeetingIds: signal(new Set<string>()) } },
-        { provide: UserService, useValue: { viewerUsername: signal('synthetic-viewer') } },
-        { provide: UiToastService, useValue: { show: vi.fn() } },
-        { provide: MeetingsHomeEditService, useValue: { edit: vi.fn() } },
-        { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence: vi.fn() } },
-        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }) } },
-        provideRouter([]),
-      ],
-    });
-    TestBed.overrideComponent(MeetingDetailsBodyComponent, {
-      remove: {
-        imports: [
-          MeetingDetailsAgendaComponent,
-          MeetingDetailsGuestsComponent,
-          MeetingDetailsOccurrenceNavComponent,
-          MeetingDetailsOwnActionsComponent,
-          MeetingDetailsScheduleComponent,
-          MeetingDetailsToolsComponent,
-        ],
-      },
-      add: { imports: [OwnActionsStubComponent, SectionStubComponent] },
-    });
+    configure(ROW);
 
     const fixture = TestBed.createComponent(MeetingDetailsBodyComponent);
     await fixture.whenStable();
@@ -108,5 +115,35 @@ describe('MeetingDetailsBodyComponent', () => {
     const link = fixture.nativeElement.querySelector('[data-testid="meeting-details-header"] [data-testid="meeting-details-project"]') as HTMLElement;
     link.click();
     expect(navigate).toHaveBeenCalled();
+  });
+
+  describe('the ⋯ menu', () => {
+    const settle = async (fixture: { whenStable: () => Promise<unknown> }): Promise<void> => {
+      await fixture.whenStable();
+      await new Promise<void>((resolve) => setTimeout(resolve, 30));
+    };
+    const openMenu = async (): Promise<HTMLElement> => {
+      const fixture = TestBed.createComponent(MeetingDetailsBodyComponent);
+      await settle(fixture);
+      (fixture.nativeElement.querySelector('[data-testid="meeting-details-more"] button') as HTMLButtonElement).click();
+      await settle(fixture);
+      return TestBed.inject(OverlayContainer).getContainerElement();
+    };
+
+    it('hands a cancelled date to the host', async () => {
+      const occurrence = { occurrence_id: '2524640400', start_time: ROW.startTime, duration: 30 } as MeetingOccurrence;
+      const meeting = { ...MEETING, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, occurrences: [occurrence] } as unknown as Meeting;
+      const occurrenceCancelled = vi.fn();
+      configure(
+        { ...ROW, meeting, occurrence, occurrenceId: occurrence.occurrence_id },
+        { occurrenceCancelled },
+        vi.fn(() => of(true))
+      );
+
+      const overlay = await openMenu();
+      (overlay.querySelector('[data-testid="meeting-details-cancel-occurrence"]') as HTMLElement).click();
+
+      expect(occurrenceCancelled).toHaveBeenCalledWith(expect.objectContaining({ id: MEETING.id }), occurrence);
+    });
   });
 });

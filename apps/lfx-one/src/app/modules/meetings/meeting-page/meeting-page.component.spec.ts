@@ -25,15 +25,26 @@ const PAST_MEETING = {
   organizer: false,
 } as unknown as Meeting;
 
+const LIVE_MEETING = {
+  id: '123',
+  title: 'Weekly sync',
+  start_time: '2030-01-01T10:00:00Z',
+  duration: 30,
+  recurrence: null,
+  invited: true,
+} as unknown as Meeting;
+
 describe('MeetingPageComponent', () => {
   let meeting: ReturnType<typeof signal<Meeting | undefined>>;
   let loadedViaPastMeetingId: ReturnType<typeof signal<boolean>>;
   let pastMeetingFullAccess: ReturnType<typeof signal<boolean>>;
+  let liveMeetingFullAccess: ReturnType<typeof signal<boolean>>;
   let meetingLoadFailed: ReturnType<typeof signal<boolean>>;
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let refresh: ReturnType<typeof vi.fn>;
   let trackPageview: ReturnType<typeof vi.fn>;
   let routeId: ReturnType<typeof signal<string | null>>;
+  let reloadsDone: ReturnType<typeof signal<number>>;
 
   const render = (): HTMLElement => {
     const fixture = TestBed.createComponent(MeetingPageComponent);
@@ -46,11 +57,13 @@ describe('MeetingPageComponent', () => {
     meeting = signal<Meeting | undefined>(PAST_MEETING);
     loadedViaPastMeetingId = signal(true);
     pastMeetingFullAccess = signal(true);
+    liveMeetingFullAccess = signal(true);
     meetingLoadFailed = signal(false);
     navigateByUrl = vi.fn().mockResolvedValue(true);
     refresh = vi.fn();
     trackPageview = vi.fn();
     routeId = signal<string | null>('123-1700000000000');
+    reloadsDone = signal(0);
 
     TestBed.configureTestingModule({
       providers: [
@@ -71,9 +84,12 @@ describe('MeetingPageComponent', () => {
               meetingMatchesRoute: signal(true),
               loadedViaPastMeetingId,
               pastMeetingFullAccess,
+              liveMeetingFullAccess,
+              resolveOccurrence: () => null,
               meetingLoadFailed,
               startClock: vi.fn(),
               refresh,
+              reloadsDone,
               trackPageview,
             },
           },
@@ -107,6 +123,21 @@ describe('MeetingPageComponent', () => {
     expect(trackPageview).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the shown details across a refetch and re-creates them after a reload', () => {
+    const fixture = TestBed.createComponent(MeetingPageComponent);
+    fixture.detectChanges();
+    const shown = (): Element | null => (fixture.nativeElement as HTMLElement).querySelector('lfx-meeting-page-details');
+    const first = shown();
+
+    meeting.set({ ...PAST_MEETING });
+    fixture.detectChanges();
+    expect(shown()).toBe(first);
+
+    reloadsDone.set(1);
+    fixture.detectChanges();
+    expect(shown()).not.toBe(first);
+  });
+
   it('flattens the public project onto the row the details read', () => {
     meeting.set({ ...PAST_MEETING, project: { name: 'Parity Project', slug: 'parity', logo_url: 'https://logo.example.org/p.png' } } as unknown as Meeting);
     const fixture = TestBed.createComponent(MeetingPageComponent);
@@ -120,8 +151,38 @@ describe('MeetingPageComponent', () => {
   });
 
   it.each([
-    ['an upcoming meeting', () => loadedViaPastMeetingId.set(false)],
-    ['a viewer without full access', () => pastMeetingFullAccess.set(false)],
+    ['an invitee', () => undefined],
+    ['the organizer', () => meeting.set({ ...LIVE_MEETING, invited: false, organizer: true })],
+  ])('shows an upcoming or live meeting to %s with full access, at the date the URL names', (_case, arrange) => {
+    loadedViaPastMeetingId.set(false);
+    meeting.set(LIVE_MEETING);
+    arrange();
+    const fixture = TestBed.createComponent(MeetingPageComponent);
+    fixture.detectChanges();
+    TestBed.tick();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('lfx-meeting-page-details')).not.toBeNull();
+    expect(fixture.componentInstance.row()).toMatchObject({ key: '123', startTime: '2030-01-01T10:00:00Z', occurrence: null });
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an ended meeting seen without full access', () => pastMeetingFullAccess.set(false)],
+    [
+      'a password-only guest of an upcoming meeting',
+      () => {
+        loadedViaPastMeetingId.set(false);
+        liveMeetingFullAccess.set(false);
+        meeting.set(LIVE_MEETING);
+      },
+    ],
+    [
+      'a meeting with no date left to show',
+      () => {
+        loadedViaPastMeetingId.set(false);
+        meeting.set({ ...LIVE_MEETING, start_time: '' });
+      },
+    ],
   ])('hands %s to the legacy page at the same URL', (_case, arrange) => {
     arrange();
     const element = render();
