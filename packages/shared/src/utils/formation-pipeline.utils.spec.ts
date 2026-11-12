@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { rowsToCsv } from './file.utils';
 import type { FormationPipelineRow } from '../interfaces/formation-pipeline.interface';
+import { FORMATION_PIPELINE_SEARCH_MAX_LENGTH } from '../constants/formation-pipeline.constants';
 import {
   buildPipelineCsvRows,
   buildPipelineUrlParams,
@@ -27,6 +28,7 @@ import {
   toPipelineTableRow,
   getPipelineStageKey,
   matchesPipelineSearch,
+  normalizePipelineSearch,
   sortPipelineRows,
 } from './formation-pipeline.utils';
 
@@ -366,6 +368,20 @@ describe('Pipeline URL state (#5619)', () => {
     }
     return params.toString();
   };
+
+  it('applies one search length everywhere: a search past the maximum is cut the same way when written, read and matched', () => {
+    const long = 'a'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH + 40);
+    const cut = 'a'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH);
+    expect(normalizePipelineSearch(`  ${long}  `)).toBe(cut);
+    expect(buildPipelineUrlParams({ ...getDefaultPipelineUrlState(), search: long })['q']).toBe(cut);
+    // The link the page writes reopens with exactly the search that filtered the rows.
+    const reopened = fromQuery(toQuery({ ...getDefaultPipelineUrlState(), search: long }));
+    expect(reopened.search).toBe(cut);
+    expect(fromQuery(`q=${long}`).search).toBe(cut);
+    // The live filter agrees: the long and the cut search match the same names.
+    expect(matchesPipelineSearch(`${cut}b`, long)).toBe(matchesPipelineSearch(`${cut}b`, cut));
+    expect(matchesPipelineSearch(`${cut}b`, long)).toBe(true);
+  });
 
   it('opens on the defaults for an empty query, and writes nothing for the defaults', () => {
     expect(fromQuery('')).toEqual(getDefaultPipelineUrlState());

@@ -55,6 +55,7 @@
               control="search"
               [placeholder]="copy.searchPlaceholder"
               [ariaLabel]="copy.searchPlaceholder"
+              [maxlength]="searchMaxLength"
               icon="fa-light fa-search"
               styleClass="w-full"
               size="small"
@@ -250,12 +251,14 @@
                   </div>
                   <div class="flex justify-between gap-3 text-xs">
                     <span class="text-gray-500">Formation lead</span>
-                    <span
-                      class="text-right break-words min-w-0"
-                      [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'"
-                      [attr.data-testid]="'formations-pipeline-mobile-lead-' + row.uid"
-                      >{{ row.formationLeadLabel }}</span
-                    >
+                    <div class="flex flex-col items-end min-w-0 text-right" [attr.data-testid]="'formations-pipeline-mobile-lead-' + row.uid">
+                      <span class="break-words" [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'">{{ row.formationLeadLabel }}</span>
+                      @if (row.formationLeadEmail && row.formationLeadEmail !== row.formationLeadLabel) {
+                        <span class="break-all text-gray-500" [attr.data-testid]="'formations-pipeline-mobile-lead-email-' + row.uid">{{
+                          row.formationLeadEmail
+                        }}</span>
+                      }
+                    </div>
                   </div>
                   <div class="flex justify-between gap-3 text-xs">
                     <span class="text-gray-500">ED / PM</span>

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FORMATION_PIPELINE_SEARCH_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -402,9 +403,38 @@ describe('FormationsPipelineComponent (#5475)', () => {
     );
 
     expect(q('formations-pipeline-mobile-lead-l')?.textContent).toContain('a-very-long-address-without-spaces@example.com');
-    expect(q('formations-pipeline-mobile-lead-l')?.classList).toContain('break-words');
+    expect(q('formations-pipeline-mobile-lead-l')?.querySelector('span')?.classList).toContain('break-words');
     expect(q('formations-pipeline-lead-l')?.classList).toContain('break-words');
     expect(q('formations-pipeline-mobile-lead-n')?.textContent).toContain('Not set');
+  });
+
+  it("shows a lead's email as text on the phone card when the lead also has a name, and not twice when there is no name", async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } }),
+          row({ uid: 'e', name: 'Emailed', stage: 'engaged', formation_lead: { name: '', email: 'only@example.com' } }),
+        ])
+      )
+    );
+
+    expect(q('formations-pipeline-mobile-lead-l')?.textContent).toContain('Lee Lead');
+    expect(q('formations-pipeline-mobile-lead-email-l')?.textContent?.trim()).toBe('lee@example.com');
+    expect(q('formations-pipeline-mobile-lead-e')?.textContent?.trim()).toBe('only@example.com');
+    expect(q('formations-pipeline-mobile-lead-email-e')).toBeNull();
+  });
+
+  it('caps the search input at the shared length and keeps a longer typed search identical in the filter and the URL', async () => {
+    await render(of(response(ROWS)), {});
+    const navigate = vi.mocked(TestBed.inject(Router).navigate);
+    const input = q('formations-pipeline-search')?.querySelector('input');
+    expect(input?.getAttribute('maxlength')).toBe(String(FORMATION_PIPELINE_SEARCH_MAX_LENGTH));
+
+    fixture.componentInstance['filterForm'].controls.search.setValue('x'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH + 30));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    const written = navigate.mock.calls.at(-1)?.[1]?.queryParams?.['q'] as string;
+    expect(written).toBe('x'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH));
   });
 
   it('exports the formation lead in the CSV', async () => {

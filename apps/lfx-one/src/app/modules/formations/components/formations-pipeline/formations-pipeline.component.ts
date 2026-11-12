@@ -24,6 +24,7 @@ import {
   FORMATION_PIPELINE_FOUNDATION_KIND_LABELS,
   FORMATION_PIPELINE_FOUNDATION_KINDS,
   FORMATION_PIPELINE_PAGE_SIZE,
+  FORMATION_PIPELINE_SEARCH_MAX_LENGTH,
   FORMATION_PIPELINE_STAGES,
 } from '@lfx-one/shared/constants';
 import type {
@@ -50,6 +51,7 @@ import {
   getPipelineCsvFilename,
   parsePipelineUrlState,
   matchesPipelineSearch,
+  normalizePipelineSearch,
   sortPipelineRows,
   toPipelineTableRow,
 } from '@lfx-one/shared/utils';
@@ -104,6 +106,7 @@ export class FormationsPipelineComponent {
   protected readonly copy = FORMATION_PIPELINE_COPY;
   protected readonly columns = FORMATION_PIPELINE_COLUMNS;
   protected readonly pageSize = FORMATION_PIPELINE_PAGE_SIZE;
+  protected readonly searchMaxLength = FORMATION_PIPELINE_SEARCH_MAX_LENGTH;
 
   /** The filter and sort state the page opened with, read from the URL once: a shared or reloaded link reopens the same view (#5619). Unknown values fall back to the defaults. */
   private readonly initialState = parsePipelineUrlState(this.route.snapshot.queryParamMap);
@@ -248,7 +251,7 @@ export class FormationsPipelineComponent {
     return toSignal(
       this.filterForm.controls.search.valueChanges.pipe(
         debounceTime(300),
-        map((value) => value.trim()),
+        map((value) => normalizePipelineSearch(value)),
         distinctUntilChanged(),
         takeUntilDestroyed(this.destroyRef)
       ),

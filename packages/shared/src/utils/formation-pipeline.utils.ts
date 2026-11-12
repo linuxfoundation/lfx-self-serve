@@ -78,9 +78,14 @@ export function countPipelineRows(rows: readonly FormationPipelineRow[]): Format
   return counts;
 }
 
+/** The one search policy (#5619): trimmed and cut to {@link FORMATION_PIPELINE_SEARCH_MAX_LENGTH}. The input, the live filter, the URL writer and the URL parser all go through it, so a reloaded link matches exactly what was on screen. */
+export function normalizePipelineSearch(search: string | null | undefined): string {
+  return (search ?? '').trim().slice(0, FORMATION_PIPELINE_SEARCH_MAX_LENGTH);
+}
+
 /** Case-insensitive name match used by both the BFF `q` filter and the UI. An empty query matches everything. */
 export function matchesPipelineSearch(name: string, search: string | null | undefined): boolean {
-  const needle = (search ?? '').trim().toLowerCase();
+  const needle = normalizePipelineSearch(search).toLowerCase();
   return !needle || name.toLowerCase().includes(needle);
 }
 
@@ -376,7 +381,7 @@ export function parsePipelineUrlState(params: { get(name: string): string | null
     state.foundationKind = kind as FormationPipelineUrlState['foundationKind'];
   }
 
-  state.search = (params.get(names.search) ?? '').trim().slice(0, FORMATION_PIPELINE_SEARCH_MAX_LENGTH);
+  state.search = normalizePipelineSearch(params.get(names.search));
 
   const sortKey = FORMATION_PIPELINE_COLUMNS.find((column) => column.key === params.get(names.sort))?.key;
   if (sortKey) {
@@ -392,7 +397,7 @@ export function parsePipelineUrlState(params: { get(name: string): string | null
 export function buildPipelineUrlParams(state: FormationPipelineUrlState): Record<string, string | null> {
   const names = FORMATION_PIPELINE_QUERY_PARAMS;
   const defaults = getDefaultPipelineUrlState();
-  const search = state.search.trim();
+  const search = normalizePipelineSearch(state.search);
   const defaultSort = state.sort.key === defaults.sort.key && state.sort.direction === defaults.sort.direction;
   return {
     [names.stage]: state.stage === defaults.stage ? null : state.stage,
