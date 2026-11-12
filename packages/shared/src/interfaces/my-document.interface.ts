@@ -8,17 +8,13 @@ export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'tran
 
 // ─── Query Result Shapes ─────────────────────────────────────────────────────
 
-/**
- * Raw shape returned by query service for `committee_link` resource type. It is tagged with `committee_uid` and, when
- * the link is in a folder, `folder_uid` — the tag the folder-empty check filters on.
- */
+/** Raw shape returned by query service for `committee_link` resource type */
 export interface CommitteeLinkQueryResult {
   uid: string;
   name: string;
   url?: string;
   created_at?: string;
   committee_uid?: string;
-  folder_uid?: string;
 }
 
 /**

@@ -4,8 +4,7 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
-  DOCUMENT_DELETE_TYPES,
-  DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+  COMMITTEE_DOCUMENT_DELETE_TYPES,
   DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
@@ -30,7 +29,6 @@ import {
   CommitteeUser,
   AuditUserProfile,
   CommitteeDocumentQueryResult,
-  CommitteeLinkQueryResult,
   CommitteeMailingListRef,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
@@ -2221,19 +2219,19 @@ export class CommitteeService {
   /**
    * Deletes a committee folder, link or uploaded file using ETag for concurrency control.
    * A folder is only deleted when it is empty.
-   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
+   * @param documentType 'link' or 'file' — determines which upstream endpoint to call
    */
   public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
     // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path on a destructive route.
-    if (!DOCUMENT_DELETE_TYPES.includes(documentType)) {
-      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_DELETE_TYPES.join(', ')}.`, {
-        operation: 'delete_committee_document',
-        service: 'committee_service',
-      });
-    }
-
-    if (documentType === 'folder') {
-      await this.assertCommitteeFolderEmpty(req, committeeId, documentId);
+    if (!COMMITTEE_DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField(
+        'type',
+        `Unsupported document type: ${documentType}. Must be one of: ${COMMITTEE_DOCUMENT_DELETE_TYPES.join(', ')}.`,
+        {
+          operation: 'delete_committee_document',
+          service: 'committee_service',
+        }
+      );
     }
 
     const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
@@ -2899,46 +2897,5 @@ export class CommitteeService {
       return [];
     }
     return pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
-  }
-
-  /**
-   * Rejects (409) when a committee folder still holds a link or an uploaded file. The upstream folder delete only
-   * mentions links, so the BFF checks files itself. Unlike the list view, a lookup failure is not swallowed into
-   * "empty": a destructive call must fail closed.
-   *
-   * Links and files are looked up by the folder's own `folder_uid` tag (with the committee's, so another committee can
-   * never match), not by listing everything the committee holds, so a large unrelated collection cannot hit the
-   * pagination cap and make an empty folder undeletable. The query service checks access after it paginates, so a page
-   * can come back with no visible rows while more remain: the pages are followed, stopping at the first match, rather
-   * than trusting one.
-   */
-  private async assertCommitteeFolderEmpty(req: Request, committeeId: string, folderId: string): Promise<void> {
-    const findChildren = <T extends { folder_uid?: string }>(type: 'committee_link' | 'committee_document'): Promise<T[]> =>
-      fetchAllQueryResources<T>(
-        req,
-        (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<T>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type,
-            tags_all: [`committee_uid:${committeeId}`, `folder_uid:${folderId}`],
-            ...(pageToken && { page_token: pageToken }),
-          }),
-        { failOnPartial: true, maxResults: 0 }
-      );
-
-    const [links, files] = await Promise.all([
-      findChildren<CommitteeLinkQueryResult>('committee_link'),
-      findChildren<CommitteeDocumentQueryResult>('committee_document'),
-    ]);
-
-    const hasChildren = links.some((link) => link.folder_uid === folderId) || files.some((file) => file.folder_uid === folderId);
-
-    if (hasChildren) {
-      throw new ConflictError(DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, 'FOLDER_NOT_EMPTY', {
-        operation: 'delete_committee_document',
-        service: 'committee_service',
-        details: { committee_uid: committeeId, folder_uid: folderId },
-        clientMessage: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
-      });
-    }
   }
 }

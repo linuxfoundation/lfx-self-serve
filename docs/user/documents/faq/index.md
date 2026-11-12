@@ -38,7 +38,7 @@ Yes, with write access, for project documents and for a group's documents. Selec
 
 ## Can I delete a document?
 
-Yes, with write access, for a project's own files, links, and folders and for a group's own on its **Documents** tab. Select **More actions** (three dots) on the row, then **Delete**, and confirm. Deleting can't be undone. A folder can only be deleted when it's empty: if it still has files or links in it, LFX tells you to delete what's inside first. Meeting, recording, mailing-list, and (on the project page) group documents can't be deleted here. See [Manage Documents](../manage-documents/#delete-documents).
+Yes, with write access, for a project's own files, links, and folders and for a group's own files and links on its **Documents** tab. Select **More actions** (three dots) on the row, then **Delete**, and confirm. Deleting can't be undone. A project folder can only be deleted when it's empty: if it still has files or links in it, LFX tells you to delete what's inside first. Deleting a group's folders isn't available yet. Meeting, recording, mailing-list, and (on the project page) group documents can't be deleted here. See [Manage Documents](../manage-documents/#delete-documents).
 
 ## Can I add a link instead of a file?
 

@@ -6,7 +6,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
-import { DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
 import { Committee, CommitteeDocument, MyDocumentItem } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { DocumentService } from '@services/document.service';
@@ -77,12 +76,12 @@ describe('CommitteeDocumentsComponent', () => {
     messageService = { add: vi.fn() };
   });
 
-  it('offers row actions on the group’s own folders, links and files, but not on meeting or mailing list documents', async () => {
+  it('offers row actions on the group’s own links and files, but not on its folders (not deletable yet) or meeting and mailing list documents', async () => {
     await render();
 
     expect(rowFor('committee_link:link-1').manageableType).toBe('link');
     expect(rowFor('committee_file:file-1').manageableType).toBe('file');
-    expect(rowFor('committee_folder:folder-1').manageableType).toBe('folder');
+    expect(rowFor('committee_folder:folder-1').manageableType).toBeUndefined();
     expect(rowFor('meeting_file:attachment-1').manageableType).toBeUndefined();
   });
 
@@ -98,7 +97,6 @@ describe('CommitteeDocumentsComponent', () => {
   it.each([
     ['committee_link:link-1', 'link-1', 'link'],
     ['committee_file:file-1', 'file-1', 'file'],
-    ['committee_folder:folder-1', 'folder-1', 'folder'],
   ])('deletes %s through the group API, says so, and reloads the list', async (rowId, documentUid, type) => {
     await render();
     let changed = 0;
@@ -116,16 +114,16 @@ describe('CommitteeDocumentsComponent', () => {
 
   it('shows the server’s reason and leaves the list alone when the delete fails', async () => {
     deleteCommitteeDocument.mockReturnValue(
-      throwError(() => new HttpErrorResponse({ status: 409, error: { error: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, code: 'FOLDER_NOT_EMPTY' } }))
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'The document changed. Reload and try again.', code: 'CONFLICT' } }))
     );
     await render();
     let changed = 0;
     fixture.componentInstance.documentsChanged.subscribe(() => changed++);
 
-    table().documentDelete.emit(rowFor('committee_folder:folder-1'));
+    table().documentDelete.emit(rowFor('committee_link:link-1'));
     await fixture.whenStable();
 
-    expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE }));
+    expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'The document changed. Reload and try again.' }));
     expect(getCommitteeDocuments).toHaveBeenCalledTimes(1);
     expect(changed).toBe(0);
   });
@@ -147,6 +145,7 @@ describe('CommitteeDocumentsComponent', () => {
     await render();
 
     table().documentDelete.emit(rowFor('meeting_file:attachment-1'));
+    table().documentDelete.emit(rowFor('committee_folder:folder-1'));
     await fixture.whenStable();
 
     expect(deleteCommitteeDocument).not.toHaveBeenCalled();

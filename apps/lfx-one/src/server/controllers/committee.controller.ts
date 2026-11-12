@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, DOCUMENT_DELETE_TYPES, MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, COMMITTEE_DOCUMENT_DELETE_TYPES, MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -1334,12 +1334,12 @@ export class CommitteeController {
   }
 
   /**
-   * DELETE /committees/:id/documents/:documentId?type=folder|link|file
+   * DELETE /committees/:id/documents/:documentId?type=link|file
    */
   public async deleteCommitteeDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, documentId } = req.params;
     const documentType = req.query['type'] as string;
-    const validDeleteTypes: readonly string[] = DOCUMENT_DELETE_TYPES;
+    const validDeleteTypes: readonly string[] = COMMITTEE_DOCUMENT_DELETE_TYPES;
     const startTime = logger.startOperation(req, 'delete_committee_document', {
       committee_id: id,
       document_id: documentId,

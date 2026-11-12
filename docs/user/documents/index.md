@@ -18,7 +18,7 @@ The Documents section lets you browse and manage documents associated with your 
 - Filter documents by source and search by name, group, or meeting
 - Open folders and move between them with the breadcrumb
 - Download files, open links, play meeting recordings, and preview meeting summaries
-- With write access, upload files, create folders, add links, and delete a project's or group's own files, links, and empty folders
+- With write access, upload files, create folders, add links, and delete a project's own files, links, and empty folders, and a group's own files and links
 
 ## Navigation
 
