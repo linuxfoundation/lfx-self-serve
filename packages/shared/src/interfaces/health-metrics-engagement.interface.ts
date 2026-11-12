@@ -39,27 +39,27 @@ export interface HealthMetricsTab {
   route: string;
 }
 
-/** Engagement's sub-nav badge, keyed to its own sections. */
+/** Engagement's sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsEngagementSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsEngagementSectionKey;
 }
 
-/**
- * Inputs to the sub-nav badges (the design's `counts()`). A `null` total means that section's data
- * has not resolved yet, so it renders no badge rather than a misleading zero.
- */
+/** Inputs to the sub-nav notes (the design's `counts()`); a zero drops its note. */
 export interface HealthMetricsEngagementSubNavCounts {
-  groups: number | null;
   dormantGroups: number;
   lowAttendanceGroups: number;
-  orgs: number | null;
   lapsedOrgs: number;
-  reps: number | null;
   neverAttendedReps: number;
-  nonMemberOrgs: number | null;
-  newsletters: number | null;
-  recipients: number | null;
 }
+
+/** What `#committees` reports for its sub-nav note. */
+export type HealthMetricsEngagementGroupNoteCounts = Pick<HealthMetricsEngagementSubNavCounts, 'dormantGroups' | 'lowAttendanceGroups'>;
+
+/** What `#orgs` reports for its sub-nav note. */
+export type HealthMetricsEngagementOrgNoteCounts = Pick<HealthMetricsEngagementSubNavCounts, 'lapsedOrgs'>;
+
+/** What `#reps` reports for its sub-nav note. */
+export type HealthMetricsEngagementRepNoteCounts = Pick<HealthMetricsEngagementSubNavCounts, 'neverAttendedReps'>;
 
 /** One group's numbers for a single period. Every period ships on every row, so the period pill
  * re-reads rather than re-deriving. */
@@ -105,8 +105,8 @@ export interface HealthMetricsEngagementGroupRowView {
   lastMetLabel: string;
 }
 
-/** Sub-nav badge inputs for `#committees`, aggregated over the whole project scope, not the page or
- * the selected type chip. */
+/** `#committees` scope counts, aggregated over the whole project scope, not the page or the selected
+ * type chip; the dormant and low-attendance counts feed its sub-nav note. */
 export interface HealthMetricsEngagementGroupCounts {
   groups: number;
   dormantGroups: number;
@@ -319,7 +319,7 @@ export interface HealthMetricsEngagementOrgRowView {
   tierPillClass: string;
 }
 
-/** Sub-nav badge inputs for `#orgs`. Both counts are period-agnostic, denormalized onto every row. */
+/** `#orgs` scope counts; the lapsed count feeds its sub-nav note. Both are period-agnostic, denormalized onto every row. */
 export interface HealthMetricsEngagementOrgCounts {
   orgs: number;
   lapsedOrgs: number;
@@ -369,7 +369,7 @@ export interface HealthMetricsEngagementNonMemberRowView {
   period: HealthMetricsEngagementNonMemberPeriod | null;
 }
 
-/** The `#nonmem` caption and sub-nav badge for one period: organizations that attended a meeting in it. */
+/** The `#nonmem` caption for one period: organizations that attended a meeting in it. */
 export interface HealthMetricsEngagementNonMemberPeriodCounts {
   range: HealthMetricsRange;
   orgs: number;
@@ -445,7 +445,7 @@ export interface HealthMetricsEngagementRepRowView {
 export type HealthMetricsEngagementRepRowLabels = Omit<HealthMetricsEngagementRepRowView, 'row' | 'period' | 'attendedLabel'>;
 
 /** Scope counts for one period. Unlike the org caption, this view's scope counts are
- * period-suffixed, so the caption and the sub-nav badge follow the pill. */
+ * period-suffixed, so the caption and the sub-nav note follow the pill. */
 export interface HealthMetricsEngagementRepPeriodCounts {
   range: HealthMetricsRange;
   reps: number;
@@ -568,8 +568,6 @@ export interface HealthMetricsEngagementNewsletterPointView {
 /** Newsletter performance for the selected period. */
 export interface HealthMetricsEngagementNewsletterView {
   isEmpty: boolean;
-  /** The sub-nav badge; `null` when the period is unmeasured. */
-  newslettersSent: number | null;
   headline: HealthMetricsEngagementNewsletterKpiView;
   side: HealthMetricsEngagementNewsletterKpiView[];
   /** Latest first, as the view ranks them. */

@@ -121,7 +121,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   // The counts cover the whole filtered set, so they must come from the response, not the page rows.
-  it('emits the whole-set counts for the sub-nav badges, and nothing while a read is in flight', async () => {
+  it('emits the whole-set counts for the sub-nav note, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 } }), (counts) => emitted.push(counts));
 
@@ -132,7 +132,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
-    // The in-flight null clears the badge rather than leaving the previous cut's number under a
+    // The in-flight null clears the note rather than leaving the previous cut's number under a
     // table that is being replaced.
     expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 }]);
   });
@@ -200,7 +200,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // Singular at one, and the badge counts never followed the chip.
+    // Singular at one, and the note counts never followed the chip.
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('1 group');
     expect(emitted.at(-1)).toEqual(counts);
   });
@@ -303,7 +303,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   // A failed read must not render the copy that asserts the foundation has no matching groups.
-  it('separates a failed read from an empty one, and keeps the badges and count off a fabricated zero', async () => {
+  it('separates a failed read from an empty one, and keeps the note and count off a fabricated zero', async () => {
     const emitted: unknown[] = [];
     await render(response(), (counts) => emitted.push(counts));
     getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));

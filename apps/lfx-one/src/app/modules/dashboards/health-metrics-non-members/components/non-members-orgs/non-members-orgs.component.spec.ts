@@ -42,7 +42,6 @@ describe('NonMembersOrgsComponent', () => {
   let getNonMembersOrgs: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
   let verdicts: boolean[];
 
@@ -71,7 +70,6 @@ describe('NonMembersOrgsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(NonMembersOrgsComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -97,7 +95,6 @@ describe('NonMembersOrgsComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
-    counts = [];
     lifecycle = [];
     verdicts = [];
   });
@@ -111,7 +108,6 @@ describe('NonMembersOrgsComponent', () => {
     expect(text('non-members-orgs-provisional')).toContain('provisional');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(counts).toEqual([null, 412]);
   });
 
   it('renders an organization row with its counts and no channel chips', async () => {
@@ -243,21 +239,6 @@ describe('NonMembersOrgsComponent', () => {
     expect(getNonMembersOrgs).toHaveBeenLastCalledWith(expect.objectContaining({ filter: 'all', search: '' }));
   });
 
-  it('keeps the sub-nav count through page turns and filters, blanking it only for a new period', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }));
-    counts.length = 0;
-
-    fixture.componentInstance['onTablePage']({ first: 10, rows: 10 });
-    fixture.componentInstance['onFilterChange']('meetings');
-    await settle();
-    expect(counts.every((count) => count === 80)).toBe(true);
-
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
-    await settle();
-    expect(counts.at(-2)).toBeNull();
-    expect(counts.at(-1)).toBe(80);
-  });
-
   it('pages through the table, including a new page size, and writes the page to the URL', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }));
     getNonMembersOrgs.mockClear();
@@ -310,7 +291,6 @@ describe('NonMembersOrgsComponent', () => {
     expect(getNonMembersOrgs).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30 }));
     expect(getNonMembersOrgs).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(counts).toEqual([null, 34]);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { nonFit: null, nonSearch: null, nonPage: 4 } }));
   });
 
@@ -338,9 +318,8 @@ describe('NonMembersOrgsComponent', () => {
   });
 
   // A failed read must not render copy that asserts the foundation had no active organizations.
-  it('separates a failed read from an empty one, settling it without a count', async () => {
+  it('separates a failed read from an empty one, settling it', async () => {
     await render();
-    counts.length = 0;
     lifecycle.length = 0;
     getNonMembersOrgs.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
@@ -348,7 +327,6 @@ describe('NonMembersOrgsComponent', () => {
     await settle();
 
     expect(query('non-members-orgs-error')).not.toBeNull();
-    expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false, false]);
   });
@@ -358,7 +336,6 @@ describe('NonMembersOrgsComponent', () => {
     await render();
 
     expect(getNonMembersOrgs).not.toHaveBeenCalled();
-    expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(text('non-members-orgs-count')).toBe('—');
   });

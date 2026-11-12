@@ -7,7 +7,7 @@
   [sections]="sections"
   [idPrefix]="idPrefix"
   [dataSections]="dataSections"
-  [subNavItems]="subNavItems()"
+  [subNavItems]="subNavItems"
   [blank]="blank"
   navLabel="Training sections"
   testIdPrefix="training">
@@ -15,9 +15,6 @@
     <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="courses">
-    <lfx-training-courses
-      (reading)="shell.sectionReading('courses')"
-      (settled)="shell.sectionSettled('courses', $event)"
-      (countChange)="coursesCount.set($event)" />
+    <lfx-training-courses (reading)="shell.sectionReading('courses')" (settled)="shell.sectionSettled('courses', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

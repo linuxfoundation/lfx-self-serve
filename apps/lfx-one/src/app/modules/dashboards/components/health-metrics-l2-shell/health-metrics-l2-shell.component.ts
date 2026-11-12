@@ -124,10 +124,10 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   /** Section key → its empty state, for each section whose every read settled empty. */
   protected readonly emptySections: Signal<ReadonlyMap<string, HealthMetricsL2EmptyCopy>> = this.initEmptySections();
   protected readonly blankView: Signal<HealthMetricsL2BlankView | null> = this.initBlankView();
-  /** An empty section's badge would count nothing, so it drops along with the section's own counts. */
+  /** An empty section has nothing to warn about, so the rail drops its note. */
   protected readonly visibleSubNavItems = computed<HealthMetricsL2SubNavItem[]>(() => {
     const empty = this.emptySections();
-    return this.subNavItems().map((item) => (empty.has(item.key) ? { ...item, count: null, note: '' } : item));
+    return this.subNavItems().map((item) => (empty.has(item.key) ? { ...item, note: '' } : item));
   });
 
   /**

@@ -50,7 +50,7 @@ const SECTIONS: HealthMetricsL2Section[] = [
   },
 ];
 const DATA_SECTIONS = ['alpha', 'beta'];
-const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, count: 3, note: '' }));
+const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '2 dormant' }));
 const BLANK: HealthMetricsL2Blank = {
   icon: 'fa-light fa-ticket',
   noun: 'event',
@@ -922,7 +922,7 @@ describe('HealthMetricsL2ShellComponent', () => {
       return fixture.debugElement.query(By.directive(HealthMetricsL2ShellComponent)).componentInstance as HealthMetricsL2ShellComponent;
     }
 
-    it('swaps a section that settled empty for the compact empty state, hiding its body, footnote and badge', async () => {
+    it('swaps a section that settled empty for the compact empty state, hiding its body, footnote and sub-nav note', async () => {
       child('alpha').settled.emit(true);
       child('beta').settled.emit(false);
       await flush();
@@ -931,7 +931,8 @@ describe('HealthMetricsL2ShellComponent', () => {
       expect(query('test-section-empty-alpha')?.textContent).toContain('This fills in once the foundation has an event on the calendar.');
       expect(query('test-section-alpha')?.querySelector('lfx-test-section')?.parentElement?.className).toContain('hidden');
       expect(query('test-footnote-alpha')).toBeNull();
-      expect(query('test-sub-nav-alpha')?.textContent).not.toContain('3');
+      expect(query('test-sub-nav-alpha-note')).toBeNull();
+      expect(query('test-sub-nav-beta-note')).not.toBeNull();
       expect(query('test-section-empty-beta')).toBeNull();
       expect(query('test-blank')).toBeNull();
     });

@@ -85,12 +85,12 @@ function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): Healt
 }
 
 describe('buildHealthMetricsEventsSubNavItems', () => {
-  it('lists every section in render order, with its label and no badge', () => {
+  it('lists every section in render order, with its label and no note', () => {
     const items = buildHealthMetricsEventsSubNavItems();
 
     expect(items.map((item) => item.key)).toEqual(HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.key));
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.label));
-    expect(items.every((item) => item.count === null && item.note === '')).toBe(true);
+    expect(items.every((item) => item.note === '')).toBe(true);
   });
 
   it('puts a note on the section it names', () => {
@@ -98,13 +98,6 @@ describe('buildHealthMetricsEventsSubNavItems', () => {
 
     expect(items.find((item) => item.key === 'forecast')?.note).toBe('2 will miss goal');
     expect(items.filter((item) => item.note !== '')).toHaveLength(1);
-  });
-
-  it('puts a badge on the section it counts, and none on the rest', () => {
-    const items = buildHealthMetricsEventsSubNavItems({}, { past: 12 });
-
-    expect(items.find((item) => item.key === 'past')?.count).toBe(12);
-    expect(items.filter((item) => item.count !== null)).toHaveLength(1);
   });
 });
 
@@ -1165,7 +1158,6 @@ describe('buildHealthMetricsEventsGeographyView', () => {
 
     expect(view.foundationMeasured).toBe(true);
     expect(view.measured).toBe(true);
-    expect(view.countries).toBe(42);
     expect(view.countriesLabel).toBe('42 countries');
     expect(view.headline).toMatchObject({ label: 'Countries represented', value: '42', delta: '+10%', deltaDirection: 'up' });
     expect(view.topCountries.map((row) => [row.label, row.valueLabel])).toEqual([
@@ -1200,7 +1192,6 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ countries: 3, topCountries: [], rankedCountries: 0 })), 'YTD');
 
     expect(view.measured).toBe(false);
-    expect(view.countries).toBeNull();
     expect(view.countriesLabel).toBe('');
     expect(view.headline).toMatchObject({ value: 'not available', delta: null });
     expect(view.topCountries).toEqual([]);
