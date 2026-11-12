@@ -19,6 +19,7 @@ import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-ano
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { foundationParticipatingOrgsEnabledGuard } from './shared/guards/foundation-participating-orgs-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
 import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
 import { formationOverviewReleaseGuard } from './shared/guards/formation-overview-release.guard';
@@ -388,6 +389,18 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
+      },
+      // Foundation Lens — Participating Companies page (ED + LF Staff, same policy as Health Metrics; #5697)
+      {
+        path: 'foundation/participating-orgs',
+        title: 'Participating Companies',
+        data: { lens: 'foundation' },
+        canMatch: [foundationParticipatingOrgsEnabledGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        loadComponent: () =>
+          import('./modules/dashboards/foundation-participating-orgs/foundation-participating-orgs.component').then(
+            (m) => m.FoundationParticipatingOrgsComponent
+          ),
       },
       // Foundation Lens — Projects page
       {

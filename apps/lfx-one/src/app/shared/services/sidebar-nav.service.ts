@@ -9,6 +9,7 @@ import {
   DOCUMENT_LABEL,
   FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
+  FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
@@ -86,6 +87,7 @@ export class SidebarNavService {
    * is the checklist plus Meetings, Mailing Lists and Groups (#2754, #3059).
    */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
+  private readonly isFoundationParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG, false);
 
   /**
    * True when the user has non-marketing foundation access (board role, root-writer, LF-staff, or
@@ -663,6 +665,16 @@ export class SidebarNavService {
             testId: 'sidebar-metrics-social-listening',
           },
         ];
+
+        // Dark-launched (#5697): the page runs on demo data until the warehouse model exists.
+        if (this.isFoundationParticipatingOrgsEnabled()) {
+          metricsItems.push({
+            label: 'Participating companies',
+            icon: 'fa-light fa-building',
+            routerLink: '/foundation/participating-orgs',
+            testId: 'sidebar-metrics-participating-companies',
+          });
+        }
 
         items.push({
           label: 'Metrics',

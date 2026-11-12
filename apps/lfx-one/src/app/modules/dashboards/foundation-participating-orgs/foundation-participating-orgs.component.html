@@ -1,0 +1,483 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="foundation-participating-orgs-page">
+  <div class="flex flex-col gap-1">
+    <lfx-page-header
+      data-testid="foundation-participating-orgs-header"
+      title="Participating Companies"
+      [description]="subtitle()"
+      titleTestId="foundation-participating-orgs-title"
+      descriptionTestId="foundation-participating-orgs-subtitle" />
+    <p class="text-xs text-gray-500" data-testid="foundation-participating-orgs-data-line">{{ dataLine() }}</p>
+  </div>
+
+  @switch (viewState()) {
+    @case ('forbidden') {
+      <lfx-empty-state
+        icon="fa-light fa-lock"
+        title="You don't have access to this foundation's participating companies"
+        data-testid="foundation-participating-orgs-no-access" />
+    }
+    @case ('error') {
+      <div role="alert" data-testid="foundation-participating-orgs-error">
+        <lfx-empty-state
+          icon="fa-light fa-triangle-exclamation"
+          title="We couldn't load participating companies"
+          [subtitle]="'Something went wrong while fetching activity for ' + foundationName() + '. ' + errorSubtitle()"
+          ctaLabel="Try again"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="retry()" />
+      </div>
+    }
+    @default {
+      @if (viewState() === 'ready' || summaryLoading()) {
+        <div class="flex flex-col gap-2">
+          <lfx-stat-card-grid [cards]="tiles()" [columns]="4" [loading]="summaryLoading()" data-testid="foundation-participating-orgs-tiles" />
+          <p class="flex items-center gap-1 text-xs text-gray-500">
+            <button
+              type="button"
+              class="rounded text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              [pTooltip]="commitShareTooltip"
+              tooltipPosition="top"
+              tooltipEvent="both"
+              aria-label="How Member Commit Share is calculated"
+              data-testid="foundation-participating-orgs-commit-share-info">
+              <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+            </button>
+            Member Commit Share: {{ commitShareTooltip }}
+          </p>
+        </div>
+      }
+
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="foundation-participating-orgs-content-card">
+        <lfx-card-tabs-bar
+          [options]="tabs()"
+          [selectedFilter]="segment()"
+          styleClass="flex-wrap items-center gap-x-4 gap-y-3"
+          (filterChange)="onSegmentChange($event)"
+          data-testid="foundation-participating-orgs-tabs">
+          <lfx-button
+            label="Export CSV"
+            icon="fa-light fa-download"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [loading]="exporting()"
+            [disabled]="pageLoading() || exporting() || totalRecords() === 0"
+            [tooltip]="totalRecords() === 0 ? 'No rows to export' : undefined"
+            (onClick)="exportMenuRef.toggle($event)"
+            data-testid="foundation-participating-orgs-export-csv" />
+          <p-menu #exportMenuRef [model]="exportMenu()" [popup]="true" appendTo="body" data-testid="foundation-participating-orgs-export-menu">
+            <ng-template #item let-item>
+              <button
+                type="button"
+                class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left"
+                (click)="item.command?.({ originalEvent: $event, item })">
+                <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
+                <span class="text-xs text-gray-500">{{ item.title }}</span>
+              </button>
+            </ng-template>
+          </p-menu>
+        </lfx-card-tabs-bar>
+
+        <div class="flex flex-col gap-3 px-5 pt-4 pb-3 lg:flex-row lg:items-center" data-testid="foundation-participating-orgs-filter-bar">
+          <div class="relative flex-1" data-testid="foundation-participating-orgs-search-field">
+            <label class="sr-only" for="foundation-participating-orgs-search">Search companies</label>
+            <lfx-input-text
+              [form]="filterForm"
+              control="search"
+              inputId="foundation-participating-orgs-search"
+              [maxlength]="maxSearchLength"
+              placeholder="Search companies"
+              icon="fa-light fa-search"
+              size="small"
+              styleClass="w-full"
+              dataTest="foundation-participating-orgs-search" />
+          </div>
+          <div class="w-full lg:w-72" data-testid="foundation-participating-orgs-project">
+            <lfx-select
+              [form]="filterForm"
+              control="project"
+              size="small"
+              [options]="projectOptions()"
+              [group]="true"
+              optionGroupLabel="label"
+              optionGroupChildren="items"
+              [filter]="true"
+              filterBy="label"
+              [filterPlaceholder]="'Search ' + projects().length + ' projects'"
+              [showClear]="true"
+              placeholder="All projects (foundation total)"
+              styleClass="w-full"
+              ariaLabel="Scope to one project"
+              dataTest="foundation-participating-orgs-project-filter" />
+          </div>
+          <div class="w-full lg:w-40" data-testid="foundation-participating-orgs-tier">
+            <lfx-select
+              [form]="filterForm"
+              control="tier"
+              size="small"
+              [options]="tierOptions"
+              placeholder="All Tiers"
+              [showClear]="true"
+              styleClass="w-full"
+              ariaLabel="Filter by membership tier"
+              dataTest="foundation-participating-orgs-tier-filter" />
+          </div>
+          <div class="w-full lg:w-44" data-testid="foundation-participating-orgs-range">
+            <lfx-select
+              [form]="filterForm"
+              control="range"
+              size="small"
+              [options]="rangeOptions"
+              styleClass="w-full"
+              ariaLabel="Time range"
+              dataTest="foundation-participating-orgs-range-filter" />
+          </div>
+        </div>
+
+        @if (selectedProjectName(); as projectName) {
+          <div
+            class="mx-5 mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-700"
+            data-testid="foundation-participating-orgs-scope-notice">
+            <span>
+              Showing <strong>{{ projectName }}</strong> only. Its numbers are part of the {{ foundationName() }} foundation total.
+            </span>
+            <lfx-button label="Back to foundation total" severity="secondary" [outlined]="true" size="small" (onClick)="clearProject()" />
+          </div>
+        } @else {
+          <p class="mx-5 mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900" data-testid="foundation-participating-orgs-totals-note">
+            <i class="fa-light fa-circle-info mr-1" aria-hidden="true"></i>
+            Foundation totals: commits are added up across all {{ summary()?.projectCount ?? '' }} {{ foundationName() }} projects; contributors active in
+            several projects are counted once. Expand a row to see each project.
+          </p>
+        }
+
+        @if (hasActiveFilters()) {
+          <div class="mx-5 mb-3 flex flex-wrap items-center gap-2 text-xs" data-testid="foundation-participating-orgs-chips">
+            <span class="text-gray-500">Filters:</span>
+            @for (chip of activeFilters(); track chip.id) {
+              <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-blue-900">
+                {{ chip.label }}
+                <button
+                  type="button"
+                  class="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  [attr.aria-label]="'Remove filter ' + chip.label"
+                  (click)="removeFilter(chip.id)">
+                  <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                </button>
+              </span>
+            }
+            <button
+              type="button"
+              class="rounded text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              (click)="clearFilters()">
+              Clear all
+            </button>
+          </div>
+        }
+
+        @if (viewState() === 'empty') {
+          <div class="p-5">
+            <lfx-empty-state
+              icon="fa-light fa-building"
+              [withCard]="false"
+              title="No contribution activity yet"
+              [subtitle]="
+                noActivityRange()
+                  ? 'Companies appear here once ' + foundationName() + ' projects have commits in the selected time range (' + noActivityRange() + ').'
+                  : 'Companies appear here once ' + foundationName() + ' projects have commits.'
+              "
+              [ctaLabel]="noActivityRange() ? 'Show All Time' : undefined"
+              (ctaClick)="showAllTime()"
+              data-testid="foundation-participating-orgs-empty" />
+          </div>
+        } @else {
+          <div class="px-5 pb-5 transition-opacity" [class.opacity-60]="refreshing()" [attr.aria-busy]="pageLoading()">
+            <lfx-table
+              [value]="rows()"
+              [loading]="showSkeleton()"
+              [lazy]="true"
+              [lazyLoadOnInit]="false"
+              [scrollable]="true"
+              [paginator]="totalRecords() > 0"
+              [rows]="pageSize()"
+              [first]="offset()"
+              [totalRecords]="totalRecords()"
+              [showCurrentPageReport]="true"
+              [showFirstLastIcon]="false"
+              currentPageReportTemplate="Showing {first}–{last} of {totalRecords} companies"
+              paginatorPosition="bottom"
+              (onPage)="onTablePage($event)"
+              data-testid="foundation-participating-orgs-table">
+              <ng-template #header>
+                <tr>
+                  @let icons = sortIconMap();
+                  @let aria = ariaSortMap();
+                  <th scope="col" class="w-10"><span class="sr-only">Expand</span></th>
+                  <th scope="col" [attr.aria-sort]="aria.name">
+                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'name', label: 'Company', icon: icons.name, end: false }" />
+                  </th>
+                  <th scope="col" class="w-28 text-right" [attr.aria-sort]="aria.commits">
+                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'commits', label: 'Commits', icon: icons.commits, end: true }" />
+                  </th>
+                  <th scope="col" class="w-24 text-right" [attr.aria-sort]="aria.commits_change">
+                    <ng-container
+                      *ngTemplateOutlet="
+                        sortButton;
+                        context: { $implicit: 'commits_change', label: 'Change', icon: icons.commits_change, end: true, srLabel: 'Commits change' }
+                      " />
+                  </th>
+                  <th scope="col" class="w-32 text-right" [attr.aria-sort]="aria.contributors">
+                    <ng-container
+                      *ngTemplateOutlet="sortButton; context: { $implicit: 'contributors', label: 'Contributors', icon: icons.contributors, end: true }" />
+                  </th>
+                  <th scope="col" class="w-24 text-right" [attr.aria-sort]="aria.contributors_change">
+                    <ng-container
+                      *ngTemplateOutlet="
+                        sortButton;
+                        context: {
+                          $implicit: 'contributors_change',
+                          label: 'Change',
+                          icon: icons.contributors_change,
+                          end: true,
+                          srLabel: 'Contributors change',
+                        }
+                      " />
+                  </th>
+                  <th scope="col" class="w-56" [attr.aria-sort]="aria.tier">
+                    <ng-container *ngTemplateOutlet="sortButton; context: { $implicit: 'tier', label: 'Membership', icon: icons.tier, end: false }" />
+                  </th>
+                </tr>
+              </ng-template>
+
+              <ng-template #body let-row>
+                <tr [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey">
+                  <td>
+                    <button
+                      type="button"
+                      class="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      [attr.aria-expanded]="isExpanded(row.participantKey)"
+                      [attr.aria-controls]="'foundation-participating-orgs-panel-' + row.participantKey"
+                      [attr.aria-label]="(isExpanded(row.participantKey) ? 'Hide projects for ' : 'Show projects for ') + row.name"
+                      [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-toggle'"
+                      (click)="toggleRow(row.participantKey)">
+                      <i
+                        class="text-xs"
+                        [class]="isExpanded(row.participantKey) ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"
+                        aria-hidden="true"></i>
+                    </button>
+                  </td>
+                  <td>
+                    <div class="flex min-w-0 items-center gap-2">
+                      @if (row.logoUrl) {
+                        <img [src]="row.logoUrl" alt="" loading="lazy" class="h-8 w-8 shrink-0 rounded-md object-contain" />
+                      } @else {
+                        <span
+                          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-50 text-xs font-semibold text-blue-600"
+                          aria-hidden="true">
+                          {{ row.initial }}
+                        </span>
+                      }
+                      <div class="flex min-w-0 flex-col">
+                        <span
+                          class="truncate text-sm font-medium text-gray-900"
+                          [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-name'"
+                          >{{ row.name }}</span
+                        >
+                        <span class="text-xs text-gray-500">{{ row.projectsInvolvedLabel }}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="text-right">
+                    <span
+                      class="text-sm tabular-nums text-gray-900"
+                      [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-commits'"
+                      >{{ row.commits.value | number }}</span
+                    >
+                  </td>
+                  <td class="text-right">
+                    <span class="text-sm font-medium tabular-nums" [class]="row.commits.changeClass">{{ row.commits.changeLabel }}</span>
+                  </td>
+                  <td class="text-right">
+                    <span class="text-sm tabular-nums text-gray-900">{{ row.contributors.value | number }}</span>
+                  </td>
+                  <td class="text-right">
+                    <span class="text-sm font-medium tabular-nums" [class]="row.contributors.changeClass">{{ row.contributors.changeLabel }}</span>
+                  </td>
+                  <td [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-membership'">
+                    <div class="flex flex-wrap items-center gap-1">
+                      @if (row.membershipLabel) {
+                        <span
+                          class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium"
+                          [class]="row.membershipBadgeClass">
+                          <i class="fa-solid fa-circle-check text-[10px]" aria-hidden="true"></i>
+                          {{ row.membershipLabel }}
+                        </span>
+                      } @else {
+                        <span
+                          class="inline-flex items-center whitespace-nowrap rounded-full border border-gray-300 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                          Non-member
+                        </span>
+                      }
+                      @for (other of row.otherMemberships; track other) {
+                        <span class="inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{{ other }}</span>
+                      }
+                    </div>
+                  </td>
+                </tr>
+                @if (isExpanded(row.participantKey)) {
+                  <tr
+                    [id]="'foundation-participating-orgs-panel-' + row.participantKey"
+                    class="bg-gray-50"
+                    [attr.data-testid]="'foundation-participating-orgs-panel-' + row.participantKey">
+                    <td colspan="7" class="px-6 py-4">
+                      <ng-container *ngTemplateOutlet="breakdownPanel; context: { $implicit: row }" />
+                    </td>
+                  </tr>
+                }
+              </ng-template>
+
+              <ng-template #emptymessage>
+                <tr>
+                  <td colspan="7" class="py-10 text-center" data-testid="foundation-participating-orgs-no-match">
+                    @if (!pageLoading()) {
+                      <div class="flex flex-col items-center gap-2">
+                        <i class="fa-light fa-magnifying-glass text-xl text-gray-400" aria-hidden="true"></i>
+                        <p class="text-sm font-medium text-gray-900">No companies match your filters</p>
+                        <p class="text-sm text-gray-500">Check the spelling, or try another tier, project or time range.</p>
+                        <lfx-button label="Clear search and filters" severity="secondary" [outlined]="true" size="small" (onClick)="clearFilters()" />
+                      </div>
+                    }
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          </div>
+        }
+      </lfx-card>
+    }
+  }
+</div>
+
+<!-- One company's project breakdown: the foundation total first, then each project it is active in (top 10 for a large company). -->
+<ng-template #breakdownPanel let-row>
+  @let view = breakdownView(row.participantKey);
+  <div class="flex flex-col gap-3" [attr.aria-busy]="view?.state?.status === 'loading'">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-600">Projects involved ({{ row.projectsInvolvedLabel.split(' ')[0] }})</h3>
+      @if (view?.canExpand) {
+        <div class="w-56">
+          <label class="sr-only" [for]="'foundation-participating-orgs-filter-' + row.participantKey">Filter {{ row.name }} projects</label>
+          <input
+            type="search"
+            class="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            [id]="'foundation-participating-orgs-filter-' + row.participantKey"
+            [placeholder]="'Filter ' + row.projectsInvolvedLabel.split(' ')[0] + ' projects'"
+            (input)="setBreakdownFilter(row.participantKey, $any($event.target).value)" />
+        </div>
+      }
+    </div>
+
+    @if (!view || view.state.status === 'loading') {
+      <div class="flex flex-col gap-2" role="status" aria-label="Loading projects" data-testid="foundation-participating-orgs-breakdown-loading">
+        @for (placeholder of [1, 2, 3]; track placeholder) {
+          <div class="h-6 animate-pulse rounded bg-gray-200"></div>
+        }
+      </div>
+    } @else if (view.state.status === 'error') {
+      <div class="flex items-center gap-3 text-sm text-gray-700" role="alert">
+        <span>We couldn't load the projects for {{ row.name }}.</span>
+        <lfx-button label="Try again" severity="secondary" [outlined]="true" size="small" (onClick)="retryBreakdown(row.participantKey)" />
+      </div>
+    } @else {
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[640px] text-sm" [attr.data-testid]="'foundation-participating-orgs-breakdown-' + row.participantKey">
+          <thead>
+            <tr class="text-left text-xs uppercase tracking-wide text-gray-500">
+              <th scope="col" class="py-1 font-medium">Project</th>
+              <th scope="col" class="py-1 text-right font-medium">Commits</th>
+              <th scope="col" class="py-1 text-right font-medium">Change</th>
+              <th scope="col" class="py-1 text-right font-medium">Contributors</th>
+              <th scope="col" class="py-1 text-right font-medium">Change</th>
+              <th scope="col" class="w-44 py-1 pl-4 font-medium">Share of company commits</th>
+            </tr>
+          </thead>
+          <tbody>
+            @if (view.total; as total) {
+              <tr class="border-t border-gray-200 bg-white font-semibold">
+                <td class="py-2"><span class="mr-2 inline-block h-2 w-2 bg-gray-900" aria-hidden="true"></span>{{ total.name }}</td>
+                <td class="py-2 text-right tabular-nums">{{ total.commits | number }}</td>
+                <td class="py-2 text-right tabular-nums" [class]="total.commitsVm.changeClass">{{ total.commitsVm.changeLabel }}</td>
+                <td class="py-2 text-right tabular-nums">{{ total.contributors | number }}</td>
+                <td class="py-2 text-right tabular-nums" [class]="total.contributorsVm.changeClass">{{ total.contributorsVm.changeLabel }}</td>
+                <td class="py-2 pl-4">100%</td>
+              </tr>
+            }
+            @for (line of view.lines; track line.projectSlug) {
+              <tr class="border-t border-gray-200" [class.bg-blue-50]="line.inView">
+                <td class="py-2">
+                  {{ line.name }}
+                  @if (line.maturity) {
+                    <span class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">{{ line.maturity }}</span>
+                  }
+                  @if (line.inView) {
+                    <span class="ml-1 rounded bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-800">In view</span>
+                  }
+                </td>
+                <td class="py-2 text-right tabular-nums">{{ line.commits | number }}</td>
+                <td class="py-2 text-right tabular-nums" [class]="line.commitsVm.changeClass">{{ line.commitsVm.changeLabel }}</td>
+                <td class="py-2 text-right tabular-nums">{{ line.contributors | number }}</td>
+                <td class="py-2 text-right tabular-nums" [class]="line.contributorsVm.changeClass">{{ line.contributorsVm.changeLabel }}</td>
+                <td class="py-2 pl-4">
+                  <div class="flex items-center gap-2">
+                    <div class="h-1.5 w-24 overflow-hidden rounded-full bg-gray-200" aria-hidden="true">
+                      <div class="h-full bg-blue-600" [style.width.%]="line.sharePercent"></div>
+                    </div>
+                    <span class="text-xs tabular-nums text-gray-700">{{ line.shareLabel }}</span>
+                  </div>
+                </td>
+              </tr>
+            }
+            @if (view.other; as other) {
+              <tr class="border-t border-gray-200 italic text-gray-600">
+                <td class="py-2">Other {{ other.count }} projects</td>
+                <td class="py-2 text-right tabular-nums">{{ other.commits | number }}</td>
+                <td class="py-2 text-right">—</td>
+                <td class="py-2 text-right">—</td>
+                <td class="py-2 text-right">—</td>
+                <td class="py-2 pl-4 text-xs tabular-nums">{{ (other.shareOfCompanyCommits * 100).toFixed(0) }}%</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (view.other) {
+        <div>
+          <lfx-button
+            [label]="'Show all ' + (view.state.data?.projects?.length ?? 0) + ' projects'"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            (onClick)="showAllProjects(row.participantKey)" />
+        </div>
+      }
+    }
+  </div>
+</ng-template>
+
+<!-- One sortable header: the active column reads darker with a direction arrow; the rest show the neutral sort icon. -->
+<ng-template #sortButton let-field let-label="label" let-icon="icon" let-end="end" let-srLabel="srLabel">
+  <button
+    type="button"
+    class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium"
+    [class.ml-auto]="end"
+    [class.text-gray-900]="sort() === field"
+    [class.text-gray-500]="sort() !== field"
+    [attr.aria-label]="srLabel ?? null"
+    [attr.data-testid]="'foundation-participating-orgs-sort-' + field"
+    (click)="onSort(field)">
+    {{ label }} <i class="text-[10px]" [class]="icon" aria-hidden="true"></i>
+  </button>
+</ng-template>
