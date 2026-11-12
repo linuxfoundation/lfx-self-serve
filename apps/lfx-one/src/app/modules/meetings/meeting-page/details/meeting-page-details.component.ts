@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, Provider, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Provider, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -43,6 +43,7 @@ export class MeetingPageDetailsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly pageData = inject(MeetingPageDataService);
   private readonly meetingService = inject(MeetingService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly row = inject(MeetingPageRowHost).row();
 
   public constructor() {
@@ -54,6 +55,19 @@ export class MeetingPageDetailsComponent {
         takeUntilDestroyed()
       )
       .subscribe((id) => void this.router.navigateByUrl(`/meetings/${encodeURIComponent(id)}`));
+    // Another coming date picked in place gets its own `?occurrence=` page, so the URL and the saved answer follow it.
+    const row = this.row;
+    if (row && !isPastMeetingCalendarRow(row.meeting)) {
+      toObservable(this.context.occurrence)
+        .pipe(
+          distinctUntilChanged(),
+          filter((occurrence): occurrence is MeetingOccurrence => !!occurrence && occurrence !== row.occurrence && !this.context.pastMeetingId()),
+          takeUntilDestroyed()
+        )
+        .subscribe(
+          (occurrence) => void this.router.navigateByUrl(meetingPageUrl({ ...row, occurrenceId: occurrence.occurrence_id, startTime: occurrence.start_time }))
+        );
+    }
     // The composer opens over this page only from its own Edit, so a save is an edit of this meeting.
     toObservable(inject(MeetingComposerService).saveCount)
       .pipe(skip(1), takeUntilDestroyed())
@@ -72,7 +86,8 @@ export class MeetingPageDetailsComponent {
       .getMeetingDetail(shown.meeting.id, { skipCache: true })
       .pipe(
         take(1),
-        catchError(() => of(null))
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((fresh) => {
         const moved = fresh?.occurrences?.find((occurrence) => isSameOccurrenceId(occurrence.occurrence_id, occurrenceId));
@@ -118,9 +133,12 @@ function provideMeetingPageSource(): Provider {
  * @description The schedule reads the answer from these rows, as from the meetings home list; answers saved here overlay it.
  */
 function initAnsweredRows(row: MeetingHomeRow): Signal<MeetingHomeRow[]> {
-  if (isPastMeetingCalendarRow(row.meeting) || !row.meeting.invited) return signal<MeetingHomeRow[]>([]).asReadonly();
+  if (isPastMeetingCalendarRow(row.meeting)) return signal<MeetingHomeRow[]>([]).asReadonly();
   const userService = inject(UserService);
-  const saved = toSignal(inject(MeetingService).getMeetingRsvpForCurrentUser(row.meeting.id, row.occurrenceId ?? undefined));
+  // A viewer who is not invited has no saved answer, but can register here and then answer.
+  const saved: Signal<MeetingRsvp | null | undefined> = row.meeting.invited
+    ? toSignal(inject(MeetingService).getMeetingRsvpForCurrentUser(row.meeting.id, row.occurrenceId ?? undefined))
+    : signal(null);
   return computed(() => {
     const answer = saved();
     if (answer === undefined) return [];

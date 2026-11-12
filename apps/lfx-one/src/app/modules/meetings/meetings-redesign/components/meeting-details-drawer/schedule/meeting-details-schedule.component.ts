@@ -135,9 +135,9 @@ export class MeetingDetailsScheduleComponent {
     if (!this.source.claimJoinOnLoad || !isPlatformBrowser(inject(PLATFORM_ID))) return;
     toObservable(this.joinLink)
       .pipe(
-        filter((link) => !!link.url && this.canJoin()),
+        // The claim holds nothing back until the page allows it, so a link that loads first is not the only try.
+        filter((link) => !!link.url && this.canJoin() && !!this.source.claimJoinOnLoad?.()),
         take(1),
-        filter(() => !!this.source.claimJoinOnLoad?.()),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((link) => {

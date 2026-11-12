@@ -161,6 +161,21 @@ describe('MeetingPageDetailsComponent', () => {
     fixture.destroy();
   });
 
+  it('gives another coming date picked in place its own ?occurrence= page', () => {
+    row.set(UPCOMING_ROW);
+    occurrence.set(UPCOMING_ROW.occurrence);
+    pastMeetingId.set(null);
+    const fixture = TestBed.createComponent(MeetingPageDetailsComponent);
+    TestBed.tick();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+
+    occurrence.set(SERIES.occurrences![3]);
+    TestBed.tick();
+
+    expect(navigateByUrl).toHaveBeenCalledWith(`/meetings/123?occurrence=${Date.parse('2030-01-22T10:00:00Z')}`);
+    fixture.destroy();
+  });
+
   describe("the viewer's answer", () => {
     const answer = (response: 'accepted' | 'declined', updated: string): MeetingRsvp =>
       ({ id: response, response_type: response, scope: 'all', updated_at: updated }) as MeetingRsvp;
@@ -178,11 +193,20 @@ describe('MeetingPageDetailsComponent', () => {
       expect(page.upcomingRows()[0].myRsvp?.response_type).toBe('declined');
     });
 
-    it('loads none for a past row or a viewer who is not invited', () => {
-      expect(source().upcomingRows()).toEqual([]);
-      row.set({ ...UPCOMING_ROW, meeting: { ...SERIES, invited: false } });
+    it('loads none for a past row', () => {
       expect(source().upcomingRows()).toEqual([]);
       expect(getMeetingRsvpForCurrentUser).not.toHaveBeenCalled();
+    });
+
+    it('asks no server for a viewer who is not invited, but shows an answer saved after registering here', () => {
+      row.set({ ...UPCOMING_ROW, meeting: { ...SERIES, invited: false } });
+      const page = source();
+      TestBed.tick();
+
+      expect(getMeetingRsvpForCurrentUser).not.toHaveBeenCalled();
+      expect(page.upcomingRows()[0].myRsvp).toBeNull();
+      confirmed.set([answer('accepted', '2029-06-01T00:00:00Z')]);
+      expect(page.upcomingRows()[0].myRsvp?.response_type).toBe('accepted');
     });
   });
 

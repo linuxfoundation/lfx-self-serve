@@ -140,6 +140,8 @@ export class MeetingPageDataService {
         this.meetingRouteId.set(this.activatedRoute.snapshot.paramMap.get('id'));
       } else if (seed.meeting) {
         this.projectState.set(seed.meeting.project);
+        // Hydration reuses the server's meeting, so Join on load need not wait for the browser's refetch.
+        this.recordJoinWindowAtLoad(seed.meeting as Meeting);
         const seededRouteId = this.activatedRoute.snapshot.paramMap.get('id');
         this.meetingRouteId.set(seededRouteId);
         this.meetingResolvedRouteId.set(seededRouteId);

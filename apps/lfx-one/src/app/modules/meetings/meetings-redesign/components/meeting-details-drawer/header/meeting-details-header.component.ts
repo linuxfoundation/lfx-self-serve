@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { ChangeDetectionStrategy, Component, computed, inject, input, Signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, Signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
 import { PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
 import { MeetingHomeRowProject } from '@lfx-one/shared/interfaces';
@@ -41,6 +42,7 @@ export class MeetingDetailsHeaderComponent {
   private readonly source = inject(MeetingDetailsSource);
   private readonly editService = inject(MeetingsHomeEditService);
   private readonly deleteService = inject(MeetingsHomeDeleteService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly context = inject(MeetingDetailsContext);
   private readonly moreButton = viewChild<UiButtonComponent>('moreButton');
 
@@ -102,11 +104,14 @@ export class MeetingDetailsHeaderComponent {
     const occurrence = this.context.occurrence();
     if (!occurrence) return;
     // The drawer closes on a date that no longer exists; a page moves on to another one.
-    this.deleteService.cancelOccurrence(this.context.shownRow(), occurrence, 'drawer').subscribe((cancelled) => {
-      if (!cancelled) return;
-      this.drawer?.requestClose();
-      this.source.occurrenceCancelled?.(this.context.meeting(), occurrence);
-    });
+    this.deleteService
+      .cancelOccurrence(this.context.shownRow(), occurrence, 'drawer')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((cancelled) => {
+        if (!cancelled) return;
+        this.drawer?.requestClose();
+        this.source.occurrenceCancelled?.(this.context.meeting(), occurrence);
+      });
   }
 
   protected close(): void {
