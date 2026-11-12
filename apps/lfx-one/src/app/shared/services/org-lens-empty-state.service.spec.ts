@@ -195,6 +195,37 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
   });
 
+  // #5550: the bootstrap restores only a roll-up, so on an address naming no organization the first
+  // selection comes from the org list — a page must not paint against the placeholder before it.
+  it('holds the skeleton while a caller with switcher access waits for the org list to select an organization', () => {
+    h.hasOrgSelectorAccess.set(true);
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    expect(h.service.settled()).toBe(true);
+  });
+
+  it('leaves the skeleton once the org list has answered without selecting anything', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.listLoaded.set(true);
+
+    expect(h.service.settled()).toBe(true);
+  });
+
+  it('does not wait for an org list a caller without switcher access never starts', () => {
+    expect(h.service.settled()).toBe(true);
+  });
+
+  it('shows a page-level state without waiting for the pending selection', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
+  });
+
   // Rule 1 — the #2216 blocking fix: a present grant is authoritative whatever else failed.
   it('renders the page for a held selection even when the lookup is partial and the staff check failed', () => {
     h.selectedAccount.set(account(HELD));

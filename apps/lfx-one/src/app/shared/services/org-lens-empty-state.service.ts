@@ -101,15 +101,30 @@ export class OrgLensEmptyStateService {
     return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
   });
 
-  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, `pageState` names no state. */
+  private readonly bootstrapped: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+
+  /**
+   * A caller with switcher access has no organization selected yet, and the org list that would
+   * default-select one has not answered. The bootstrap restores only a roll-up (#5550), so on an
+   * address that names no organization the first selection comes from that list.
+   */
+  private readonly selectionPending: Signal<boolean> = computed(
+    () => this.accountContext.hasOrgSelectorAccess() && !this.accountContext.selectedAccount().uid && !this.orgNavigation.loaded()
+  );
+
+  /**
+   * `bootstrapped`, and no selection is still on its way; before this, pages render a skeleton. A page-level
+   * state is not held back by a pending selection: `pageState` shows it as soon as the bootstrap has answered.
+   */
+  public readonly settled: Signal<boolean> = computed(() => this.bootstrapped() && !this.selectionPending());
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
    * A caller with no switcher access never starts that list (an admitted contractor with no roster row,
    * #2961), so waiting on it would hold them on the skeleton forever. Used by the pages
    * that wait for the default selection from that list (overview, projects, ROI and its project detail,
-   * meetings, groups, EasyCLA) and by `/org/not-found`; the other Org pages never waited for the list and gate on `settled`.
+   * meetings, groups, EasyCLA) and by `/org/not-found`; the other Org pages gate on `settled`, which waits for the list only while no organization is selected.
    */
   public readonly pageReady: Signal<boolean> = computed(() => this.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded()));
 
@@ -168,11 +183,11 @@ export class OrgLensEmptyStateService {
   private readonly selectedClaOnly: Signal<boolean> = computed(() => this.claOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid));
 
   /** FR-010 — the list is a lower bound but the page still renders: show the switcher notice, not a page state. */
-  public readonly listIncomplete: Signal<boolean> = computed(() => this.settled() && this.roleGrants.lookupOutcome() === 'partial' && this.selectedHeld());
+  public readonly listIncomplete: Signal<boolean> = computed(() => this.bootstrapped() && this.roleGrants.lookupOutcome() === 'partial' && this.selectedHeld());
 
   /** The page-level state to render, or `null` when the page itself should render. */
   public readonly pageState: Signal<OrgLensEmptyStateName | null> = computed(() => {
-    if (!this.settled()) {
+    if (!this.bootstrapped()) {
       return null;
     }
     if (this.selectedHeld() || this.selectedClaOnly()) {
