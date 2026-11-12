@@ -22,6 +22,7 @@ import {
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
   PROJECT_SETTINGS_NOT_FOUND_CODE,
+  PROJECT_USER_ALREADY_ON_PROJECT_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
   getYearForRange,
@@ -824,7 +825,7 @@ export class ProjectService {
 
     // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
     if (operation === 'add' && existingUserInfo) {
-      throw new ConflictError('This person is already on the project', 'ALREADY_ON_PROJECT', {
+      throw new ConflictError('This person is already on the project', PROJECT_USER_ALREADY_ON_PROJECT_CODE, {
         operation: 'add_user_project_permissions',
         service: 'project_service',
       });
