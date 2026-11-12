@@ -14172,11 +14172,12 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
   /**
    * The X fields survive a refine: proceeding again for the SAME event clears the draft for the
    * regenerated copy, but the tweet, budget and image are typed by the operator and nothing the
-   * generator produces replaces them. A different event's X fields must not follow. Implement is
-   * torn down between proceeds, as a refine from Planning does, so the image is restored from the
-   * carry rather than left standing on a live mount.
+   * generator produces replaces them. Implement is torn down between proceeds, as a refine from
+   * Planning does, so the image is restored from the carry rather than left standing on a live mount.
+   * These real-template round trips mount Implementation more than once and drain Angular between
+   * each phase; allow headroom beyond the default 5 seconds on shared CI runners (#5638).
    */
-  it('keeps the typed X fields and image across a same-event proceed, and drops them for another event', async () => {
+  it('keeps the typed X fields and image across a same-event proceed', { timeout: 15_000 }, async () => {
     listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
     vi.spyOn(TestBed.inject(CampaignService), 'uploadCreativeAsset').mockReturnValue(of(tweetAsset) as never);
 
@@ -14193,6 +14194,17 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     expect(tab()['twitterImageAssetId']()).toBe('asset-x');
     expect(tab()['twitterImageAssetName']()).toBe('tweet.png');
     expect(tab()['twitterImageAssetBriefId']()).toBe('brief-1');
+  });
+
+  /** A different event's X fields and image must not follow it onto the next one. */
+  it('drops the typed X fields and image when the next proceed is for another event', { timeout: 15_000 }, async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'uploadCreativeAsset').mockReturnValue(of(tweetAsset) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
     await leaveForPlanning();
 
     const otherEvent = { ...withTwitter, eventDetails: { ...withTwitter.eventDetails, slug: 'other-event-2026', name: 'Other Event' } } as CampaignBriefOutput;
@@ -14206,7 +14218,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
    * Start Over discards the brief, so a carry made by an earlier refine must go with it: the carry
    * is what the next proceed reads once Start Over has cleared the draft.
    */
-  it('drops a carried X draft on Start Over, even for the same event', async () => {
+  it('drops a carried X draft on Start Over, even for the same event', { timeout: 15_000 }, async () => {
     listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
     await proceedAndTypeX();
     await leaveForPlanning();
@@ -14223,7 +14235,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
   });
 
   /** New Brief discards the generated brief too, so the brief generated next is not a refine of it. */
-  it('drops the typed X fields after New Brief, even for the same event', async () => {
+  it('drops the typed X fields after New Brief, even for the same event', { timeout: 15_000 }, async () => {
     listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
     await proceedAndTypeX();
     await leaveForPlanning();
