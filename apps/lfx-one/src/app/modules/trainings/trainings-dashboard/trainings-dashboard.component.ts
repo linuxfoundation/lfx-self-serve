@@ -5,6 +5,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
 import { Certification, FilterPillOption, TrainingEnrollment, UnifiedCertification } from '@lfx-one/shared/interfaces';
 import { TRAINING_PRODUCT_TYPE } from '@lfx-one/shared/constants';
 
@@ -26,6 +27,8 @@ const TAB_OPTIONS: FilterPillOption[] = [
   { id: 'enrolled-trainings', label: 'Enrolled Trainings' },
   { id: 'rewards', label: 'Rewards' },
 ];
+
+const DEFAULT_TAB = 'certifications';
 
 const USEFUL_LINKS = [
   {
@@ -63,6 +66,7 @@ const USEFUL_LINKS = [
 export class TrainingsDashboardComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly trainingService = inject(TrainingService);
+  private readonly route = inject(ActivatedRoute);
 
   // ─── Configuration ─────────────────────────────────────────────────────────
   protected readonly subtitle = PAGE_SUBTITLE;
@@ -70,7 +74,8 @@ export class TrainingsDashboardComponent {
   protected readonly usefulLinks = USEFUL_LINKS;
 
   // ─── Writable Signals ──────────────────────────────────────────────────────
-  protected readonly activeTab = signal<string>('certifications');
+  // Seeded from `?tab=` so links (e.g. old openprofile.dev Coupons) can open a tab directly.
+  protected readonly activeTab = signal<string>(this.initialTab());
 
   // ─── Data Signals ──────────────────────────────────────────────────────────
   protected readonly unifiedCerts: Signal<UnifiedCertification[] | undefined> = this.initUnifiedCerts();
@@ -96,6 +101,11 @@ export class TrainingsDashboardComponent {
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
+  private initialTab(): string {
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    return tab && TAB_OPTIONS.some((option) => option.id === tab) ? tab : DEFAULT_TAB;
+  }
+
   private initUnifiedCerts(): Signal<UnifiedCertification[] | undefined> {
     return toSignal(this.trainingService.getUnifiedCertifications());
   }
