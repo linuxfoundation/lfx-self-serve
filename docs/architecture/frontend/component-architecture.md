@@ -512,8 +512,8 @@ AppComponent
         └── /profile             → ProfileLayoutComponent (lazy loaded; tabs incl. settings → AccountSettingsComponent, transactions)
 
     Standalone routes (outside MainLayoutComponent):
-    ├── /meetings/not-found      → MeetingNotFoundComponent
-    └── /meetings/:id            → MeetingJoinComponent (public meeting join)
+    ├── /meetings/not-found      → MeetingPageNotFoundComponent behind meetingPageRedesignGuard, else MeetingNotFoundComponent
+    └── /meetings/:id            → MeetingPageComponent behind meetingPageRedesignGuard, else MeetingJoinComponent (public meeting join)
 ```
 
 ## 🎯 Usage Guidelines

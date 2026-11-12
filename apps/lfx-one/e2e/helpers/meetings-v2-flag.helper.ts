@@ -43,3 +43,18 @@ export async function stubMeetingsV2Flag(page: Page, enabled = true): Promise<vo
 export async function stubMeetingsRedesignFlag(page: Page, enabled = false): Promise<void> {
   await pinFlag(page, MEETINGS_REDESIGN_FLAG, enabled);
 }
+
+/**
+ * Turns the redesign on for the `/meetings/:id` and `/meetings/not-found` pages, which the server picks before the browser
+ * runs: the override goes into local storage for the browser and into the cookie the server reads outside production.
+ */
+export async function stubMeetingPageRedesign(page: Page, baseURL: string | undefined): Promise<void> {
+  await stubMeetingsRedesignFlag(page, true);
+  await page.context().addCookies([
+    {
+      name: FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+      value: encodeURIComponent(JSON.stringify({ [MEETINGS_REDESIGN_FLAG]: true })),
+      url: baseURL ?? 'http://localhost:4200',
+    },
+  ]);
+}
