@@ -16,7 +16,7 @@ import {
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, normalizeOrgSegment, orgRollUpAccount, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { filter, firstValueFrom, from, Subscription, switchMap, take } from 'rxjs';
+import { filter, finalize, firstValueFrom, from, Subscription, switchMap, take } from 'rxjs';
 
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
@@ -799,22 +799,21 @@ export class AccountContextService {
     this.tierLookupsInFlight.add(accountId);
     this.analyticsService
       .getOrgLensAccountContext([accountId])
-      .pipe(take(1))
-      .subscribe({
-        next: (rows) => {
-          const row = rows.find((candidate) => candidate.accountId === accountId);
-          if (!row) {
-            return;
-          }
-          const tier = row.membershipTierDisplayName ?? '';
-          this.selectedTiers.set(accountId, tier);
-          const current = this.selectedAccount();
-          if (tier && current.accountId === accountId && current.membershipTier !== tier) {
-            this.selectedAccount.set({ ...current, membershipTier: tier });
-          }
-        },
-        complete: () => this.tierLookupsInFlight.delete(accountId),
-        error: () => this.tierLookupsInFlight.delete(accountId),
+      .pipe(
+        take(1),
+        finalize(() => this.tierLookupsInFlight.delete(accountId))
+      )
+      .subscribe((rows) => {
+        const row = rows.find((candidate) => candidate.accountId === accountId);
+        if (!row) {
+          return;
+        }
+        const tier = row.membershipTierDisplayName ?? '';
+        this.selectedTiers.set(accountId, tier);
+        const current = this.selectedAccount();
+        if (tier && current.accountId === accountId && current.membershipTier !== tier) {
+          this.selectedAccount.set({ ...current, membershipTier: tier });
+        }
       });
   }
 

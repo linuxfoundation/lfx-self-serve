@@ -521,14 +521,21 @@ describe('AccountContextService — membership tier for the selected organizatio
   const otherOrg: Account = { accountId: UID_OTHER, accountName: 'Other Org', membershipTier: '', uid: UID_OTHER, slug: 'other-org' };
   const seedOrg: Account = { accountId: UID_SEED, accountName: 'Seed Org', membershipTier: '', uid: UID_SEED };
 
-  const tierRow = (accountId: string, tier: string | null): OrgLensAccountContextResponse =>
-    ({
-      accountId,
-      accountName: 'Snowflake name',
-      logoUrl: null,
-      cdevOrgId: null,
-      membershipTierDisplayName: tier,
-    }) as unknown as OrgLensAccountContextResponse;
+  const tierRow = (accountId: string, tier: string | null): OrgLensAccountContextResponse => ({
+    accountId,
+    accountName: 'Snowflake name',
+    logoUrl: null,
+    cdevOrgId: null,
+    cdevOrgName: null,
+    cdevOrgLogo: null,
+    isMember: tier !== null,
+    memberAccountType: null,
+    membershipId: null,
+    membershipProjectId: null,
+    membershipProjectName: null,
+    membershipTierDisplayName: tier,
+    membershipTierClass: null,
+  });
 
   const setup = (platformId = 'browser') => {
     const cookies = new Map<string, string>();
