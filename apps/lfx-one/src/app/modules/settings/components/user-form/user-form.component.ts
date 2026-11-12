@@ -231,9 +231,9 @@ export class UserFormComponent {
   }
 
   /**
-   * Shows why an add failed. The BFF's error body carries its reason under `error`, never `message`, so
-   * the shared reader is used rather than `error.error?.message`, which is always empty here and left every
-   * failure on the generic text. Someone already on the project gets the way to change their role.
+   * Shows why an add failed. The BFF's error envelope carries its reason under `error` (and no `message`), so
+   * the shared reader is used rather than `error.error?.message`, which is empty for these failures and left
+   * every one on the generic text. Someone already on the project gets the way to change their role.
    */
   private handleAddUserError(error: HttpErrorResponse): void {
     const alreadyOnProject = error.status === 409 && error.error?.code === PROJECT_USER_ALREADY_ON_PROJECT_CODE;

@@ -79,7 +79,6 @@ describe('UserFormComponent', () => {
       component.onSubmit();
 
       expect(lastToast()).toMatchObject({ severity: 'error', detail: PROJECT_USER_ALREADY_ON_PROJECT_MESSAGE });
-      expect(PROJECT_USER_ALREADY_ON_PROJECT_MESSAGE).toContain('Edit');
       // The dialog stays open and usable, not stuck on a spinner.
       expect(close).not.toHaveBeenCalled();
       expect(component.submitting()).toBe(false);

@@ -24,7 +24,7 @@ export const PROJECT_PERMISSION_ROLE_COLOR: Record<ProjectPermissionRole, Filter
 /**
  * `code` the BFF answers an add-user request with (a 409) when the person is already listed on the
  * project. Add is not an upsert, so a role change goes through the row's Edit action instead.
- * Mirrors the code thrown in `ProjectService.updateProjectPermissions`.
+ * Thrown by `ProjectService.updateProjectPermissions` and read by the user form, so the two share one value.
  */
 export const PROJECT_USER_ALREADY_ON_PROJECT_CODE = 'ALREADY_ON_PROJECT';
 
