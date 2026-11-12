@@ -44,6 +44,12 @@ export const FORMATION_RECORD_SELECTABLE_STAGES: readonly ProjectStage[] = [
   ProjectStage.Archived,
 ];
 
+/**
+ * The PCC test projects (lfx-pcc helper.ts). They behave as foundations by name (`computeIsFoundation`) and are left out
+ * of the formation Pipeline with everything under them (#5619). Exact names, as stored.
+ */
+export const TEST_PROJECT_NAMES: readonly string[] = ['Test Project Group IT', 'Test Project IT'];
+
 /** Stages whose selection needs a confirmation step stating the checklist effect (D5). */
 export const FORMATION_RECORD_CONFIRM_STAGES: readonly ProjectStage[] = [ProjectStage.Active, ProjectStage.Archived, ProjectStage.FormationDisengaged];
 

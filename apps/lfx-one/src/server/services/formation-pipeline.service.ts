@@ -21,7 +21,15 @@ import type {
   UpstreamPipelineSettings,
   UserInfo,
 } from '@lfx-one/shared/interfaces';
-import { chunkArray, comparePipelineText, computeIsFoundation, countPipelineRows, getPipelineStageKey, matchesPipelineSearch } from '@lfx-one/shared/utils';
+import {
+  chunkArray,
+  comparePipelineText,
+  computeIsFoundation,
+  countPipelineRows,
+  getPipelineStageKey,
+  isTestProjectName,
+  matchesPipelineSearch,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { AuthorizationError } from '../errors';
@@ -64,7 +72,11 @@ export class FormationPipelineService {
     const projects = await this.fetchPipelineProjects(req);
     const parents = await this.resolveParents(req, projects, rootUid, query.foundationUid);
 
-    const scoped = projects.filter((project) => this.inScope(project, parents, rootUid, query) && matchesPipelineSearch(project.name, query.search));
+    // Test projects and everything under them never reach rows, counts or the CSV (#5619).
+    const scoped = projects.filter(
+      (project) =>
+        this.inScope(project, parents, rootUid, query) && !this.isTestProject(project, parents, rootUid) && matchesPipelineSearch(project.name, query.search)
+    );
     const baseRows = scoped.map((project) => this.toRow(project, parents, rootUid));
 
     // Counts ignore the stage selection, so they come before it is applied; the UI derives its own counts from the rows after its client-side search.
@@ -207,6 +219,27 @@ export class FormationPipelineService {
       funding: project.funding,
       funding_model: project.funding_model ?? [],
     });
+  }
+
+  /** Whether a project is a PCC test project or sits under one: its own name or any ancestor in the resolved chain matches. The chain stops at a foundation, and the test projects are foundations by name, so a descendant's chain always reaches them. */
+  private isTestProject(project: UpstreamPipelineProject, known: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): boolean {
+    if (isTestProjectName(project.name)) {
+      return true;
+    }
+    const seen = new Set<string>();
+    let uid = collapseRootParentUid(project.parent_uid || null, rootUid);
+    while (uid && !seen.has(uid)) {
+      seen.add(uid);
+      const node = known.get(uid);
+      if (!node) {
+        return false;
+      }
+      if (isTestProjectName(node.name)) {
+        return true;
+      }
+      uid = collapseRootParentUid(node.parent_uid || null, rootUid);
+    }
+    return false;
   }
 
   /** The nearest foundation ancestor of a project (never the project itself), or `null` when its chain holds none. */

@@ -395,4 +395,42 @@ describe('FormationPipelineService.getPipeline', () => {
       expect(parentRead).not.toHaveProperty('select');
     });
   });
+
+  // #5619 D6: the IT test projects and everything under them are not real pipeline projects.
+  describe('test projects', () => {
+    const TEST_GROUP = { uid: 'tg', name: 'Test Project Group IT', ...FOUNDATION_FIELDS };
+
+    it('drops a test project and its descendants from rows and counts, keeping real projects', async () => {
+      mockUpstream({
+        projects: [
+          project({ uid: 'real', name: 'Real Project', parent_uid: 'F' }),
+          project({ uid: 'self', name: 'Test Project IT', parent_uid: 'tg' }),
+          project({ uid: 'child', name: 'Ordinary Name', parent_uid: 'tg' }),
+          project({ uid: 'deep', name: 'Deeper', parent_uid: 'mid' }),
+          project({ uid: 'draft', name: 'Test Project Group IT', stage: 'Prospect', parent_uid: '' }),
+        ],
+        parents: {
+          F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS },
+          tg: TEST_GROUP,
+          mid: { uid: 'mid', name: 'Active Middle', parent_uid: 'tg', ...PLAIN_FIELDS },
+        },
+      });
+
+      const { rows, counts } = await service.getPipeline(req, allStages);
+
+      expect(rows.map((row) => row.uid)).toEqual(['real']);
+      expect(counts).toMatchObject({ engaged: 1, prospect: 0, total: 1 });
+    });
+
+    it('keeps them out when a foundation scope is selected', async () => {
+      mockUpstream({
+        projects: [project({ uid: 'real', name: 'Real Project', parent_uid: 'F' }), project({ uid: 'self', name: 'Test Project IT', parent_uid: 'F' })],
+        parents: { F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS } },
+      });
+
+      const { rows } = await service.getPipeline(req, { ...allStages, foundationUid: 'F' });
+
+      expect(rows.map((row) => row.uid)).toEqual(['real']);
+    });
+  });
 });
