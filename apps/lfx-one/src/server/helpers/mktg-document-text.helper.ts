@@ -276,7 +276,7 @@ export class MktgDocumentText {
         return MktgDocumentText.none('too-complex');
       }
       if (markup.file(MktgDocumentText.pptxPresentationPart) !== null) {
-        return MktgDocumentText.pptxText(markup);
+        return MktgDocumentText.pptxText(markup, deadline);
       }
       const { value } = await mammoth.extractRawText({ buffer: await markup.generateAsync({ type: 'nodebuffer', compression: 'STORE' }) });
       return MktgDocumentText.ok(value.replace(/\n{3,}/g, '\n\n'));
@@ -296,10 +296,14 @@ export class MktgDocumentText {
    * not the deck. The markup copy is already capped, so this
    * walk is bounded by it.
    */
-  private static async pptxText(markup: JSZip): Promise<MktgReadText> {
+  private static async pptxText(markup: JSZip, deadline: number): Promise<MktgReadText> {
     const slides = await MktgDocumentText.pptxSlidesInOrder(markup);
     const texts: string[] = [];
     for (const slide of slides) {
+      // The caller's deadline race cannot cancel this loop, so it checks the clock itself between slides.
+      if (performance.now() >= deadline) {
+        return MktgDocumentText.none('too-complex');
+      }
       const xml = await slide.async('string');
       const paragraphs = xml
         .split(/<\/a:p>/)
@@ -339,10 +343,17 @@ export class MktgDocumentText {
           targets.set(id, target.startsWith('/') ? target.slice(1) : `ppt/${target}`);
         }
       }
+      // A slide part is read once however many `<p:sldId>` tags (or relationships) point at it: listing one
+      // large slide tens of thousands of times would otherwise cost its size times that count.
+      const listed = new Set<string>();
       const ordered = Array.from(MktgDocumentText.startTags(presentation, 'p:sldId'), (tag) => {
         const id = MktgDocumentText.xmlAttribute(tag, 'r:id');
         const part = id === null ? undefined : targets.get(id);
-        return part === undefined ? null : markup.file(part);
+        if (part === undefined || listed.has(part)) {
+          return null;
+        }
+        listed.add(part);
+        return markup.file(part);
       }).filter((file): file is JSZip.JSZipObject => file !== null);
       if (ordered.length > 0) {
         return ordered;

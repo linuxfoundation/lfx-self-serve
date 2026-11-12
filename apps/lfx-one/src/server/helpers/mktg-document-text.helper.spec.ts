@@ -208,6 +208,7 @@ describe('MktgDocumentText.read — Word and text', () => {
     const hostile: Record<string, string> = {
       'one multi-megabyte <Relationship> tag with no attributes': 'a'.repeat(size),
       'a run of <Relationship tags that never close': '<Relationship '.repeat(size / 14),
+      'many attribute-less <Relationship> tags just under the length cap': `<Relationship ${'a'.repeat(8_000)}>`.repeat(180),
       'one multi-megabyte <p:sldId> tag with no attributes': 'a'.repeat(size),
     };
 
@@ -230,7 +231,7 @@ describe('MktgDocumentText.read — Word and text', () => {
     }
   }, 30_000);
 
-  it('reads a .pptx slide made of unclosed <a:t and <a:br tags without stalling the event loop, and keeps the runs around them', async () => {
+  it('reads a .pptx slide made of unclosed <a:t and <a:br tags without stalling the event loop, and keeps the run before them', async () => {
     const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
     const slide = (body: string): string =>
       `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:p>${body}</a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
@@ -250,6 +251,24 @@ describe('MktgDocumentText.read — Word and text', () => {
       expect(stall).toBeLessThan(2_000);
       expect(read?.text).toBe('Before');
     }
+  }, 30_000);
+
+  it('reads a .pptx slide once however many times the deck lists it, instead of once per listing', async () => {
+    const a = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+    const big = 'x'.repeat(300_000);
+    const deck = await zip({
+      'ppt/presentation.xml': `<p:presentation><p:sldIdLst>${'<p:sldId r:id="rId1"/>'.repeat(30_000)}</p:sldIdLst></p:presentation>`,
+      'ppt/_rels/presentation.xml.rels': '<Relationships><Relationship Id="rId1" Target="slides/slide1.xml"/></Relationships>',
+      'ppt/slides/slide1.xml': `<p:sld xmlns:a="${a}"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>${big}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`,
+    });
+
+    let read: Awaited<ReturnType<typeof MktgDocumentText.read>> | undefined;
+    const stall = await longestStall(async () => {
+      read = await MktgDocumentText.read(deck);
+    });
+
+    expect(stall).toBeLessThan(2_000);
+    expect(read?.text).toBe(big);
   }, 30_000);
 
   it('reads .pptx relationship attributes in any order and spacing, and ignores a tag whose value is never closed', async () => {
