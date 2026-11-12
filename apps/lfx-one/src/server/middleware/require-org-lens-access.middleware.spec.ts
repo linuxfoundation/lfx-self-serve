@@ -305,7 +305,10 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   const ROLL_UP = `family-${ROOT}`;
 
   const org = (uid: string, name: string): OrgRollUpSetOrg => ({ uid, accountId: uid, name, logoUrl: null });
-  const rollUpSet = (orgs = [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')], overrides: Partial<OrgRollUpSetResponse> = {}): OrgRollUpSetResponse => ({
+  const rollUpSet = (
+    orgs = [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
+    overrides: Partial<OrgRollUpSetResponse> = {}
+  ): OrgRollUpSetResponse => ({
     families: [{ rootUid: ROOT, rootName: 'Parent Co', rootLogoUrl: null, orgs }],
     degraded: false,
     lookupOutcome: 'ok',
