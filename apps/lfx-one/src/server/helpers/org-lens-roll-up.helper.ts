@@ -97,5 +97,13 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
       excluded_count: family.orgs.length - members.length,
     });
   }
-  return { rollUpKey, rootUid, members };
+
+  const complete = rollUpSet.lookupOutcome === 'ok';
+  if (!complete) {
+    logger.warning(req, operation, 'Roll-up set is partial; serving the verified members of the family', {
+      roll_up_key: rollUpKey,
+      member_count: members.length,
+    });
+  }
+  return { rollUpKey, rootUid, members, complete };
 }

@@ -5,6 +5,7 @@
 // reaches Angular's partially-compiled @angular/common, which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
+import type { OrgRollUpSetOrg, OrgRollUpSetResponse } from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,7 +70,7 @@ function errorOf(next: ReturnType<typeof vi.fn>): unknown {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getEffectiveUsername.mockReturnValue('lguerra');
+  getEffectiveUsername.mockReturnValue('jdoe');
   getAccessAwareOrgs.mockResolvedValue(grants([LF]));
   // Default: the authorizer resolves "not an auditor" — the roster alone decides in most cases.
   checkSingleAccessStrict.mockResolvedValue(false);
@@ -303,8 +304,8 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   const OTHER_ROOT = '001000000000009AAA';
   const ROLL_UP = `family-${ROOT}`;
 
-  const org = (uid: string, name: string): { uid: string; accountId: string; name: string; logoUrl: null } => ({ uid, accountId: uid, name, logoUrl: null });
-  const rollUpSet = (orgs = [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')], overrides: Record<string, unknown> = {}): unknown => ({
+  const org = (uid: string, name: string): OrgRollUpSetOrg => ({ uid, accountId: uid, name, logoUrl: null });
+  const rollUpSet = (orgs = [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')], overrides: Partial<OrgRollUpSetResponse> = {}): OrgRollUpSetResponse => ({
     families: [{ rootUid: ROOT, rootName: 'Parent Co', rootLogoUrl: null, orgs }],
     degraded: false,
     lookupOutcome: 'ok',
@@ -331,13 +332,30 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     const { next } = await runRollUp(req);
 
     expect(statusOf(next)).toBe('allow');
-    expect(getRollUpSet).toHaveBeenCalledWith(req, 'lguerra');
+    expect(getRollUpSet).toHaveBeenCalledWith(req, 'jdoe');
     await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
       rollUpKey: ROLL_UP,
       rootUid: ROOT,
       members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
+      complete: true,
     });
     expect(getRollUpSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the verified members of a family present in a partial roll-up set, marked incomplete', async () => {
+    getRollUpSet.mockResolvedValue(rollUpSet([org(ROOT, 'Parent Co')], { degraded: true, lookupOutcome: 'partial' }));
+    getAccessAwareOrgs.mockResolvedValue({ ...grants([ROOT]), degraded: true });
+    const req = buildRollUpReq();
+
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
+      rollUpKey: ROLL_UP,
+      rootUid: ROOT,
+      members: [org(ROOT, 'Parent Co')],
+      complete: false,
+    });
   });
 
   it('never takes the organizations from the client', async () => {

@@ -28,7 +28,7 @@ export async function requireOrgLensAccess(req: Request, res: Response, next: Ne
   try {
     const orgUid = req.params['orgUid'];
     if (isOrgRollUpSegment(orgUid)) {
-      if (!ORG_LENS_ROLL_UP_READ_METHODS.has(req.method)) {
+      if (!ORG_LENS_ROLL_UP_READ_METHODS.includes(req.method)) {
         throw ServiceValidationError.forField('orgUid', 'A family roll-up is read-only; choose a single organization to make changes', {
           operation: 'require_org_lens_access',
         });
