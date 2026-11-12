@@ -21,6 +21,7 @@ import {
   FORMATION_PIPELINE_PROSPECT_LABEL,
   FORMATION_PIPELINE_LAUNCH_SOON_DAYS,
   FORMATION_PIPELINE_QUERY_PARAMS,
+  FORMATION_PIPELINE_STAFF_HIDDEN_STAGES,
   FORMATION_PIPELINE_SEARCH_MAX_LENGTH,
   FORMATION_PIPELINE_STAGE_LABELS,
   FORMATION_PIPELINE_STAGE_SEVERITY,
@@ -46,6 +47,7 @@ import type {
   FormationPipelineStage,
   FormationPipelineStageFilter,
   FormationPipelineUrlState,
+  FormationPipelineViewer,
 } from '../interfaces/formation-pipeline.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import { formatIsoDateLabel, parseIsoDateAsUtcMidnight, timeAgo } from './date-time.utils';
@@ -70,6 +72,16 @@ export function getPipelineStageKey(stage: string | null | undefined): Formation
 /** What the formation team reads for a stored stage: a v2 `Prospect` shows as "Draft" (#5619); every other value is shown as stored. The stored value never changes. */
 export function getFormationStageDisplayLabel(stage: string): string {
   return stage === FORMATION_PIPELINE_STAGE_UPSTREAM.prospect ? FORMATION_PIPELINE_PROSPECT_LABEL : stage;
+}
+
+/** Whether a viewer may see a stage at all: LF staff outside the formation team never see Draft or Confidential (#5544). */
+export function isPipelineStageVisible(stage: FormationPipelineStage, viewer: FormationPipelineViewer): boolean {
+  return viewer === 'formation_team' || !FORMATION_PIPELINE_STAFF_HIDDEN_STAGES.includes(stage);
+}
+
+/** The stages of the live pipeline this viewer sees (the default view). */
+export function getPipelineLiveStages(viewer: FormationPipelineViewer): FormationPipelineStage[] {
+  return FORMATION_PIPELINE_LIVE_STAGES.filter((stage) => isPipelineStageVisible(stage, viewer));
 }
 
 /** A zeroed {@link FormationPipelineCounts}. */
@@ -101,9 +113,13 @@ export function matchesPipelineSearch(name: string, search: string | null | unde
 }
 
 /** Rows in the selected stage; `all` keeps every row. */
-export function filterPipelineRowsByStage(rows: readonly FormationPipelineRow[], stage: FormationPipelineStageFilter): FormationPipelineRow[] {
+export function filterPipelineRowsByStage(
+  rows: readonly FormationPipelineRow[],
+  stage: FormationPipelineStageFilter,
+  viewer: FormationPipelineViewer = 'formation_team'
+): FormationPipelineRow[] {
   if (stage === 'all') return [...rows];
-  if (stage === 'in_pipeline') return rows.filter((row) => FORMATION_PIPELINE_LIVE_STAGES.includes(row.stage));
+  if (stage === 'in_pipeline') return rows.filter((row) => getPipelineLiveStages(viewer).includes(row.stage));
   return rows.filter((row) => row.stage === stage);
 }
 
@@ -190,8 +206,8 @@ export function pruneUnknownPipelineClassification(
 }
 
 /** Rows in the live pipeline (Draft, Exploratory, Engaged, On hold). */
-export function countLivePipelineRows(counts: FormationPipelineCounts): number {
-  return FORMATION_PIPELINE_LIVE_STAGES.reduce((sum, stage) => sum + counts[stage], 0);
+export function countLivePipelineRows(counts: FormationPipelineCounts, viewer: FormationPipelineViewer = 'formation_team'): number {
+  return getPipelineLiveStages(viewer).reduce((sum, stage) => sum + counts[stage], 0);
 }
 
 /** The calendar day of an ISO date or timestamp, as UTC midnight; `null` when absent or unparseable. */
@@ -313,15 +329,15 @@ export function sortPipelineRows(rows: readonly FormationPipelineRow[], sort: Fo
 }
 
 /** Stage pills: `In pipeline` (the default), `All`, then every stage, with counts. Disengaged and Confidential appear only when they hold rows. */
-export function buildPipelinePillOptions(counts: FormationPipelineCounts): FilterPillOption[] {
-  const stagePills = FORMATION_PIPELINE_STAGES.filter((stage) => counts[stage] > 0 || !FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES.includes(stage)).map(
-    (stage) => ({
-      id: stage,
-      label: `${FORMATION_PIPELINE_STAGE_LABELS[stage]} (${counts[stage]})`,
-    })
-  );
+export function buildPipelinePillOptions(counts: FormationPipelineCounts, viewer: FormationPipelineViewer = 'formation_team'): FilterPillOption[] {
+  const stagePills = FORMATION_PIPELINE_STAGES.filter(
+    (stage) => isPipelineStageVisible(stage, viewer) && (counts[stage] > 0 || !FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES.includes(stage))
+  ).map((stage) => ({
+    id: stage,
+    label: `${FORMATION_PIPELINE_STAGE_LABELS[stage]} (${counts[stage]})`,
+  }));
   return [
-    { id: 'in_pipeline', label: `${FORMATION_PIPELINE_COPY.inPipeline} (${countLivePipelineRows(counts)})` },
+    { id: 'in_pipeline', label: `${FORMATION_PIPELINE_COPY.inPipeline} (${countLivePipelineRows(counts, viewer)})` },
     { id: 'all', label: `${FORMATION_PIPELINE_COPY.allStages} (${counts.total})` },
     ...stagePills,
   ];
@@ -332,7 +348,8 @@ export function buildPipelineStatCards(
   counts: FormationPipelineCounts,
   rows: readonly FormationPipelineRow[],
   selected: FormationPipelineStageFilter,
-  now: Date = new Date()
+  now: Date = new Date(),
+  viewer: FormationPipelineViewer = 'formation_team'
 ): StatCardItem[] {
   const withLaunch = rows.filter((row) => row.stage === 'exploratory' && toUtcDay(row.announcement_date)).length;
   const launchingSoon = rows.filter((row) => row.stage === 'engaged' && getPipelineLaunch(row.announcement_date, now).soon).length;
@@ -343,7 +360,7 @@ export function buildPipelineStatCards(
     on_hold: FORMATION_PIPELINE_STAT_CAPTIONS.on_hold,
     archived: FORMATION_PIPELINE_STAT_CAPTIONS.archived,
   };
-  return FORMATION_PIPELINE_STAT_STAGES.map((stage) => ({
+  return FORMATION_PIPELINE_STAT_STAGES.filter((stage) => isPipelineStageVisible(stage, viewer)).map((stage) => ({
     value: counts[stage],
     label: FORMATION_PIPELINE_STAGE_LABELS[stage],
     subLine: subLines[stage],

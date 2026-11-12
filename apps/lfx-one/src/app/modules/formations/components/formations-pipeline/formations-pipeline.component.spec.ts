@@ -55,8 +55,8 @@ const ROWS: FormationPipelineRow[] = [
   }),
 ];
 
-function response(rows: FormationPipelineRow[]): FormationPipelineResponse {
-  return { rows, counts: countPipelineRows(rows) };
+function response(rows: FormationPipelineRow[], viewer: FormationPipelineResponse['viewer'] = 'formation_team'): FormationPipelineResponse {
+  return { rows, counts: countPipelineRows(rows), viewer };
 }
 
 describe('FormationsPipelineComponent (#5475)', () => {
@@ -714,7 +714,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
 
   it('shows the forbidden message for a 403 and a retryable error otherwise', async () => {
     await render(throwError(() => new HttpErrorResponse({ status: 403 })));
-    expect(q('formations-pipeline-error')?.textContent).toContain('Only the formation team can see the pipeline.');
+    expect(q('formations-pipeline-error')?.textContent).toContain('Only the formation team and LF staff can see the pipeline.');
     expect(q('formations-pipeline-retry')).toBeNull();
 
     await render(throwError(() => new HttpErrorResponse({ status: 500 })));
@@ -889,6 +889,67 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(lines[1]).toContain(`${OSS}; ${SPEC}`);
       expect(lines[1]).toContain('Quantum');
       expect(lines.filter((line) => line.startsWith('Bravo'))).toEqual([]);
+    });
+  });
+
+  // #5544: LF staff outside the formation team read the same table without Draft and Confidential projects.
+  describe('staff view (#5544)', () => {
+    const staffRows = ROWS.filter((r) => r.stage !== 'prospect' && r.stage !== 'confidential');
+    const pillLabels = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid="formations-pipeline-pills"] button')].map((el: Element) => el.textContent?.trim() ?? '');
+    const cardLabels = (): string => q('formations-pipeline-stats')?.textContent ?? '';
+
+    it('says Draft projects are visible to the formation team only, and shows no Draft pill or card', async () => {
+      await render(of(response(staffRows, 'staff')));
+
+      expect(q('formations-pipeline-staff-note')?.textContent?.trim()).toBe('Draft projects are visible to the formation team only.');
+      expect(pillLabels().join('|')).not.toMatch(/Draft|Confidential/);
+      expect(cardLabels()).not.toContain('Draft');
+      expect(cardLabels()).toContain('Exploratory');
+    });
+
+    it('opens on Exploratory, Engaged and On hold', async () => {
+      await render(of(response(staffRows, 'staff')));
+
+      expect(rowIds().sort()).toEqual(['a', 'd']);
+      expect(pillLabels()[0]).toBe('In pipeline (2)');
+    });
+
+    it('treats a ?stage=prospect link as the default view, not an empty one', async () => {
+      await render(of(response(staffRows, 'staff')), { stage: 'prospect' });
+
+      expect(rowIds().sort()).toEqual(['a', 'd']);
+      expect(pillLabels()[0]).toBe('In pipeline (2)');
+    });
+
+    it('adds no write control: rows only link to the formation page', async () => {
+      await render(of(response(staffRows, 'staff')));
+
+      expect(
+        fixture.nativeElement.querySelectorAll(
+          '[data-testid="formations-pipeline-card"] input[type="checkbox"], [data-testid="formations-pipeline-card"] textarea'
+        ).length
+      ).toBe(0);
+    });
+
+    it("leaves the formation team's view as it was: Draft pill and card, no note", async () => {
+      await render(of(response(ROWS)));
+
+      expect(q('formations-pipeline-staff-note')).toBeNull();
+      expect(pillLabels().join('|')).toContain('Draft');
+      expect(cardLabels()).toContain('Draft');
+    });
+
+    it('exports only the rows it shows', async () => {
+      await render(of(response(staffRows, 'staff')));
+      let captured: Blob | null = null;
+      const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => ((captured = blob as Blob), 'blob:x'));
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+      fixture.componentInstance['exportCsv']();
+      expect(create).toHaveBeenCalled();
+      const text = await (captured as unknown as Blob).text();
+      expect(text).not.toContain('Bravo');
+      expect(text).toContain('Alpha');
     });
   });
 });

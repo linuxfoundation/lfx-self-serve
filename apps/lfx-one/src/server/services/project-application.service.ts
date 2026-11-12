@@ -3,6 +3,7 @@
 
 import {
   FORMATION_TEAM_NAME,
+  LF_STAFF_TEAM_ID,
   PROJECT_APPLICATION_PARENT_KEY,
   PROJECT_APPLICATION_PROJECT_UID_KEY,
   PROJECT_APPLICATION_SLUG_KEY,
@@ -72,6 +73,11 @@ export class ProjectApplicationService {
   /** Whether the caller is on the formation team — gates the queue tab and staff-only actions in the UI. Fails closed. */
   public async isFormationTeamMember(req: Request): Promise<boolean> {
     return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /** Whether the caller is LF staff (`team:lf-staff`) — lets staff who are not on the formation team see the read-only Pipeline tab (#5544). Fails closed. */
+  public async isLfStaffMember(req: Request): Promise<boolean> {
+    return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' });
   }
 
   /**

@@ -8,11 +8,15 @@ last_updated: 2026-11-12
 intercom_collection: Dashboards
 ---
 
-The **Pipeline** tab lists every project the formation team is bringing into The Linux Foundation, one row per project, by stage. It is for formation team members only.
+The **Pipeline** tab lists every project the formation team is bringing into The Linux Foundation, one row per project, by stage. Formation team members see all of it; Linux Foundation staff see a read-only version without Draft and Confidential projects.
 
 ## Who can see it
 
 Formation team members see the **Pipeline** tab on the **Formations** page when The Linux Foundation is the selected foundation. It is the first tab and the one that opens by default. Everyone else sees the Formations page without it, and the page behind it refuses the request. The Formations feature must also be enabled for your account.
+
+### Linux Foundation staff
+
+Linux Foundation staff who are not on the formation team also see the **Pipeline** tab, with the **Formations** tab beside it. They do not see the **Project proposals** tab. Their view is read-only and leaves out **Draft** and **Confidential** projects entirely: those projects do not appear in the rows, the stage pills, the stat cards or the CSV export, and a line above the table says "Draft projects are visible to the formation team only." The view opens on Exploratory, Engaged and On hold. Contractors are not Linux Foundation staff and do not see the tab.
 
 To go back to the original list, select the **Formations** tab. Select **Pipeline** again to return.
 

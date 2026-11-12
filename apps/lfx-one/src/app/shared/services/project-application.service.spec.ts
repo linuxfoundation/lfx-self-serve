@@ -71,6 +71,23 @@ describe('ProjectApplicationService (#3037)', () => {
     expect(results).toEqual([true, false]);
   });
 
+  it('reads both access answers from one request, each failing closed (#5544)', () => {
+    const results: unknown[] = [];
+    service.getAccessState().subscribe((value) => results.push(value));
+    http.expectOne('/api/project-applications/access').flush({ is_formation_team: false, is_lf_staff: true });
+    // An older response without the staff field reads as not staff.
+    service.getAccessState().subscribe((value) => results.push(value));
+    http.expectOne('/api/project-applications/access').flush({ is_formation_team: true });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    service.getAccessState().subscribe((value) => results.push(value));
+    http.expectOne('/api/project-applications/access').flush({ error: 'boom' }, { status: 503, statusText: 'Unavailable' });
+    expect(results).toEqual([
+      { isFormationTeam: false, isLfStaff: true },
+      { isFormationTeam: true, isLfStaff: false },
+      { isFormationTeam: false, isLfStaff: false },
+    ]);
+  });
+
   it('creates with the answers only', () => {
     service.create({ project_name: 'Example' }).subscribe();
     const request = http.expectOne('/api/project-applications');

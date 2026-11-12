@@ -17,6 +17,7 @@ import type {
   FormationPipelineQuery,
   FormationPipelineResponse,
   FormationPipelineRow,
+  FormationPipelineViewer,
   QueryServiceResponse,
   UpstreamFormationQueueRow,
   UpstreamPipelineProject,
@@ -29,6 +30,7 @@ import {
   computeIsFoundation,
   countPipelineRows,
   getPipelineStageKey,
+  isPipelineStageVisible,
   isTestProjectName,
   matchesPipelineSearch,
   normalizePipelineClassification,
@@ -36,7 +38,7 @@ import {
 import { Request } from 'express';
 
 import { AuthorizationError } from '../errors';
-import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
+import { checkFormationTeamMembership, checkLfStaffMembership } from '../helpers/formation-team.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { AccessCheckService } from './access-check.service';
@@ -46,7 +48,8 @@ import { NatsService } from './nats.service';
 
 /**
  * The formation team's project pipeline (#5475): every non-Active project by stage, read through
- * query-service. Guarded by `team:formation` membership, checked before any upstream read.
+ * query-service. Guarded by `team:formation` membership, checked before any upstream read. LF staff outside the team (#5544)
+ * get a read-only view of the same data without Draft and Confidential projects.
  */
 export class FormationPipelineService {
   private readonly microserviceProxy = new MicroserviceProxyService();
@@ -62,17 +65,13 @@ export class FormationPipelineService {
   public async getPipeline(req: Request, query: FormationPipelineQuery): Promise<FormationPipelineResponse> {
     const operation = 'get_formation_pipeline';
 
-    // The guard runs before any upstream read. checkSingleAccess fails closed.
-    if (!(await checkFormationTeamMembership(this.accessCheckService, req))) {
-      throw new AuthorizationError('Only the formation team can see the pipeline.', {
-        operation,
-        service: 'formation_pipeline',
-        code: FORMATION_TEAM_REQUIRED_CODE,
-      });
-    }
+    const viewer = await this.resolveViewer(req, operation);
 
     const rootUid = await resolveRootProjectUid(req, this.natsService);
-    const projects = await this.fetchPipelineProjects(req);
+    // Staff never receive Draft or Confidential projects: they are not requested, and dropped again here whatever the
+    // caller can read (a direct grant on a Draft project would otherwise let query-service return it), before anything
+    // is counted, so rows, counts, stat cards and the CSV cannot disagree.
+    const projects = (await this.fetchPipelineProjects(req, viewer)).filter((project) => this.isVisibleToViewer(project, viewer));
     const parents = await this.resolveParents(req, projects, rootUid, query.foundationUid);
 
     // Test projects and everything under them never reach rows, counts or the CSV (#5619).
@@ -104,8 +103,33 @@ export class FormationPipelineService {
       })
       .sort((a, b) => comparePipelineText(a.name, b.name));
 
-    logger.debug(req, operation, 'Built formation pipeline', { row_count: rows.length, total: counts.total, foundation_scoped: !!query.foundationUid });
-    return { rows, counts };
+    logger.debug(req, operation, 'Built formation pipeline', { row_count: rows.length, total: counts.total, foundation_scoped: !!query.foundationUid, viewer });
+    return { rows, counts, viewer };
+  }
+
+  /**
+   * Who the pipeline is built for, decided before any upstream read, both checks fail-closed. The formation team comes
+   * first, so a member who is also LF staff keeps the full view; then LF staff (`team:lf-staff`, not contractors); anyone
+   * else gets the 403 `FORMATION_TEAM_REQUIRED` without a read.
+   */
+  private async resolveViewer(req: Request, operation: string): Promise<FormationPipelineViewer> {
+    if (await checkFormationTeamMembership(this.accessCheckService, req)) {
+      return 'formation_team';
+    }
+    if (await checkLfStaffMembership(this.accessCheckService, req)) {
+      return 'staff';
+    }
+    throw new AuthorizationError('Only the formation team and LF staff can see the pipeline.', {
+      operation,
+      service: 'formation_pipeline',
+      code: FORMATION_TEAM_REQUIRED_CODE,
+    });
+  }
+
+  /** Whether the viewer may see this project's stage at all; an unrecognized stage is not a pipeline stage and is dropped by `toRow` anyway. */
+  private isVisibleToViewer(project: UpstreamPipelineProject, viewer: FormationPipelineViewer): boolean {
+    const stage = getPipelineStageKey(project.stage);
+    return !stage || isPipelineStageVisible(stage, viewer);
   }
 
   /** The three fields of a settings person the table shows; anything else query-service returned is dropped. */
@@ -116,9 +140,11 @@ export class FormationPipelineService {
     return { name: user.name ?? '', email: user.email ?? '', ...(user.username && { username: user.username }) };
   }
 
-  /** Every `type=project` document in a pipeline stage (Active is never requested). */
-  private async fetchPipelineProjects(req: Request): Promise<UpstreamPipelineProject[]> {
-    const stageFilters = FORMATION_PIPELINE_STAGES.map((stage) => `stage:${FORMATION_PIPELINE_STAGE_UPSTREAM[stage]}`);
+  /** Every `type=project` document in a pipeline stage the viewer may see (Active is never requested). */
+  private async fetchPipelineProjects(req: Request, viewer: FormationPipelineViewer): Promise<UpstreamPipelineProject[]> {
+    const stageFilters = FORMATION_PIPELINE_STAGES.filter((stage) => isPipelineStageVisible(stage, viewer)).map(
+      (stage) => `stage:${FORMATION_PIPELINE_STAGE_UPSTREAM[stage]}`
+    );
     return fetchAllQueryResources<UpstreamPipelineProject>(
       req,
       (pageToken) =>
