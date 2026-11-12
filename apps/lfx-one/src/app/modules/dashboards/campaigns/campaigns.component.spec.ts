@@ -14255,9 +14255,10 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
   /**
    * A restore leaves Planning on its input step without going through `reset()`, so Scrape &
    * Generate for the same event is the only signal that the next proceed is a new generation. The
-   * X fields typed over the restored brief must not follow onto it.
+   * X fields typed over the restored brief must not follow onto it. A real-template round trip
+   * (restore, leave, generate, proceed); allow the same CI headroom as its siblings (#5638).
    */
-  it('drops the typed X fields when a new brief is generated after a restore, even for the same event', async () => {
+  it('drops the typed X fields when a new brief is generated after a restore, even for the same event', { timeout: 15_000 }, async () => {
     listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
     vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(NEVER as never);
     (
