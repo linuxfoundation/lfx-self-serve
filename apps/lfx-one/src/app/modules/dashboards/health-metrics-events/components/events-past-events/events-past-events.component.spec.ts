@@ -14,7 +14,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { EventsPastEventsComponent } from './events-past-events.component';
 
-import type { HealthMetricsEventsPast, HealthMetricsEventsPastEvent, HealthMetricsEventsSectionKey } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsPast, HealthMetricsEventsPastEvent } from '@lfx-one/shared/interfaces';
 
 function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): HealthMetricsEventsPastEvent {
   return {
@@ -61,7 +61,6 @@ describe('EventsPastEventsComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
   let verdicts: boolean[];
-  let picked: HealthMetricsEventsSectionKey[];
 
   async function render(payload: HealthMetricsEventsPast | Error = past()): Promise<void> {
     getEventsPast = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -84,7 +83,6 @@ describe('EventsPastEventsComponent', () => {
       lifecycle.push('settled');
       verdicts.push(empty);
     });
-    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
     await settle();
   }
 
@@ -107,7 +105,6 @@ describe('EventsPastEventsComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
     verdicts = [];
-    picked = [];
   });
 
   it("reads the foundation once and renders the period's header from the view", async () => {
@@ -240,16 +237,5 @@ describe('EventsPastEventsComponent', () => {
     await render();
 
     expect(query('events-past-events-order')?.textContent?.trim()).toBe('most recent first');
-  });
-
-  it('cross-links back to the forecast mid-sentence in the footnote', async () => {
-    await render();
-
-    expect(query('events-past-events-footnote')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'a past event is a result. See the registration forecast → for what is still open.'
-    );
-    query('events-past-events-forecast-link')?.click();
-
-    expect(picked).toEqual(['forecast']);
   });
 });

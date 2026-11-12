@@ -208,7 +208,7 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(verdicts.at(-1)).toBeNull();
   });
 
-  it('points a closed period at Past events with a hint, not a button, and shows no footnote', async () => {
+  it('points a closed period at Past events with a hint, not a button', async () => {
     await render({ events: [event()] });
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
@@ -218,7 +218,6 @@ describe('EventsRegistrationForecastComponent', () => {
       'See how events actually finished in the Past events section below.'
     );
     expect(closed?.querySelector('button')).toBeNull();
-    expect(query('events-registration-forecast-footnote')).toBeNull();
   });
 
   it('shows the event name on each pill and the selected event date at the row end, keeping the date in the full label', async () => {
@@ -237,12 +236,6 @@ describe('EventsRegistrationForecastComponent', () => {
 
     expect(query('events-registration-forecast-available-evt-1')?.textContent?.trim()).toBe('forecast available');
     expect(query('events-registration-forecast-available-evt-2')).toBeNull();
-  });
-
-  it('closes the populated section with the forecast footnote', async () => {
-    await render({ events: [event()] });
-
-    expect(query('events-registration-forecast-footnote')?.textContent).toContain('The forecast is a projection from historical pacing curves');
   });
 
   it.each([

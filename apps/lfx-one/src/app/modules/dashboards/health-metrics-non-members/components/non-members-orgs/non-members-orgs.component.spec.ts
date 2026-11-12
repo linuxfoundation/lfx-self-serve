@@ -141,14 +141,15 @@ describe('NonMembersOrgsComponent', () => {
     expect(headers).toEqual(['Organization', 'Membership', 'Meetings attended', 'People', 'Contributions', 'Last engaged', 'Fit']);
   });
 
-  it('carries the design caution note and the all-time caveat in a warning footnote', async () => {
+  it('carries the design caution note and the all-time caveat in a small warning note', async () => {
     await render();
     const note = query('non-members-orgs-provisional');
 
     expect(text('non-members-orgs-provisional')).toContain(
       'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.'
     );
-    expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')?.classList).toContain('fa-triangle-exclamation');
+    expect(note?.querySelector('[data-testid="health-metrics-footnote-note"]')).not.toBeNull();
+    expect(note?.querySelector('[data-testid="ui-note-icon"] i')?.classList).toContain('fa-triangle-exclamation');
     expect(text('non-members-orgs-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
   });
 
