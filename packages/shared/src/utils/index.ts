@@ -167,6 +167,7 @@ export * from './campaign-optimize.utils';
 export * from './campaign-audience.utils';
 export * from './meta-ad-set.utils';
 export * from './mktg-asset.utils';
+export * from './mktg-report-v2.utils';
 export * from './mktg-kit.utils';
 export * from './mktg-rebuild.utils';
 export * from './mktg-navigation.utils';

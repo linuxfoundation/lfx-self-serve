@@ -30,8 +30,6 @@ import {
   AEO_GEO_CATEGORIES,
   AEO_GEO_INTAKE,
   AEO_GEO_TIMEOUT_MESSAGE,
-  BRAND_KIT_APPROVE_HEADER,
-  BRAND_KIT_APPROVE_HEADER_GAPS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   LINKEDIN_POST_INTAKE,
@@ -55,6 +53,9 @@ import {
   MKTG_PRINT_KIT_READ_NONE,
   MKTG_PRINT_KIT_READ_PENDING,
   MKTG_RUN_RESUME_QUERY_CLEAR,
+  MKTG_APPROVE_HEADER,
+  MKTG_APPROVE_HEADER_GAPS,
+  BRAND_KIT_INTAKE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -62,6 +63,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgAssetReport,
+  MktgApproveGapsDialogData,
   MktgPrintKitRead,
   MktgRevisionResponse,
   MktgBreadcrumbPage,
@@ -1337,9 +1339,10 @@ export class MktgDocumentViewComponent {
     const selection = this.revisionParam();
     const epoch = this.restoreEpoch;
     const subject = this.userService.user()?.sub;
+    const data: MktgApproveGapsDialogData = { report, brandKit: view.type.agentKey === BRAND_KIT_INTAKE.agentId };
     const ref = this.dialogService.open(MktgApproveGapsDialogComponent, {
-      header: mktgReportHasOpenGaps(report) ? BRAND_KIT_APPROVE_HEADER_GAPS : BRAND_KIT_APPROVE_HEADER,
-      data: report,
+      header: mktgReportHasOpenGaps(report) ? MKTG_APPROVE_HEADER_GAPS : MKTG_APPROVE_HEADER,
+      data,
       modal: true,
       // The dialog focuses its own content on show, so a long list opens at its top rather than at the footer button.
       focusOnShow: false,

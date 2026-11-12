@@ -16,7 +16,16 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS } from './foundation-message.constants';
 import { MKTG_ARTIFACT_MAX_DOCUMENT_BYTES, MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX, MKTG_ARTIFACT_SPECS } from './mktg-artifact.constants';
-import { MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE } from './mktg-asset.constants';
+import {
+  MKTG_REPORT_ASSET_LABELS,
+  MKTG_REPORT_BARE_URL_REGEX,
+  MKTG_REPORT_FINDINGS_EMPTY_LINES,
+  MKTG_REPORT_FINDINGS_TITLES,
+  MKTG_REPORT_LIST_MAX,
+  MKTG_REPORT_MISSING_FIX_PREFIX,
+  MKTG_REPORT_TEXT_MAX_CHARS,
+  MKTG_REPORT_V2,
+} from './mktg-asset.constants';
 
 /** Contract discriminator the BFF accepts; unknown majors are rejected. */
 export const BRAND_KIT_CONTRACT_ID = 'brand-kit-output/v2';
@@ -291,8 +300,8 @@ export const BRAND_KIT_LOGO_SLOTS = ['primary', 'stacked', 'symbol', 'reversed']
 // Report v2 (brand-kit ≥ 2.2.0): the findings groups, the colour conflicts and the rules' basis, all optional in the envelope
 // ---------------------------------------------------------------------------
 
-/** The report version that carries the findings; absent means the v1 report. */
-export const BRAND_KIT_REPORT_V2 = 2;
+/** The report version that carries the findings; absent means the v1 report (the family's, {@link MKTG_REPORT_V2}). */
+export const BRAND_KIT_REPORT_V2 = MKTG_REPORT_V2;
 /** What a failed source was: a provenance kind, or one of the other inputs the agent reads. */
 export const BRAND_KIT_REPORT_SOURCE_KINDS = [...BRAND_KIT_FOUND_IN_KINDS, 'logo_file', 'logo_package', 'lfx_record', 'framework'] as const;
 /** The assets the agent looks for and may report missing. */
@@ -324,49 +333,36 @@ export const BRAND_KIT_REPORT_RULE_BASES = ['project', 'lf-reference'] as const;
  * `name` are non-empty text with no cap; every hex is uppercase `#RRGGBB`; the findings groups, the colour conflicts
  * and a rule's `uses` hold at most 50 entries, the rules at most 200; a conflict lists 2–4 values.
  */
-export const BRAND_KIT_REPORT_TEXT_MAX_CHARS = 300;
+export const BRAND_KIT_REPORT_TEXT_MAX_CHARS = MKTG_REPORT_TEXT_MAX_CHARS;
 /** A sentence that is nothing but an address, in any case: it belongs in `source`, not in a reason, text or fix. */
-export const BRAND_KIT_REPORT_BARE_URL_REGEX = /^https?:\/\/\S+$/i;
+export const BRAND_KIT_REPORT_BARE_URL_REGEX = MKTG_REPORT_BARE_URL_REGEX;
 /** No findings group, conflict list or `uses` list grows past this. */
-export const BRAND_KIT_REPORT_LIST_MAX = 50;
+export const BRAND_KIT_REPORT_LIST_MAX = MKTG_REPORT_LIST_MAX;
 /** The rules list is longer than the others: one entry per rendered rule across the six chapters. */
 export const BRAND_KIT_REPORT_RULES_MAX = 200;
 /** A colour conflict lists the values seen: at least two (or it is no conflict), at most four. */
 export const BRAND_KIT_REPORT_CONFLICT_VALUES = { min: 2, max: 4 } as const;
 /** The Sources tab's groups, in reading order. */
 export const BRAND_KIT_SOURCES_GROUPS = ['failed', 'missing', 'warnings', 'conflicts'] as const;
-/** What each group is called on the tab. */
 /** The Failed sources title of a logo package the agent could not read from a link, before its host. */
 export const BRAND_KIT_LOGO_PACKAGE_TITLE = 'Logo package (ZIP)';
 
+/** What each group is called on the tab: the family's three findings titles, then the kit's own conflicts. */
 export const BRAND_KIT_SOURCES_GROUP_TITLES = {
-  failed: 'Failed sources',
-  missing: 'Missing assets',
-  warnings: 'Warnings',
+  ...MKTG_REPORT_FINDINGS_TITLES,
   conflicts: 'Colour conflicts',
 } as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
 /** What each group says when it has nothing to list. */
 export const BRAND_KIT_SOURCES_EMPTY_LINES = {
-  failed: MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
-  missing: 'Nothing is missing.',
-  warnings: 'No warnings.',
+  ...MKTG_REPORT_FINDINGS_EMPTY_LINES,
   conflicts: 'No colour conflicts.',
 } as const satisfies Record<(typeof BRAND_KIT_SOURCES_GROUPS)[number], string>;
-/** How the tab names each asset the agent may report missing. */
-export const BRAND_KIT_REPORT_ASSET_LABELS = {
-  logo_primary: 'Primary logo',
-  logo_stacked: 'Stacked logo',
-  logo_symbol: 'Symbol',
-  logo_reversed: 'Reversed logo',
-  brand_page: 'Brand page',
-  font_weights: 'Font weights',
-  palette_accent: 'Accent colour',
-  framework: 'Messaging framework',
-} as const satisfies Record<(typeof BRAND_KIT_REPORT_ASSETS)[number], string>;
+/** How the tab names each asset the agent may report missing: the family map, which holds the kit's eight. */
+export const BRAND_KIT_REPORT_ASSET_LABELS = MKTG_REPORT_ASSET_LABELS satisfies Record<(typeof BRAND_KIT_REPORT_ASSETS)[number], string>;
 /** Before a conflict's chosen hex: the value the kit keeps. */
 export const BRAND_KIT_CONFLICT_KEPT_WORD = 'kept';
 /** Before a missing asset's fix, when the agent names one. */
-export const BRAND_KIT_MISSING_FIX_PREFIX = 'Fix: ';
+export const BRAND_KIT_MISSING_FIX_PREFIX = MKTG_REPORT_MISSING_FIX_PREFIX;
 
 /** The exact lengths the chapters' fixed lists have (the agent's envelope schema). */
 export const BRAND_KIT_CHAPTER_COUNTS = {
@@ -518,15 +514,15 @@ export const BRAND_KIT_PROJECT_UID_REGEX = MKTG_ARTIFACT_PARTITION_REGEX;
 export const BRAND_KIT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
 
 // ---------------------------------------------------------------------------
-// The approve dialog and the overview's basis pills (report v2, brand-kit ≥
-// 2.2.0): every word they print, so a copy change is a one-file fix. The
-// Sources tab keeps its own names for the words the two surfaces share.
+// The kit-only words of the approve dialog and the overview's basis pills
+// (report v2, brand-kit ≥ 2.2.0): the colour-conflict and LF-reference-rule
+// sections and the chapter basis labels, which only a Brand Kit report has.
+// The dialog's headers, its findings group titles and the fix prefix are the
+// family's (MKTG_APPROVE_HEADER*, MKTG_REPORT_FINDINGS_TITLES,
+// MKTG_REPORT_MISSING_FIX_PREFIX in mktg-asset.constants.ts), shared with
+// every agent's report; the Sources tab aliases them above.
 // ---------------------------------------------------------------------------
 
-/** The approve dialog's header when the report has a source that could not be read or an open gap (what "Approve anyway" accepts). */
-export const BRAND_KIT_APPROVE_HEADER_GAPS = 'Approve with open gaps?';
-/** The approve dialog's header when the report has only what the reviewer should see first: colour conflicts or LF-reference rules. */
-export const BRAND_KIT_APPROVE_HEADER = 'Approve this version?';
 /** The approve dialog's section of colour conflicts. */
 export const BRAND_KIT_APPROVE_CONFLICTS_TITLE = 'Colour conflicts';
 /** Before the hex the kit keeps: `kept #FF702D`. */

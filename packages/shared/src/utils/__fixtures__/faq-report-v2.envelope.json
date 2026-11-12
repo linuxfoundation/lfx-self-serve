@@ -1,0 +1,253 @@
+{
+  "contract": "faq-output/v1",
+  "kind": "faq",
+  "project": "agentic-ai-foundation",
+  "project_name": "Agentic AI Foundation",
+  "version": 1,
+  "mode": "draft",
+  "content": {
+    "faq": [
+      [
+        "About the Agentic AI Foundation",
+        [
+          [
+            "What is the Agentic AI Foundation?",
+            "The Agentic AI Foundation (AAIF) is a neutral, open foundation hosted at the Linux Foundation that supports the open protocols and tools for AI agents, formed in December 2025.",
+            "Press release"
+          ],
+          [
+            "Is AAIF controlled by one AI company?",
+            "No. The Agentic AI Foundation is a neutral foundation hosted at the Linux Foundation, with founding contributions from Member Org Two, Member Org Three and Member Org Eight and Platinum members including Member Org One, Member Org Six and Member Org Seven.",
+            "Notes"
+          ],
+          [
+            "Which projects did the foundation launch with?",
+            "It launched with three founding contributions: Member Org Two's Model Context Protocol (MCP), Member Org Three's goose and Member Org Eight's AGENTS.md.",
+            "Press release"
+          ]
+        ]
+      ],
+      [
+        "Projects",
+        [
+          [
+            "Which projects does AAIF host?",
+            "AAIF hosts:\n- Agent Router\n- Agent Skills\n- Agent2Agent (A2A)\n- AGENTS.md\n- agentgateway\n- Goose\n- Model Context Protocol (MCP)\n- Open Responses\n- OpenEnv\n- OpenSandbox",
+            "Website"
+          ],
+          [
+            "How do I propose a new project to AAIF?",
+            null,
+            null
+          ]
+        ]
+      ],
+      [
+        "Membership",
+        [
+          [
+            "How much does membership cost, and what does each tier include?",
+            "Platinum membership is $350,000 a year and Gold $200,000; Silver is priced by company size from $5,000 to $75,000, and Associate membership is open to pre-approved non-profits and universities at no cost.",
+            "Notes"
+          ],
+          [
+            "Who are the Platinum members?",
+            "The press release names Member Org One, Member Org Two, Member Org Three, Member Org Four, Member Org Five, Member Org Six, Member Org Seven and Member Org Eight as Platinum members.",
+            "Press release"
+          ]
+        ]
+      ],
+      [
+        "Getting involved",
+        [
+          [
+            "How can developers contribute?",
+            "Join a working group, contribute to a hosted project on GitHub, or become an AAIF ambassador; the Get Involved menu on the site lists each path.",
+            "Website"
+          ],
+          [
+            "Where can I follow the foundation's news?",
+            "The site publishes a blog, press and news, a weekly briefing and a daily agentic AI newsletter, each with a subscription link.",
+            "Website"
+          ]
+        ]
+      ]
+    ]
+  },
+  "content_sha256": "b8493236b1ec6ea0e5711ef4195e517e5f5c3259a18c075d630915196c50b98e",
+  "report": {
+    "sources_read": [
+      "https://aaif.io/",
+      "https://aaif.io/members",
+      "https://aaif.io/projects",
+      "LF press release: formation of the Agentic AI Foundation",
+      "LFX record: Agentic AI Foundation (agentic-ai-foundation)"
+    ],
+    "sources_failed": [],
+    "gaps": [
+      "How do I propose a new project to AAIF?"
+    ],
+    "notes": "The Platinum roster is the December 2025 press release's; the members page lists the current one.\nSettled in the question round from linuxfoundation.org, confirmed by the requester: Is AAIF controlled by one AI company?\nThe membership answer comes from LFX membership figures the requester confirmed in the question round.",
+    "version": 2,
+    "findings": {
+      "sources_failed": [],
+      "missing_assets": [
+        {
+          "asset": "unanswered_question",
+          "reason": "How do I propose a new project to AAIF?",
+          "fix": "Answer it in a comment on this question and redraft, or remove the question."
+        }
+      ],
+      "warnings": [
+        {
+          "code": "settled_from_suggestion",
+          "text": "The requester kept the suggested answer in the question round, so this answer rests on the agent's research, not on a source the requester supplied: Is AAIF controlled by one AI company?"
+        },
+        {
+          "code": "settled_from_suggestion",
+          "text": "The requester kept the suggested answer in the question round, so this answer rests on the agent's research, not on a source the requester supplied: How much does membership cost, and what does each tier include?"
+        }
+      ]
+    }
+  },
+  "checks": {
+    "findings": [],
+    "unanswered": [
+      {
+        "path": "faq[1][1][1]",
+        "group": "Projects",
+        "question": "How do I propose a new project to AAIF?"
+      }
+    ]
+  },
+  "inputs_record": {
+    "date_read": "2026-10-18",
+    "website": {
+      "url": "https://aaif.io/",
+      "read": true
+    },
+    "links": [
+      {
+        "url": "https://aaif.io/members",
+        "read": true
+      },
+      {
+        "url": "https://aaif.io/projects",
+        "read": true
+      }
+    ],
+    "documents": [
+      {
+        "title": "LF press release: formation of the Agentic AI Foundation",
+        "kind": "press",
+        "url": "https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation",
+        "text_supplied": false,
+        "read": true
+      }
+    ],
+    "notes_given": true,
+    "framework": {
+      "given": true,
+      "avoid_phrases": [
+        "the standard for agents",
+        "owned by",
+        "AI that replaces people"
+      ],
+      "open_objections": [
+        "How do I propose a new project?",
+        "How much does membership cost?"
+      ]
+    },
+    "lfx_records": [
+      {
+        "slug": "agentic-ai-foundation",
+        "uid": "u-aaif",
+        "name": "Agentic AI Foundation (AAIF)",
+        "date_read": "2026-10-18"
+      }
+    ],
+    "questions_asked": [
+      {
+        "id": "one-company-control",
+        "question": "Is AAIF controlled by one AI company?",
+        "why": "The framework leaves this objection open; the press release names the founding contributors and the Platinum members.",
+        "suggested_answer": "No. The Agentic AI Foundation is a neutral foundation hosted at the Linux Foundation, with founding contributions from Member Org Two, Member Org Three and Member Org Eight and Platinum members including Member Org One, Member Org Six and Member Org Seven.",
+        "basis": "https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation",
+        "answered": true
+      },
+      {
+        "id": "membership-cost",
+        "question": "How much does membership cost, and what does each tier include?",
+        "why": "The framework leaves this objection open; LFX holds the project's memberships.",
+        "suggested_answer": "Platinum membership is $350,000 a year and Gold $200,000; Silver is priced by company size from $5,000 to $75,000, and Associate membership is open to pre-approved non-profits and universities at no cost.",
+        "basis": "LFX memberships",
+        "answered": true
+      },
+      {
+        "id": "propose-project",
+        "question": "How do I propose a new project to AAIF?",
+        "why": "The notes say developers ask it; the projects page points to a GitHub process but states no steps.",
+        "suggested_answer": "",
+        "basis": "",
+        "answered": true
+      }
+    ],
+    "answers": [
+      {
+        "id": "one-company-control",
+        "question": "Is AAIF controlled by one AI company?",
+        "answer": "No. The Agentic AI Foundation is a neutral foundation hosted at the Linux Foundation, with founding contributions from Member Org Two, Member Org Three and Member Org Eight and Platinum members including Member Org One, Member Org Six and Member Org Seven.",
+        "origin": "accepted",
+        "date": "2026-10-18"
+      },
+      {
+        "id": "membership-cost",
+        "question": "How much does membership cost, and what does each tier include?",
+        "answer": "Platinum membership is $350,000 a year and Gold $200,000; Silver is priced by company size from $5,000 to $75,000, and Associate membership is open to pre-approved non-profits and universities at no cost.",
+        "origin": "accepted",
+        "date": "2026-10-18"
+      },
+      {
+        "id": "propose-project",
+        "question": "How do I propose a new project to AAIF?",
+        "answer": "Use your suggestion; where you have none, leave the question open for the team.",
+        "origin": "requester",
+        "date": "2026-10-18"
+      }
+    ],
+    "web_searches": [],
+    "fetched": [
+      {
+        "url": "https://aaif.io/",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/members",
+        "ok": true
+      },
+      {
+        "url": "https://www.linuxfoundation.org/press/linux-foundation-announces-the-formation-of-the-agentic-ai-foundation",
+        "ok": true
+      },
+      {
+        "url": "https://aaif.io/projects",
+        "ok": true
+      }
+    ]
+  },
+  "intake": {
+    "mode": "form",
+    "completed_at": "2026-10-18T12:00:00Z"
+  },
+  "revision": null,
+  "capabilities": {
+    "web_fetch": true,
+    "lfx_mcp": true
+  },
+  "generated_at": "2026-10-18T12:00:00Z",
+  "agent": {
+    "identifier": "linux-foundation~faq",
+    "agent_version": "1.2.0",
+    "prompt_manifest_sha256": "f4a3e897ce6d975391f8608488f1676994e28681e3f043a76d89c29fc4abb04b"
+  }
+}

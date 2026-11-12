@@ -7,6 +7,7 @@ import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgBoilerplatesAsset } from '@lfx-one/shared/interfaces';
+import { boilerplatesReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { MessageService } from 'primeng/api';
 import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -190,6 +191,32 @@ describe('MktgBoilerplatesViewComponent', () => {
     expect(query('mktg-boilerplates-view-gaps')?.textContent).toContain('The launch year is not stated.');
     expect(query('mktg-boilerplates-view-gaps-accepted')).toBeNull();
     expect(query('mktg-boilerplates-view-checks-empty')).not.toBeNull();
+  });
+
+  it('shows the agent’s real v2 report on the Sources tab as the Brand Kit does: no source failed, the open question in the agent’s words with its fix on the Missing assets card, no warning', async () => {
+    await render({ ...ASSET, report: boilerplatesReportV2Envelope().report });
+    query('mktg-boilerplates-view-tab-sources')?.click();
+    await fixture.whenStable();
+
+    expect(query('mktg-boilerplates-view-sources-failed')).toBeNull();
+    expect(query('mktg-boilerplates-view-sources-failed-empty')?.textContent).toBe('No source failed.');
+    expect(query('mktg-report-findings-missing-item')?.textContent).toContain('Open question');
+    expect(query('mktg-report-findings-missing-reason')?.textContent?.trim()).toBe(
+      'The question "Should the 100-word boilerplate name individual member companies?" was not answered, so the boilerplates were written without it.'
+    );
+    expect(query('mktg-report-findings-missing-fix')?.textContent?.trim()).toBe('Fix: Answer it on a redraft, or add the fact to the request notes.');
+    expect(query('mktg-report-findings-warnings-item')).toBeNull();
+    expect(query('mktg-report-findings-warnings-empty')?.textContent?.trim()).toBe('No warnings.');
+  });
+
+  it('adds no findings card for a v1 report, whose failed sources list as before', async () => {
+    await render();
+    query('mktg-boilerplates-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-boilerplates-view-sources-failed')?.textContent).toContain('Not found');
+    expect(query('mktg-boilerplates-view-sources-failed-detail')).toBeNull();
+    expect(query('mktg-report-findings-missing')).toBeNull();
+    expect(query('mktg-report-findings-warnings')).toBeNull();
   });
 
   it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {

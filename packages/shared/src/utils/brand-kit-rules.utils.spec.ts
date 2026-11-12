@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import type { BrandKitReport } from '../interfaces/brand-kit.interface';
 import type { MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import { brandKitReportV2RulesFixture } from './__fixtures__/brand-kit-report-v2-rules.fixture';
+import { boilerplatesReportV2Envelope, faqReportV2Envelope, frameworkReportV2Fixture } from './__fixtures__/mktg-report-v2.fixture';
 import {
   brandKitApproveFindings,
   brandKitChapterBasisLabel,
@@ -21,9 +22,12 @@ import {
   brandKitReportRules,
   mktgReportHasOpenGaps,
   mktgReportNeedsApprovalReview,
+  mktgReportGapMirrorsReason,
+  mktgReportUnmirroredGaps,
 } from './brand-kit-rules.utils';
 
-const V1_REPORT: MktgAssetReport = { sources_read: ['https://one.example.org'], sources_failed: [], gaps: [], notes: '' };
+// A v1 kit report: the v1 fields and none of the v2 ones (typed as the kit's so the cases below may spread kit fields over it).
+const V1_REPORT: BrandKitReport = { sources_read: ['https://one.example.org'], sources_failed: [], gaps: [], notes: '' };
 
 describe('brandKitChapterRuleBases', () => {
   it('gives nothing for a v1 report, which has no rules', () => {
@@ -164,6 +168,137 @@ describe('brandKitApproveFindings', () => {
     expect(brandKitApproveFindings(V1_REPORT)).toEqual({ failed: [], missing: [] });
     expect(brandKitApproveFindings(null)).toEqual({ failed: [], missing: [] });
   });
+
+  it('lists another agent’s real v2 findings the same way: the framework’s failed source, the boilerplates’ open question titled from the family map, an unknown id as written', () => {
+    const framework = frameworkReportV2Fixture();
+    expect(brandKitApproveFindings(framework)).toEqual({
+      failed: [{ title: 'https://aaif.io/press', text: 'This page does not exist on the site (the server answered 404).', detail: 'HTTP 404' }],
+      missing: [],
+    });
+    const boilerplates = boilerplatesReportV2Envelope().report;
+    expect(brandKitApproveFindings(boilerplates)).toEqual({
+      failed: [],
+      missing: [
+        {
+          title: 'Open question',
+          text: 'The question "Should the 100-word boilerplate name individual member companies?" was not answered, so the boilerplates were written without it.',
+          fix: 'Answer it on a redraft, or add the fact to the request notes.',
+        },
+      ],
+    });
+    const unknown: MktgAssetReport = {
+      ...framework,
+      findings: { sources_failed: [], missing_assets: [{ asset: 'something_new', reason: 'Not found.' }], warnings: [] },
+    };
+    expect(brandKitApproveFindings(unknown).missing).toEqual([{ title: 'something_new', text: 'Not found.', fix: null }]);
+  });
+});
+
+describe('mktgReportUnmirroredGaps', () => {
+  const FINDINGS = { sources_failed: [], warnings: [] };
+
+  it('lists the gaps no missing asset mirrors, as written: mirrored by equality or by substring, kept when unmirrored', () => {
+    const report: MktgAssetReport = {
+      ...V1_REPORT,
+      gaps: ['How much does membership cost?', 'Not answered: Should the boilerplate name member companies?', 'Whether to name the Gold members.'],
+      findings: {
+        ...FINDINGS,
+        missing_assets: [
+          { asset: 'unanswered_question', reason: 'How much does membership cost?' },
+          { asset: 'unanswered_question', reason: ' Should the boilerplate name member companies? ' },
+        ],
+      },
+    };
+    expect(mktgReportUnmirroredGaps(report)).toEqual(['Whether to name the Gold members.']);
+  });
+
+  it('gives the real envelopes their lines: the boilerplates’ one gap no question stands for (its wrapped question is mirrored), nothing for the FAQ (its gap is its question) or the framework (no gap)', () => {
+    expect(mktgReportUnmirroredGaps(boilerplatesReportV2Envelope().report)).toEqual(['Whether to name the Gold and Silver members: the framework names none.']);
+    expect(mktgReportUnmirroredGaps(faqReportV2Envelope().report)).toEqual([]);
+    expect(mktgReportUnmirroredGaps(frameworkReportV2Fixture())).toEqual([]);
+  });
+
+  describe('mktgReportGapMirrorsReason', () => {
+    it('matches the agents’ current wording: the boilerplates’ "Not answered: …" gap against its straight-quoted reason, the framework’s bare question against its curly-quoted reason, the FAQ’s equal pair', () => {
+      expect(
+        mktgReportGapMirrorsReason(
+          'Not answered: Should the 100-word boilerplate name individual member companies?',
+          'The question "Should the 100-word boilerplate name individual member companies?" was not answered, so the boilerplates were written without it.'
+        )
+      ).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'How many member organizations does the foundation have today?',
+          'The question “How many member organizations does the foundation have today?” was left unanswered, so the framework fills that gap with a placeholder or an inference.'
+        )
+      ).toBe(true);
+      expect(mktgReportGapMirrorsReason('How do I propose a new project to AAIF?', 'How do I propose a new project to AAIF?')).toBe(true);
+    });
+
+    it('reduces a reason to its quoted question only in the agents’ wrapper shape: a quoted word in a bare question hides no other gap, and a nested quote survives', () => {
+      const bareWithQuotedWord = 'Should the boilerplate say "members" or "participants"?';
+      expect(mktgReportGapMirrorsReason('Whether to name the Gold and Silver members: the framework names none.', bareWithQuotedWord)).toBe(false);
+      expect(mktgReportGapMirrorsReason('Not answered: Should the boilerplate say "members" or "participants"?', bareWithQuotedWord)).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'What does “open” mean here?',
+          'The question “What does “open” mean here?” was left unanswered, so the framework fills that gap with a placeholder.'
+        )
+      ).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'Whether to name the Gold and Silver members: the framework names none.',
+          'The section "Pricing" asks "How much is it?" and no page answers it.'
+        )
+      ).toBe(false);
+    });
+
+    it('takes the quoted question from the wrapper only, never a quoted word elsewhere: a nested or section quote hides no gap that merely holds the word', () => {
+      // The nested wrapper reduces to the whole question, not to “open”: a gap about the licence is unrelated.
+      expect(
+        mktgReportGapMirrorsReason(
+          'The open source licence is not named.',
+          'The question “What does “open” mean here?” was left unanswered, so the framework fills that gap with a placeholder.'
+        )
+      ).toBe(false);
+      // No wrapper: the reason is compared whole, so the quoted "Pricing" does not stand for a gap about pricing.
+      expect(
+        mktgReportGapMirrorsReason('Pricing tiers are not published on the site.', 'The section "Pricing" asks "How much is it?" and no page answers it.')
+      ).toBe(false);
+    });
+
+    it('needs the reduction for a wrapped question against a gap that carries it with more words, in straight or curly quotes', () => {
+      // Whole against whole neither side contains the other; the question taken from the wrapper is inside the gap.
+      expect(mktgReportGapMirrorsReason('Not answered: How much is it? (no page states it)', 'The question "How much is it?" was not answered.')).toBe(true);
+      expect(mktgReportGapMirrorsReason('Not answered: How much is it? (no page states it)', 'The question “How much is it?” was left unanswered.')).toBe(true);
+    });
+
+    it('leaves a reason that does not start with the wrapper whole, so its quoted question is not taken', () => {
+      // Not the agents' wrapper: compared whole, neither side contains the other, so the gap stays listed (the safe side).
+      expect(
+        mktgReportGapMirrorsReason('Not answered: How much is it? (no page states it)', 'Earlier the question "How much is it?" was raised and not answered.')
+      ).toBe(false);
+    });
+
+    it('folds whitespace and case, matches containment either way, and keeps an unrelated gap', () => {
+      expect(mktgReportGapMirrorsReason('not answered:  how  much does membership cost?', 'How much does MEMBERSHIP cost?')).toBe(true);
+      expect(mktgReportGapMirrorsReason('How much does membership cost?', 'Not answered: how much does membership cost? (no page states it)')).toBe(true);
+      expect(
+        mktgReportGapMirrorsReason(
+          'Whether to name the Gold and Silver members: the framework names none.',
+          'The question "Should the boilerplate name member companies?" was not answered.'
+        )
+      ).toBe(false);
+      expect(mktgReportGapMirrorsReason('', 'How much does membership cost?')).toBe(false);
+    });
+  });
+
+  it('gives nothing for a v1 report or no report, and reads a Brand Kit’s report like any agent’s (the dialog, not the util, leaves the kit out)', () => {
+    expect(mktgReportUnmirroredGaps({ ...V1_REPORT, gaps: ['Missing evidence'] })).toEqual([]);
+    expect(mktgReportUnmirroredGaps(null)).toEqual([]);
+    const kit: BrandKitReport = { ...brandKitReportV2RulesFixture(), gaps: ['A kit gap no asset mirrors.'] };
+    expect(mktgReportUnmirroredGaps(kit)).toEqual(['A kit gap no asset mirrors.']);
+  });
 });
 
 describe('mktgReportHasOpenGaps', () => {
@@ -187,6 +322,18 @@ describe('mktgReportHasOpenGaps', () => {
   ];
   it.each(cases)('with %s: %s', (_case, report, expected) => {
     expect(mktgReportHasOpenGaps(report)).toBe(expected);
+  });
+
+  it('counts another agent’s real v2 findings too: the framework’s failed source and the FAQ’s open question with nothing in the legacy fields; the FAQ’s warnings alone do not', () => {
+    const framework: MktgAssetReport = { ...frameworkReportV2Fixture(), sources_failed: [], gaps: [] };
+    expect(mktgReportHasOpenGaps(framework)).toBe(true);
+    expect(mktgReportNeedsApprovalReview(framework)).toBe(true);
+    const faq: MktgAssetReport = { ...faqReportV2Envelope().report, sources_failed: [], gaps: [] };
+    expect(mktgReportHasOpenGaps(faq)).toBe(true);
+    const warningsOnly: MktgAssetReport = { ...faq, findings: { ...EMPTY_FINDINGS, warnings: faq.findings?.warnings ?? [] } };
+    expect(warningsOnly.findings?.warnings).toHaveLength(2);
+    expect(mktgReportHasOpenGaps(warningsOnly)).toBe(false);
+    expect(mktgReportNeedsApprovalReview(warningsOnly)).toBe(false);
   });
 });
 

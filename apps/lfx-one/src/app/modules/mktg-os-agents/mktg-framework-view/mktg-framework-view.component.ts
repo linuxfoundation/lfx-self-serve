@@ -30,7 +30,9 @@ import {
   FOUNDATION_MESSAGE_VIEW_TABS,
   MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
   MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE,
+  MKTG_REPORT_GAPS_TITLE,
   MKTG_PRINT_KIT_READ_NONE,
+  MKTG_REPORT_ASSET_LABELS,
   MKTG_PRINT_KIT_READ_NOTES,
   MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
 } from '@lfx-one/shared/constants';
@@ -56,10 +58,12 @@ import {
   foundationMessageGoalViews,
   foundationMessageNumberRows,
   mktgPrintDocumentTitle,
+  mktgReportFindingsView,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { MktgReportFindingsComponent } from '../components/mktg-report-findings/mktg-report-findings.component';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 
 import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framework-print.component';
@@ -96,6 +100,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgFrameworkPrintComponent,
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
+    MktgReportFindingsComponent,
   ],
   templateUrl: './mktg-framework-view.component.html',
 })
@@ -152,12 +157,15 @@ export class MktgFrameworkViewComponent {
   // === Computed ===
   protected readonly content = computed(() => this.asset()?.content ?? null);
   protected readonly report = computed(() => this.asset()?.report ?? null);
+  /** The report's findings as the Sources tab shows them: a v2 report's three groups, a v1 report's failed list alone. */
+  protected readonly reportFindings = computed(() => mktgReportFindingsView(this.report(), MKTG_REPORT_ASSET_LABELS));
   protected readonly findings = computed(() => this.asset()?.checks.findings ?? []);
   protected readonly ready = computed(() => this.state() === 'ready' && this.content() !== null);
   protected readonly title = computed(() => `${this.projectName()} Messaging framework`);
   protected readonly header = computed(() => this.headerMetadata() ?? mktgAssetHeaderFallback('foundation-message', this.version(), null, this.approval()));
   protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
   protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
+  protected readonly gapsTitle = MKTG_REPORT_GAPS_TITLE;
   /** Under an approved revision's gaps: accepted at that approval, still open. */
   protected readonly acceptedGapsNote = computed(() => describeMktgAcceptedGaps(this.report(), this.approval(), this.version()));
   protected readonly modeLabel = computed(() => {

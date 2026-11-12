@@ -11,6 +11,7 @@
 
 import { FAQ_DOCUMENT_KINDS, FAQ_MODES, FAQ_REVISION_MODES, FAQ_VIEW_TABS } from '../constants/faq.constants';
 import type { MktgArtifactPersistReceipt } from './mktg-artifact.interface';
+import type { MktgAssetReport } from './mktg-asset.interface';
 import type {
   MktgRunAnswersBody,
   MktgRunAnswersResponse,
@@ -50,14 +51,8 @@ export interface FaqContent {
   faq: FaqGroup[];
 }
 
-/** What the run read, what it could not read, and what the sources do not state. */
-export interface FaqReport {
-  sources_read: string[];
-  sources_failed: { name: string; reason: string }[];
-  gaps: string[];
-  /** Anything a person should check; on a check, one issue per line. */
-  notes: string;
-}
+/** What the run read, what it could not read, and what the sources do not state (`notes`: on a check, one issue per line). The family's report: a v2 one carries `findings`. */
+export type FaqReport = MktgAssetReport;
 
 /** One question the sources did not answer, flagged for the team. */
 export interface FaqUnanswered {

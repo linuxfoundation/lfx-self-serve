@@ -8,6 +8,7 @@
 
 import type { BOILERPLATES_FORM_TYPE, BOILERPLATES_MODES, BOILERPLATES_VIEW_TABS } from '../constants/boilerplates.constants';
 import type { MktgArtifactPersistReceipt } from './mktg-artifact.interface';
+import type { MktgAssetReport } from './mktg-asset.interface';
 import type {
   MktgRunAnswersBody,
   MktgRunAnswersResponse,
@@ -39,13 +40,8 @@ export interface BoilerplatesContent {
   bp: BoilerplatesEntry[];
 }
 
-/** What the run read and could not, and what a person should check — shown to the reviewer, never part of the content. */
-export interface BoilerplatesReport {
-  sources_read: string[];
-  sources_failed: { name: string; reason: string }[];
-  gaps: string[];
-  notes: string;
-}
+/** What the run read and could not, and what a person should check — shown to the reviewer, never part of the content. The family's report: a v2 one carries `findings`. */
+export type BoilerplatesReport = MktgAssetReport;
 
 /** The finalize tool's own checks: each length's word count, in order, and the mechanical findings. */
 export interface BoilerplatesChecks {

@@ -7,6 +7,7 @@ import type { MktgRevisionApproval } from '../interfaces/mktg-document-store.int
 import { brandKitFoundIn, brandKitIsLight, brandKitLabelInk } from './brand-kit-book.utils';
 import { brandKitWebsiteHost } from './brand-kit.utils';
 import { describeMktgAcceptedItem, mktgWarningAcceptedKey } from './mktg-asset.utils';
+import { mktgReportSourceHref } from './mktg-report-v2.utils';
 
 /**
  * The Sources tab's groups from a report: a v2 report's findings in the agent's plain words, never rewritten; a v1
@@ -66,9 +67,9 @@ export function brandKitSourcesView(report: BrandKitReport, approval: MktgRevisi
   };
 }
 
-/** A warning's source is a link only when it is an http(s) URL; anything else is shown as text. */
+/** A warning's source is a link only when it is an http(s) URL; anything else is shown as text (the family's rule). */
 export function brandKitSourceHref(source: string | null): string | null {
-  return source && /^https?:\/\//i.test(source) ? source : null;
+  return mktgReportSourceHref(source);
 }
 
 /** An http(s) address inside a source description: the card shows its host, never the full address. */

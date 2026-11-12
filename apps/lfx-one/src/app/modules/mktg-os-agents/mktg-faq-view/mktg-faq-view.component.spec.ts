@@ -8,6 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionApproval, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { provideMktgCommentsStub, mktgCommentScopeFixture, mktgCommentFixture } from '@shared/testing/mktg-comments-test-service';
+import { faqReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import {
   FAQ_INJECTED_ANSWER,
   FAQ_LIST_ANSWER,
@@ -338,6 +339,31 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-gaps')).toContain('How much does membership cost?');
     expect(query('mktg-faq-view-gaps-accepted')).toBeNull();
     expect(query('mktg-faq-view-checks-empty')).not.toBeNull();
+  });
+
+  it('shows the agent’s real v2 report on the Sources tab as the Brand Kit does: no source failed, the open question with its fix on the Missing assets card, and its two warnings as text without a link', async () => {
+    host.asset.set({ ...ASSET, report: faqReportV2Envelope().report });
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-sources-failed')).toBeNull();
+    expect(text('mktg-faq-view-sources-failed-empty')).toBe('No source failed.');
+    expect(query('mktg-faq-view-sources-failed-detail')).toBeNull();
+    expect(text('mktg-report-findings-missing-item')).toContain('Open question');
+    expect(text('mktg-report-findings-missing-reason')).toBe('How do I propose a new project to AAIF?');
+    expect(text('mktg-report-findings-missing-fix')).toBe('Fix: Answer it in a comment on this question and redraft, or remove the question.');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="mktg-report-findings-warnings-item"]')).toHaveLength(2);
+    expect(text('mktg-report-findings-warnings-text')).toContain('Is AAIF controlled by one AI company?');
+    expect(query('mktg-report-findings-warnings-source-link')).toBeNull();
+    expect(query('mktg-report-findings-warnings-empty')).toBeNull();
+  });
+
+  it('adds no findings card for a v1 report, whose failed sources list as before', async () => {
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-sources-failed')).toContain('404');
+    expect(query('mktg-faq-view-sources-failed-detail')).toBeNull();
+    expect(query('mktg-report-findings-missing')).toBeNull();
+    expect(query('mktg-report-findings-warnings')).toBeNull();
   });
 
   it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
