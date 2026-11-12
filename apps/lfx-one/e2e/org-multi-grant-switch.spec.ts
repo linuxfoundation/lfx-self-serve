@@ -181,11 +181,8 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
   });
 
   test('M2: selection persists across a page reload (cookie contract)', async ({ page, context }) => {
-    // The persistence contract is the `lfx-selected-account` cookie: AccountContextService reads it
-    // on every bootstrap (constructor + initializeUserOrganizations) and reselects the matching
-    // seed. Asserting on the cookie post-click + post-reload verifies the contract hermetically.
-    // The DOM re-hydration path (persona API → seed match → aria-selected) requires stubbing the
-    // full persona payload, which is out of scope for a switching test.
+    // The persistence contract is the `lfx-selected-account` cookie. Asserting on the cookie
+    // post-click + post-reload verifies the contract hermetically.
     const trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
     await trigger.click();

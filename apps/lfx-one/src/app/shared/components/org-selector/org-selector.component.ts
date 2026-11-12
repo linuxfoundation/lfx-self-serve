@@ -460,11 +460,10 @@ export class OrgSelectorComponent {
     const account: Account = {
       // Spec 002: selection is keyed by `uid`, which now carries the org account id (SFID) — persisted to
       // the cookie + sent to all /api/orgs/:orgUid/lens/* routes. `accountId` carries the same value for
-      // display/analytics; the canonical fetch + Snowflake enrichment populate display fields.
+      // display/analytics; the canonical fetch populates display fields.
       accountId: item.accountId ?? '',
       accountName: item.name,
-      // Tier is org-specific — never carry over the previously selected org's value. Snowflake
-      // enrichment (refreshFromSnowflake) populates it when authoritative data arrives; the empty
+      // Tier is org-specific — never carry over the previously selected org's value. The empty
       // default matches PLACEHOLDER_ACCOUNT semantics. `slug` below is the indexed row's, never Snowflake's.
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,

@@ -163,7 +163,7 @@ export class OrgMeetingsInfluenceComponent {
   }
 
   private initFetchedRows(): Signal<OrgInfluenceRow[]> {
-    // A string key, not an object: `selectedAccount` is rewritten in place by Snowflake enrichment
+    // A string key, not an object: `selectedAccount` is rewritten in place by the tier lookup
     // and the canonical-record patch, and a fresh object with identical contents would dirty the
     // computed and retrigger the fetch, flashing the loading state for no new data.
     const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.timeRange()}|${this.attempt()}`));

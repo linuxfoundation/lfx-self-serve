@@ -399,7 +399,7 @@ export class AllEmployeesComponent {
   protected readonly currentAccountId = computed(() => this.accountContext.selectedAccount().uid);
 
   public constructor() {
-    // Reset all state and cancel in-flight detail fetches only when the actual org uid changes; subscribing to selectedAccount directly would also fire on object-ref refreshes (e.g. Snowflake enrichment re-setting the same account) and wipe user search/filter state.
+    // Reset all state and cancel in-flight detail fetches only when the actual org uid changes; subscribing to selectedAccount directly would also fire on object-ref refreshes (e.g. the tier lookup re-setting the same account) and wipe user search/filter state.
     this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
       this.detailCancel$.next();
       this.resetAllState();

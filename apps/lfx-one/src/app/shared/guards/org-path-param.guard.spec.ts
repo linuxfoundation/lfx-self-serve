@@ -171,8 +171,7 @@ describe('orgPathParamGuard', () => {
 
     // lfx-self-serve#2570 (prod): the address names the selection, so the selection is addressed and
     // is pinned exactly as a resolver hit would be. A selection that reached the address by any other
-    // route (the org-items default, the cookie) is otherwise left unpinned here, and a later persona
-    // refresh — empty for a staff viewer — re-seeds over it under the address it does not match.
+    // route (the org-items default, the cookie) is otherwise left unpinned here.
     it.each([
       ['slug', 'acme-inc', '/org/acme-inc/overview', true],
       ['SFID (no slug)', null, `/org/${UID_A}/overview`, true],
@@ -320,8 +319,8 @@ describe('orgPathParamGuard', () => {
     /**
      * The `admitWhilePending` argument is the contract this guard owes the service, so it is pinned
      * here: on a cold deep link the grant sets have not answered, and without opting in a
-     * conglomerate admin whose siblings are inherited grants would be bounced to their single
-     * persona seed before anyone knows better. What that flag then *does* is the service's
+     * conglomerate admin whose siblings are inherited grants would be bounced before anyone knows
+     * better. What that flag then *does* is the service's
      * behaviour and is covered by its own specs — asserting it here against a mock that honours the
      * argument would only restate this expectation.
      */
@@ -342,8 +341,8 @@ describe('orgPathParamGuard', () => {
     });
 
     /**
-     * Regression, PR #4415 review 7. A caller whose organizations are all inherited grants has no
-     * persona seeds, so nothing has selected one and `selectedAccount()` is the placeholder.
+     * Regression, PR #4415 review 7. A caller whose organizations are all inherited grants can have
+     * nothing selected yet, so `selectedAccount()` is the placeholder.
      * Falling back to it alone sent them to the dead end while they held an organization the
      * roll-up had been counting a moment earlier.
      */

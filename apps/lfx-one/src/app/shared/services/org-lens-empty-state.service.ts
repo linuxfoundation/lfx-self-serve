@@ -231,8 +231,7 @@ export class OrgLensEmptyStateService {
    *
    * Rule 2 is deliberately unguarded by `holdsAnything`: with the roster never loaded, `selectedHeld`
    * cannot be true and the server read gate answers 503 `ROLE_GRANTS_UNAVAILABLE` to every section
-   * anyway — one page-level outage with Retry is the honest render, not six section-level copies of
-   * it. `holdsAnything` (persona-seeded accounts) is not evidence of a grant, so it cannot admit the page.
+   * anyway — one page-level outage with Retry is the honest render, not six section-level copies of it.
    */
   public classifyLookup(holdsAnything: boolean): OrgLensLookupBlocker | null {
     const outcome = this.roleGrants.lookupOutcome();

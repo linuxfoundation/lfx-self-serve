@@ -267,9 +267,6 @@ export abstract class NavMenuBase {
   private initEffectiveShowOrgSelector(): Signal<boolean> {
     return computed<boolean>(() => {
       if (!this.showOrgSelector()) return false;
-      // Direct writer/auditor grants or a persona-seeded org list. The persona-seeds fallback keeps
-      // the selector visible for users on dev sandbox accounts that have a seeded org list but no
-      // settings-doc grants in the upstream b2b_org_settings docs.
       return this.accountContextService.hasOrgSelectorAccess();
     });
   }

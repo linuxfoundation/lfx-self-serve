@@ -148,7 +148,7 @@ export class OrgEasyclaComponent {
    * A page-level state is a settled answer in its own right, so it does not wait behind the loading branch.
    *
    * `orgNavigation.loaded()` is part of the authorized branch because grants and personas can both
-   * be loaded while the org list is still being fetched and default-selected. Without it those users would see a
+   * be loaded while the org list is still being fetched and default-selected. Without it a caller would see a
    * settled answer about their CLAs before any company was selected.
    */
   protected readonly orgContextLoaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());

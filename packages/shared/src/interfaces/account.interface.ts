@@ -12,8 +12,8 @@ export interface Account {
   /**
    * Lowercase URL-identity slug derived by member-service from the org name (spec 050, DR-007:
    * `slugify(Account.Name)`, no stored slug). Tri-state: a string when published; `null` when the
-   * name yields none (the address then uses `uid`); `undefined` when not known yet — persona seeds
-   * and the cookie-restored stub carry no slug until an indexed row — the org item or the resolver
+   * name yields none (the address then uses `uid`); `undefined` when not known yet — a uid-only
+   * stub carries no slug until an indexed row — the org item or the resolver
    * answer — supplies it, and those are the only writers (spec 050: URL identity is the index's;
    * the canonical record never sets, unsets or overwrites it, since addresses resolve against the
    * index). Readers must not collapse `undefined` into `null`. Never sourced from Snowflake.
@@ -23,7 +23,7 @@ export interface Account {
   logoUrl?: string | null;
   /** Highest active corporate membership tier display name (e.g. "Platinum Membership"). NULL/empty → no badge. */
   membershipTier?: string | null;
-  /** Org account id (18-char SFID) from member-service — the primary org identifier (spec 002). Persisted in the `lfx-selected-account` cookie and sent to every `/api/orgs/:orgUid/lens/*` route. NULL only for not-yet-resolved persona seeds on a fresh load; the canonical fetch hydrates display fields once it is present. */
+  /** Org account id (18-char SFID) from member-service — the primary org identifier (spec 002). Persisted in the `lfx-selected-account` cookie and sent to every `/api/orgs/:orgUid/lens/*` route. The canonical fetch hydrates display fields once it is present. */
   uid?: string | null;
   /** Parent org account id (SFID); NULL for top-level orgs. Populated from canonical record fetch. */
   parentUid?: string | null;

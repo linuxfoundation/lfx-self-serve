@@ -57,7 +57,7 @@ export class OrgMeetingsComponent {
   // Complex computed
   // Spec 053 — the page-level state replacing the page (`could-not-load`, `staff-check-failed`,
   // `no-organization`), or null when the page renders (FR-016). Reused below so a caller with no
-  // persona-seeded organizations (who never triggers the nav fetch) isn't stuck waiting on
+  // switcher access (who never triggers the nav fetch) isn't stuck waiting on
   // `orgNavigationService.loaded()` forever.
   protected readonly pageState = this.emptyState.pageState;
   protected readonly hasPageState = this.emptyState.hasPageState;
@@ -66,19 +66,19 @@ export class OrgMeetingsComponent {
   // True once every fetch that can populate `selectedAccount` has settled — either a page-level
   // state replaces the page (short-circuits without waiting on nav), or role grants + personas +
   // org-navigation's default-org selection have all returned. Without waiting on org-navigation
-  // too, a direct writer/auditor whose persona response has no organizations could see a one-tick
+  // too, a direct writer/auditor could see a one-tick
   // flash of the no-company empty state before `/api/nav/org-items` populates `selectedAccount`.
   // Mirrors org-projects.component.ts's `orgContextLoaded` gate.
   protected readonly loaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
 
-  // Either identifier counts as "selected": a uid-only stub (account-context.service.ts)
+  // Either identifier counts as "selected": a uid-only stub (org-path-param.guard.ts)
   // can have `uid` set with `accountId` still empty. Checking only one leaves a validly-selected
   // company on the empty state, per the same gate in org-overview.component.ts.
   protected readonly hasCompany: Signal<boolean> = computed(
     () => !!this.accountContext.selectedAccount().uid || !!this.accountContext.selectedAccount().accountId
   );
 
-  // Every section keys off the analytics account id, not the uid. A cookie-restored selection can
+  // Every section keys off the analytics account id, not the uid. A uid-only stub can
   // carry a uid with the accountId still pending, and the canonical-record fetch that resolves it
   // fails silently by design — so once the org context has settled without one, the sections would
   // otherwise sit on their loading skeletons indefinitely with nothing on screen to say why.

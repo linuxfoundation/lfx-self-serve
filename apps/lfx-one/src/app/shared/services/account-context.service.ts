@@ -212,23 +212,7 @@ export class AccountContextService {
   /** True while the selection is pinned by an **address** (resolver hit, FR-020 stub, or a URL naming it) — the only pin an org-items reload honours. */
   public readonly isAdoptedFromAddress: Signal<boolean> = computed(() => this.isAddressedSelection() && this.pinSource() === 'address');
 
-  private readonly heldOrgUids: Signal<string[]> = computed(() => {
-    const grants = this.orgRoleGrantsService;
-    const sets = {
-      writerSet: grants.writerSet(),
-      inheritedWriterSet: grants.inheritedWriterSet(),
-      auditorSet: grants.auditorSet(),
-      inheritedAuditorSet: grants.inheritedAuditorSet(),
-    };
-    const held = new Set<string>();
-    for (const [, set] of ORG_ROLE_AUTHORITY_ORDER) {
-      sets[set].forEach((uid) => held.add(uid));
-    }
-    // Last, and never grouped into `rollUpFamilies`: a CLA-only organization is a real
-    // address but not something the roll-up combines (M3).
-    this.orgClaOnlyAccess.claOnlyOrgUids().forEach((uid) => held.add(uid));
-    return [...held];
-  });
+  private readonly heldOrgUids: Signal<string[]> = computed(() => this.initHeldOrgUids());
 
   private readonly heldOrgUidSet: Signal<ReadonlySet<string>> = computed(() => new Set(this.heldOrgUids()));
 
@@ -286,7 +270,7 @@ export class AccountContextService {
     // settles, and demoting on that transient count would drop the caller into one company and
     // overwrite the cookie that said otherwise. Once the grants have loaded the count is
     // trustworthy, and a caller who no longer holds two organizations in that family falls through
-    // to the ordinary default selection below.
+    // to the fallback below.
     const storedRootUid = orgRollUpRootUid(storedUid);
     if (storedRootUid && (this.canSelectRollUpFor(storedRootUid) || this.rollUpEligibilityUnsettled())) {
       this.applyRollUpSelection(storedRootUid);
@@ -381,8 +365,7 @@ export class AccountContextService {
   public rollUpFallbackOrganization(rootUid?: string | null): Account | null {
     const familyUids = rootUid ? (this.rollUpFamilies().find((family) => family.rootUid === rootUid)?.orgUids ?? []) : [];
     const uid = familyUids[0] ?? this.heldOrgUids()[0];
-    // Same shape the cookie-restore path uses, `accountId`
-    // included: demoting off the roll-up with Events open must actually re-fetch, and that
+    // `accountId` as well as `uid`: demoting off the roll-up with Events open must actually re-fetch, and that
     // pipeline filters out a null `accountId` before its `switchMap`, so an empty one would
     // leave the combined results sitting under the concrete organization's address
     // (#4415, Copilot).
@@ -626,6 +609,24 @@ export class AccountContextService {
    */
   private canAddressOrganization(uid: string | null | undefined): boolean {
     return !!uid && (this.orgRoleGrantsService.isStaff() || this.heldOrgUidSet().has(uid));
+  }
+
+  private initHeldOrgUids(): string[] {
+    const grants = this.orgRoleGrantsService;
+    const sets = {
+      writerSet: grants.writerSet(),
+      inheritedWriterSet: grants.inheritedWriterSet(),
+      auditorSet: grants.auditorSet(),
+      inheritedAuditorSet: grants.inheritedAuditorSet(),
+    };
+    const held = new Set<string>();
+    for (const [, set] of ORG_ROLE_AUTHORITY_ORDER) {
+      sets[set].forEach((uid) => held.add(uid));
+    }
+    // Last, and never grouped into `rollUpFamilies`: a CLA-only organization is a real
+    // address but not something the roll-up combines (M3).
+    this.orgClaOnlyAccess.claOnlyOrgUids().forEach((uid) => held.add(uid));
+    return [...held];
   }
 
   /**
