@@ -2,12 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  FORMATION_PIPELINE_COLUMNS,
   FORMATION_PIPELINE_COPY,
   FORMATION_PIPELINE_CSV_FILENAME_PREFIX,
+  FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
+  FORMATION_PIPELINE_DEFAULT_SORT,
+  FORMATION_PIPELINE_DEFAULT_STAGE,
+  FORMATION_PIPELINE_FOUNDATION_KINDS,
+  FORMATION_PIPELINE_FOUNDATION_UID_PATTERN,
   FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES,
   FORMATION_PIPELINE_LIVE_STAGES,
   FORMATION_PIPELINE_PROSPECT_LABEL,
   FORMATION_PIPELINE_LAUNCH_SOON_DAYS,
+  FORMATION_PIPELINE_QUERY_PARAMS,
+  FORMATION_PIPELINE_SEARCH_MAX_LENGTH,
   FORMATION_PIPELINE_STAGE_LABELS,
   FORMATION_PIPELINE_STAGE_SEVERITY,
   FORMATION_PIPELINE_STAGE_UPSTREAM,
@@ -28,6 +36,7 @@ import type {
   FormationPipelineSort,
   FormationPipelineStage,
   FormationPipelineStageFilter,
+  FormationPipelineUrlState,
 } from '../interfaces/formation-pipeline.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import { formatIsoDateLabel, parseIsoDateAsUtcMidnight, timeAgo } from './date-time.utils';
@@ -330,4 +339,72 @@ export function buildPipelineCsvRows(rows: readonly FormationPipelineRow[]): str
 /** `formation-pipeline-YYYY-MM-DD.csv` for the given day (UTC). */
 export function getPipelineCsvFilename(now: Date = new Date()): string {
   return `${FORMATION_PIPELINE_CSV_FILENAME_PREFIX}${now.toISOString().slice(0, 10)}.csv`;
+}
+
+/** The default filter and sort state: what the page opens on and what the URL omits. */
+export function getDefaultPipelineUrlState(): FormationPipelineUrlState {
+  return {
+    stage: FORMATION_PIPELINE_DEFAULT_STAGE,
+    foundationUid: null,
+    foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
+    search: '',
+    sort: { ...FORMATION_PIPELINE_DEFAULT_SORT },
+  };
+}
+
+/**
+ * Reads the Pipeline state from query params. Anything unrecognized falls back to the default for that one field, so a stale
+ * or hand-edited link still opens the page: an unknown stage or type, a sort column that does not exist, a foundation uid of
+ * the wrong shape, a search past the API's length limit (cut to it).
+ */
+export function parsePipelineUrlState(params: { get(name: string): string | null }): FormationPipelineUrlState {
+  const names = FORMATION_PIPELINE_QUERY_PARAMS;
+  const state = getDefaultPipelineUrlState();
+
+  const stage = params.get(names.stage);
+  if (stage === 'all' || stage === 'in_pipeline' || FORMATION_PIPELINE_STAGES.some((candidate) => candidate === stage)) {
+    state.stage = stage as FormationPipelineStageFilter;
+  }
+
+  const foundationUid = params.get(names.foundation);
+  if (foundationUid && FORMATION_PIPELINE_FOUNDATION_UID_PATTERN.test(foundationUid)) {
+    state.foundationUid = foundationUid;
+  }
+
+  const kind = params.get(names.foundationKind);
+  if (FORMATION_PIPELINE_FOUNDATION_KINDS.some((candidate) => candidate === kind)) {
+    state.foundationKind = kind as FormationPipelineUrlState['foundationKind'];
+  }
+
+  state.search = (params.get(names.search) ?? '').trim().slice(0, FORMATION_PIPELINE_SEARCH_MAX_LENGTH);
+
+  const sortKey = FORMATION_PIPELINE_COLUMNS.find((column) => column.key === params.get(names.sort))?.key;
+  if (sortKey) {
+    state.sort = { key: sortKey, direction: params.get(names.direction) === 'desc' ? 'desc' : 'asc' };
+  }
+  return state;
+}
+
+/**
+ * The query params for a state, with `null` for every field at its default so a `merge` navigation drops it from the URL
+ * and the default view keeps a clean address. The inverse of {@link parsePipelineUrlState}.
+ */
+export function buildPipelineUrlParams(state: FormationPipelineUrlState): Record<string, string | null> {
+  const names = FORMATION_PIPELINE_QUERY_PARAMS;
+  const defaults = getDefaultPipelineUrlState();
+  const search = state.search.trim();
+  const defaultSort = state.sort.key === defaults.sort.key && state.sort.direction === defaults.sort.direction;
+  return {
+    [names.stage]: state.stage === defaults.stage ? null : state.stage,
+    [names.foundation]: state.foundationUid,
+    [names.foundationKind]: state.foundationKind === defaults.foundationKind ? null : state.foundationKind,
+    [names.search]: search || null,
+    [names.sort]: defaultSort ? null : state.sort.key,
+    [names.direction]: defaultSort ? null : state.sort.direction,
+  };
+}
+
+/** Every Pipeline query param set to `null`, for leaving the tab: a `merge` navigation then removes them all. */
+export function clearedPipelineUrlParams(): Record<string, null> {
+  return Object.fromEntries(Object.values(FORMATION_PIPELINE_QUERY_PARAMS).map((name) => [name, null]));
 }

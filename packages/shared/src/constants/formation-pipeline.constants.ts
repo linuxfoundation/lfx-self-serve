@@ -115,6 +115,22 @@ export const FORMATION_PIPELINE_FOUNDATION_KIND_LABELS: Record<FormationPipeline
   no_foundation: 'No foundation',
 };
 
+/**
+ * Query params that carry the Pipeline's filter and sort state (#5619). Defaults are omitted from the URL. Kept apart from
+ * `tab` and `project`, which the Formations page already owns.
+ */
+export const FORMATION_PIPELINE_QUERY_PARAMS = {
+  stage: 'stage',
+  foundation: 'foundation',
+  foundationKind: 'type',
+  search: 'q',
+  sort: 'sort',
+  direction: 'dir',
+} as const;
+
+/** What a foundation uid in the URL may look like; the BFF's `foundation_uid` check accepts the same shape. */
+export const FORMATION_PIPELINE_FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
 /** A launch inside this many days is flagged amber. */
 export const FORMATION_PIPELINE_LAUNCH_SOON_DAYS = 30;
 

@@ -87,6 +87,16 @@ export interface FormationPipelineSort {
   direction: FormationPipelineSortDirection;
 }
 
+/** The Pipeline's filter and sort state as it lives in the URL (#5619): stage, foundation, foundation type, name search and sort. */
+export interface FormationPipelineUrlState {
+  stage: FormationPipelineStageFilter;
+  /** The chosen foundation's uid, or `null` for all foundations. */
+  foundationUid: string | null;
+  foundationKind: FormationPipelineFoundationKindFilter;
+  search: string;
+  sort: FormationPipelineSort;
+}
+
 /** What the "Expected launch" cell shows for one date. */
 export interface FormationPipelineLaunch {
   /** Formatted date, or the "Not set" copy. */

@@ -28,7 +28,7 @@ import {
   PROJECT_APPLICATION_PARENT_QUERY_PARAM,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
-import { withProposalsPendingCount } from '@lfx-one/shared/utils';
+import { clearedPipelineUrlParams, withProposalsPendingCount } from '@lfx-one/shared/utils';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { FormationsPipelineComponent } from '../components/formations-pipeline/formations-pipeline.component';
@@ -161,7 +161,8 @@ export class FormationsQueueComponent {
     this.router.navigate([], {
       relativeTo: this.route,
       // Pipeline is the default for those who see the tab, so it carries no param; Formations must say so.
-      queryParams: { tab: tab === FORMATION_PIPELINE_TAB_ID ? null : tab },
+      // Leaving the Pipeline drops its filter and sort params; they belong to that tab only (#5619).
+      queryParams: { tab: tab === FORMATION_PIPELINE_TAB_ID ? null : tab, ...(tab === FORMATION_PIPELINE_TAB_ID ? {} : clearedPipelineUrlParams()) },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

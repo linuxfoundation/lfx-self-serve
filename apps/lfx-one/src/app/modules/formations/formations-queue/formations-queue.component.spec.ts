@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import { ProjectApplicationService } from '@services/project-application.service';
 import { ProjectService } from '@services/project.service';
@@ -419,6 +419,20 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
       expect(getFormationsQueue).toHaveBeenCalledTimes(1);
       expect(query(failing, 'formations-queue-pipeline')).toBeNull();
       expect(fixture).toBeTruthy();
+    });
+
+    it('drops the Pipeline filter params when switching to another tab, and keeps the Pipeline tab param-free (#5619)', async () => {
+      const fixture = await render({ slug: 'tlf', isFormationTeam: true, tab: 'pipeline' });
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      fixture.componentInstance['onPageTabChange']('formations');
+      expect(navigate).toHaveBeenLastCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { tab: 'formations', stage: null, foundation: null, type: null, q: null, sort: null, dir: null } })
+      );
+
+      fixture.componentInstance['onPageTabChange']('pipeline');
+      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { tab: null } }));
     });
 
     it('opens ?tab=pipeline directly', async () => {

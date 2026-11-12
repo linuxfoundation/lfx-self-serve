@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import type { FormationPipelineFoundationKindFilter, FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
 import { countPipelineRows } from '@lfx-one/shared/utils';
@@ -57,13 +57,21 @@ describe('FormationsPipelineComponent (#5475)', () => {
   let fixture: ComponentFixture<FormationsPipelineComponent>;
   let getFormationPipeline: ReturnType<typeof vi.fn>;
 
-  const render = async (result: Observable<FormationPipelineResponse> = of(response(ROWS))): Promise<void> => {
+  const render = async (result: Observable<FormationPipelineResponse> = of(response(ROWS)), query: Record<string, string> | null = null): Promise<void> => {
     TestBed.resetTestingModule();
     getFormationPipeline = vi.fn(() => result);
     await TestBed.configureTestingModule({
       imports: [FormationsPipelineComponent],
-      providers: [provideRouter([]), { provide: FormationService, useValue: { getFormationPipeline } }],
+      providers: [
+        provideRouter([]),
+        { provide: FormationService, useValue: { getFormationPipeline } },
+        ...(query ? [{ provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap(query)) } }] : []),
+      ],
     }).compileComponents();
+    if (query) {
+      // A mocked ActivatedRoute is not a real route to navigate relative to.
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    }
     fixture = TestBed.createComponent(FormationsPipelineComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -156,6 +164,126 @@ describe('FormationsPipelineComponent (#5475)', () => {
     await click(q('formations-pipeline-sort-project')!.querySelector('button'));
     expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
     expect(rowIds()).toEqual(['d', 'b', 'a', 'c']);
+  });
+
+  // #5619: the filters and sort live in the URL, so a shared or reloaded link reopens the same view.
+  describe('URL state', () => {
+    const lastParams = (): Record<string, string | null> => {
+      const calls = vi.mocked(TestBed.inject(Router).navigate).mock.calls;
+      return (calls[calls.length - 1][1] as { queryParams: Record<string, string | null> }).queryParams;
+    };
+
+    it('opens on the state in the URL: stage, foundation type, search and sort', async () => {
+      const rows = [
+        row({ uid: 'n', name: 'Alpha Fund', stage: 'engaged', foundation_kind: 'new_foundation', parent: null }),
+        row({ uid: 'u', name: 'Alpha Under', stage: 'engaged', foundation_kind: 'under_foundation' }),
+        row({ uid: 'z', name: 'Zeta Fund', stage: 'engaged', foundation_kind: 'new_foundation', parent: null }),
+      ];
+      await render(of(response(rows)), { stage: 'engaged', type: 'new_foundation', q: 'alpha', sort: 'project', dir: 'desc' });
+
+      expect(rowIds()).toEqual(['n']);
+      expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
+      expect(fixture.componentInstance['filterForm'].controls.search.value).toBe('alpha');
+      expect(fixture.componentInstance['filterForm'].controls.foundationKind.value).toBe('new_foundation');
+    });
+
+    it('opens scoped to a foundation in the URL, reads once scoped, and lists the foundations for the select', async () => {
+      getFormationPipeline = vi.fn((foundationUid: string | null) =>
+        of(foundationUid ? response([row({ uid: 'only', name: 'Only' })]) : response([row({ uid: 'p', parent: { uid: 'f2', name: 'Foundation Two' } })]))
+      );
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationsPipelineComponent],
+        providers: [
+          provideRouter([]),
+          { provide: FormationService, useValue: { getFormationPipeline } },
+          { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({ foundation: 'f2' })) } },
+        ],
+      }).compileComponents();
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture = TestBed.createComponent(FormationsPipelineComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getFormationPipeline).toHaveBeenNthCalledWith(1, 'f2');
+      expect(getFormationPipeline).toHaveBeenCalledTimes(2); // the unfiltered read that names the foundations
+      expect(rowIds()).toEqual(['only']);
+      expect(fixture.componentInstance['foundationOptions']().map((option: { label: string }) => option.label)).toContain('Foundation Two');
+      expect(fixture.componentInstance['filterForm'].controls.foundation.value).toBe('f2');
+    });
+
+    it('ignores bad values and opens on the defaults', async () => {
+      await render(of(response(ROWS)), { stage: 'bogus', type: 'bogus', sort: 'bogus', foundation: 'no spaces allowed' });
+
+      expect(rowIds()).toEqual(['d', 'a', 'b']);
+      expect(getFormationPipeline).toHaveBeenCalledWith(null);
+    });
+
+    it('writes nothing for the default view, then each change to the URL (merge, no history entry)', async () => {
+      await render(of(response(ROWS)), {});
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+      expect(navigate).not.toHaveBeenCalled();
+
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParamsHandling: 'merge', replaceUrl: true }));
+      expect(lastParams()).toMatchObject({ stage: 'archived', foundation: null, type: null, q: null, sort: null, dir: null });
+
+      await click(q('formations-pipeline-sort-project')!.querySelector('button'));
+      expect(lastParams()).toMatchObject({ stage: 'archived', sort: 'project', dir: 'asc' });
+
+      fixture.componentInstance['filterForm'].controls.foundationKind.setValue('no_foundation');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(lastParams()).toMatchObject({ type: 'no_foundation' });
+
+      fixture.componentInstance['filterForm'].controls.foundation.setValue('f2');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(lastParams()).toMatchObject({ foundation: 'f2' });
+    });
+
+    it('writes the search only after the debounce, and clears every param on reset', async () => {
+      await render(of(response(ROWS)), {});
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+
+      fixture.componentInstance['filterForm'].controls.search.setValue('alp');
+      fixture.detectChanges();
+      expect(navigate).not.toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      fixture.detectChanges();
+      expect(lastParams()).toMatchObject({ q: 'alp' });
+
+      fixture.componentInstance['resetFilters']();
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      fixture.detectChanges();
+      expect(lastParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null });
+    });
+
+    it('round-trips: what one view writes, a fresh page reads back as the same view', async () => {
+      const rows = [
+        row({ uid: 'u1', name: 'Alpha One', stage: 'archived', foundation_kind: 'under_foundation' }),
+        row({ uid: 'u2', name: 'Alpha Two', stage: 'archived', foundation_kind: 'under_foundation' }),
+        row({ uid: 'n', name: 'Alpha Fund', stage: 'archived', foundation_kind: 'new_foundation', parent: null }),
+      ];
+      await render(of(response(rows)), {});
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      fixture.componentInstance['filterForm'].controls.foundationKind.setValue('under_foundation');
+      fixture.componentInstance['filterForm'].controls.search.setValue('alpha');
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await click(q('formations-pipeline-sort-project')!.querySelector('button'));
+      await click(q('formations-pipeline-sort-project')!.querySelector('button'));
+      const written = Object.fromEntries(Object.entries(lastParams()).filter(([, value]) => value !== null)) as Record<string, string>;
+      const before = rowIds();
+
+      expect(written).toEqual({ stage: 'archived', type: 'under_foundation', q: 'alpha', sort: 'project', dir: 'desc' });
+      expect(before).toEqual(['u2', 'u1']);
+
+      await render(of(response(rows)), written);
+      expect(rowIds()).toEqual(before);
+      expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
+    });
   });
 
   // #5619 D7

@@ -7,6 +7,10 @@ import { rowsToCsv } from './file.utils';
 import type { FormationPipelineRow } from '../interfaces/formation-pipeline.interface';
 import {
   buildPipelineCsvRows,
+  buildPipelineUrlParams,
+  clearedPipelineUrlParams,
+  getDefaultPipelineUrlState,
+  parsePipelineUrlState,
   chunkArray,
   buildPipelinePillOptions,
   buildPipelineStatCards,
@@ -350,5 +354,69 @@ describe('filterPipelineRowsByFoundationKind (#5619)', () => {
     const copy = [...rows];
     filterPipelineRowsByFoundationKind(rows, 'new_foundation');
     expect(rows).toEqual(copy);
+  });
+});
+
+describe('Pipeline URL state (#5619)', () => {
+  const fromQuery = (query: string) => parsePipelineUrlState(new URLSearchParams(query));
+  const toQuery = (state: ReturnType<typeof getDefaultPipelineUrlState>): string => {
+    const params = new URLSearchParams();
+    for (const [name, value] of Object.entries(buildPipelineUrlParams(state))) {
+      if (value !== null) params.set(name, value);
+    }
+    return params.toString();
+  };
+
+  it('opens on the defaults for an empty query, and writes nothing for the defaults', () => {
+    expect(fromQuery('')).toEqual(getDefaultPipelineUrlState());
+    expect(toQuery(getDefaultPipelineUrlState())).toBe('');
+  });
+
+  it('round-trips every field through the URL', () => {
+    const state = {
+      stage: 'archived' as const,
+      foundationUid: 'f-uid_1',
+      foundationKind: 'under_foundation' as const,
+      search: 'quantum & more',
+      sort: { key: 'formation_lead' as const, direction: 'desc' as const },
+    };
+    const query = toQuery(state);
+
+    expect(query).toBe('stage=archived&foundation=f-uid_1&type=under_foundation&q=quantum+%26+more&sort=formation_lead&dir=desc');
+    expect(fromQuery(query)).toEqual(state);
+  });
+
+  it('round-trips each stage selection and each foundation kind', () => {
+    for (const stage of ['all', 'in_pipeline', 'prospect', 'exploratory', 'engaged', 'on_hold', 'disengaged', 'confidential', 'archived'] as const) {
+      expect(fromQuery(toQuery({ ...getDefaultPipelineUrlState(), stage })).stage).toBe(stage);
+    }
+    for (const foundationKind of ['all', 'new_foundation', 'under_foundation', 'no_foundation'] as const) {
+      expect(fromQuery(toQuery({ ...getDefaultPipelineUrlState(), foundationKind })).foundationKind).toBe(foundationKind);
+    }
+  });
+
+  it('omits the sort pair only when it is the default sort', () => {
+    const defaults = getDefaultPipelineUrlState();
+    expect(buildPipelineUrlParams({ ...defaults, sort: { key: defaults.sort.key, direction: 'desc' } })).toMatchObject({
+      sort: defaults.sort.key,
+      dir: 'desc',
+    });
+    expect(buildPipelineUrlParams(defaults)).toMatchObject({ sort: null, dir: null });
+  });
+
+  it('falls back to the default for one bad value without discarding the others', () => {
+    const state = fromQuery('stage=bogus&type=nope&sort=nope&foundation=has%20space&q=%20alpha%20&dir=desc');
+
+    expect(state).toEqual({ ...getDefaultPipelineUrlState(), search: 'alpha' });
+    expect(fromQuery('stage=engaged&type=bogus').stage).toBe('engaged');
+    expect(fromQuery('sort=ed_pm&dir=sideways').sort).toEqual({ key: 'ed_pm', direction: 'asc' });
+  });
+
+  it('cuts an over-long search to the API limit', () => {
+    expect(fromQuery(`q=${'a'.repeat(300)}`).search).toHaveLength(100);
+  });
+
+  it('clears every Pipeline param when leaving the tab', () => {
+    expect(clearedPipelineUrlParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null });
   });
 });
