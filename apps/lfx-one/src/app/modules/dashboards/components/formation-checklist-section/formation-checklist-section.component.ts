@@ -10,7 +10,12 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
-import { FORMATION_CHECKLIST_GRID_CLASSES, FORMATION_ITEM_QUERY_PARAM, FORMATION_NO_CHECKLIST_COPY } from '@lfx-one/shared/constants';
+import {
+  FORMATION_CHECKLIST_GRID_CLASSES,
+  FORMATION_CHECKLIST_HEADING,
+  FORMATION_ITEM_QUERY_PARAM,
+  getFormationNoChecklistCopy,
+} from '@lfx-one/shared/constants';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -72,6 +77,12 @@ export class FormationChecklistSectionComponent {
    */
   public readonly projectSlug = input<string | null>(null);
 
+  /** Section heading. Defaults to "Formation Checklist" (`/project/formation`); the foundation drill-down passes the neutral "Formation items" (#5635). */
+  public readonly heading = input<string>(FORMATION_CHECKLIST_HEADING);
+
+  /** The project's stage when the host knows it (the foundation drill-down does), so the not-found empty state can say why there is nothing to track (#5635). */
+  public readonly stage = input<string | null>(null);
+
   /** The full-tier grid template (#2774) — the same one `lfx-formation-checklist-row` binds, so the header captions sit over the columns they label. */
   protected readonly gridClasses = FORMATION_CHECKLIST_GRID_CLASSES;
 
@@ -91,7 +102,7 @@ export class FormationChecklistSectionComponent {
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   /** How the last read failed: `not-found` (the BFF's masked 403/404) shows the neutral no-checklist state, anything else the retryable error. */
   private readonly loadFailure = signal<'not-found' | 'error' | null>(null);
-  protected readonly noChecklistCopy = FORMATION_NO_CHECKLIST_COPY;
+  protected readonly noChecklistCopy = computed(() => getFormationNoChecklistCopy(this.stage()));
   // Starts true — both hosts guarantee a slug on the very first combineLatest emission
   // (`/project/formation`'s `formationProjectEnabledGuard` confirmed a Formation-stage project
   // context; the foundation drill-down only renders this component once its `projectSlug` input is

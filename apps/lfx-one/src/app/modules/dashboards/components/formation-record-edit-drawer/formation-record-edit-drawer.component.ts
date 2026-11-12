@@ -234,8 +234,8 @@ export class FormationRecordEditDrawerComponent {
     const label = PROJECT_FORMATION_STAGE_LABELS[stage as ProjectStage] ?? stage;
     const effect =
       stage === ProjectStage.Active
-        ? 'Moving this project to Active completes its formation checklist.'
-        : `Moving this project to ${label} freezes its formation checklist, which becomes read-only.`;
+        ? 'Moving this project to Active completes its formation.'
+        : `Moving this project to ${label} freezes its formation items, which become read-only.`;
     const open = openRequired === 1 ? '1 required item is still open.' : `${openRequired} required items are still open.`;
     return openRequired > 0 ? `${effect} ${open} You can still continue.` : effect;
   }
