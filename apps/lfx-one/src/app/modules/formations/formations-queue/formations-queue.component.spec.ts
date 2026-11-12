@@ -52,6 +52,16 @@ describe('FormationsQueueComponent — foundation scoping (GH-2367)', () => {
     expect(getFormationsQueue).toHaveBeenCalledWith(undefined, '', undefined);
   });
 
+  // #5619: the formation team's stage name is "Draft", never "Prospect".
+  it('words the Formations tab subtitle with Draft, rooted and foundation-scoped', async () => {
+    await render();
+    expect(fixture.componentInstance['subtitle']()).toBe('Every foundation, project, and child project between Draft and Active.');
+
+    selectedFoundation.set({ uid: 'aaif-uid-1', name: 'AAIF', slug: 'aaif' } as ProjectContext);
+    fixture.detectChanges();
+    expect(fixture.componentInstance['subtitle']()).toBe("AAIF's formations between Draft and Active.");
+  });
+
   it('forwards the selected foundation uid once a foundation is chosen', async () => {
     await render();
 

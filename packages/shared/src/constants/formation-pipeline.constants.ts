@@ -92,7 +92,14 @@ export const FORMATION_PIPELINE_STAT_CARD_STYLE: Record<string, Pick<StatCardIte
 export const FORMATION_PIPELINE_STAT_CAPTIONS = {
   prospect: 'Created in PCC, not yet exploring',
   on_hold: 'Paused by the formation team',
-  archived: 'Did not launch',
+  archived: 'No longer active',
+} as const;
+
+/** Formations tab copy that names the stage range, so the Formations and Pipeline tabs both call a v2 `Prospect` "Draft" (#5619). */
+export const FORMATION_QUEUE_COPY = {
+  emptySubtitle: `Formations between ${FORMATION_PIPELINE_PROSPECT_LABEL} and Active will appear here.`,
+  allSubtitle: `Every foundation, project, and child project between ${FORMATION_PIPELINE_PROSPECT_LABEL} and Active.`,
+  foundationSubtitle: (foundationName: string): string => `${foundationName}'s formations between ${FORMATION_PIPELINE_PROSPECT_LABEL} and Active.`,
 } as const;
 
 /** A launch inside this many days is flagged amber. */

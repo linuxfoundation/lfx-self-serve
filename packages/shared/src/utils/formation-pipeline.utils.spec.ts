@@ -14,6 +14,7 @@ import {
   countPipelineRows,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
+  getFormationStageDisplayLabel,
   getPipelineEdPmLines,
   getPipelineLaunch,
   getPipelineRowLink,
@@ -266,5 +267,18 @@ describe('comparePipelineText', () => {
     comparePipelineText('a', 'b');
     expect(spy).toHaveBeenCalledWith('b', 'en', { sensitivity: 'base' });
     spy.mockRestore();
+  });
+});
+
+describe('getFormationStageDisplayLabel (#5619)', () => {
+  it('shows a stored Prospect as Draft and leaves every other stage as stored', () => {
+    expect(getFormationStageDisplayLabel('Prospect')).toBe('Draft');
+    expect(getFormationStageDisplayLabel('Formation - Engaged')).toBe('Formation - Engaged');
+    expect(getFormationStageDisplayLabel('')).toBe('');
+  });
+
+  it('puts the neutral caption on the Archived stat card', () => {
+    const cards = buildPipelineStatCards(countPipelineRows([row({ stage: 'archived' })]), [], 'in_pipeline', NOW);
+    expect(cards.find((card) => card.action === 'archived')?.subLine).toBe('No longer active');
   });
 });

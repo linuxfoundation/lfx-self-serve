@@ -21,6 +21,7 @@ import {
   createEmptyFormationsQueueResponse,
   FORMATION_PIPELINE_COPY,
   FORMATION_PIPELINE_TAB_ID,
+  FORMATION_QUEUE_COPY,
   FORMATIONS_QUEUE_PAGE_TAB_OPTIONS,
   LF_FOUNDATION_ROOT_SLUG,
   PROJECT_APPLICATION_FROM_FOUNDATION_COPY,
@@ -140,9 +141,7 @@ export class FormationsQueueComponent {
       return FORMATION_PIPELINE_COPY.description;
     }
     const foundation = this.projectContextService.selectedFoundation();
-    return foundation
-      ? `${foundation.name}'s formations between Prospect and Active.`
-      : 'Every foundation, project, and child project between Prospect and Active.';
+    return foundation ? FORMATION_QUEUE_COPY.foundationSubtitle(foundation.name) : FORMATION_QUEUE_COPY.allSubtitle;
   });
 
   public constructor() {

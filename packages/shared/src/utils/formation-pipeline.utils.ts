@@ -6,6 +6,7 @@ import {
   FORMATION_PIPELINE_CSV_FILENAME_PREFIX,
   FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES,
   FORMATION_PIPELINE_LIVE_STAGES,
+  FORMATION_PIPELINE_PROSPECT_LABEL,
   FORMATION_PIPELINE_LAUNCH_SOON_DAYS,
   FORMATION_PIPELINE_STAGE_LABELS,
   FORMATION_PIPELINE_STAGE_SEVERITY,
@@ -45,6 +46,11 @@ export function chunkArray<T>(items: readonly T[], size: number): T[][] {
 /** Maps an upstream `stage` string to its pipeline key; `null` for `Active` and anything unrecognized. */
 export function getPipelineStageKey(stage: string | null | undefined): FormationPipelineStage | null {
   return FORMATION_PIPELINE_STAGES.find((key) => FORMATION_PIPELINE_STAGE_UPSTREAM[key] === stage) ?? null;
+}
+
+/** What the formation team reads for a stored stage: a v2 `Prospect` shows as "Draft" (#5619); every other value is shown as stored. The stored value never changes. */
+export function getFormationStageDisplayLabel(stage: string): string {
+  return stage === FORMATION_PIPELINE_STAGE_UPSTREAM.prospect ? FORMATION_PIPELINE_PROSPECT_LABEL : stage;
 }
 
 /** A zeroed {@link FormationPipelineCounts}. */
