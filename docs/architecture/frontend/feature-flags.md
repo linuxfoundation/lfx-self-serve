@@ -916,7 +916,7 @@ env:
 - Use **different client IDs** for each environment via environment variables
 - Client-side IDs are safe to use in runtime configuration (they're public)
 - Server-side SDK keys should **never** be in client code
-- The server has its own LaunchDarkly connection for per-user access checks (`LaunchDarklyServerService`). It reads the secret server-side SDK key from `LD_SDK_KEY`, never from `LD_CLIENT_ID`, and fails closed (returns the flag default) when the key is missing or LaunchDarkly has not been reached yet. Once connected, it serves the last known flag values if LaunchDarkly later becomes unreachable, so a targeting change made during an outage takes effect on reconnect. See [Insights API Tokens](../backend/insights-tokens.md#access-flag)
+- The server has its own LaunchDarkly connection for per-user access checks and SSR page choices (`LaunchDarklyServerService`). It reads the secret server-side SDK key from `LD_SDK_KEY`, never from `LD_CLIENT_ID`, and fails closed (returns the flag default) when the key is missing or LaunchDarkly has not been reached yet. Once connected, it serves the last known flag values if LaunchDarkly later becomes unreachable, so a targeting change made during an outage takes effect on reconnect. See [Insights API Tokens](../backend/insights-tokens.md#access-flag)
 - See [Runtime Configuration](../../runtime-configuration.md) for complete architecture details
 
 ### LaunchDarkly Provider Options
@@ -1189,6 +1189,7 @@ protected readonly showFeature = this.featureFlagService.getBooleanFlag(FEATURE_
 - **Browser (flat `/meetings`)**: resolves after the first render so hydration matches. A local override (`getFlagOverride`) decides first; otherwise it waits for `providerReady` (up to the shared `FEATURE_FLAG_READY_TIMEOUT_MS`, 10s, like the other flag guards) and a timeout means the existing dashboard.
 - **Page choice**: the redesign renders only when the flag is on, the active lens is `me` and the URL is the flat `/meetings`. The lens is read once, together with the flag, so a later lens change never swaps the page.
 - **Loading**: the existing dashboard is rendered directly, because a plain `@defer` block (no hydrate trigger) renders nothing on the server; the redesign is `@defer`-loaded so its chunk only downloads when chosen. The decision is fixed once resolved, so the page does not swap under the user if the flag or lens changes.
+- **`/meetings/:id`**: the same flag picks the meeting page through a paired route and the `meetingPageRedesignGuard` CanMatch. Here the server evaluates it too (`resolveSsrFlags` in `server.ts`, through `LaunchDarklyServerService` with the browser's user context, impersonation included) and passes it in `ServerRequestContext.flags`; the guard hands its decision to the browser in TransferState, so hydration keeps the server's page. Outside production the local override is mirrored into a cookie the server reads. See [Public Meeting Join Page](public-meeting-join.md#-redesigned-page-behind-meetings-redesign).
 
 ### Performance Considerations
 

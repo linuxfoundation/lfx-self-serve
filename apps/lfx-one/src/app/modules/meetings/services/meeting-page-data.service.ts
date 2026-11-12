@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { computed, DestroyRef, inject, Injectable, makeStateKey, PLATFORM_ID, Signal, signal, TransferState } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { computed, DestroyRef, inject, Injectable, Injector, makeStateKey, PLATFORM_ID, Signal, signal, TransferState } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import {
   canJoinMeeting,
@@ -19,8 +19,9 @@ import {
 } from '@lfx-one/shared';
 import { isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, map, Observable, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, filter, map, Observable, Subscription, switchMap, take, tap } from 'rxjs';
 
 /**
  * Loads the public meeting behind `/meetings/:id` for a meeting page, the way the legacy join page always has.
@@ -37,6 +38,7 @@ export class MeetingPageDataService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
 
   // Persists the SSR-resolved meeting so the client's first paint matches the server DOM instead
   // of tearing it down at hydration (GH-2041) — see `MeetingJoinPageState` for why the meeting
@@ -61,6 +63,7 @@ export class MeetingPageDataService {
   private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
   private joinWindowChecked = false;
   private joinWindowOpenAtLoadState = false;
+  private pendingPageview: Subscription | null = null;
 
   public readonly project: Signal<PublicMeetingProject | null> = this.projectState.asReadonly();
   /** The meeting password, from `?password=` or else the router state the composer's toast link carries. */
@@ -147,6 +150,39 @@ export class MeetingPageDataService {
       if (match) return match;
     }
     return getCurrentOrNextOccurrence(meeting);
+  }
+
+  /**
+   * Sends the page's pageview, which this route defers, with its foundation and project once both are known.
+   * @description `trackPage()` drops calls made before the Plausible script runs, so the one emission waits for it.
+   */
+  public trackPageview(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const plausibleService = this.injector.get(PlausibleService);
+    // The parent (foundation) arrives in the same payload as the project (LFXV2-3266).
+    const pageviewContext$ = toObservable(this.project, { injector: this.injector }).pipe(
+      filter((p): p is PublicMeetingProject => !!p?.slug),
+      map((project) => ({ project, parent: project.parent })),
+      take(1)
+    );
+    const analyticsReady$ = toObservable(plausibleService.ready, { injector: this.injector }).pipe(filter(Boolean));
+    // A newer pageview replaces one still waiting for Plausible, so a meeting left early is never counted.
+    this.pendingPageview?.unsubscribe();
+    this.pendingPageview = combineLatest([pageviewContext$, analyticsReady$])
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([{ project, parent }]) => {
+        const isTopLevel = !project.parent_uid;
+        plausibleService.trackPage(
+          PlausibleService.buildPageviewContext({
+            foundationSlug: isTopLevel ? project.slug : parent?.slug,
+            foundationName: isTopLevel ? project.name : parent?.name,
+            projectSlug: isTopLevel ? undefined : project.slug,
+            projectName: isTopLevel ? undefined : project.name,
+          })
+        );
+      });
   }
 
   // Ticks the wall-clock signal. Also on tab focus/visibility: mobile browsers freeze timers in the background, so the
