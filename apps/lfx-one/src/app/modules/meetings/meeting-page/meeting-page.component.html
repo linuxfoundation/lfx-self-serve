@@ -1,0 +1,44 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- A fixed 36px bar; the pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX. -->
+<lfx-impersonation-banner />
+
+<div class="flex min-h-screen flex-col bg-white" [class]="userService.impersonating() ? 'pt-[36px]' : ''" data-testid="meeting-page">
+  <lfx-header />
+
+  <main class="@container mx-auto flex w-full max-w-[1080px] flex-auto flex-col">
+    @switch (view()) {
+      @case ('error') {
+        <div class="flex flex-auto items-center justify-center px-4 py-16" role="alert" data-testid="meeting-page-error">
+          <lfx-ui-empty-state
+            heading="Something went wrong loading this meeting."
+            description="Please try again."
+            icon="fa-light fa-triangle-exclamation"
+            [headingLevel]="1">
+            <lfx-ui-button empty-state-action variant="secondary" icon="fa-light fa-arrows-rotate" (click)="reload()" data-testid="meeting-page-refresh"
+              >Refresh</lfx-ui-button
+            >
+          </lfx-ui-empty-state>
+        </div>
+      }
+      @case ('details') {
+        <!-- Keyed by the row, so another meeting gets fresh details instead of the last one's state. -->
+        @if (row(); as row) {
+          @for (shown of [row]; track shown.key) {
+            <lfx-meeting-page-details />
+          }
+        }
+      }
+      @default {
+        <!-- Loading, or handing the visit to the legacy page. -->
+        <div class="flex flex-col gap-4 px-4 py-8 sm:px-8" role="status" aria-label="Loading meeting" data-testid="meeting-page-loading">
+          <lfx-ui-skeleton width="40%" height="16px" />
+          <lfx-ui-skeleton width="70%" height="32px" />
+          <lfx-ui-skeleton width="55%" height="20px" />
+          <lfx-ui-skeleton height="160px" />
+        </div>
+      }
+    }
+  </main>
+</div>

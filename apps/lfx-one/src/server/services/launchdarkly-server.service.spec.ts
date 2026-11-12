@@ -61,6 +61,12 @@ describe('LaunchDarklyServerService', () => {
     expect(boolVariation).toHaveBeenCalledWith('insights-public-api-token-access', { kind: 'user', key: 'jdoe' }, false);
   });
 
+  it('evaluates with a given context instead of the session username', async () => {
+    await service.isFlagEnabled(req, 'meetings-redesign', false, { key: 'pat', name: 'Pat Viewer', email: 'pat@example.org' });
+
+    expect(boolVariation).toHaveBeenCalledWith('meetings-redesign', { kind: 'user', key: 'pat', name: 'Pat Viewer', email: 'pat@example.org' }, false);
+  });
+
   it('connects once and reuses the client across evaluations', async () => {
     await service.isFlagEnabled(req, 'insights-public-api-token-access');
     await service.isFlagEnabled(req, 'insights-public-api-token-access');

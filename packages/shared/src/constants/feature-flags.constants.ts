@@ -236,6 +236,9 @@ export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
  * **UI-only** — evaluated through `FeatureFlagService` in the browser, so the server renders a loading
  * state and the browser picks the page. A provider that is not ready within `FEATURE_FLAG_READY_TIMEOUT_MS` means
  * the existing dashboard. It gates no endpoint: both pages read the same `/api/meetings` surface.
+ *
+ * It also picks the `/meetings/:id` page (`meetingPageRedesignGuard`). There the server evaluates it too
+ * (`resolveSsrFlags`, with the browser's user context), so SSR and hydration render the same page.
  */
 export const MEETINGS_REDESIGN_FLAG = 'meetings-redesign';
 /**

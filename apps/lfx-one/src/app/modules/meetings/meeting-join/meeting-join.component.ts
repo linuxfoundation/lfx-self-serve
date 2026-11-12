@@ -88,7 +88,6 @@ import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { OverlayStateService } from '@services/overlay-state.service';
-import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -176,7 +175,6 @@ export class MeetingJoinComponent implements OnInit {
   protected readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly plausibleService = inject(PlausibleService);
   private readonly dialogService = inject(DialogService);
   private readonly featureFlagService = inject(FeatureFlagService);
   /**
@@ -589,7 +587,7 @@ export class MeetingJoinComponent implements OnInit {
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
     this.initializeLeaveFromLink();
-    this.initializePublicMeetingPageviewTracking();
+    this.pageData.trackPageview();
 
     // Runs after first render so the SSR skeleton hydrates before swapping to the timezone tag.
     afterNextRender(() => {
@@ -1704,37 +1702,6 @@ export class MeetingJoinComponent implements OnInit {
   // no client fetch needed here anymore.
   private initializeParentProject(): Signal<PublicMeetingParentProject | null> {
     return computed(() => this.project()?.parent ?? null);
-  }
-
-  // PlausibleService defers the auto-pageview for /meetings/:id — fire it here once context lands.
-  private initializePublicMeetingPageviewTracking(): void {
-    if (isPlatformServer(this.platformId)) {
-      return;
-    }
-    // The parent (foundation) now arrives in the same payload as the project (LFXV2-3266), so no
-    // race against a separate fetch is needed here anymore — just wait for the project itself.
-    const pageviewContext$ = toObservable(this.project).pipe(
-      filter((p): p is PublicMeetingProject => !!p?.slug),
-      map((project) => ({ project, parent: project.parent })),
-      take(1)
-    );
-    // trackPage() silently drops calls made before the Plausible script executes, and this route's
-    // pageview is deferred to this component — hold the single emission until the script is ready
-    // instead of losing the pageview when project context resolves faster than the script loads.
-    const analyticsReady$ = toObservable(this.plausibleService.ready).pipe(filter(Boolean));
-    combineLatest([pageviewContext$, analyticsReady$])
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe(([{ project, parent }]) => {
-        const isTopLevel = !project.parent_uid;
-        this.plausibleService.trackPage(
-          PlausibleService.buildPageviewContext({
-            foundationSlug: isTopLevel ? project.slug : parent?.slug,
-            foundationName: isTopLevel ? project.name : parent?.name,
-            projectSlug: isTopLevel ? undefined : project.slug,
-            projectName: isTopLevel ? undefined : project.name,
-          })
-        );
-      });
   }
 
   /** Builds the composite key `initializeRegistrants` uses to detect a stale roster fallback. */

@@ -6,6 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { Meeting, PublicMeetingProject } from '@lfx-one/shared';
 import { MeetingService } from '@services/meeting.service';
+import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,8 @@ describe('MeetingPageDataService', () => {
   let getPublicMeeting: ReturnType<typeof vi.fn>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
+  let trackPage: ReturnType<typeof vi.fn>;
+  let analyticsReady: ReturnType<typeof signal<boolean>>;
 
   const create = async (): Promise<TestHostComponent> => {
     const fixture = TestBed.createComponent(TestHostComponent);
@@ -39,6 +42,8 @@ describe('MeetingPageDataService', () => {
     getPublicMeeting = vi.fn().mockReturnValue(of({ meeting: { id: '123', title: 'Live' }, project, full_access: true, can_join: false }));
     getPublicPastMeeting = vi.fn().mockReturnValue(of({ meeting: { id: '123-1700000000000', title: 'Past' }, project, full_access: true }));
     navigate = vi.fn();
+    trackPage = vi.fn();
+    analyticsReady = signal(false);
 
     TestBed.configureTestingModule({
       providers: [
@@ -61,6 +66,7 @@ describe('MeetingPageDataService', () => {
         { provide: Router, useValue: { navigate } },
         { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting } },
         { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: PlausibleService, useValue: { ready: analyticsReady, trackPage } },
       ],
     });
   });
@@ -122,5 +128,38 @@ describe('MeetingPageDataService', () => {
     } as Meeting;
 
     expect(host.data.resolveOccurrence(meeting)?.occurrence_id).toBe('b');
+  });
+
+  it('sends one pageview with the foundation and project once analytics is ready', async () => {
+    getPublicMeeting.mockReturnValue(
+      of({
+        meeting: { id: '123' },
+        project: { ...project, slug: 'child', name: 'Child', parent_uid: 'f1', parent: { slug: 'found', name: 'Foundation' } },
+        full_access: true,
+        can_join: false,
+      })
+    );
+    const host = await create();
+    host.data.trackPageview();
+    TestBed.tick();
+    expect(trackPage).not.toHaveBeenCalled();
+
+    analyticsReady.set(true);
+    TestBed.tick();
+    host.data.refresh();
+    await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+
+    expect(trackPage).toHaveBeenCalledTimes(1);
+    expect(trackPage).toHaveBeenCalledWith({ foundation: 'found', foundation_name: 'Foundation', project: 'child', project_name: 'Child' });
+  });
+
+  it('treats a top-level project as the foundation', async () => {
+    analyticsReady.set(true);
+    const host = await create();
+    host.data.trackPageview();
+    TestBed.tick();
+
+    expect(trackPage).toHaveBeenCalledWith({ foundation: 'project', foundation_name: 'Project' });
   });
 });

@@ -46,6 +46,7 @@ import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.gu
 import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
+import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -965,6 +966,14 @@ export const routes: Routes = [
     path: 'meetings/not-found',
     title: 'Meeting Not Found',
     loadComponent: () => import('./modules/meetings/meeting-not-found/meeting-not-found.component').then((m) => m.MeetingNotFoundComponent),
+  },
+  // Paired by path: the redesigned page when `meetingPageRedesignGuard` matches, else the legacy page below.
+  // Fallback rule: whatever the redesigned page doesn't serve yet (see `MeetingPageComponent`) renders the legacy page.
+  {
+    path: 'meetings/:id',
+    title: 'Meeting',
+    canMatch: [meetingPageRedesignGuard],
+    loadComponent: () => import('./modules/meetings/meeting-page/meeting-page.component').then((m) => m.MeetingPageComponent),
   },
   {
     path: 'meetings/:id',

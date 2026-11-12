@@ -131,6 +131,17 @@ The attendance stats (attended, absent, rate) come from the participant rows whe
 
 ---
 
+## 🧭 Redesigned page behind `meetings-redesign`
+
+`app.routes.ts` pairs `meetings/:id`: `MeetingPageComponent` (`modules/meetings/meeting-page/`) first, behind the `meetingPageRedesignGuard` CanMatch, then this legacy page unguarded.
+
+- **Server decision.** `server.ts` evaluates `meetings-redesign` for a signed-in viewer on `/meetings/:id` only (`resolveSsrFlags`), keyed like the browser's `FeatureFlagService` context, including impersonation, into `ServerRequestContext.flags`. Anonymous visitors get the default, the legacy page. The guard records its decision in TransferState (`MEETING_PAGE_REDESIGN_KEY`), and the browser's first match reuses it, so hydration never swaps pages. Later client navigations ask `FeatureFlagService`.
+- **QA override.** Outside production the guard mirrors the `lfx-feature-flag-overrides` local storage entry into a cookie of the same name, which the server-side guard reads, so an override applies to SSR from the next full load.
+- **Fallback rule.** The guard skips the page for anonymous viewers, for `?password=` or `?action=` links, and for the legacy page's navigations to its own URL. Once loaded, the page serves only an ended meeting (`{id}-{ms}` or the past fallback) that a non-organizer with full access opens; anything else re-navigates the same URL with `MEETING_PAGE_LEGACY_STATE`, on the server too, and renders this page.
+- **Shared loading.** Both pages use `MeetingPageDataService` (one instance per page), and `MeetingPageComponent` hosts `MeetingDetailsBodyComponent` with a page `MeetingDetailsSource`: no dialog, no list, and another date opens at its own `/meetings/...` URL.
+
+---
+
 ## 🧱 Component Structure
 
 **Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join/meeting-join.component.ts`
