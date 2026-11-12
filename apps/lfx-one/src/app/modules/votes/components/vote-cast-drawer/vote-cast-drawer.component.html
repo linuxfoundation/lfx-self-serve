@@ -172,19 +172,49 @@
                             [attr.aria-label]="'Move ' + choice.choice_text + ' down'">
                             <i class="fa-light fa-arrow-down" aria-hidden="true"></i>
                           </button>
+                          @if (changeMode() && !readOnly() && question.type === 'multiple_choice') {
+                            <button
+                              type="button"
+                              (click)="toggleRankedChoice(question.question_id, choice.choice_id)"
+                              [disabled]="abstain()"
+                              class="flex items-center justify-center min-w-[44px] min-h-[44px] flex-shrink-0 text-slate-500 hover:text-slate-700 disabled:opacity-30"
+                              [attr.data-testid]="'vote-cast-rank-remove-' + choice.choice_id"
+                              [attr.aria-label]="'Remove ' + choice.choice_text + ' from ranking'">
+                              <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                            </button>
+                          }
                         </div>
                       }
                     </div>
-                    @if (readOnly()) {
+                    @if (showsRecordedBallot()) {
                       @let unranked = unrankedChoicesByQuestion().get(question.question_id) ?? [];
                       @if (unranked.length > 0) {
                         <div class="flex flex-col gap-2" [attr.data-testid]="'vote-cast-unranked-' + question.question_id">
                           <h4 class="text-sm font-medium text-slate-700">Not ranked</h4>
+                          @if (changeMode() && !readOnly() && question.type === 'single_choice') {
+                            <lfx-button
+                              label="Rank all options"
+                              size="small"
+                              severity="secondary"
+                              [disabled]="abstain()"
+                              (onClick)="rankAllChoices(question.question_id)"
+                              [attr.data-testid]="'vote-cast-rank-all-' + question.question_id" />
+                          }
                           @for (choice of unranked; track choice.choice_id) {
                             <div
                               class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3"
                               [attr.data-testid]="'vote-cast-unranked-' + choice.choice_id">
                               <span class="text-sm text-slate-700">{{ choice.choice_text }}</span>
+                              @if (changeMode() && !readOnly() && question.type === 'multiple_choice') {
+                                <lfx-button
+                                  label="Add to ranking"
+                                  size="small"
+                                  severity="secondary"
+                                  [disabled]="abstain()"
+                                  [ariaLabel]="'Add ' + choice.choice_text + ' to ranking'"
+                                  (onClick)="toggleRankedChoice(question.question_id, choice.choice_id)"
+                                  [attr.data-testid]="'vote-cast-rank-add-' + choice.choice_id" />
+                              }
                             </div>
                           }
                         </div>

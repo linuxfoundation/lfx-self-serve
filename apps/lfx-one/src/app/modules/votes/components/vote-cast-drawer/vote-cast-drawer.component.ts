@@ -108,6 +108,8 @@ export class VoteCastDrawerComponent {
 
   // === Outputs ===
   public readonly voteSubmitted = output<string>();
+  /** Authoritative rejection, not a successful submission; keyed to the attempted vote. */
+  public readonly voteChangeBlocked = output<string>();
 
   // === Forms ===
   public readonly form = new FormGroup({});
@@ -256,6 +258,28 @@ export class VoteCastDrawerComponent {
     if (toIndex < 0 || toIndex >= current.length) return;
     moveItemInArray(current, fromIndex, toIndex);
     control.setValue(current);
+    this.bumpFormVersion();
+  }
+
+  /** Only an explicit change-mode action can add or remove a preference from a recorded partial ranking. */
+  protected toggleRankedChoice(questionId: string, choiceId: string): void {
+    if (!this.changeMode() || this.readOnly() || this.impersonating() || this.abstain()) return;
+    const question = this.questions().find((item) => item.question_id === questionId);
+    const control = this.form.get(questionId);
+    if (question?.type !== 'multiple_choice' || !question.choices.some((choice) => choice.choice_id === choiceId) || !control) return;
+    const current = Array.isArray(control.value) ? (control.value as string[]) : [];
+    control.setValue(current.includes(choiceId) ? current.filter((id) => id !== choiceId) : [...current, choiceId]);
+    this.bumpFormVersion();
+  }
+
+  /** A recorded ranked single-choice abstention starts empty; ranking all options is an explicit voter action. */
+  protected rankAllChoices(questionId: string): void {
+    if (!this.changeMode() || this.readOnly() || this.impersonating() || this.abstain()) return;
+    const question = this.questions().find((item) => item.question_id === questionId);
+    const control = this.form.get(questionId);
+    if (question?.type !== 'single_choice' || !control) return;
+    const current = Array.isArray(control.value) ? (control.value as string[]) : [];
+    control.setValue([...current, ...question.choices.map((choice) => choice.choice_id).filter((id) => !current.includes(id))]);
     this.bumpFormVersion();
   }
 
@@ -537,7 +561,7 @@ export class VoteCastDrawerComponent {
   private initUnrankedChoicesByQuestion(): Signal<Map<string, UserChoice[]>> {
     return computed(() => {
       const result = new Map<string, UserChoice[]>();
-      if (!this.readOnly() || !this.isRankedPoll()) return result;
+      if (!this.showsRecordedBallot() || !this.isRankedPoll()) return result;
       const ranked = this.rankedOrderByQuestion();
       for (const question of this.questions()) {
         const selected = new Set((ranked.get(question.question_id) ?? []).map((choice) => choice.choice_id));
@@ -613,15 +637,6 @@ export class VoteCastDrawerComponent {
     for (const [questionId, value] of Object.entries(prefill.answers)) {
       this.form.get(questionId)?.setValue(value, { emitEvent: false });
     }
-    // A changed ranked ballot ranks every choice, like a first ballot: keep the recorded order, then append the rest.
-    if (this.changeMode() && this.isRankedPoll()) {
-      for (const question of this.questions()) {
-        const control = this.form.get(question.question_id);
-        const order = Array.isArray(control?.value) ? (control.value as string[]) : [];
-        const rest = question.choices.map((choice) => choice.choice_id).filter((id) => !order.includes(id));
-        control?.setValue([...order, ...rest], { emitEvent: false });
-      }
-    }
     // Emitting updates the displayed abstention while syncControls keeps review locked.
     this.abstainControl.setValue(prefill.abstain);
     for (const [promptId, text] of Object.entries(prefill.comments)) {
@@ -660,6 +675,7 @@ export class VoteCastDrawerComponent {
           const message = typeof body?.error === 'string' ? body.error.toLowerCase() : '';
           if (err instanceof HttpErrorResponse && err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
             this.messageService.add({ severity: 'warn', summary: "This vote doesn't allow changes", detail: VOTE_BALLOT_FINAL_STATE, life: 5000 });
+            this.voteChangeBlocked.emit(voteUid);
             this.visible.set(false);
             return;
           }

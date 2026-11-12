@@ -218,6 +218,8 @@ export class VoteDetailComponent {
   private readonly refreshTick = signal<number>(0);
   /** The vote a ballot was cast on from this page — it reads as submitted before the refreshed (indexed) response catches up. */
   private readonly submittedBallotFor = signal<string | null>(null);
+  /** An authoritative finality rejection must outlive stale ballot reads for this vote. */
+  private readonly changeBlockedFor = signal<string | null>(null);
   /** Comment-question expansion choices survive tab switches and same-vote refreshes. */
   protected readonly commentExpansionState = signal<Map<string, boolean>>(new Map());
 
@@ -269,7 +271,7 @@ export class VoteDetailComponent {
   protected readonly activeTab: Signal<VoteDetailTab> = this.initActiveTab();
   private readonly hasSubmittedBallot: Signal<boolean> = computed(() => !!this.vote() && this.submittedBallotFor() === this.vote()?.uid);
   protected readonly voterState: Signal<VoterResultsState> = this.initVoterState();
-  /** The viewer's own current ballot, read only for a voter whose ballot is recorded on an active vote (#4331). */
+  /** The viewer's own current ballot, including invited managers, while their ballot is recorded on an active vote (#4331, #4723). */
   protected readonly myBallot: Signal<MyVoteBallot | null> = this.initMyBallot();
   /** A settled voter view for someone never invited or removed from the vote (#4330) — the page trims to the voter-state panel. */
   protected readonly isOutsider: Signal<boolean> = computed(
@@ -308,7 +310,7 @@ export class VoteDetailComponent {
   protected readonly canChangeVote: Signal<boolean> = computed(() => {
     const ballot = this.myBallot();
     const vote = this.vote();
-    if (this.impersonating() || this.voterState() !== 'submitted' || !ballot || !vote) return false;
+    if (this.impersonating() || this.voterState() !== 'submitted' || !ballot || !vote || this.changeBlockedFor() === vote.uid) return false;
     return canChangeSubmittedBallot({
       canChangeVote: ballot.can_change_vote,
       allowVoteChange: vote.allow_vote_change,
@@ -318,7 +320,11 @@ export class VoteDetailComponent {
     });
   });
   /** The voter's submitted ballot is final because the vote disallows changes (#4723). */
-  protected readonly ballotFinal: Signal<boolean> = computed(() => this.voterState() === 'submitted' && !isVoteChangeAllowed(this.vote()));
+  protected readonly ballotFinal: Signal<boolean> = computed(
+    () =>
+      this.voterState() === 'submitted' &&
+      (this.changeBlockedFor() === this.vote()?.uid || this.myBallot()?.can_change_vote === false || !isVoteChangeAllowed(this.vote()))
+  );
   /** Formally ended. A draft (`disabled`) is neither active nor ended, so "closed" copy keys on this, never on `!isActive`. */
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ENDED);
   /** Non-ranked poll types (generic, majority, and anything unrecognized) render the plurality layout — see isRankedPollType. */
@@ -410,6 +416,13 @@ export class VoteDetailComponent {
     if (!this.canChangeVote()) return;
     this.castDrawerChangeMode.set(true);
     this.castDrawerVisible.set(true);
+  }
+
+  protected onVoteChangeBlocked(voteId: string): void {
+    if (voteId !== this.voteId() || voteId !== this.vote()?.uid) return;
+    this.changeBlockedFor.set(voteId);
+    this.castDrawerChangeMode.set(false);
+    this.refreshTick.update((tick) => tick + 1);
   }
 
   protected onVoteSubmitted(voteId: string): void {
@@ -596,8 +609,8 @@ export class VoteDetailComponent {
     const key = computed(() => ({
       uid: this.vote()?.uid ?? null,
       tick: this.refreshTick(),
-      // canManage() is null while access resolves, and audience() reads 'voter' then — wait so a manager never fetches.
-      submitted: this.voterState() === 'submitted' && this.canManage() !== null && this.audience() === 'voter' && !this.ballotPrivacyRestricted(),
+      // Management presentation must not exclude an invited voter from their own ballot.
+      submitted: this.voterState() === 'submitted' && this.canManage() !== null && !this.ballotPrivacyRestricted(),
     }));
     const ballot = toSignal(
       toObservable(key).pipe(

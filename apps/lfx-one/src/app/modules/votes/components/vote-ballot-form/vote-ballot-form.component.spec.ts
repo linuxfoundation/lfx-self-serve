@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { VoteBallotSubmission, VoteLinkBallot, VoteLinkBallotState } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -198,6 +199,130 @@ describe('VoteBallotFormComponent (#4363)', () => {
       expect(emitted[0].userVoteContent?.[0].ranked_choices?.map((c) => c.choice_id)).toEqual(['c-c', 'c-a', 'c-b']);
     });
 
+    it.each(['comment only', 'reorder', 'add', 'remove', 'empty then add', 'abstain round trip'] as const)(
+      'preserves a named partial ranked ballot with explicit edits only: %s',
+      async (scenario) => {
+        await render(
+          baseBallot({
+            poll_type: 'instant_runoff_vote',
+            poll_questions: [{ question_id: 'q1', prompt: 'Rank options', type: 'multiple_choice', choices: CHOICES }],
+          }),
+          votedState({
+            poll_answers: [
+              {
+                question_id: 'q1',
+                prompt: 'Rank options',
+                type: 'multiple_choice',
+                ranked_user_choice: [
+                  { choice_id: 'c-c', choice_text: 'Carol', choice_rank: 1 },
+                  { choice_id: 'c-a', choice_text: 'Alice', choice_rank: 2 },
+                ],
+              },
+            ],
+          })
+        );
+        const component = fixture.componentInstance;
+        let expected = ['c-c', 'c-a'];
+        expect(component.form.get('q1')?.value).toEqual(expected);
+        expect(byId('vote-link-rank-c-b')).toBeNull();
+        expect((byId('vote-link-rank-down-c-a') as HTMLButtonElement).disabled).toBe(true);
+
+        if (scenario === 'reorder') {
+          click('vote-link-rank-up-c-a');
+          expected = ['c-a', 'c-c'];
+        } else if (scenario === 'add') {
+          byId('vote-link-rank-add-c-b')!.querySelector('button')!.click();
+          expected = ['c-c', 'c-a', 'c-b'];
+        } else if (scenario === 'remove') {
+          click('vote-link-rank-remove-c-c');
+          expected = ['c-a'];
+        } else if (scenario === 'empty then add') {
+          click('vote-link-rank-remove-c-c');
+          click('vote-link-rank-remove-c-a');
+          expect(component.form.get('q1')?.value).toEqual([]);
+          expect(byId('vote-link-rank-c-a')).toBeNull();
+          expect(byId('vote-link-submit-button')!.querySelector('button')!.disabled).toBe(true);
+          byId('vote-link-rank-add-c-b')!.querySelector('button')!.click();
+          expected = ['c-b'];
+        } else if (scenario === 'abstain round trip') {
+          component.abstainControl.setValue(true);
+          component['toggleRankedChoice']('q1', 'c-b');
+          expect(component.form.get('q1')?.value).toEqual(expected);
+          component.abstainControl.setValue(false);
+        }
+        (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+        await fixture.whenStable();
+        fixture.detectChanges();
+        submit();
+        expect(emitted).toEqual([
+          {
+            abstain: false,
+            userVoteContent: [{ question_id: 'q1', ranked_choices: expected.map((choiceId, index) => ({ choice_id: choiceId, choice_rank: index + 1 })) }],
+            commentResponses: [{ prompt_id: 'p1', comment_text: 'Comment correction' }],
+          },
+        ]);
+      }
+    );
+
+    it.each(['single_choice', 'multiple_choice'] as const)(
+      'can explicitly replace a named ranked %s abstention without inferring ranks on comment edits',
+      async (type) => {
+        await render(
+          baseBallot({
+            poll_type: 'instant_runoff_vote',
+            poll_questions: [{ question_id: 'q1', prompt: 'Rank options', type, choices: CHOICES }],
+          }),
+          votedState({ abstained: true, poll_answers: [] })
+        );
+        const component = fixture.componentInstance;
+        (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+        fixture.detectChanges();
+        submit();
+        expect(component.form.get('q1')?.value).toEqual([]);
+        expect(emitted[0]).toMatchObject({ abstain: true, userVoteContent: undefined });
+
+        component.abstainControl.setValue(false);
+        fixture.detectChanges();
+        expect(byId('vote-link-submit-button')!.querySelector('button')!.disabled).toBe(true);
+        const actionId = type === 'single_choice' ? 'vote-link-rank-all-q1' : 'vote-link-rank-add-c-b';
+        byId(actionId)!.querySelector('button')!.click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        submit();
+        const expected = type === 'single_choice' ? ['c-a', 'c-b', 'c-c'] : ['c-b'];
+        expect(emitted[1].userVoteContent).toEqual([
+          {
+            question_id: 'q1',
+            ranked_choices: expected.map((choiceId, index) => ({ choice_id: choiceId, choice_rank: index + 1 })),
+          },
+        ]);
+      }
+    );
+
+    it.each([true, undefined])('retains ranked non-prefill privacy when pseudo_anonymity is %s', async (privacy) => {
+      await render(
+        baseBallot({
+          pseudo_anonymity: privacy,
+          poll_type: 'instant_runoff_vote',
+          poll_questions: [{ question_id: 'q1', prompt: 'Rank options', type: 'multiple_choice', choices: CHOICES }],
+        }),
+        votedState({
+          abstained: true,
+          poll_answers: [
+            {
+              question_id: 'q1',
+              prompt: 'Rank options',
+              type: 'multiple_choice',
+              ranked_user_choice: [{ choice_id: 'c-c', choice_text: 'Carol', choice_rank: 1 }],
+            },
+          ],
+        })
+      );
+      expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c-a', 'c-b', 'c-c']);
+      expect(fixture.componentInstance.abstainControl.value).toBe(false);
+      expect(byId('vote-link-unranked-q1')).toBeNull();
+      expect(byId('vote-link-rank-remove-c-a')).toBeNull();
+    });
     it('never prefills a pseudo-anonymous vote, even if a payload carries answers', async () => {
       await render(baseBallot({ pseudo_anonymity: true }), votedState({ abstained: true }));
 

@@ -890,7 +890,16 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     });
   });
 
-  it('ranks every choice in change mode: the recorded order first, then the rest', async () => {
+  it.each([
+    'comment only',
+    'reorder',
+    'add',
+    'remove',
+    'abstain round trip',
+    'recorded abstention',
+    'recorded single-choice abstention',
+    'full ranking',
+  ] as const)('preserves recorded rankings until an explicit edit: %s', async (scenario) => {
     const ranked: Vote = {
       ...CHANGE_VOTE,
       poll_type: PollType.INSTANT_RUNOFF_VOTE,
@@ -922,10 +931,129 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
         },
       ],
     };
-    await open(ranked, { getMyVoteBallot: vi.fn().mockReturnValue(of(rankedBallot)) }, { changeMode: true });
 
-    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r3', 'r1', 'r2']);
-    expect(fixture.componentInstance.form.enabled).toBe(true);
+    if (scenario === 'recorded single-choice abstention') ranked.poll_questions![0].type = 'single_choice';
+    if (scenario === 'full ranking') rankedBallot.poll_answers[0].ranked_user_choice.push({ choice_id: 'r2', choice_text: 'Blake', choice_rank: 3 });
+    if (scenario === 'recorded abstention' || scenario === 'recorded single-choice abstention') {
+      rankedBallot.abstained = true;
+      rankedBallot.poll_answers = [];
+    }
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await open(ranked, { getMyVoteBallot: vi.fn().mockReturnValue(of(rankedBallot)), updateMyResponse }, { changeMode: true });
+    const component = fixture.componentInstance;
+    let expected = ['r3', 'r1'];
+    if (scenario === 'full ranking') expected = ['r3', 'r1', 'r2'];
+    if (scenario === 'recorded abstention' || scenario === 'recorded single-choice abstention') expected = [];
+
+    expect(component.form.get('q1')?.value).toEqual(expected);
+    if (scenario !== 'full ranking') expect(el('vote-cast-rank-r2')).toBeNull();
+    if (scenario === 'reorder') {
+      el('vote-cast-rank-up-r1')!.click();
+      expected = ['r1', 'r3'];
+    } else if (scenario === 'add') {
+      el('vote-cast-rank-add-r2')!.querySelector('button')!.click();
+      expected = ['r3', 'r1', 'r2'];
+    } else if (scenario === 'remove') {
+      el('vote-cast-rank-remove-r3')!.click();
+      expected = ['r1'];
+    } else if (scenario === 'abstain round trip') {
+      component.abstainControl.setValue(true);
+      component['toggleRankedChoice']('q1', 'r2');
+      expect(component.form.get('q1')?.value).toEqual(expected);
+      component.abstainControl.setValue(false);
+    } else if (scenario === 'recorded abstention') {
+      component.abstainControl.setValue(false);
+      await fixture.whenStable();
+      expect(component['submitDisabled']()).toBe(true);
+      el('vote-cast-rank-add-r2')!.querySelector('button')!.click();
+      expected = ['r2'];
+    } else if (scenario === 'recorded single-choice abstention') {
+      expect(el('vote-cast-rank-all-q1')!.querySelector('button')!.disabled).toBe(true);
+      component.abstainControl.setValue(false);
+      await fixture.whenStable();
+      expect(component['submitDisabled']()).toBe(true);
+      el('vote-cast-rank-all-q1')!.querySelector('button')!.click();
+      expected = ['r1', 'r2', 'r3'];
+    }
+    (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.form.get('q1')?.value).toEqual(expected);
+    expect(submitButton()?.disabled).toBe(false);
+    submitButton()!.click();
+
+    expect(updateMyResponse).toHaveBeenCalledExactlyOnceWith(VOTE.uid, {
+      abstain: false,
+      user_vote_content: [{ question_id: 'q1', ranked_choices: expected.map((choiceId, index) => ({ choice_id: choiceId, choice_rank: index + 1 })) }],
+      comment_responses: [{ prompt_id: 'p1', comment_text: 'Comment correction' }],
+    });
+  });
+
+  it.each(['single_choice', 'multiple_choice'] as const)('does not populate a recorded ranked %s abstention on a comment-only save', async (type) => {
+    const ranked = {
+      ...CHANGE_VOTE,
+      poll_type: PollType.INSTANT_RUNOFF_VOTE,
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Rank options',
+          type,
+          choices: [{ choice_id: 'r1', choice_text: 'Option A' }],
+        },
+      ],
+    } as Vote;
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await open(
+      ranked,
+      { getMyVoteBallot: vi.fn().mockReturnValue(of({ ...BALLOT, abstained: true, poll_answers: [] })), updateMyResponse },
+      { changeMode: true }
+    );
+    const component = fixture.componentInstance;
+    (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+    component['onSubmit']();
+    expect(component.form.get('q1')?.value).toEqual([]);
+    expect(updateMyResponse).toHaveBeenCalledExactlyOnceWith(VOTE.uid, {
+      abstain: true,
+      user_vote_content: undefined,
+      comment_responses: [{ prompt_id: 'p1', comment_text: 'Comment correction' }],
+    });
+  });
+  it('disables an emptied recorded ranking until the voter explicitly adds a choice', async () => {
+    const ranked = {
+      ...CHANGE_VOTE,
+      poll_type: PollType.INSTANT_RUNOFF_VOTE,
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Rank options',
+          type: 'multiple_choice',
+          choices: [{ choice_id: 'r1', choice_text: 'Option A' }],
+        },
+      ],
+    } as Vote;
+    const rankedBallot = {
+      ...BALLOT,
+      poll_answers: [
+        {
+          question_id: 'q1',
+          prompt: 'Rank options',
+          type: 'multiple_choice',
+          user_choice: [],
+          ranked_user_choice: [{ choice_id: 'r1', choice_text: 'Option A', choice_rank: 1 }],
+        },
+      ],
+    } as MyVoteBallot;
+    await open(ranked, { getMyVoteBallot: vi.fn().mockReturnValue(of(rankedBallot)) }, { changeMode: true });
+    el('vote-cast-rank-remove-r1')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(submitButton()?.disabled).toBe(true);
+    expect(el('vote-cast-rank-r1')).toBeNull();
+    el('vote-cast-rank-add-r1')!.querySelector('button')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(submitButton()?.disabled).toBe(false);
+    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r1']);
   });
 
   it('keeps Update disabled until the submitted ballot loads, and shows the load error', async () => {
@@ -942,21 +1070,30 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
       .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'this poll does not allow changing a submitted vote' } })));
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
     const component = fixture.componentInstance;
+    const blocked: string[] = [];
+    const success = vi.fn();
+    component.voteChangeBlocked.subscribe((uid) => blocked.push(uid));
+    component.voteSubmitted.subscribe(success);
 
     component['onSubmit']();
 
     expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: "This vote doesn't allow changes" }));
     expect(component.visible()).toBe(false);
+    expect(blocked).toEqual([VOTE.uid]);
+    expect(success).not.toHaveBeenCalled();
   });
 
   it('keeps the drawer open with an error toast for any other update failure', async () => {
     const updateMyResponse = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
+    const blocked = vi.fn();
+    fixture.componentInstance.voteChangeBlocked.subscribe(blocked);
 
     fixture.componentInstance['onSubmit']();
 
     expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Unable to update vote' }));
     expect(fixture.componentInstance.visible()).toBe(true);
+    expect(blocked).not.toHaveBeenCalled();
   });
 
   it('shows the pre-submit final notice on a first ballot of a locked vote', async () => {

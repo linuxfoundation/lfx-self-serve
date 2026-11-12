@@ -4,7 +4,7 @@ description: How to find, edit, delete, vote on, and send reminders for votes in
 audience: [all]
 product_area: Votes
 tags: [votes, manage, drafts, cast, results, reminders, mailing-list, copy-link]
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 intercom_collection: Votes
 ---
 
@@ -68,6 +68,14 @@ You vote from the **Me** lens, where **Votes** lists the votes you are invited t
 5. Select **Submit Vote**. If the vote doesn't allow changes, a notice above the button says **Once you submit, your vote can't be changed.**
 
 After you submit, the row's button changes to **Review** and your **Your vote** column shows **Voted**. **Review** opens the same drawer with your recorded choices, rankings, abstention and comments locked. The drawer has no submit or change action. To change an active ballot, open the vote's page and select **Change vote**, or use your personalized ballot link; both work only when the vote allows changes. The **Your ballot** section on the vote's page also shows what is recorded. Results stay hidden until the vote closes.
+
+If you also manage the vote, **Your ballot** above the management results offers **Change vote** for your own submitted ballot. Your management view and access to results do not change; this never lets you edit someone else's response.
+
+When changing a ranked multiple-selection ballot in the signed-in vote-page drawer, only your recorded choices are ranked. Editing a comment does not rank any additional option. Use **Add to ranking** next to an option under **Not ranked** to include it, or the option's remove button to leave it unranked. Drag or use the arrow buttons to reorder your selected options. Keep at least one ranked option unless you abstain, then select **Update Vote**.
+
+Personalized links preserve recorded rankings on named votes too, with the same explicit add/remove controls for ranked multiple-selection questions. Pseudo-anonymous links do not display or prefill your previous choices; when changing a private ballot, enter your intended answers again.
+
+To replace a recorded abstention with ranked answers, clear **Abstain from this vote** first. For ranked single-selection questions, select **Rank all options**, then reorder them. For ranked multiple-selection questions, use **Add to ranking** to select your options. Until you explicitly select ranks, editing a comment while keeping Abstain selected does not add preferences.
 
 ### While impersonating another user
 

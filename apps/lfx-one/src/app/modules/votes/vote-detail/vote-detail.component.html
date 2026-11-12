@@ -65,6 +65,23 @@
             [columns]="3"
             (actionClick)="onSummaryCardClick($event)"
             data-testid="vote-detail-summary" />
+          @if (canChangeVote() || ballotFinal()) {
+            <lfx-card data-testid="vote-detail-manager-ballot">
+              <div class="flex flex-col items-start gap-3">
+                <h2 class="text-base font-semibold text-gray-900">Your ballot</h2>
+                @if (canChangeVote()) {
+                  <lfx-button
+                    label="Change vote"
+                    icon="fa-light fa-pen"
+                    severity="secondary"
+                    (onClick)="onChangeVote()"
+                    data-testid="vote-detail-manager-change-vote" />
+                } @else {
+                  <p class="text-sm text-gray-600" data-testid="vote-detail-manager-ballot-final">{{ ballotFinalText }}</p>
+                }
+              </div>
+            </lfx-card>
+          }
         }
 
         <div class="grid grid-cols-1 gap-6" [class.lg:grid-cols-3]="showVoteDetails()">
@@ -232,6 +249,7 @@
       [voteId]="voteData.uid"
       [listVote]="voteData"
       [changeMode]="castDrawerChangeMode()"
+      (voteChangeBlocked)="onVoteChangeBlocked($event)"
       (voteSubmitted)="onVoteSubmitted($event)" />
 
     <!-- Full Results tab breakdown: generic option bars or ranked distributions, plus the vote-level abstain row. -->
