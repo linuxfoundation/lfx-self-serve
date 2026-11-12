@@ -271,7 +271,7 @@ test.describe('Documentation Tab — CSV download (SC-013, SC-014, FR-032)', () 
     const lines = body.split('\r\n').filter((l) => l.length > 0);
 
     // Header is exactly the 9 FR-032a columns in this exact order.
-    expect(lines[0]).toBe('Organization,Foundation,Agreement Name,Signed Date,Format,Status,Tier,Current,Download URL');
+    expect(lines[0]).toBe('Company,Foundation,Agreement Name,Signed Date,Format,Status,Tier,Current,Download URL');
 
     // Each data row has exactly 9 comma-separated columns (allowing for RFC 4180 quoted fields).
     expect(lines.length).toBeGreaterThanOrEqual(2); // header + at least one data row
