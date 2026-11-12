@@ -353,8 +353,9 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     const column = alpha.parentElement as HTMLElement;
 
-    // The header only sticks at `lg`, so the margin is a `lg:` utility reading the offset the column carries.
-    expect(alpha.className).toContain('lg:scroll-mt-[var(--l2-sticky-top)]');
+    // The header sticks at every width, so the margin applies at every width, reading the offset the column carries.
+    expect(alpha.className).toContain('scroll-mt-[var(--l2-sticky-top)]');
+    expect(alpha.className).not.toContain('lg:scroll-mt');
     expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
     expect(fixture.nativeElement.querySelector('lfx-health-metrics-l2-sub-nav').style.getPropertyValue('--hmn-top')).toBe(`${chrome.stickyTopPx() + 8}px`);
 
