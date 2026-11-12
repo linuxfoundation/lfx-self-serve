@@ -60,6 +60,7 @@ import {
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { LensService } from '@services/lens.service';
+import { MeetingRollupPreferenceService } from '@services/meeting-rollup-preference.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -124,6 +125,7 @@ export class MeetingsDashboardComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly location = inject(Location);
+  private readonly rollupPreference = inject(MeetingRollupPreferenceService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
   private readonly composer = inject(MeetingComposerService);
@@ -195,10 +197,13 @@ export class MeetingsDashboardComponent {
   // project checked is the whole roll-up (no subset sent, which also keeps a large tree's "select all"
   // under the server's project_uids cap), anything else is that subset. The picker keeps showing exactly
   // what the user checked.
+  // "All projects" chosen by a link or a saved choice before the options (and so the checkboxes) are known:
+  // the requests already cover every project, even if the options never load.
+  private readonly rollupAllProjects = signal<boolean>(this.urlRollupProjects?.includes(MEETING_ROLLUP_ALL_PROJECTS) ?? false);
   private readonly rollupProjectsMode: Signal<'default' | 'all' | 'subset'> = computed(() => {
     const selected = this.rollupProjectsFilter();
     const all = this.rollupProjectOptions();
-    if (selected.length === 0) return 'default';
+    if (selected.length === 0) return this.rollupAllProjects() ? 'all' : 'default';
     return all.length > 0 && all.every((option) => selected.includes(option.value)) ? 'all' : 'subset';
   });
   // The project picker's label while nothing is checked: the default view, the root's own meetings.
@@ -291,8 +296,6 @@ export class MeetingsDashboardComponent {
   private pastPageToken = signal<string | undefined>(undefined);
   private loadMoreUpcoming$ = new Subject<string>();
   private loadMorePast$ = new Subject<string>();
-  // The user's own project-selection changes, saved per root after a short pause.
-  private readonly rollupProjectsSave$ = new Subject<{ rootUid: string; projectUids: string[] }>();
   // Set once the user changes the selection for the current root, so a late saved choice does not overwrite it.
   private rollupProjectsTouched = false;
   // Bumped whenever a list's first page is requested again, so a Load More page of the previous query is discarded.
@@ -407,7 +410,6 @@ export class MeetingsDashboardComponent {
     this.resetRollupFiltersOnProjectChange();
     this.resetRollupFiltersOnMeLens();
     this.seedRollupProjects();
-    this.saveRollupProjects();
 
     toObservable(this.activeLens)
       .pipe(takeUntilDestroyed())
@@ -489,18 +491,14 @@ export class MeetingsDashboardComponent {
   }
 
   public onRollupProjectsFilterChange(value: string[]): void {
+    this.rollupAllProjects.set(false);
     this.rollupProjectsFilter.set(value);
     this.rollupProjectsTouched = true;
     const rootUid = this.project()?.uid;
     if (rootUid) {
-      this.rollupProjectsSave$.next({ rootUid, projectUids: this.savedRollupProjects(rootUid) });
+      this.rollupPreference.save(rootUid, this.savedRollupProjects(rootUid));
     }
-    // A group type or group outside the selected projects would match nothing.
-    const groupType = this.groupTypeFilter();
-    if (groupType && !this.groupTypeOptions().some((option) => option.value === groupType)) {
-      this.groupTypeFilter.set(null);
-    }
-    this.clearGroupOutsideOptions();
+    this.reconcileGroupFilters();
   }
 
   /** "Show all projects" on the root-only empty state: checks every project, as the user's own choice. */
@@ -1354,6 +1352,7 @@ export class MeetingsDashboardComponent {
       .pipe(distinctUntilChanged(), pairwise(), takeUntilDestroyed())
       .subscribe(([previous, current]) => {
         if (current === 'me' && (previous === 'foundation' || previous === 'project')) {
+          this.rollupAllProjects.set(false);
           this.rollupProjectsFilter.set([]);
           this.groupFilter.set(null);
           this.groupTypeFilter.set(null);
@@ -1420,52 +1419,68 @@ export class MeetingsDashboardComponent {
           this.rollupProjectsTouched = false;
           const fromLink = linked;
           linked = null;
-          if (!fromLink && this.rollupProjectsFilter().length > 0) {
-            this.rollupProjectsFilter.set([]);
+          if (!fromLink) {
+            this.rollupAllProjects.set(false);
+            if (this.rollupProjectsFilter().length > 0) {
+              this.rollupProjectsFilter.set([]);
+            }
           }
           const choice$ = fromLink ? of<string[] | null>(fromLink) : this.meetingService.getRollupProjectsPreference(rootUid);
           const rootOptions$ = options$.pipe(
             filter((options) => options.projects.some((p) => p.uid === rootUid)),
             take(1)
           );
-          return combineLatest([choice$, rootOptions$]).pipe(map(([choice, options]) => ({ rootUid, choice, options })));
+          return choice$.pipe(
+            // "All projects" needs no options: cover every project now, check the boxes once they load.
+            tap((choice) => {
+              if (!this.rollupProjectsTouched && choice !== null && MeetingsDashboardComponent.isAllRollupProjectsChoice(choice)) {
+                this.rollupAllProjects.set(true);
+              }
+            }),
+            switchMap((choice) => rootOptions$.pipe(map((options) => ({ rootUid, choice, options }))))
+          );
         }),
         takeUntilDestroyed()
       )
       .subscribe(({ rootUid, choice, options }) => {
-        if (this.rollupProjectsTouched || choice === null) {
+        if (this.rollupProjectsTouched) {
           return;
         }
         const all = options.projects.map((p) => p.uid);
-        if (choice.length === 0 || choice.includes(MEETING_ROLLUP_ALL_PROJECTS)) {
+        if (choice !== null && MeetingsDashboardComponent.isAllRollupProjectsChoice(choice)) {
           this.rollupProjectsFilter.set(all);
-          return;
+        } else if (choice !== null) {
+          const valid = choice.filter((uid) => all.includes(uid) && uid !== rootUid);
+          // The root alone is the default, shown as an empty picker; otherwise keep the root if it was chosen.
+          this.rollupProjectsFilter.set(valid.length > 0 ? choice.filter((uid) => all.includes(uid)) : []);
         }
-        const valid = choice.filter((uid) => all.includes(uid) && uid !== rootUid);
-        // The root alone is the default, shown as an empty picker; otherwise keep the root if it was chosen.
-        this.rollupProjectsFilter.set(valid.length > 0 ? choice.filter((uid) => all.includes(uid)) : []);
+        // A group or group type from a link may sit outside the seeded scope; drop it rather than match nothing.
+        this.reconcileGroupFilters();
       });
   }
 
-  /** Saves the user's own selection changes for the root they were made on, after a short pause. */
-  private saveRollupProjects(): void {
-    this.rollupProjectsSave$
-      .pipe(
-        debounceTime(600),
-        distinctUntilChanged((a, b) => a.rootUid === b.rootUid && a.projectUids.join(',') === b.projectUids.join(',')),
-        switchMap(({ rootUid, projectUids }) => this.meetingService.saveRollupProjectsPreference(rootUid, projectUids)),
-        takeUntilDestroyed()
-      )
-      .subscribe();
+  /** A saved or linked choice of every project: an empty saved list, or a link's `all`. */
+  private static isAllRollupProjectsChoice(choice: string[]): boolean {
+    return choice.length === 0 || choice.includes(MEETING_ROLLUP_ALL_PROJECTS);
+  }
+
+  /** Drops a group type, then a group, that the current project scope no longer offers: they would match nothing. */
+  private reconcileGroupFilters(): void {
+    const groupType = this.groupTypeFilter();
+    if (groupType && !this.groupTypeOptions().some((option) => option.value === groupType)) {
+      this.groupTypeFilter.set(null);
+    }
+    this.clearGroupOutsideOptions();
   }
 
   /** "Reset filters" returns the selection to the default (the root alone), and saves that as the user's choice. */
   private resetRollupProjectsToDefault(): void {
+    this.rollupAllProjects.set(false);
     this.rollupProjectsFilter.set([]);
     const rootUid = this.project()?.uid;
     if (rootUid && this.activeLens() !== 'me') {
       this.rollupProjectsTouched = true;
-      this.rollupProjectsSave$.next({ rootUid, projectUids: [rootUid] });
+      this.rollupPreference.save(rootUid, [rootUid]);
     }
   }
 

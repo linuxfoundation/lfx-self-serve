@@ -1082,6 +1082,25 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
       });
 
+      it('covers every project for a link to all projects even when the options fail to load', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ projects: 'all' });
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(of({ projects: [], groups: [] }));
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual([]);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
+      it('drops a linked group outside the seeded scope instead of matching nothing', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ group: 'wg', group_type: 'Working Group' });
+        const component = mount();
+        openScope(component);
+
+        expect(component.groupFilter()).toBeNull();
+        expect(component.groupTypeFilter()).toBeNull();
+      });
+
       it('points an empty default view to the sub-projects, and Show all projects checks them all', () => {
         const component = mount();
         openScope(component);
