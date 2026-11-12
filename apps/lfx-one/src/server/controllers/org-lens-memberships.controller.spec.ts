@@ -115,6 +115,7 @@ describe('OrgLensMembershipsController — family roll-up lists', () => {
       { uid: VALID_ORG_UID, accountId: VALID_ORG_UID, name: 'Parent Co', logoUrl: null },
       { uid: SUBSIDIARY, accountId: SUBSIDIARY, name: 'Subsidiary Co', logoUrl: null },
     ],
+    complete: true,
   };
   const rollUpReq = (query: Record<string, string> = {}): Request => ({ params: { orgUid: ROLL_UP }, query }) as unknown as Request;
 
