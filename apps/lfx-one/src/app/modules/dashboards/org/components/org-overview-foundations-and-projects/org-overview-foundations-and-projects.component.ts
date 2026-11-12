@@ -11,7 +11,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensFoundationsService } from '@services/org-lens-foundations.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PlausibleService } from '@services/plausible.service';
-import { catchError, combineLatest, map, of, skip, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
 import {
   ORG_COMMITS_DEFINITION,
@@ -52,7 +52,11 @@ export class OrgOverviewFoundationsAndProjectsComponent {
 
   protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Organization');
 
-  private readonly orgUid$ = toObservable(this.accountContextService.selectedAccount).pipe(map((account) => account.uid));
+  // Keyed on the organization, not the account object: a late tier answer re-emits the same organization.
+  private readonly orgUid$ = toObservable(this.accountContextService.selectedAccount).pipe(
+    map((account) => account.uid),
+    distinctUntilChanged()
+  );
   private readonly retryTrigger$ = toObservable(this.retryTrigger);
 
   /** Combined stream: re-fetches on selected-account change OR retry tick. `retryTrigger$` is signal-backed and emits its current value on subscribe, so no `startWith(0)` needed. */
@@ -90,12 +94,10 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   protected readonly expansionMap = computed(() => this.expansionState());
 
   public constructor() {
-    // Reset row expansion whenever the selected account actually changes (skip the initial emission so the empty map isn't overwritten on first mount).
-    toObservable(this.accountContextService.selectedAccount)
-      .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => {
-        this.expansionState.set({});
-      });
+    // Reset row expansion whenever the selected organization actually changes (skip the initial emission so the empty map isn't overwritten on first mount).
+    this.orgUid$.pipe(skip(1), takeUntilDestroyed()).subscribe(() => {
+      this.expansionState.set({});
+    });
   }
 
   protected toggleExpansion(foundationId: string): void {

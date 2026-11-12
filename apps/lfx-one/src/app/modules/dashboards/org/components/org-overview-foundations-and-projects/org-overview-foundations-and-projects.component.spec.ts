@@ -54,17 +54,20 @@ function response(projects: OrgLensFoundationProject[]): OrgLensFoundationsAndPr
   };
 }
 
-async function render(projects: OrgLensFoundationProject[]): Promise<ComponentFixture<OrgOverviewFoundationsAndProjectsComponent>> {
+const ACME: Account = { accountId: 'acc-1', accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' };
+
+async function render(
+  projects: OrgLensFoundationProject[],
+  selectedAccount = signal<Account>(ACME),
+  getFoundationsAndProjects = vi.fn(() => of(response(projects)))
+): Promise<ComponentFixture<OrgOverviewFoundationsAndProjectsComponent>> {
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
     imports: [OrgOverviewFoundationsAndProjectsComponent],
     providers: [
       provideRouter([]),
-      {
-        provide: AccountContextService,
-        useValue: { selectedAccount: signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' }) },
-      },
-      { provide: OrgLensFoundationsService, useValue: { getFoundationsAndProjects: () => of(response(projects)) } },
+      { provide: AccountContextService, useValue: { selectedAccount } },
+      { provide: OrgLensFoundationsService, useValue: { getFoundationsAndProjects } },
       { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
       { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
     ],
@@ -100,6 +103,43 @@ describe('OrgOverviewFoundationsAndProjectsComponent maintainer roles (lfx-self-
     expect(maintainers('envoy')).toBe('0');
     expect(maintainers('unavailable')).toBe('—');
     expect(maintainers('non-lf')).toBe('—');
+  });
+});
+
+describe('OrgOverviewFoundationsAndProjectsComponent selected organization', () => {
+  const expandedProject = (fixture: ComponentFixture<OrgOverviewFoundationsAndProjectsComponent>): Element | null =>
+    (fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-overview-foundations-and-projects-project-k8s-maintainers"]');
+
+  async function settle(fixture: ComponentFixture<OrgOverviewFoundationsAndProjectsComponent>): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('keeps the rows and their expansion when only the tier of the same organization arrives', async () => {
+    const selectedAccount = signal<Account>(ACME);
+    const getFoundationsAndProjects = vi.fn(() => of(response([project('k8s')])));
+    const fixture = await render([project('k8s')], selectedAccount, getFoundationsAndProjects);
+    expect(expandedProject(fixture)).not.toBeNull();
+
+    selectedAccount.set({ ...ACME, membershipTier: 'Gold Membership' });
+    await settle(fixture);
+
+    expect(getFoundationsAndProjects).toHaveBeenCalledTimes(1);
+    expect(expandedProject(fixture)).not.toBeNull();
+  });
+
+  it('refetches and collapses the rows when another organization is selected', async () => {
+    const selectedAccount = signal<Account>(ACME);
+    const getFoundationsAndProjects = vi.fn(() => of(response([project('k8s')])));
+    const fixture = await render([project('k8s')], selectedAccount, getFoundationsAndProjects);
+
+    selectedAccount.set({ ...ACME, accountId: 'acc-2', uid: 'org-uid-2', slug: 'other' });
+    await settle(fixture);
+
+    expect(getFoundationsAndProjects).toHaveBeenLastCalledWith('org-uid-2');
+    expect(getFoundationsAndProjects).toHaveBeenCalledTimes(2);
+    expect(expandedProject(fixture)).toBeNull();
   });
 });
 

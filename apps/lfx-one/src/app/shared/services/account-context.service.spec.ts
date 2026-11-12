@@ -631,6 +631,35 @@ describe('AccountContextService — membership tier for the selected organizatio
     expect(service.selectedAccount().membershipTier).toBe('Silver Membership');
   });
 
+  it('applies the cached tier once the canonical record gives a uid-only stub its accountId', async () => {
+    const { service, getOrgLensAccountContext, httpGet } = setup();
+    getOrgLensAccountContext.mockImplementation((ids: string[]) => of([tierRow(ids[0], ids[0] === UID_GRANT ? 'Silver Membership' : null)]));
+    httpGet.mockReturnValue(of({ uid: UID_GRANT, accountId: UID_GRANT, name: 'Grant Org' } as OrgCanonicalRecord));
+    service.setAccount(grantOrg);
+    service.setAccount(otherOrg);
+    const stub: Account = { accountId: '', accountName: '', membershipTier: '', uid: UID_GRANT };
+
+    service.adoptFromAddress(stub);
+    await service.refreshCanonicalRecord(stub);
+
+    expect(service.selectedAccount().membershipTier).toBe('Silver Membership');
+    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops the old tier and looks up the new one when the canonical record corrects the accountId', async () => {
+    const { service, getOrgLensAccountContext, httpGet } = setup();
+    getOrgLensAccountContext.mockImplementation((ids: string[]) => of([tierRow(ids[0], ids[0] === UID_GRANT ? 'Platinum Membership' : 'Gold Membership')]));
+    httpGet.mockReturnValue(of({ uid: UID_GRANT, accountId: UID_OTHER, name: 'Grant Org' } as OrgCanonicalRecord));
+
+    service.setAccount(grantOrg);
+    expect(service.selectedAccount().membershipTier).toBe('Platinum Membership');
+    await service.refreshCanonicalRecord(grantOrg);
+
+    expect(service.selectedAccount().accountId).toBe(UID_OTHER);
+    expect(service.selectedAccount().membershipTier).toBe('Gold Membership');
+    expect(getOrgLensAccountContext).toHaveBeenLastCalledWith([UID_OTHER]);
+  });
+
   it('keeps the tier across a switch away and back without asking again', () => {
     const { service, getOrgLensAccountContext } = setup();
     getOrgLensAccountContext.mockImplementation((ids: string[]) => of([tierRow(ids[0], ids[0] === UID_GRANT ? 'Platinum Membership' : 'Gold Membership')]));

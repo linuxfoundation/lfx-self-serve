@@ -700,10 +700,14 @@ export class AccountContextService {
     if (!matchesByUid && !matchesByAccountId) {
       return;
     }
+    const accountId = canonical.accountId ?? current.accountId;
     const next: Account = {
       ...current,
-      accountId: canonical.accountId ?? current.accountId,
+      accountId,
       accountName: canonical.name ?? current.accountName,
+      // The tier belongs to the accountId: a filled-in or corrected one takes that organization's known
+      // tier, or none so `lookUpSelectedTier` asks for it.
+      membershipTier: accountId === current.accountId ? current.membershipTier : this.knownTier(accountId),
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
@@ -780,6 +784,10 @@ export class AccountContextService {
           }
         }
       });
+  }
+
+  private knownTier(accountId: string): string {
+    return this.liveAccounts().get(accountId)?.membershipTier || this.selectedTiers.get(accountId) || '';
   }
 
   private lookUpSelectedTier(account: Account): void {
