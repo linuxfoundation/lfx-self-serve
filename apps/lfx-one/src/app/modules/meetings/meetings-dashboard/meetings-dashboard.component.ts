@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, Location } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -121,6 +121,7 @@ export class MeetingsDashboardComponent {
   private readonly userService = inject(UserService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly location = inject(Location);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
   private readonly composer = inject(MeetingComposerService);
@@ -449,7 +450,10 @@ export class MeetingsDashboardComponent {
   }
 
   public onRollupProjectsFilterChange(value: string[]): void {
-    this.rollupProjectsFilter.set(value);
+    // Every project selected is the whole roll-up: send no subset, which also keeps a large tree's
+    // "select all" under the server's project_uids cap.
+    const all = this.rollupProjectOptions();
+    this.rollupProjectsFilter.set(all.length > 0 && all.every((option) => value.includes(option.value)) ? [] : value);
     // A group type or group outside the selected projects would match nothing.
     const groupType = this.groupTypeFilter();
     if (groupType && !this.groupTypeOptions().some((option) => option.value === groupType)) {
@@ -473,12 +477,7 @@ export class MeetingsDashboardComponent {
     this.responseFilter.set('all');
     this.organizedByMe.set(false);
     this.hideDeclined.set(false);
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { time: value === 'past' ? 'past' : null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    this.replaceQueryParams({ time: value === 'past' ? 'past' : null });
   }
 
   public resetFilters(): void {
@@ -1281,9 +1280,7 @@ export class MeetingsDashboardComponent {
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
         takeUntilDestroyed()
       )
-      .subscribe((queryParams) => {
-        void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
-      });
+      .subscribe((queryParams) => this.replaceQueryParams(queryParams));
   }
 
   /**
@@ -1301,6 +1298,27 @@ export class MeetingsDashboardComponent {
           this.groupTypeFilter.set(null);
         }
       });
+  }
+
+  /**
+   * Rewrites only the given query params on the live address. `ProjectContextService` moves `?project=`
+   * with `Location.replaceState`, which leaves the Router's own query params stale, so merging through
+   * `router.navigate` could put a previous project back in the URL. Same pattern as its
+   * `syncProjectQueryParam`, and skipped mid-navigation for the same reason.
+   */
+  private replaceQueryParams(params: Record<string, string | null>): void {
+    if (this.router.getCurrentNavigation()) {
+      return;
+    }
+    const urlTree = this.router.parseUrl(this.location.path(true));
+    for (const [name, value] of Object.entries(params)) {
+      if (value === null) {
+        delete urlTree.queryParams[name];
+      } else {
+        urlTree.queryParams[name] = value;
+      }
+    }
+    this.location.replaceState(this.router.serializeUrl(urlTree));
   }
 
   /** Project and group selections belong to one tree, so switching to another foundation or project clears them. */

@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, DefaultUrlSerializer, provideRouter, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -33,6 +34,9 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
   let lens: WritableSignal<Lens>;
   let context: WritableSignal<ProjectContext | null>;
   const route = { snapshot: { queryParamMap: convertToParamMap({}) } };
+  const serializer = new DefaultUrlSerializer();
+  // The live address the dashboard rewrites; `ProjectContextService` may have moved `?project=` past the Router.
+  const location = { path: vi.fn(() => '/project/meetings?project=scope'), replaceState: vi.fn() };
   const flush = (): void => TestBed.tick();
   const ids = (component: MeetingsDashboardComponent): string[] => component.filteredMeetings().map((m) => m.id);
   const row = (id: string, extra: Partial<Meeting> = {}): Meeting =>
@@ -101,11 +105,22 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         { provide: LensService, useValue: { activeLens: lens } },
         { provide: ProjectContextService, useValue: { activeContext: context, canWrite: signal(true), canWriteMeetings: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true), hasBoardRole: signal(true), hasProjectRole: signal(true) } },
-        { provide: Router, useValue: { navigate: vi.fn() } },
+        {
+          provide: Router,
+          useValue: {
+            navigate: vi.fn(),
+            getCurrentNavigation: () => null,
+            parseUrl: (url: string) => serializer.parse(url),
+            serializeUrl: (tree: ReturnType<DefaultUrlSerializer['parse']>) => serializer.serialize(tree),
+          },
+        },
         { provide: ActivatedRoute, useValue: route },
+        { provide: Location, useValue: location },
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     });
+    location.replaceState.mockClear();
+    location.path.mockReturnValue('/project/meetings?project=scope');
     users = TestBed.inject(UserService);
     users.user.set({ username: 'alias', 'https://sso.linuxfoundation.org/claims/username': 'viewer' } as User);
     users.authenticated.set(true);
@@ -882,20 +897,26 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(component.meetingTypeFilter()).toBeNull();
     });
 
-    it('writes filter changes back to the URL', () => {
+    it('writes filter changes to the live URL, keeping the project it already carries', () => {
       const component = mount();
       openScope(component);
+      location.path.mockReturnValue('/project/meetings?project=current&group=stale#top');
 
       component.onRollupProjectsFilterChange(['child']);
       component.onGroupTypeFilterChange('Working Group');
       flush();
 
-      expect(TestBed.inject(Router).navigate).toHaveBeenLastCalledWith([], {
-        relativeTo: route,
-        queryParams: { projects: 'child', group: null, group_type: 'Working Group', type: null, view: null },
-        queryParamsHandling: 'merge',
-        replaceUrl: true,
-      });
+      expect(location.replaceState).toHaveBeenLastCalledWith('/project/meetings?project=current&projects=child&group_type=Working%20Group#top');
+      expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+    });
+
+    it('treats every project selected as the whole roll-up', () => {
+      const component = mount();
+      openScope(component);
+
+      component.onRollupProjectsFilterChange(['scope', 'child']);
+
+      expect(component.rollupProjectsFilter()).toEqual([]);
     });
 
     it('offers only the groups and group types of the selected projects and type, and clears a group they no longer offer', () => {
