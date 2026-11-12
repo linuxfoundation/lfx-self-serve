@@ -220,7 +220,11 @@ export class VoteBallotFormComponent {
       const answer = applyPrefill ? prefill?.poll_answers?.find((a) => a.question_id === question.question_id) : undefined;
       if (ranked) {
         const declared = question.choices.map((choice) => choice.choice_id);
-        const answered = [...(answer?.ranked_user_choice ?? [])].sort((a, b) => (a.choice_rank ?? 0) - (b.choice_rank ?? 0)).map((choice) => choice.choice_id);
+        const choices = answer?.ranked_user_choice?.length ? answer.ranked_user_choice : (answer?.user_choice ?? []);
+        const answered = choices
+          .map((choice, index) => ({ choice, index }))
+          .sort((a, b) => (a.choice.choice_rank ?? a.index + 1) - (b.choice.choice_rank ?? b.index + 1))
+          .map(({ choice }) => choice.choice_id);
         const known = answered.filter((id) => declared.includes(id));
         const order = applyPrefill ? known : declared;
         this.form.addControl(question.question_id, new FormControl<string[]>(order, { nonNullable: true, validators: [Validators.required] }), {

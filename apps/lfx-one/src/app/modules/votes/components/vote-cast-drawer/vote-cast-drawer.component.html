@@ -291,7 +291,7 @@
             </div>
           }
 
-          @if (allowAbstain() || (ballotReadOnly() && abstain())) {
+          @if (allowAbstain() || (showsRecordedBallot() && abstain())) {
             <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col gap-2">
               <div class="relative flex items-center gap-2 min-h-[44px]" data-testid="vote-cast-abstain-toggle">
                 <p-checkbox [binary]="true" [formControl]="abstainControl" inputId="vote-cast-abstain" />

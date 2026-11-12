@@ -321,7 +321,7 @@ export class VoteCastDrawerComponent {
       this.commentForm.markAllAsTouched();
       return;
     }
-    const userVoteContent = isAbstain ? undefined : this.buildAnswers(vote.poll_questions ?? []);
+    const userVoteContent = isAbstain ? undefined : this.buildAnswers(this.questions());
     // Comments are independent of abstain — a voter can abstain and still leave a comment.
     const commentResponses = buildCommentResponses(this.commentPromptsData());
 

@@ -101,8 +101,8 @@ export function isVoteAwaitingMyBallot(vote: Vote): boolean {
 }
 
 /**
- * True when My Votes can show the viewer's recorded ballot in a read-only drawer: active and already responded (#4331).
- * My Votes opens the cast drawer in read-only review mode for these rows instead of navigating to the vote page.
+ * True when My Votes can open the viewer's recorded-ballot Review drawer: active and already responded (#4331).
+ * Ballot-change eligibility separately determines whether the recorded ballot is editable.
  */
 export function isVoteBallotReviewable(vote: Vote): boolean {
   return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.RESPONDED;
@@ -1004,7 +1004,7 @@ export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_qu
 /**
  * Turns the caller's current ballot into cast-drawer form values (#4331)
  * @description Single choice keeps the first selected choice, multiple choice every selected choice; ranked questions
- * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked in the read-only review.
+ * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked when Review opens.
  * Recorded choice ids are preserved even when current question metadata no longer declares them; unanswered questions are omitted.
  */
 export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, ballot: MyVoteBallot): VoteCastFormPrefill {

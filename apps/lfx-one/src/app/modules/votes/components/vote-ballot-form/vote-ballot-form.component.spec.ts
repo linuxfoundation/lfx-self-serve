@@ -199,6 +199,72 @@ describe('VoteBallotFormComponent (#4363)', () => {
       expect(emitted[0].userVoteContent?.[0].ranked_choices?.map((c) => c.choice_id)).toEqual(['c-c', 'c-a', 'c-b']);
     });
 
+    it.each([[], undefined])('falls back to saved user_choice ranks when ranked_user_choice is %s', async (rankedUserChoice) => {
+      await render(
+        baseBallot({ poll_type: 'instant_runoff_vote' }),
+        votedState({
+          poll_answers: [
+            {
+              question_id: 'q1',
+              prompt: 'Who?',
+              type: 'single_choice',
+              ranked_user_choice: rankedUserChoice,
+              user_choice: [
+                { choice_id: 'c-a', choice_text: 'Alice', choice_rank: 2 },
+                { choice_id: 'c-c', choice_text: 'Carol', choice_rank: 1 },
+              ],
+            },
+          ],
+        })
+      );
+      (fixture.componentInstance.commentForm.get('p1') as unknown as FormControl<string>).setValue('Comment correction');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c-c', 'c-a']);
+      expect(byId('vote-link-rank-c-b')).toBeNull();
+      expect(byId('vote-link-submit-button')?.querySelector('button')?.disabled).toBe(false);
+      submit();
+      expect(emitted[0]).toMatchObject({
+        userVoteContent: [
+          {
+            question_id: 'q1',
+            ranked_choices: [
+              { choice_id: 'c-c', choice_rank: 1 },
+              { choice_id: 'c-a', choice_rank: 2 },
+            ],
+          },
+        ],
+        commentResponses: [{ prompt_id: 'p1', comment_text: 'Comment correction' }],
+      });
+    });
+
+    it('preserves saved user_choice order when recorded ranks are omitted', async () => {
+      await render(
+        baseBallot({ poll_type: 'instant_runoff_vote' }),
+        votedState({
+          poll_answers: [
+            {
+              question_id: 'q1',
+              prompt: 'Who?',
+              type: 'single_choice',
+              ranked_user_choice: [],
+              user_choice: [
+                { choice_id: 'c-c', choice_text: 'Carol' },
+                { choice_id: 'c-a', choice_text: 'Alice' },
+              ],
+            },
+          ],
+        })
+      );
+      submit();
+
+      expect(emitted[0].userVoteContent?.[0].ranked_choices).toEqual([
+        { choice_id: 'c-c', choice_rank: 1 },
+        { choice_id: 'c-a', choice_rank: 2 },
+      ]);
+    });
+
     it.each(['comment only', 'reorder', 'add', 'remove', 'empty then add', 'abstain round trip'] as const)(
       'preserves a named partial ranked ballot with explicit edits only: %s',
       async (scenario) => {

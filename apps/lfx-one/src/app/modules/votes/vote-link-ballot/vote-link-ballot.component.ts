@@ -86,7 +86,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   protected readonly statusLabel = computed(() => (this.state() === 'ready' ? 'Open' : ''));
 
   protected readonly finalStateText = VOTE_BALLOT_FINAL_STATE;
-  /** Whether this vote lets voters change a submitted ballot at all; drives the POST→PUT flip and the thank-you copy (#4723). */
+  /** Vote-setting fallback for first submissions and POST→PUT recovery; a finality rejection always blocks changes (#4723). */
   protected readonly changeAllowed = computed(() => isVoteChangeAllowed(this.ballot()) && !this.changeBlocked());
   /** Whether the voter's submitted ballot can be changed now: ITX's answer when reported, otherwise derived from the vote (#4723). */
   protected readonly canChange = computed(() => {
@@ -104,7 +104,9 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     () => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.editing() && this.canChange()
   );
   /** A submitted ballot that can no longer be changed renders as final, in place of the update prompt and the form. */
-  protected readonly showFinal = computed(() => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.canChange());
+  protected readonly showFinal = computed(
+    () => this.state() === 'ready' && (this.changeBlocked() || (!!this.ballot()?.ballot.already_voted && !this.canChange()))
+  );
   /** Pre-submit notice on a first submission when the vote makes submitted ballots final. */
   protected readonly finalNotice = computed(() => {
     const ballot = this.ballot();
@@ -145,7 +147,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
 
   protected onSubmit(submission: VoteBallotSubmission): void {
     const token = this.token();
-    if (!token || this.submitting()) return;
+    if (!token || this.submitting() || this.changeBlocked()) return;
 
     const body: VoteLinkResponseRequest = {
       vote_token: token,

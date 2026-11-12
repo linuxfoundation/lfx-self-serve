@@ -875,6 +875,61 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(component.visible()).toBe(false);
   });
 
+  it.each([false, undefined])('can clear a recorded abstention when allow_abstain is %s', async (allowAbstain) => {
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await open(
+      { ...CHANGE_VOTE, allow_abstain: allowAbstain },
+      { getMyVoteBallot: vi.fn().mockReturnValue(of({ ...BALLOT, abstained: true, poll_answers: [] })), updateMyResponse },
+      { changeMode: true }
+    );
+    const component = fixture.componentInstance;
+    const checkbox = document.getElementById('vote-cast-abstain') as HTMLInputElement;
+
+    expect(checkbox).not.toBeNull();
+    expect(checkbox.checked).toBe(true);
+    expect(checkbox.disabled).toBe(false);
+    expect(component.form.disabled).toBe(true);
+    checkbox.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.abstainControl.value).toBe(false);
+    expect(component.form.enabled).toBe(true);
+    expect(el('vote-cast-abstain-toggle')).toBeNull();
+    (component.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(submitButton()?.disabled).toBe(false);
+    submitButton()!.click();
+
+    expect(updateMyResponse).toHaveBeenCalledWith(
+      VOTE.uid,
+      expect.objectContaining({
+        abstain: false,
+        user_vote_content: [{ question_id: 'q1', choice_ids: ['c1'] }],
+      })
+    );
+  });
+
+  it.each([undefined, []])('submits saved questions when poll_questions is %s', async (pollQuestions) => {
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await open(
+      { ...CHANGE_VOTE, poll_questions: pollQuestions },
+      { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse },
+      { changeMode: true }
+    );
+    const component = fixture.componentInstance;
+    expect(component.form.get('q1')?.value).toBe('c2');
+    expect(document.getElementById('vote-cast-choice-c2')).not.toBeNull();
+    expect(submitButton()?.disabled).toBe(false);
+    submitButton()!.click();
+
+    expect(updateMyResponse).toHaveBeenCalledExactlyOnceWith(VOTE.uid, {
+      abstain: false,
+      user_vote_content: [{ question_id: 'q1', choice_ids: ['c2'] }],
+      comment_responses: BALLOT.comment_responses,
+    });
+  });
+
   it.each([
     ['changes are disabled', { allow_vote_change: false }, undefined],
     ['ITX locks the ballot', { allow_vote_change: true }, false],

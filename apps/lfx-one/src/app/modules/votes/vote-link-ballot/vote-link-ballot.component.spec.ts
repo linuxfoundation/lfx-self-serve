@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { NEVER, Observable, of, throwError } from 'rxjs';
+import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteLinkBallotComponent } from './vote-link-ballot.component';
@@ -440,6 +440,39 @@ describe('VoteLinkBallotComponent (#4363)', () => {
       expect(testId('vote-link-inline-error')).toBeNull();
     });
 
+    it.each(['pending', 'stale', 'failed'] as const)('locks a POST-to-PUT finality conflict while reload is %s', async (reloadState) => {
+      await open(of(BALLOT));
+      const reload = new Subject<VoteLinkBallot>();
+      getLinkBallot.mockReturnValue(reload);
+      submitLinkResponse
+        .mockReturnValueOnce(throwError(() => httpError(400, 'vote is not awaiting response')))
+        .mockReturnValueOnce(throwError(() => httpError(409, 'this poll does not allow changing a submitted vote')));
+
+      submit();
+      fixture.detectChanges();
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+      expect(testId('vote-link-ballot-form')).toBeNull();
+
+      if (reloadState === 'stale') {
+        reload.next({ ...BALLOT, ballot: { ...BALLOT.ballot, can_change_vote: true } });
+        reload.complete();
+      } else if (reloadState === 'failed') {
+        reload.error(httpError(500, 'server error'));
+      }
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      expect(testId('vote-link-update-prompt')).toBeNull();
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      expect(submitLinkResponse).toHaveBeenNthCalledWith(1, expect.anything(), false);
+      expect(submitLinkResponse).toHaveBeenNthCalledWith(2, expect.anything(), true);
+      submit();
+      expect(submitLinkResponse).toHaveBeenCalledTimes(2);
+    });
+
     it('does not flip a first submission to PUT on a locked vote; it reloads into the final state', async () => {
       const locked = { ...BALLOT, allow_vote_change: false };
       getLinkBallot.mockReturnValueOnce(of(locked)).mockReturnValueOnce(of({ ...locked, ballot: { ...VOTED, can_change_vote: false } }));
@@ -464,6 +497,23 @@ describe('VoteLinkBallotComponent (#4363)', () => {
 
       await open(of(BALLOT));
       expect(testId('vote-link-final-notice')).toBeNull();
+    });
+
+    it.each([
+      { allowVoteChange: false, canChangeVote: true },
+      { allowVoteChange: true, canChangeVote: undefined },
+      { allowVoteChange: undefined, canChangeVote: undefined },
+    ])('keeps update confirmation revisable for $allowVoteChange/$canChangeVote', async ({ allowVoteChange, canChangeVote }) => {
+      await open(of({ ...BALLOT, allow_vote_change: allowVoteChange, ballot: { ...VOTED, can_change_vote: canChangeVote } }));
+      testId('vote-link-update-button')?.querySelector('button')?.click();
+      fixture.detectChanges();
+      submit();
+      fixture.detectChanges();
+
+      expect(state()).toBe('updated');
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), true);
+      expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('You can change your vote');
+      expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('Your vote is final.');
     });
 
     it('says the vote is final on the thank-you screen of a locked vote', async () => {
