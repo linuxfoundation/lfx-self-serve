@@ -22820,6 +22820,29 @@ describe('ImplementationTabComponent linkedin targeting facets', () => {
     expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
   });
 
+  it("shows the failure, not the previous foundation's profiles, when the reload after a switch fails", async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const calls: string[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: (slug: string) => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = (slug: string) => {
+      calls.push(slug);
+      return calls.length === 1 ? of(PROFILES) : throwError(() => new HttpErrorResponse({ status: 403 }));
+    };
+    const { fixture } = await mount({});
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(calls).toEqual(['a', 'b']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(chips(fixture, 'groups')).toEqual([]);
+  });
+
   it("drops the previous foundation's late profile answer after a foundation switch", async () => {
     const ctx = TestBed.inject(ProjectContextService);
     ctx.setRouteLensKind('foundation');

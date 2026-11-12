@@ -2347,34 +2347,19 @@ export class ImplementationTabComponent implements OnInit {
    * The configured profile the selection resolves to (#5546) — `custom` reads `cloud-native`, as
    * campaign-service does — or `null` until the catalogue has it.
    */
-  protected readonly linkedInSelectedTargetingProfile = computed<LinkedInTargetingProfileConfig | null>(() => {
-    const id = resolveLinkedInTargetingProfileId(this.linkedInTargetingProfile());
-    return this.linkedInTargetingProfiles().find((profile) => profile.id === id) ?? null;
-  });
+  protected readonly linkedInSelectedTargetingProfile: Signal<LinkedInTargetingProfileConfig | null> = this.initLinkedInSelectedTargetingProfile();
 
   /** The selected profile's member groups and skills that are KEPT after the operator's removals; `null` until it loads. */
-  protected readonly linkedInEffectiveTargeting = computed<LinkedInTargetingFacets | null>(() => {
-    const profile = this.linkedInSelectedTargetingProfile();
-    return profile ? linkedInTargetingAfterRemovals(profile, this.linkedInTargetingRemovals() ?? { skills: [], groups: [] }) : null;
-  });
+  protected readonly linkedInEffectiveTargeting: Signal<LinkedInTargetingFacets | null> = this.initLinkedInEffectiveTargeting();
 
   /**
    * The edit a create sends as `linkedInConfig.targetingProfileEdit`, or `null` when nothing the
    * profile carries was removed — so an untouched profile sends exactly what it always did.
    */
-  protected readonly linkedInTargetingProfileEdit = computed<LinkedInTargetingProfileEdit | null>(() => {
-    const profile = this.linkedInSelectedTargetingProfile();
-    const effective = this.linkedInEffectiveTargeting();
-    if (!profile || !effective) return null;
-    if (effective.skills.length === profile.skills.length && effective.groups.length === profile.groups.length) return null;
-    return { id: profile.id, skills: effective.skills, groups: effective.groups };
-  });
+  protected readonly linkedInTargetingProfileEdit: Signal<LinkedInTargetingProfileEdit | null> = this.initLinkedInTargetingProfileEdit();
 
   /** Whether the operator holds removals at all, loaded or not — what the create gate and the reset control read. */
-  protected readonly linkedInTargetingRemovalsHeld = computed<boolean>(() => {
-    const removals = this.linkedInTargetingRemovals();
-    return !!removals && removals.skills.length + removals.groups.length > 0;
-  });
+  protected readonly linkedInTargetingRemovalsHeld: Signal<boolean> = this.initLinkedInTargetingRemovalsHeld();
 
   /**
    * Shown, not blocking, when every member group and skill is removed. campaign-service accepts it:
@@ -2383,10 +2368,7 @@ export class ImplementationTabComponent implements OnInit {
    * constant it always adds (`internal/platform/linkedin/config.go` `jobFunctions`). The audience is
    * then everyone in those job functions in the chosen locations, which is worth saying.
    */
-  protected readonly linkedInTargetingEmptyWarning = computed<boolean>(() => {
-    const effective = this.linkedInEffectiveTargeting();
-    return !!effective && this.linkedInTargetingProfileEdit() !== null && effective.skills.length === 0 && effective.groups.length === 0;
-  });
+  protected readonly linkedInTargetingEmptyWarning: Signal<boolean> = this.initLinkedInTargetingEmptyWarning();
 
   /**
    * The geo targets a Reddit dispatch will actually carry.
@@ -7377,6 +7359,44 @@ export class ImplementationTabComponent implements OnInit {
     return this.linkedInImageUploadStatus() === 'error' && briefId !== '' && this.linkedInImageUploadFailedBriefId() === briefId;
   }
 
+  private initLinkedInSelectedTargetingProfile(): Signal<LinkedInTargetingProfileConfig | null> {
+    return computed(() => {
+      const id = resolveLinkedInTargetingProfileId(this.linkedInTargetingProfile());
+      return this.linkedInTargetingProfiles().find((profile) => profile.id === id) ?? null;
+    });
+  }
+
+  private initLinkedInEffectiveTargeting(): Signal<LinkedInTargetingFacets | null> {
+    return computed(() => {
+      const profile = this.linkedInSelectedTargetingProfile();
+      return profile ? linkedInTargetingAfterRemovals(profile, this.linkedInTargetingRemovals() ?? { skills: [], groups: [] }) : null;
+    });
+  }
+
+  private initLinkedInTargetingProfileEdit(): Signal<LinkedInTargetingProfileEdit | null> {
+    return computed(() => {
+      const profile = this.linkedInSelectedTargetingProfile();
+      const effective = this.linkedInEffectiveTargeting();
+      if (!profile || !effective) return null;
+      if (effective.skills.length === profile.skills.length && effective.groups.length === profile.groups.length) return null;
+      return { id: profile.id, skills: effective.skills, groups: effective.groups };
+    });
+  }
+
+  private initLinkedInTargetingRemovalsHeld(): Signal<boolean> {
+    return computed(() => {
+      const removals = this.linkedInTargetingRemovals();
+      return !!removals && removals.skills.length + removals.groups.length > 0;
+    });
+  }
+
+  private initLinkedInTargetingEmptyWarning(): Signal<boolean> {
+    return computed(() => {
+      const effective = this.linkedInEffectiveTargeting();
+      return !!effective && this.linkedInTargetingProfileEdit() !== null && effective.skills.length === 0 && effective.groups.length === 0;
+    });
+  }
+
   private initLinkedInVariantViews(): Signal<LinkedInVariantView[]> {
     return computed(() => {
       const slotKey = this.linkedInImageUploadVariantKey();
@@ -8135,6 +8155,9 @@ export class ImplementationTabComponent implements OnInit {
     // Stamp the slug as `loadLinkedInAccounts` does: a late answer for the previous foundation must
     // not overwrite (or fail) the load made for the current one.
     const requestedSlug = this.activeFoundationSlug();
+    // Drop the previous foundation's catalogue too: left in place, a failed reload would still show
+    // its profiles and hide the failure (lfx-one review 3 on #5631).
+    this.linkedInTargetingProfiles.set([]);
     this.linkedInTargetingProfilesLoading.set(true);
     this.linkedInTargetingProfilesFailed.set(false);
     this.campaignService
