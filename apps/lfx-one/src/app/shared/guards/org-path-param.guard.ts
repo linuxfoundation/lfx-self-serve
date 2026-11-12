@@ -82,7 +82,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   // or bookmarked roll-up cannot put a caller into a mode they do not qualify for — but it is
   // admitted while the grant sets are still loading (`admitWhilePending`). On a cold deep link the
   // grants have not answered yet and a conglomerate admin whose siblings are inherited grants would
-  // otherwise be bounced to their single persona seed before anyone knows better. The service's
+  // otherwise be bounced before anyone knows better. The service's
   // reconciliation effect demotes them if the settled grants disagree.
   //
   // A caller who genuinely no longer holds two organizations in the family is re-pointed at one
@@ -136,8 +136,6 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     // hit would be (lfx-self-serve#2570), upgrading a `'default'` pin: from here on the page is
     // `/org/A/…` and only A may render under it, so an org-items reload must not re-default it to B
     // (whose `'default'` write would leave this address in place — spec 050's silent substitution).
-    // Without any pin, a later persona refresh may re-seed over the selection under the address it
-    // does not match.
     accountContext.pinSelection('address');
     return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;
   }

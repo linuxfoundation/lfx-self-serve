@@ -58,9 +58,7 @@ export class OrgClaReturnService {
    *
    * `adoptFromAddress` also rewrites the cookie, so the round trip repairs the selection that went
    * missing rather than leaving the next reload to fall back all over again — and pins the
-   * selection as the address's own (lfx-self-serve#2570): the return can resolve as soon as the org
-   * list has loaded, before the persona refresh, and that refresh carries no seeds for a grant-only
-   * viewer; unpinned, it would reset the returned organization to the placeholder mid-render. The
+   * selection as the address's own (lfx-self-serve#2570). The
    * catalogue row is the same indexed snapshot the selector uses; `refreshCanonicalRecord` is the
    * fire-and-forget reconciliation both `org-selector` and `org-navigation` run after selecting, so
    * this does not leave name, logo and parent stale for the rest of the session.

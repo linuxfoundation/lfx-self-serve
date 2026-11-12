@@ -344,10 +344,10 @@ export class OrgNavigationService {
       //
       // #2961: the same holds for an LF contractor. The page explains their empty list
       // (`contractor-no-grant`); the toast would repeat it as employee copy, and clearing the selection
-      // would drop the persona-seeded organization the page asks the read gate about.
+      // would drop the organization the page asks the read gate about.
       //
-      // Decided once the role grants have answered: a persona seed can start this list before they do,
-      // and reading `isStaff`/`isContractor` early would toast and clear the selection for exactly the
+      // Decided once the role grants have answered: reading `isStaff`/`isContractor` early would toast
+      // and clear the selection for exactly the
       // callers these exemptions exist for.
       // Like the deferred default below, it re-checks before acting: an address adopted, or a selection
       // made, while it waited wins over clearing it.
@@ -369,7 +369,7 @@ export class OrgNavigationService {
     if (current.uid) {
       const match = page.items.find((item) => item.uid === current.uid);
       if (match) {
-        // A selection restored from the cookie or a persona seed carries no URL-identity slug; the
+        // A selection restored from the cookie carries no URL-identity slug; the
         // indexed row's is the one addresses resolve against (spec 050). Apply it whenever the
         // tri-state differs — `undefined` (not known) becomes the row's value or an indexed `null`, a
         // stale slug becomes the current one — so in-app addresses see the indexed segment and the
@@ -380,10 +380,7 @@ export class OrgNavigationService {
         if (heldSlug !== indexedSlug) {
           this.accountContextService.setIndexedSlug(indexedSlug);
         }
-        // Pinned before the address is written (lfx-self-serve#2570): the persona refresh can land
-        // between here and the page's render, and for a grant-only (staff) viewer it carries no
-        // seeds — unpinned, that resets the selection to the placeholder under the address just
-        // written, and the page renders empty for the organization the bar names.
+        // Pinned before the address is written (lfx-self-serve#2570).
         this.accountContextService.pinSelection('default');
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
         // bar as a default's — written the same way. A default never touches an addressed page or the
@@ -480,10 +477,7 @@ export class OrgNavigationService {
     const account = this.toAccountFromOrgItem(item);
     this.accountContextService.setAccount(account);
     // The default is what the address is written from next, so it is pinned like an adopted one
-    // (lfx-self-serve#2570): the persona refresh that lands after this — with no seeds at all for a
-    // grant-only viewer — must not replace it. Pinned at selection time, not at the write, because
-    // that refresh can also land in the gap before the write; unpinned it would clear the selection,
-    // the write would find no segment, and the legacy address would stay put, empty.
+    // (lfx-self-serve#2570).
     this.accountContextService.pinSelection('default');
     // Fire-and-forget: it settles either way (failures are logged inside and leave the indexed snapshot).
     void this.accountContextService.refreshCanonicalRecord(account);

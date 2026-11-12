@@ -5,24 +5,19 @@ import { HttpClient } from '@angular/common/http';
 import { computed, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, UrlSerializer } from '@angular/router';
-import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
-import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse, OrgLensLookupOutcome, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { ACCOUNT_COOKIE_KEY, ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
+import { Account, OrgCanonicalRecord, OrgLensLookupOutcome, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
-import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
 import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { OrgRollUpFamiliesService } from './org-roll-up-families.service';
 import { OrgRollUpFlagService } from './org-roll-up-flag.service';
 
-// Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
-// before the persona refresh re-seeds organizations. That re-seed runs `initializeUserOrganizations`
-// again — with empty seeds for a staff viewer — and used to reset the selection to the placeholder
-// or a seed, i.e. the silent substitution deep links exist to remove (#2713 review).
 describe('AccountContextService — address-adopted selection', () => {
   const UID_A = '0014100000MgaAAAAA';
   const UID_B = '0014100000MgbBBBBB';
@@ -61,7 +56,6 @@ describe('AccountContextService — address-adopted selection', () => {
           },
         },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
-        { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn().mockReturnValue(of([])) } },
         { provide: OrgRoleGrantsService, useValue: grants },
         {
           provide: OrgRollUpFamiliesService,
@@ -131,10 +125,7 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.selectedUrlSegment()).toBe('bravo-llc');
     });
 
-    // A slug-only patch from the org list must not rebuild the selection from the Snowflake row:
-    // a name the canonical record has since patched (a rename not yet in Snowflake) would flip back.
     it('setIndexedSlug keeps display fields the canonical record patched', async () => {
-      service.initializeUserOrganizations([{ ...addressedB, accountName: 'Bravo (Snowflake)' }]);
       service.adoptFromAddress(addressedB);
       http().get.mockReturnValue(of({ ...canonicalOf('bravo-llc'), name: 'Bravo Renamed' }));
       await service.refreshCanonicalRecord(addressedB);
@@ -168,30 +159,21 @@ describe('AccountContextService — address-adopted selection', () => {
     });
   });
 
-  it('survives a staff re-seed with no organizations, which otherwise resets to the placeholder', () => {
+  it('survives the bootstrap restore, which otherwise resets to the placeholder', () => {
     service.adoptFromAddress(addressedB);
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
 
     expect(service.selectedAccount()).toEqual(addressedB);
     expect(service.isAddressedSelection()).toBe(true);
     expect(service.selectedUrlSegment()).toBe('bravo-llc');
   });
 
-  it('survives a re-seed that does not contain the addressed organization, keeping the resolved record (name, slug)', () => {
-    service.adoptFromAddress(addressedB);
-    service.initializeUserOrganizations([seedA]);
-
-    expect(service.selectedAccount()).toEqual(addressedB);
-    // The seeds still feed the selector rows.
-    expect(service.availableAccounts()).toEqual([seedA]);
-  });
-
-  it('is released when the user switches to another organization, so seeding behaves as before', () => {
+  it('is released when the user switches to another organization, so the bootstrap restore can reset it', () => {
     service.adoptFromAddress(addressedB);
     service.setAccount(seedA);
 
     expect(service.isAddressedSelection()).toBe(false);
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     expect(service.selectedAccount().uid).toBeUndefined();
   });
 
@@ -201,18 +183,39 @@ describe('AccountContextService — address-adopted selection', () => {
     expect(service.isAddressedSelection()).toBe(false);
   });
 
-  it('is not claimed by a plain setAccount, so a cookie-restored selection still defers to seeding', () => {
+  it('is not claimed by a plain setAccount, so the bootstrap restore still runs', () => {
     service.setAccount(addressedB);
     expect(service.isAddressedSelection()).toBe(false);
 
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     expect(service.selectedAccount().uid).toBeUndefined();
+  });
+
+  describe('restoreSelection', () => {
+    it('leaves a first visit on the placeholder, for the org list to pick the default from the grants', () => {
+      grants.writerSet.set(new Set([UID_A]));
+
+      service.restoreSelection();
+
+      expect(service.selectedAccount().uid).toBeUndefined();
+      expect(cookies.has(ACCOUNT_COOKIE_KEY)).toBe(false);
+    });
+
+    it('leaves a stored organization to the org list default too, keeping it as the list pin', () => {
+      grants.writerSet.set(new Set([UID_A]));
+      cookies.set(ACCOUNT_COOKIE_KEY, JSON.stringify({ uid: UID_B }));
+
+      service.restoreSelection();
+
+      expect(service.selectedAccount().uid).toBeUndefined();
+      expect(service.orgListPinUid()).toBe(UID_B);
+    });
   });
 
   // LFXV2-3029: an inherited (roll-up) grant is a held organization — the switcher lists those rows,
   // so it must be enabled for a caller holding nothing else, or their list never starts (spec 053).
   describe('hasOrgSelectorAccess', () => {
-    it('is false with no grants, no seeded organizations and no LF-team entitlement', () => {
+    it('is false with no grants, no CLA-only organization and no LF-team entitlement', () => {
       expect(service.hasOrgSelectorAccess()).toBe(false);
     });
 
@@ -242,9 +245,10 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
 
-    it('is true for a persona-seeded organization alone', () => {
-      service.initializeUserOrganizations([seedA]);
-      expect(service.hasOrgSelectorAccess()).toBe(true);
+    it('is not opened by a selection the caller holds no grant on', () => {
+      service.adoptFromAddress(addressedB);
+
+      expect(service.hasOrgSelectorAccess()).toBe(false);
     });
 
     it('is true for a CLA-only organization alone', () => {
@@ -253,34 +257,22 @@ describe('AccountContextService — address-adopted selection', () => {
     });
   });
 
-  // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
-  // the current selection in place. A persona refresh with no seeds — what a grant-only staff viewer
-  // gets — then leaves it alone instead of resetting an addressed page to the placeholder mid-render.
   describe('pinSelection', () => {
-    it('keeps the current selection through an empty re-seed, without rebuilding it', () => {
+    it('keeps the current selection through the bootstrap restore, without rebuilding it', () => {
       service.setAccount(addressedB);
       service.pinSelection('default');
+      cookies.set(ACCOUNT_COOKIE_KEY, JSON.stringify({ uid: `family-${UID_A}` }));
 
       expect(service.isAddressedSelection()).toBe(true);
-      service.initializeUserOrganizations([]);
+      service.restoreSelection();
       expect(service.selectedAccount()).toEqual(addressedB);
     });
 
-    it('keeps the current selection through a re-seed that does not list it', () => {
-      service.setAccount(addressedB);
+    it('does nothing on the placeholder', () => {
       service.pinSelection('default');
 
-      service.initializeUserOrganizations([seedA]);
-      expect(service.selectedAccount()).toEqual(addressedB);
-      expect(service.availableAccounts()).toEqual([seedA]);
-    });
-
-    it('does nothing on the placeholder, so seeding still selects normally', () => {
-      service.pinSelection('default');
       expect(service.isAddressedSelection()).toBe(false);
-
-      service.initializeUserOrganizations([seedA]);
-      expect(service.selectedAccount()).toEqual(seedA);
+      expect(service.isAdoptedFromAddress()).toBe(false);
     });
 
     it('is released when the user switches, like an adopted selection', () => {
@@ -292,8 +284,7 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.isAdoptedFromAddress()).toBe(false);
     });
 
-    // The two kinds: only an address pin is honoured by an org-items reload (`isAdoptedFromAddress`);
-    // both hold against the persona re-seed (`isAddressedSelection`).
+    // The two kinds: only an address pin is honoured by an org-items reload (`isAdoptedFromAddress`).
     it('a default pin is not an address pin', () => {
       service.setAccount(addressedB);
       service.pinSelection('default');
@@ -340,176 +331,6 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.isAddressedSelection()).toBe(false);
       expect(service.isAdoptedFromAddress()).toBe(false);
     });
-
-    // The "not a setAccount" half of the contract (ahmedomosanya on lfx-self-serve#2793): the guard
-    // shortcut pins on every child navigation, so a pin that rebuilt the selection from the live
-    // Snowflake row would revert a canonical-record rename each time. Seeded so the rebuild would
-    // actually differ — the other cases run with no live rows, where `setAccount` is an identity.
-    it('does not rebuild the selection from the live row, so a canonical-record rename survives the pin', async () => {
-      const staleRow = {
-        accountId: UID_B,
-        accountName: 'Bravo (stale Snowflake name)',
-        logoUrl: null,
-        cdevOrgId: null,
-        membershipTierDisplayName: 'Gold',
-      } as unknown as OrgLensAccountContextResponse;
-      (TestBed.inject(AnalyticsService) as unknown as { getOrgLensAccountContext: ReturnType<typeof vi.fn> }).getOrgLensAccountContext.mockReturnValue(
-        of([staleRow])
-      );
-      service.initializeUserOrganizations([{ ...addressedB, accountName: 'Bravo' }]);
-      expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
-
-      const http = TestBed.inject(HttpClient) as unknown as { get: ReturnType<typeof vi.fn> };
-      http.get.mockReturnValue(of({ uid: UID_B, accountId: UID_B, name: 'Bravo Holdings', slug: 'bravo-llc' } as OrgCanonicalRecord));
-      await service.refreshCanonicalRecord(service.selectedAccount());
-      expect(service.selectedAccount().accountName).toBe('Bravo Holdings');
-
-      service.pinSelection('address');
-      expect(service.isAdoptedFromAddress()).toBe(true);
-      expect(service.selectedAccount().accountName).toBe('Bravo Holdings');
-
-      // The rebuild the pin must not do — proves the seeding above makes the difference observable.
-      service.setAccount(service.selectedAccount());
-      expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
-    });
-  });
-});
-
-describe('AccountContextService — Snowflake enrichment platform boundary', () => {
-  const UID_A = '0014100000MgaAAAAA';
-  const seedA: Account = { accountId: 'acc-A', accountName: 'Alpha', membershipTier: '', uid: UID_A };
-
-  const liveRow = (accountId: string, accountName: string): OrgLensAccountContextResponse =>
-    ({
-      accountId,
-      accountName,
-      logoUrl: null,
-      cdevOrgId: null,
-      membershipTierDisplayName: null,
-    }) as unknown as OrgLensAccountContextResponse;
-
-  const setup = (platformId: string, responses: unknown[] = []) => {
-    const cookies = new Map<string, string>();
-    const getOrgLensAccountContext = vi.fn();
-    for (const response of responses) {
-      getOrgLensAccountContext.mockReturnValueOnce(response);
-    }
-    getOrgLensAccountContext.mockReturnValue(of([]));
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: PLATFORM_ID, useValue: platformId },
-        {
-          provide: SsrCookieService,
-          useValue: {
-            get: (key: string) => cookies.get(key) ?? '',
-            set: (key: string, value: string) => cookies.set(key, value),
-            delete: (key: string) => cookies.delete(key),
-          },
-        },
-        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
-        { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
-        {
-          provide: OrgRoleGrantsService,
-          useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false), claManagerOrgSet: signal(new Set()) },
-        },
-        {
-          provide: OrgRollUpFamiliesService,
-          useValue: { hasServerFamilies: signal(false), families: signal([]), unsettled: signal(false) },
-        },
-        { provide: OrgRollUpFlagService, useValue: { enabled: signal(true), unsettled: signal(false) } },
-        { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
-      ],
-    });
-    return { service: TestBed.inject(AccountContextService), getOrgLensAccountContext };
-  };
-
-  // The retired Org Lens rollout flag used to gate this fetch; with the flag gone it runs on every browser bootstrap.
-  it('runs enrichment unconditionally in the browser', () => {
-    const { service, getOrgLensAccountContext } = setup('browser');
-
-    service.initializeUserOrganizations([seedA]);
-
-    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
-    expect(getOrgLensAccountContext).toHaveBeenCalledWith(['acc-A']);
-  });
-
-  // The flag defaulted to false on the server (no OpenFeature provider there), so enrichment never ran during SSR —
-  // the platform guard preserves that boundary now that the flag is gone.
-  it('skips enrichment on the server so SSR never blocks on Snowflake', () => {
-    const { service, getOrgLensAccountContext } = setup('server');
-
-    service.initializeUserOrganizations([seedA]);
-
-    expect(getOrgLensAccountContext).not.toHaveBeenCalled();
-    expect(service.selectedAccount().accountId).toBe('acc-A');
-  });
-
-  // Bootstrap (transfer-state seeds) and the later persona re-seed each trigger a fetch; the earlier response
-  // must not overwrite the later one when it lands last. Both generations cover the same account so the
-  // stale payload would clobber the fresh one without the generation guard (a stub selection with a
-  // non-matching cookie uid would ignore enrichment entirely, which would not exercise the guard).
-  it('drops a superseded enrichment response when the re-seed fetch answers first', () => {
-    const bootstrap$ = new Subject<OrgLensAccountContextResponse[]>();
-    const reseed$ = new Subject<OrgLensAccountContextResponse[]>();
-    const { service } = setup('browser', [bootstrap$.asObservable(), reseed$.asObservable()]);
-
-    service.initializeUserOrganizations([seedA]);
-    service.initializeUserOrganizations([seedA]);
-
-    reseed$.next([liveRow('acc-A', 'Alpha Fresh')]);
-    reseed$.complete();
-    expect(service.selectedAccount().accountName).toBe('Alpha Fresh');
-
-    bootstrap$.next([liveRow('acc-A', 'Alpha Stale')]);
-    bootstrap$.complete();
-
-    expect(service.selectedAccount().accountName).toBe('Alpha Fresh');
-    expect(service.availableAccounts()).toHaveLength(1);
-    expect(service.availableAccounts()[0].accountName).toBe('Alpha Fresh');
-  });
-
-  // An empty persona re-seed (staff viewers carry no orgs) starts no fetch, but it still
-  // supersedes the in-flight bootstrap enrichment: the late response must neither repopulate
-  // `liveAccounts` nor touch the placeholder selection. Probed via `setAccount`, which merges
-  // any live row for the id — a repopulated cache would surface the stale name here.
-  it('invalidates an in-flight enrichment on an empty re-seed', () => {
-    const bootstrap$ = new Subject<OrgLensAccountContextResponse[]>();
-    const { service, getOrgLensAccountContext } = setup('browser', [bootstrap$.asObservable()]);
-
-    service.initializeUserOrganizations([seedA]);
-    service.initializeUserOrganizations([]);
-
-    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
-    expect(service.availableAccounts()).toHaveLength(0);
-
-    bootstrap$.next([liveRow('acc-A', 'Alpha Stale')]);
-    bootstrap$.complete();
-
-    service.setAccount({ ...seedA, accountName: 'Seed Name' });
-    expect(service.selectedAccount().accountName).toBe('Seed Name');
-  });
-
-  // Same supersession for an addressed selection: the empty re-seed preserves it (staff re-seed
-  // behavior), and the late bootstrap response for the same account must not clobber the
-  // canonical display fields with stale Snowflake ones.
-  it('preserves an addressed selection when an empty re-seed beats a late bootstrap response', () => {
-    const bootstrap$ = new Subject<OrgLensAccountContextResponse[]>();
-    const { service, getOrgLensAccountContext } = setup('browser', [bootstrap$.asObservable()]);
-
-    service.initializeUserOrganizations([seedA]);
-    service.adoptFromAddress({ ...seedA, accountName: 'Canonical Name' });
-    expect(service.isAddressedSelection()).toBe(true);
-
-    service.initializeUserOrganizations([]);
-    expect(service.selectedAccount().accountName).toBe('Canonical Name');
-
-    bootstrap$.next([liveRow('acc-A', 'Alpha Stale')]);
-    bootstrap$.complete();
-
-    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
-    expect(service.selectedAccount().accountName).toBe('Canonical Name');
-    expect(service.availableAccounts()).toHaveLength(0);
   });
 });
 
@@ -539,8 +360,6 @@ describe('AccountContextService — family roll-up', () => {
   let navigateSpy: ReturnType<typeof vi.fn>;
   let currentNavigation: unknown;
   let routerEvents: Subject<unknown>;
-  /** Rows the Snowflake enrichment answers with; `toAccount` maps these and carries no `uid`. */
-  let liveRows: OrgLensAccountContextResponse[];
   /** M3 CLA-only access: not part of a roll-up, but a real address the demotion may keep. */
   let claOnlyOrgUids: WritableSignal<Set<string>>;
   let grants: {
@@ -570,10 +389,9 @@ describe('AccountContextService — family roll-up', () => {
   /** The `org-lens-rollup-enabled` gate — on and settled unless a test says otherwise. */
   let rollUpFlag: { enabled: WritableSignal<boolean>; unsettled: WritableSignal<boolean> };
 
-  /** Stands in for the roll-up set endpoint: groups what the caller holds (persona seeds and every grant set) under each organization's top parent. */
+  /** Stands in for the roll-up set endpoint: groups what the caller holds (every grant set) under each organization's top parent. */
   const groupLikeServer = (): OrgRollUpFamily[] => {
-    const seeds = (service as unknown as { userOrganizations: Signal<Account[]> }).userOrganizations();
-    const held = new Set<string>(seeds.flatMap((account) => (account.uid ? [account.uid] : [])));
+    const held = new Set<string>();
     for (const set of [grants.writerSet(), grants.auditorSet(), grants.inheritedWriterSet(), grants.inheritedAuditorSet()]) {
       set.forEach((uid) => held.add(uid));
     }
@@ -597,7 +415,6 @@ describe('AccountContextService — family roll-up', () => {
     navigateSpy = vi.fn();
     currentNavigation = null;
     routerEvents = new Subject<unknown>();
-    liveRows = [];
     claOnlyOrgUids = signal(new Set<string>());
     httpGet = vi.fn().mockReturnValue(of(null));
     grants = {
@@ -633,7 +450,6 @@ describe('AccountContextService — family roll-up', () => {
           },
         },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
-        { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn(() => of(liveRows)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
         { provide: OrgRollUpFamiliesService, useValue: serverFamilies },
         { provide: OrgRollUpFlagService, useValue: rollUpFlag },
@@ -658,18 +474,23 @@ describe('AccountContextService — family roll-up', () => {
     service = TestBed.inject(AccountContextService);
   });
 
+  const bootstrapHolding = (...accounts: Account[]): void => {
+    grants.writerSet.update((held) => new Set([...held, ...accounts.flatMap((account) => (account.uid ? [account.uid] : []))]));
+    service.restoreSelection();
+  };
+
   const familyOrgs = (rootUid: string): string[] | undefined => service.rollUpFamilies().find((family) => family.rootUid === rootUid)?.orgUids;
 
-  it('groups persona seeds and grant sets by family, de-duplicated by uid', () => {
-    service.initializeUserOrganizations([seedA]);
+  it('groups the grant sets by family, de-duplicated by uid', () => {
+    grants.writerSet.set(new Set([UID_A]));
     expect(familyOrgs(ROOT)).toEqual([UID_A]);
     expect(service.canSelectRollUp()).toBe(false);
 
-    // The same organization held by seed *and* grant is still one organization.
-    grants.writerSet.set(new Set([UID_A]));
+    // The same organization held through two grants is still one organization.
+    grants.auditorSet.set(new Set([UID_A]));
     expect(familyOrgs(ROOT)).toEqual([UID_A]);
 
-    // An inherited grant adds a sibling the persona seeds never carried — the conglomerate case.
+    // An inherited grant adds a sibling — the conglomerate case.
     grants.inheritedWriterSet.set(new Set([UID_B]));
     expect(familyOrgs(ROOT)?.sort()).toEqual([UID_A, UID_B].sort());
     expect(service.canSelectRollUp()).toBe(true);
@@ -701,7 +522,7 @@ describe('AccountContextService — family roll-up', () => {
     // roll-up would demote and overwrite its cookie before the real answer lands.
     it('offers no roll-up while the server families are not usable', () => {
       grants.inheritedWriterSet.set(new Set([UID_B]));
-      service.initializeUserOrganizations([seedA]);
+      bootstrapHolding(seedA);
       serverFamilies.hasServerFamilies.set(false);
 
       expect(service.rollUpFamilies()).toEqual([]);
@@ -712,7 +533,7 @@ describe('AccountContextService — family roll-up', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
       serverFamilies.hasServerFamilies.set(false);
       serverFamilies.unsettled.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
       expect(service.selectedAccount().accountName).toBe(ROLLUP_ACCOUNT_NAME);
 
@@ -729,7 +550,7 @@ describe('AccountContextService — family roll-up', () => {
     it('offers no new pick from a partial answer, but keeps a restored roll-up', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
       serverFamilies.unsettled.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
 
       expect(service.eligibleRollUpFamilies()).toEqual([]);
@@ -741,7 +562,7 @@ describe('AccountContextService — family roll-up', () => {
     // Retry reloads the grants; until the families answer that reload, the previous answer describes
     // grants that were replaced. A family it names may have shrunk or gone, so it admits no new pick.
     it('offers no new pick from an answer to an earlier grants load', () => {
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
       expect(service.canSelectRollUpFor(ROOT)).toBe(true);
 
@@ -758,7 +579,7 @@ describe('AccountContextService — family roll-up', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
       serverFamilies.hasServerFamilies.set(false);
       serverFamilies.unsettled.set(true);
-      service.initializeUserOrganizations([seedA]);
+      bootstrapHolding(seedA);
       grants.inheritedWriterSet.set(new Set());
 
       expect(service.grantsUnsettled()).toBe(true);
@@ -782,7 +603,7 @@ describe('AccountContextService — family roll-up', () => {
    */
   describe('org-lens-rollup-enabled flag', () => {
     it('offers no roll-up while the flag is off, though the families are known', () => {
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       expect(service.canSelectRollUpFor(ROOT)).toBe(true);
 
       rollUpFlag.enabled.set(false);
@@ -797,7 +618,7 @@ describe('AccountContextService — family roll-up', () => {
     it('admits a roll-up address while the flag has not answered, but offers no new pick', () => {
       rollUpFlag.enabled.set(false);
       rollUpFlag.unsettled.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
 
       expect(service.canSelectRollUpFor(ROOT)).toBe(false);
       expect(service.selectRollUp(ROOT)).toBe(false);
@@ -809,7 +630,7 @@ describe('AccountContextService — family roll-up', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
       rollUpFlag.enabled.set(false);
       rollUpFlag.unsettled.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
 
       expect(service.isRollUp()).toBe(true);
@@ -831,7 +652,7 @@ describe('AccountContextService — family roll-up', () => {
       grants.lookupOutcome.set('failed');
       rollUpFlag.enabled.set(false);
       rollUpFlag.unsettled.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
       expect(service.isRollUp()).toBe(true);
 
@@ -853,7 +674,7 @@ describe('AccountContextService — family roll-up', () => {
       serverFamilies.answered.set(false);
       rollUpFlag.enabled.set(false);
       rollUpFlag.unsettled.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
       expect(service.isRollUp()).toBe(true);
 
@@ -872,7 +693,7 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
 
       grants.loaded.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
 
       expect(service.isRollUp()).toBe(false);
@@ -889,7 +710,7 @@ describe('AccountContextService — family roll-up', () => {
       serverFamilies.unsettled.set(true);
       serverFamilies.answered.set(false);
       rollUpFlag.enabled.set(false);
-      service.initializeUserOrganizations([seedZ, seedB]);
+      service.restoreSelection();
       TestBed.tick();
 
       expect(service.isRollUp()).toBe(true);
@@ -907,7 +728,7 @@ describe('AccountContextService — family roll-up', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
       rollUpFlag.enabled.set(false);
       rollUpFlag.unsettled.set(true);
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       TestBed.tick();
 
       rollUpFlag.unsettled.set(false);
@@ -980,9 +801,9 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.rollUpOrganizationCount()).toBe(2);
     });
 
-    it('demotes into the same family before an unrelated organization', () => {
-      service.initializeUserOrganizations([{ accountId: UID_E, accountName: 'Echo', membershipTier: '', uid: UID_E }]);
-      grants.writerSet.set(new Set([UID_C]));
+    it('demotes into the same family before an unrelated organization held with more authority', () => {
+      grants.writerSet.set(new Set([UID_E]));
+      grants.auditorSet.set(new Set([UID_C]));
       grants.inheritedAuditorSet.set(new Set([UID_D]));
 
       expect(service.rollUpFallbackOrganization(UID_C)?.uid).toBe(UID_C);
@@ -990,15 +811,40 @@ describe('AccountContextService — family roll-up', () => {
     });
   });
 
+  describe('rollUpFallbackOrganization outside a family', () => {
+    const UID_C = '0014100000MgcCCCCC';
+
+    beforeEach(() => familyParents.set(new Map()));
+
+    it('lands on the most authoritative grant: an inherited writer before a direct auditor', () => {
+      grants.auditorSet.set(new Set([UID_A]));
+      grants.inheritedWriterSet.set(new Set([UID_B]));
+
+      expect(service.rollUpFallbackOrganization(null)).toEqual(expect.objectContaining({ uid: UID_B, accountId: UID_B }));
+    });
+
+    it('lands on a granted organization before a CLA-only one the caller also manages', () => {
+      claOnlyOrgUids.set(new Set([UID_A]));
+      grants.inheritedAuditorSet.set(new Set([UID_C]));
+
+      expect(service.rollUpFallbackOrganization(null)?.uid).toBe(UID_C);
+    });
+
+    it('answers null when the caller holds nothing', () => {
+      expect(service.rollUpFallbackOrganization(null)).toBeNull();
+    });
+  });
+
   it('refuses the selection for a caller holding one organization', () => {
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
+    service.setAccount(seedA);
     expect(service.selectRollUp(ROOT)).toBe(false);
     expect(service.isRollUp()).toBe(false);
     expect(service.selectedAccount().uid).toBe(UID_A);
   });
 
   it('selects, addresses as /org/family-{root} and persists the family key', () => {
-    service.initializeUserOrganizations([seedA, seedB]);
+    bootstrapHolding(seedA, seedB);
     expect(service.selectRollUp(ROOT)).toBe(true);
     expect(service.isRollUp()).toBe(true);
     expect(service.selectedUrlSegment()).toBe(SEGMENT);
@@ -1009,43 +855,41 @@ describe('AccountContextService — family roll-up', () => {
   // into a single company.
   it('restores the roll-up from the cookie on the next bootstrap', () => {
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA, seedB]);
+    bootstrapHolding(seedA, seedB);
     expect(service.isRollUp()).toBe(true);
     expect(service.selectedAccount().accountName).toBe('All Alpha Organizations');
   });
 
   /**
-   * A conglomerate's siblings arrive as inherited grants, which load after the persona seeds. A
+   * A conglomerate's siblings arrive as inherited grants. A
    * restore that trusted the count at that instant would demote the caller to one company and
    * overwrite the cookie that said otherwise.
    */
   it('restores optimistically while the grant sets are still loading', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
     expect(service.isRollUp()).toBe(true);
   });
 
   it('demotes a restored roll-up once the grants confirm a single organization', () => {
     grants.loaded.set(true);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
     expect(service.isRollUp()).toBe(false);
     expect(service.selectedAccount().uid).toBe(UID_A);
   });
 
-  // A caller whose organizations are all inherited grants has no persona seeds at all; the restore
-  // must happen before the empty-seeds bail-out or it is lost.
-  it('restores for a caller with no persona seeds', () => {
+  it('restores for a caller whose organizations are all inherited grants', () => {
     grants.inheritedWriterSet.set(new Set([UID_A, UID_B]));
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     expect(service.isRollUp()).toBe(true);
   });
 
   // `/api/orgs/uid/all` is not a thing: the sentinel names a set, and that endpoint takes an SFID.
   it('never asks for a canonical record for the sentinel', async () => {
-    service.initializeUserOrganizations([seedA, seedB]);
+    bootstrapHolding(seedA, seedB);
     service.selectRollUp(ROOT);
     httpGet.mockClear();
     await service.refreshCanonicalRecord(service.selectedAccount());
@@ -1053,31 +897,11 @@ describe('AccountContextService — family roll-up', () => {
   });
 
   it('leaves roll-up mode when a concrete organization is selected', () => {
-    service.initializeUserOrganizations([seedA, seedB]);
+    bootstrapHolding(seedA, seedB);
     service.selectRollUp(ROOT);
     service.setAccount(seedB);
     expect(service.isRollUp()).toBe(false);
     expect(service.selectedUrlSegment()).toBe(UID_B);
-  });
-
-  // Regression, PR #4415 review: `availableAccounts()` swaps each seed for its enriched Snowflake
-  // row, and `toAccount` carries no `uid` — counting that list dropped every enriched organization
-  // and hid the roll-up the moment enrichment succeeded.
-  it('keeps counting organizations after Snowflake enrichment replaces the seeds', () => {
-    // Enrichment answers for both seeds. `toAccount` maps these without a `uid`, so
-    // `availableAccounts()` — which prefers the live row — yields two uid-less accounts.
-    liveRows = [
-      { accountId: UID_A, accountName: 'Alpha Inc', logoUrl: null, cdevOrgId: null, membershipTierDisplayName: 'Gold' },
-      { accountId: UID_B, accountName: 'Bravo Inc', logoUrl: null, cdevOrgId: null, membershipTierDisplayName: 'Silver' },
-    ] as OrgLensAccountContextResponse[];
-
-    service.initializeUserOrganizations([seedA, seedB]);
-
-    // Guard the premise: the enriched list really has lost the uids.
-    expect(service.availableAccounts().every((account) => !account.uid)).toBe(true);
-    // The count must come from the persona seeds, so it survives that.
-    expect(familyOrgs(ROOT)).toHaveLength(2);
-    expect(service.canSelectRollUp()).toBe(true);
   });
 
   // Regression, PR #4415 review: the optimistic restore pinned the selection, so every later
@@ -1085,7 +909,7 @@ describe('AccountContextService — family roll-up', () => {
   it('demotes an optimistically restored roll-up when the grants settle against it', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
     expect(service.isRollUp()).toBe(true);
 
     grants.loaded.set(true);
@@ -1098,7 +922,7 @@ describe('AccountContextService — family roll-up', () => {
   it('keeps an optimistically restored roll-up when the grants confirm it', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.inheritedWriterSet.set(new Set([UID_B]));
     grants.loaded.set(true);
@@ -1109,7 +933,7 @@ describe('AccountContextService — family roll-up', () => {
 
   // The Events family keys on `:accountId`; a falsy one is filtered out by those consumers.
   it('carries the sentinel in accountId as well as uid', () => {
-    service.initializeUserOrganizations([seedA, seedB]);
+    bootstrapHolding(seedA, seedB);
     service.selectRollUp(ROOT);
     expect(service.getAccountId()).toBe(SEGMENT);
   });
@@ -1124,7 +948,7 @@ describe('AccountContextService — family roll-up', () => {
   it('keeps the roll-up when the grants lookup failed rather than answered empty', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
     expect(service.isRollUp()).toBe(true);
 
     // The outage: loaded flips true, every grant set is empty, outcome is 'failed'.
@@ -1140,7 +964,7 @@ describe('AccountContextService — family roll-up', () => {
   it('keeps the roll-up while the grants lookup is only partial', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     grants.lookupOutcome.set('partial');
@@ -1150,15 +974,13 @@ describe('AccountContextService — family roll-up', () => {
   });
 
   /**
-   * Regression, PR #4415 review 3. Eligibility counts inherited grants, but the demotion fallback
-   * only looked at persona seeds — so a caller holding one inherited organization and no seed was
-   * dropped to the placeholder with their cookie cleared, rather than onto the organization they
-   * still held.
+   * Regression, PR #4415 review 3. A caller holding one inherited organization must be demoted onto
+   * it, not dropped to the placeholder with their cookie cleared.
    */
-  it('demotes onto a granted organization when the caller has no persona seeds', () => {
+  it('demotes onto an inherited grant', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     expect(service.isRollUp()).toBe(true);
 
     grants.inheritedWriterSet.set(new Set([UID_B]));
@@ -1176,7 +998,7 @@ describe('AccountContextService — family roll-up', () => {
   it('re-points the address off the roll-up when it demotes, keeping the page', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     TestBed.tick();
@@ -1192,7 +1014,7 @@ describe('AccountContextService — family roll-up', () => {
     routerUrl = `/org/${SEGMENT}/people?employees=jdoe&tab=board`;
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     TestBed.tick();
@@ -1205,7 +1027,7 @@ describe('AccountContextService — family roll-up', () => {
     routerUrl = '/profile';
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     TestBed.tick();
@@ -1217,7 +1039,7 @@ describe('AccountContextService — family roll-up', () => {
   it('updates the saved choice when the caller no longer holds two organizations', () => {
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     TestBed.tick();
@@ -1233,7 +1055,7 @@ describe('AccountContextService — family roll-up', () => {
     routerUrl = `/org/Family-${ROOT}/people`;
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     TestBed.tick();
@@ -1252,7 +1074,7 @@ describe('AccountContextService — family roll-up', () => {
     routerUrl = '/';
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     TestBed.tick();
@@ -1277,7 +1099,7 @@ describe('AccountContextService — family roll-up', () => {
     routerUrl = '/';
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([seedA]);
+    bootstrapHolding(seedA);
 
     grants.loaded.set(true);
     TestBed.tick();
@@ -1299,7 +1121,7 @@ describe('AccountContextService — family roll-up', () => {
    * lfx-self-serve#4415 review 9. `orgPathParamGuard` used to decide this itself, and got two
    * things wrong that `demoteFromRollUp` already had right: it could reuse the roll-up as its own
    * fallback (`orgUrlSegment` answers the sentinel, so the re-point no-opped and the caller stayed
-   * on roll-up), and it left the result unpinned where a persona re-seed could replace it.
+   * on roll-up), and it left the result unpinned.
    */
   /**
    * Cursor on PR #4415. `selected_uid` is a pin hint naming a `b2b_org` row for the org-items page
@@ -1315,7 +1137,7 @@ describe('AccountContextService — family roll-up', () => {
    */
   it('carries accountId on a grant-only demotion target, not just uid', () => {
     service.selectRollUp(ROOT, { admitWhilePending: true });
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     grants.writerSet.set(new Set([UID_B]));
 
     const next = service.demoteAddressedRollUp(ROOT);
@@ -1328,7 +1150,7 @@ describe('AccountContextService — family roll-up', () => {
   it('carries accountId on a grant-only demotion target from another family', () => {
     const UID_C = '0014100000MgcCCCCC';
     service.selectRollUp(ROOT, { admitWhilePending: true });
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     grants.writerSet.set(new Set([UID_C]));
 
     const next = service.demoteAddressedRollUp(ROOT);
@@ -1338,15 +1160,15 @@ describe('AccountContextService — family roll-up', () => {
   });
 
   /**
-   * Cursor on PR #4415. With the grants settled below the minimum and no persona seeds, the stored
+   * Cursor on PR #4415. With the grants settled below the minimum, the stored
    * sentinel fell through to the placeholder path and stayed in the cookie — so the next bootstrap
    * restored the combined view during its unsettled window and flickered before demoting again.
    */
-  it('replaces an ineligible roll-up cookie with a held organization when there are no seeds', () => {
+  it('replaces an ineligible roll-up cookie with a held organization', () => {
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
     grants.inheritedWriterSet.set(new Set([UID_B]));
 
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
 
     expect(service.selectedAccount().uid).toBe(UID_B);
     expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_B });
@@ -1357,14 +1179,14 @@ describe('AccountContextService — family roll-up', () => {
   it('clears an ineligible roll-up cookie when there is nothing to fall back to', () => {
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
 
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
 
     expect(cookies.get(COOKIE)).toBeUndefined();
   });
 
   describe('orgListPinUid', () => {
     it('answers null while the roll-up is selected', () => {
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       service.selectRollUp(ROOT);
 
       expect(service.selectedAccount().uid).toBe(SEGMENT);
@@ -1372,7 +1194,8 @@ describe('AccountContextService — family roll-up', () => {
     });
 
     it('answers the selected organization when one is selected', () => {
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
+      service.setAccount(seedA);
 
       expect(service.orgListPinUid()).toBe(UID_A);
     });
@@ -1380,7 +1203,7 @@ describe('AccountContextService — family roll-up', () => {
 
   describe('demoteAddressedRollUp', () => {
     it('never answers with the roll-up itself', () => {
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       service.selectRollUp(ROOT);
       expect(service.isRollUp()).toBe(true);
 
@@ -1393,19 +1216,19 @@ describe('AccountContextService — family roll-up', () => {
 
     it('writes the concrete choice when the caller no longer qualifies', () => {
       cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       service.selectRollUp(ROOT);
       // The caller holds one organization now.
-      service.initializeUserOrganizations([seedA]);
+      grants.writerSet.set(new Set([UID_A]));
 
       service.demoteAddressedRollUp(ROOT);
 
       expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_A });
     });
 
-    // Pinned like a resolver hit, so a persona re-seed cannot replace it before the address lands.
+    // Pinned like a resolver hit, so the bootstrap restore cannot replace it before the address lands.
     it('pins the result as an address selection', () => {
-      service.initializeUserOrganizations([seedA, seedB]);
+      bootstrapHolding(seedA, seedB);
       service.selectRollUp(ROOT);
 
       const next = service.demoteAddressedRollUp(ROOT);
@@ -1413,22 +1236,21 @@ describe('AccountContextService — family roll-up', () => {
       expect(next?.uid).toBe(UID_A);
       expect(service.isAdoptedFromAddress()).toBe(true);
 
-      // The re-seed that used to clear it.
-      service.initializeUserOrganizations([seedA, seedB]);
+      service.restoreSelection();
       expect(service.selectedAccount().uid).toBe(UID_A);
     });
 
     /**
      * Copilot on PR #4415. `orgUrlSegment(current)` proves the current selection is *addressable*,
      * not that this caller holds it. A stale concrete selection of A, with the settled grants
-     * naming only B and no persona seeds, was therefore pinned and persisted as the demotion
+     * naming only B, was therefore pinned and persisted as the demotion
      * target — over the one organization they do have.
      */
     it('falls back to a held organization, not a stale addressable selection', () => {
-      // On A from an earlier navigation; the grants now name only B, and there are no seeds.
+      // On A from an earlier navigation; the grants now name only B.
       service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
       grants.inheritedWriterSet.set(new Set([UID_B]));
-      service.initializeUserOrganizations([]);
+      service.restoreSelection();
 
       const next = service.demoteAddressedRollUp(ROOT);
 
@@ -1441,7 +1263,7 @@ describe('AccountContextService — family roll-up', () => {
     it('prefers an organization in the addressed family over an unrelated current selection', () => {
       const UID_X = '0014100000MgxXXXXX';
       const seedX: Account = { accountId: UID_X, accountName: 'Xray', membershipTier: '', uid: UID_X };
-      service.initializeUserOrganizations([seedX]);
+      grants.writerSet.set(new Set([UID_X]));
       service.setAccount(seedX);
       grants.inheritedWriterSet.set(new Set([UID_B]));
 
@@ -1453,7 +1275,7 @@ describe('AccountContextService — family roll-up', () => {
     it('keeps a CLA-only organization the caller is already addressing', () => {
       claOnlyOrgUids.set(new Set([UID_A]));
       service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
-      service.initializeUserOrganizations([]);
+      service.restoreSelection();
 
       expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
     });
@@ -1467,7 +1289,7 @@ describe('AccountContextService — family roll-up', () => {
     it('falls back to a CLA-only organization rather than the not-found dead end', () => {
       // On the roll-up itself, so there is no concrete selection to keep; nothing but CLA-only left.
       service.selectRollUp(ROOT, { admitWhilePending: true });
-      service.initializeUserOrganizations([]);
+      service.restoreSelection();
       claOnlyOrgUids.set(new Set([UID_A]));
 
       expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
@@ -1476,7 +1298,7 @@ describe('AccountContextService — family roll-up', () => {
     // A held grant outranks a CLA-only company: the roll-up combines the former, never the latter.
     it('prefers a granted organization over a CLA-only one', () => {
       service.selectRollUp(ROOT, { admitWhilePending: true });
-      service.initializeUserOrganizations([]);
+      service.restoreSelection();
       grants.writerSet.set(new Set([UID_B]));
       claOnlyOrgUids.set(new Set([UID_A]));
 
@@ -1487,26 +1309,26 @@ describe('AccountContextService — family roll-up', () => {
     it('keeps the current organization for a staff viewer', () => {
       grants.isStaff.set(true);
       service.adoptFromAddress({ accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A, slug: 'alpha-inc' });
-      service.initializeUserOrganizations([]);
+      service.restoreSelection();
 
       expect(service.demoteAddressedRollUp(ROOT)?.uid).toBe(UID_A);
     });
 
     it('answers null when there is nothing addressable to fall back to', () => {
-      service.initializeUserOrganizations([]);
+      service.restoreSelection();
       expect(service.demoteAddressedRollUp(ROOT)).toBeNull();
     });
   });
 
   /**
    * Regression, PR #4415 review 10 (high). On a cold a roll-up address deep link the grants have not
-   * answered, so a caller with no persona seeds had nothing to be demoted to and the guard's only
+   * answered, so the caller had nothing to be demoted to and the guard's only
    * answer was `/org/not-found`: a dead end later grants cannot repair, since reconciliation stops
    * once the roll-up is deselected.
    */
   it('admits a cold roll-up visit it cannot yet decide, rather than stranding the caller', () => {
     grants.loaded.set(false);
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
 
     expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(true);
     expect(service.demoteAddressedRollUp(ROOT)).toBeNull();
@@ -1521,7 +1343,7 @@ describe('AccountContextService — family roll-up', () => {
    */
   it('survives an effect flush while the fallback is still undecidable', () => {
     grants.loaded.set(false);
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     service.selectRollUp(ROOT, { admitWhilePending: true });
 
     // The flush that used to strand the caller.
@@ -1541,7 +1363,7 @@ describe('AccountContextService — family roll-up', () => {
 
   it('demotes that caller as soon as the grants name an organization', () => {
     grants.loaded.set(false);
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     service.selectRollUp(ROOT, { admitWhilePending: true });
 
     grants.inheritedWriterSet.set(new Set([UID_B]));
@@ -1555,24 +1377,23 @@ describe('AccountContextService — family roll-up', () => {
   // Settled grants with nothing in them is a real answer, so the dead end is still correct.
   it('still refuses when the grants have settled on nothing', () => {
     grants.loaded.set(true);
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
 
     expect(service.selectRollUp(ROOT, { admitWhilePending: true })).toBe(false);
   });
 
   /**
    * Regression, PR #4415 review 11. The effect-driven demotion applied its fallback with a bare
-   * `setAccount`, leaving it unpinned — so for a grant-only caller an empty persona re-seed between
-   * the demotion and the router settling reset the selection to the placeholder, and the deferred
-   * re-point then read that placeholder and redirected to `/org/not-found` despite the grant.
+   * `setAccount`, leaving it unpinned, so a later bootstrap path could replace it before the deferred
+   * re-point read it, and the re-point redirected to `/org/not-found` despite the grant.
    */
-  it('pins the effect-driven demotion fallback against an empty re-seed', () => {
+  it('pins the effect-driven demotion fallback against a later bootstrap restore', () => {
     currentNavigation = { id: 1 };
     routerUrl = '/';
     grants.inheritedWriterSet.set(new Set([UID_B]));
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     expect(service.isRollUp()).toBe(true);
 
     // Grants settle on one organization: demotion fires, the re-point is deferred behind the
@@ -1581,8 +1402,7 @@ describe('AccountContextService — family roll-up', () => {
     TestBed.tick();
     expect(service.selectedAccount().uid).toBe(UID_B);
 
-    // The persona refresh lands, with nothing in it — this used to blank the selection.
-    service.initializeUserOrganizations([]);
+    service.restoreSelection();
     expect(service.selectedAccount().uid).toBe(UID_B);
 
     // So the deferred re-point addresses the organization, not the dead end.

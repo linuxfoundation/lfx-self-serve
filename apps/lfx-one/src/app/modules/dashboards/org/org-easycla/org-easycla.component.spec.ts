@@ -1250,7 +1250,6 @@ describe('OrgEasyclaComponent', () => {
               selectedAccount,
               hasOrgSelectorAccess,
               selectedUrlSegment,
-              availableAccounts: signal([]),
               setAccount,
               adoptFromAddress: setAccount,
               refreshCanonicalRecord,

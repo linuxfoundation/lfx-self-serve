@@ -71,8 +71,7 @@ export class OrgMeetingsComponent {
   // Mirrors org-projects.component.ts's `orgContextLoaded` gate.
   protected readonly loaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
 
-  // Either identifier counts as "selected": a fresh persona seed can have `uid` but an empty
-  // `accountId` pending Snowflake enrichment, while a cookie-restored stub (account-context.service.ts)
+  // Either identifier counts as "selected": a uid-only stub (account-context.service.ts)
   // can have `uid` set with `accountId` still empty. Checking only one leaves a validly-selected
   // company on the empty state, per the same gate in org-overview.component.ts.
   protected readonly hasCompany: Signal<boolean> = computed(

@@ -140,7 +140,7 @@ export class OrgRoleGrantsService {
         const message = error instanceof Error ? error.message : 'Unknown error';
         this.errorInternal.set(message);
         // BFF downgrades upstream failures to empty 200 per contract, so reaching this branch typically means a transport-level failure.
-        // Treat as empty grants → sidebar visibility gate falls back to persona seeds.
+        // Treat as empty grants.
         this.writerSetInternal.set(new Set());
         this.auditorSetInternal.set(new Set());
         this.inheritedWriterSetInternal.set(new Set());

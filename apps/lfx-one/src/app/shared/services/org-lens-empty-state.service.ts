@@ -30,8 +30,8 @@ import { PersonaService } from './persona.service';
  *   7. caller holds nothing                                     → `no-organization`
  *   8. otherwise (a selection is pending)                       → `null`
  *
- * Rule 5 keys on the server's answer, never the roster: with an organization selected (persona seed,
- * cookie) it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
+ * Rule 5 keys on the server's answer, never the roster: with an organization selected (address, org list)
+ * it asks the read gate (`OrgRoleGrantsService.readCheck`), which also admits FGA-only readers
  * such as key-contact auditors that no list shows, and an organization it admits renders the page even
  * when the roster lists nothing; with nothing selected it is "holds nothing".
  *
@@ -106,8 +106,8 @@ export class OrgLensEmptyStateService {
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
-   * A caller with no switcher access never starts that list (an admitted contractor with no roster row
-   * or persona seed, #2961), so waiting on it would hold them on the skeleton forever. Used by the pages
+   * A caller with no switcher access never starts that list (an admitted contractor with no roster row,
+   * #2961), so waiting on it would hold them on the skeleton forever. Used by the pages
    * that wait for the default selection from that list (overview, projects, ROI and its project detail,
    * meetings, groups, EasyCLA) and by `/org/not-found`; the other Org pages never waited for the list and gate on `settled`.
    */
@@ -133,10 +133,7 @@ export class OrgLensEmptyStateService {
     // inherited grants, so the count sits below two through the whole partial window while the
     // selection stands (#4415, Copilot then Cursor).
     //
-    // The outage rules come FIRST, because optimism must never paper one over. Writing the failure
-    // check as one disjunct among others did exactly that: two persona seeds keep `canSelectRollUpFor`
-    // true after the roster fails outright, and that short-circuited rules 2 and 3 away, taking the
-    // page-level state and its shared Retry with them (#4415, Copilot).
+    // The outage rules come FIRST, because optimism must never paper one over (#4415, Copilot).
     const rollUpRootUid = orgRollUpRootUid(uid);
     if (rollUpRootUid) {
       const outcome = this.roleGrants.lookupOutcome();
@@ -191,7 +188,7 @@ export class OrgLensEmptyStateService {
       return 'contractor-no-grant';
     }
     // The read gate admitted the organization in front of them (an FGA-only reader such as a key-contact
-    // auditor may have no roster row or persona seed): its answer wins over the roster-based rule 6.
+    // auditor may have no roster row): its answer wins over the roster-based rule 6.
     if (contractor === 'admitted') {
       return null;
     }

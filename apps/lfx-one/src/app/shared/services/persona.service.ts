@@ -18,7 +18,6 @@ import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, Observable, of, take, tap } from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
-import { AccountContextService } from './account-context.service';
 import { CookieRegistryService } from './cookie-registry.service';
 
 @Injectable({
@@ -28,7 +27,6 @@ export class PersonaService {
   private readonly http = inject(HttpClient);
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
-  private readonly accountContextService = inject(AccountContextService);
   private readonly transferState = inject(TransferState);
 
   public readonly currentPersona: WritableSignal<PersonaType>;
@@ -612,11 +610,8 @@ export class PersonaService {
       this.persistCurrentState();
     }
 
-    if (response.organizations) {
-      if (response.organizations.length > 0) {
-        console.info('[PersonaService] Detected organizations:', response.organizations);
-      }
-      this.accountContextService.initializeUserOrganizations(response.organizations);
+    if (response.organizations && response.organizations.length > 0) {
+      console.info('[PersonaService] Detected organizations:', response.organizations);
     }
 
     this.personaLoaded.set(true);

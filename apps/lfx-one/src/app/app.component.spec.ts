@@ -107,7 +107,7 @@ describe('AppComponent — meetings v2 flag', () => {
         { provide: SegmentService, useValue: { initialize: segmentInitialize, setImpersonating: segmentSetImpersonating, identifyUser: segmentIdentifyUser } },
         { provide: PlausibleService, useValue: { initialize: plausibleInitialize, setImpersonating: plausibleSetImpersonating } },
         { provide: DataDogRumService, useValue: { setImpersonating: vi.fn(), setUser: dataDogSetUser } },
-        { provide: AccountContextService, useValue: { initializeUserOrganizations: vi.fn() } },
+        { provide: AccountContextService, useValue: { restoreSelection: vi.fn() } },
         { provide: IntercomService, useValue: { boot: intercomBoot, setIdentity: intercomSetIdentity } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ...(options?.auth ? [{ provide: REQUEST_CONTEXT, useValue: { auth: options.auth } }] : []),
