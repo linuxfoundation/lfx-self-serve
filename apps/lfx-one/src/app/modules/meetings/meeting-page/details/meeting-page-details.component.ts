@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, inject, Provider, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MeetingHomeRow } from '@lfx-one/shared/interfaces';
 import { getPastMeetingResourceId, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
+import { distinctUntilChanged, filter } from 'rxjs';
 
 import { MeetingDetailsBodyComponent } from '../../meetings-redesign/components/meeting-details-drawer/body/meeting-details-body.component';
 import { MeetingDetailsContext } from '../../meetings-redesign/components/meeting-details-drawer/meeting-details.context';
@@ -38,7 +40,22 @@ export abstract class MeetingPageRowHost {
     provideMeetingPageSource(),
   ],
 })
-export class MeetingPageDetailsComponent {}
+export class MeetingPageDetailsComponent {
+  private readonly context = inject(MeetingDetailsContext);
+  private readonly router = inject(Router);
+  private readonly row = inject(MeetingPageRowHost).row();
+
+  public constructor() {
+    // Another past date picked in place gets its own page, so the URL and the access check follow it.
+    toObservable(this.context.pastMeetingId)
+      .pipe(
+        distinctUntilChanged(),
+        filter((id): id is string => !!id && id !== this.row?.key),
+        takeUntilDestroyed()
+      )
+      .subscribe((id) => void this.router.navigateByUrl(`/meetings/${encodeURIComponent(id)}`));
+  }
+}
 
 /** The page's source: its row and clock, and navigation to another date's page. */
 function provideMeetingPageSource(): Provider {

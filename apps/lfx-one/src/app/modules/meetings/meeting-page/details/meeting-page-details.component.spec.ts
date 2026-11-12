@@ -8,6 +8,8 @@ import { Router } from '@angular/router';
 import { Meeting, MeetingHomeRow, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MeetingDetailsBodyComponent } from '../../meetings-redesign/components/meeting-details-drawer/body/meeting-details-body.component';
+import { MeetingDetailsContext } from '../../meetings-redesign/components/meeting-details-drawer/meeting-details.context';
 import { MeetingDetailsSource } from '../../meetings-redesign/components/meeting-details-drawer/meeting-details.source';
 import { MeetingPageDataService } from '../../services/meeting-page-data.service';
 import { MeetingPageDetailsComponent, MeetingPageRowHost } from './meeting-page-details.component';
@@ -25,6 +27,7 @@ const PAST_ROW = {
 describe('MeetingPageDetailsComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let row: ReturnType<typeof signal<MeetingHomeRow | null>>;
+  let pastMeetingId: ReturnType<typeof signal<string | null>>;
 
   const source = (): MeetingDetailsSource => {
     const fixture = TestBed.createComponent(MeetingPageDetailsComponent);
@@ -34,6 +37,7 @@ describe('MeetingPageDetailsComponent', () => {
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
     row = signal<MeetingHomeRow | null>(PAST_ROW);
+    pastMeetingId = signal<string | null>(PAST_ROW.key);
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { navigateByUrl } },
@@ -41,7 +45,10 @@ describe('MeetingPageDetailsComponent', () => {
         { provide: MeetingPageDataService, useValue: { clock: signal(Date.parse('2026-01-01T00:00:00Z')) } },
       ],
     });
-    TestBed.overrideComponent(MeetingPageDetailsComponent, { set: { imports: [], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+    TestBed.overrideComponent(MeetingPageDetailsComponent, {
+      remove: { imports: [MeetingDetailsBodyComponent], providers: [MeetingDetailsContext] },
+      add: { schemas: [CUSTOM_ELEMENTS_SCHEMA], providers: [{ provide: MeetingDetailsContext, useValue: { pastMeetingId } }] },
+    });
   });
 
   it('gives the details the host row and the page clock, with no dialog or list', () => {
@@ -70,5 +77,17 @@ describe('MeetingPageDetailsComponent', () => {
     source().open({ ...PAST_ROW, meeting: { id: '456' } as Meeting, occurrenceId: null });
 
     expect(navigateByUrl).toHaveBeenCalledWith('/meetings/456');
+  });
+
+  it('gives another past date picked in place its own page', () => {
+    const fixture = TestBed.createComponent(MeetingPageDetailsComponent);
+    TestBed.tick();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+
+    pastMeetingId.set('123-1700604800000');
+    TestBed.tick();
+
+    expect(navigateByUrl).toHaveBeenCalledWith('/meetings/123-1700604800000');
+    fixture.destroy();
   });
 });

@@ -7,14 +7,14 @@ import { Router } from '@angular/router';
 import { HeaderComponent } from '@components/header/header.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
-import { Meeting, MeetingHomeRow, MeetingPageView } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHomeRow, MeetingPageView, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { isPastMeetingCalendarRow, toPastMeetingHomeRow } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import { filter, take } from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs';
 
 import { MeetingPageDataService } from '../services/meeting-page-data.service';
 import { MeetingPageDetailsComponent, MeetingPageRowHost } from './details/meeting-page-details.component';
@@ -37,7 +37,7 @@ export class MeetingPageComponent implements MeetingPageRowHost {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly userService = inject(UserService);
 
-  protected readonly meeting: Signal<Meeting | undefined> = this.pageData.load();
+  protected readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined> = this.pageData.load();
   /** The row the details show; null until the meeting loaded and this page serves it. */
   public readonly row: Signal<MeetingHomeRow | null> = this.initRow();
   protected readonly view: Signal<MeetingPageView> = this.initView();
@@ -47,11 +47,12 @@ export class MeetingPageComponent implements MeetingPageRowHost {
     this.pageData.startClock();
     const view$ = toObservable(this.view).pipe(takeUntilDestroyed(this.destroyRef));
     view$.pipe(filter((view) => view === 'fallback')).subscribe(() => this.fallBack());
-    // Only once this page shows, so a visit handed to the legacy page is counted there alone.
+    // Once per meeting this page shows, so a visit handed to the legacy page is counted there alone.
     view$
       .pipe(
         filter((view) => view === 'details'),
-        take(1)
+        map(() => this.pageData.routeId()),
+        distinctUntilChanged()
       )
       .subscribe(() => this.pageData.trackPageview());
   }
@@ -64,7 +65,14 @@ export class MeetingPageComponent implements MeetingPageRowHost {
     return computed(() => {
       const meeting = this.meeting();
       if (!meeting || !this.pageData.meetingMatchesRoute() || !this.serves(meeting) || !isPastMeetingCalendarRow(meeting)) return null;
-      return toPastMeetingHomeRow(meeting);
+      // The public payload carries its project apart; the details read the flattened fields.
+      const { project } = meeting;
+      return toPastMeetingHomeRow({
+        ...meeting,
+        project_name: meeting.project_name || project?.name,
+        project_slug: meeting.project_slug || project?.slug,
+        project_logo_url: meeting.project_logo_url || project?.logo_url,
+      });
     });
   }
 

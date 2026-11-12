@@ -33,6 +33,7 @@ describe('MeetingPageComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let refresh: ReturnType<typeof vi.fn>;
   let trackPageview: ReturnType<typeof vi.fn>;
+  let routeId: ReturnType<typeof signal<string | null>>;
 
   const render = (): HTMLElement => {
     const fixture = TestBed.createComponent(MeetingPageComponent);
@@ -49,6 +50,7 @@ describe('MeetingPageComponent', () => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
     refresh = vi.fn();
     trackPageview = vi.fn();
+    routeId = signal<string | null>('123-1700000000000');
 
     TestBed.configureTestingModule({
       providers: [
@@ -65,6 +67,7 @@ describe('MeetingPageComponent', () => {
             provide: MeetingPageDataService,
             useValue: {
               load: () => meeting,
+              routeId,
               meetingMatchesRoute: signal(true),
               loadedViaPastMeetingId,
               pastMeetingFullAccess,
@@ -85,6 +88,32 @@ describe('MeetingPageComponent', () => {
     expect(element.querySelector('lfx-meeting-page-details')).not.toBeNull();
     expect(navigateByUrl).not.toHaveBeenCalled();
     expect(trackPageview).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a pageview for each meeting the reused page shows', () => {
+    const element = render();
+    expect(element.querySelector('lfx-meeting-page-details')).not.toBeNull();
+
+    // The route changes first, so the page shows its loading state before the next meeting.
+    routeId.set('123-1700604800000');
+    meeting.set(undefined);
+    TestBed.tick();
+    meeting.set({ ...PAST_MEETING, id: '123-1700604800000', meeting_and_occurrence_id: '123-1700604800000' } as unknown as Meeting);
+    TestBed.tick();
+
+    expect(trackPageview).toHaveBeenCalledTimes(2);
+  });
+
+  it('flattens the public project onto the row the details read', () => {
+    meeting.set({ ...PAST_MEETING, project: { name: 'Parity Project', slug: 'parity', logo_url: 'https://logo.example.org/p.png' } } as unknown as Meeting);
+    const fixture = TestBed.createComponent(MeetingPageComponent);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.row()?.meeting).toMatchObject({
+      project_name: 'Parity Project',
+      project_slug: 'parity',
+      project_logo_url: 'https://logo.example.org/p.png',
+    });
   });
 
   it.each([
