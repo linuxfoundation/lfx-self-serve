@@ -480,7 +480,7 @@ export const FORMATION_NO_CHECKLIST_COPY = {
 /** The empty state for a Disengaged project with no items: it already is a formation stage, so the default subtitle would be wrong. */
 export const FORMATION_NO_CHECKLIST_DISENGAGED_COPY = {
   title: FORMATION_NO_CHECKLIST_COPY.title,
-  subtitle: "This project is disengaged, so there's nothing to track.",
+  subtitle: 'This project is disengaged.',
 } as const;
 
 /** The not-found empty state for a project in the stage given; the default copy for Draft, an unknown stage or none. */

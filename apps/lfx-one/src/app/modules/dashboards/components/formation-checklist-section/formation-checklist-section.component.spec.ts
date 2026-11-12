@@ -419,7 +419,7 @@ describe('FormationChecklistSectionComponent', () => {
       const copy = (): string | undefined => byTestId('formation-checklist-empty-no-checklist')?.textContent ?? undefined;
 
       await render(buildResponse('live', 'live'), { projectSlug: 'other-project', fetchResult: failWith(404), stage: 'Formation - Disengaged' });
-      expect(copy()).toContain("This project is disengaged, so there's nothing to track.");
+      expect(copy()).toContain('This project is disengaged.');
       expect(copy()).not.toContain('start when the project moves');
 
       await render(buildResponse('live', 'live'), { projectSlug: 'other-project', fetchResult: failWith(404), stage: 'Prospect' });

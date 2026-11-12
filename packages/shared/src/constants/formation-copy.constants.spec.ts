@@ -50,7 +50,7 @@ describe('formation shared copy (#5635)', () => {
   });
 
   it('explains a disengaged project with nothing to track, and keeps the existing copy for Draft and any other stage', () => {
-    expect(getFormationNoChecklistCopy(ProjectStage.FormationDisengaged).subtitle).toBe("This project is disengaged, so there's nothing to track.");
+    expect(getFormationNoChecklistCopy(ProjectStage.FormationDisengaged).subtitle).toBe('This project is disengaged.');
     expect(getFormationNoChecklistCopy(ProjectStage.Prospect)).toBe(FORMATION_NO_CHECKLIST_COPY);
     expect(getFormationNoChecklistCopy(ProjectStage.FormationExploratory)).toBe(FORMATION_NO_CHECKLIST_COPY);
     expect(getFormationNoChecklistCopy(null)).toBe(FORMATION_NO_CHECKLIST_COPY);
