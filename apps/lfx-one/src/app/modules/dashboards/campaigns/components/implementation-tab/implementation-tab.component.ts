@@ -8858,7 +8858,10 @@ export class ImplementationTabComponent implements OnInit {
     // the payload strips, and "\uFEFFJoin us" would seed beside "Join us" as a repeat on the wire.
     const fitting = values
       .filter((value): value is string => typeof value === 'string')
-      .map((value) => this.trimCreativeLine(value.replace(/\s*[\r\n]+\s*/g, ' ')))
+      // Each whitespace run holding a line break becomes one space. Not `/\s*[\r\n]+\s*/`: its optional
+      // prefix overlaps the break class, so it backtracks quadratically on a long run of spaces, and a
+      // stored brief's copy is unbounded.
+      .map((value) => this.trimCreativeLine(value.replace(/\s+/g, (run) => (/[\r\n]/.test(run) ? ' ' : run))))
       .filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
     // De-duplicated on campaign-service's own key ({@link creativeRepeatKey}), which REFUSES a list
     // holding two lines equal under it. The first spelling is kept, so "Join us" and "join us" seed one
