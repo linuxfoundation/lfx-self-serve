@@ -908,28 +908,66 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     }
   );
 
-  it('settles initial change-mode loading into the ranked list fallback when detail fails', async () => {
+  it.each(['success', 'failure'] as const)('preserves a settled fallback and draft through a later refresh %s', async (outcome) => {
     const detail = new Subject<Vote>();
+    const refresh = new Subject<Vote>();
     const vote: Vote = { ...CHANGE_VOTE, poll_type: PollType.INSTANT_RUNOFF_VOTE };
-    await setup(vi.fn().mockReturnValue(detail.asObservable()), { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)) });
+    const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await setup(vi.fn().mockReturnValueOnce(detail.asObservable()).mockReturnValueOnce(refresh.asObservable()), {
+      getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)),
+      updateMyResponse,
+    });
     fixture.componentRef.setInput('changeMode', true);
     fixture.componentRef.setInput('voteId', vote.uid);
     fixture.componentRef.setInput('listVote', vote);
     fixture.componentRef.setInput('visible', true);
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(fixture.componentInstance['loadingVote']()).toBe(true);
+    const component = fixture.componentInstance;
+    expect(component['loadingVote']()).toBe(true);
     expect(el('vote-cast-question-q1')).toBeNull();
 
     detail.error(new Error('500'));
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(fixture.componentInstance['loadingVote']()).toBe(false);
-    expect(fixture.componentInstance['isRankedPoll']()).toBe(true);
-    expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c2']);
+    expect(component['loadingVote']()).toBe(false);
+    expect(component['isRankedPoll']()).toBe(true);
+    expect(component.form.get('q1')?.value).toEqual(['c2']);
     expect(el('vote-cast-question-q1')).not.toBeNull();
+    (component.form.get('q1') as unknown as FormControl<string[]>).setValue(['c1']);
+    (component.commentForm.get('p1') as unknown as FormControl<string>).setValue('Draft after fallback');
+    const endTime = '2099-07-01T18:00:00Z';
+    fixture.componentRef.setInput('listVote', { ...vote, end_time: endTime, poll_questions: undefined, poll_comment_prompts: undefined });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component['loadingVote']()).toBe(false);
+    expect(component['isRankedPoll']()).toBe(true);
+    expect(el('vote-cast-question-q1')).not.toBeNull();
+    expect(component['drawerPt']()).toEqual({ footer: { class: 'border-t border-slate-200' } });
+    expect(component.form.get('q1')?.value).toEqual(['c1']);
+    expect(component.commentForm.get('p1')?.value).toBe('Draft after fallback');
+    if (outcome === 'success') {
+      refresh.next({ ...vote, end_time: endTime });
+      refresh.complete();
+    } else {
+      refresh.error(new Error('500'));
+    }
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component['loadingVote']()).toBe(false);
+    expect(component['vote']()?.end_time).toBe(endTime);
+    expect(component.form.get('q1')?.value).toEqual(['c1']);
+    expect(component.commentForm.get('p1')?.value).toBe('Draft after fallback');
     expect(submitButton()?.disabled).toBe(false);
+    submitButton()!.click();
+    expect(updateMyResponse).toHaveBeenCalledWith(vote.uid, {
+      abstain: false,
+      user_vote_content: [{ question_id: 'q1', ranked_choices: [{ choice_id: 'c1', choice_rank: 1 }] }],
+      comment_responses: [{ prompt_id: 'p1', comment_text: 'Draft after fallback' }],
+    });
   });
 
   it('prefills the submitted ballot, keeps it editable, and saves the change with PUT', async () => {
