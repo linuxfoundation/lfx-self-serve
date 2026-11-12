@@ -623,7 +623,7 @@ export class ImportMembersDialogComponent {
     }
     if (httpError && MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(status)) {
       const reason = this.failureReason(httpError);
-      this.stopReason.set(this.stopReason() ?? reason);
+      this.stopForFatalError(httpError, reason);
       this.markUnsubmitted(rows, reason);
       return EMPTY;
     }

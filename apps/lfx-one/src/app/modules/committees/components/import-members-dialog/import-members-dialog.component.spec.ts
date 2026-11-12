@@ -1132,21 +1132,31 @@ describe('ImportMembersDialogComponent', () => {
     });
 
     it.each([
-      [401, 'Your session has expired. Sign in again, then retry.'],
-      [403, 'You no longer have permission to manage this group.'],
-      [404, 'This group could not be found.'],
-    ])('stops sending after HTTP %i and keeps unsent rows retryable', async (status, reason) => {
+      [401, false, 'Your session has expired. Sign in again, then retry.'],
+      [403, false, 'You no longer have permission to manage this group.'],
+      [404, false, 'This group could not be found.'],
+      [401, true, 'Your session has expired. Sign in again, then retry.'],
+      [403, true, 'You no longer have permission to manage this group.'],
+      [404, true, 'This group could not be found.'],
+    ])('stops sending after HTTP %i with manual stop %s and keeps unsent rows retryable', async (status, manualStop, reason) => {
       await upload(`email\n${emails(30)}`);
       component.startImport();
+      if (manualStop) {
+        component.stopImport();
+        expect(component.stopping()).toBe(true);
+      }
       failBulk(0, status);
       await render();
 
       expect(pending).toHaveLength(1);
       expect(component.phase()).toBe('results');
       expect(component.stopReason()).toBe(reason);
+      expect(component.stopping()).toBe(false);
       expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import chunk failed', { status });
       expect(component.rows().every((row) => row.status === 'not_submitted')).toBe(true);
       expect(component.rows()[0].reason).toBe(`Not sent: ${reason}`);
+      expect(component.rows()[25].reason).toBe(`Not sent: ${reason}`);
+      expect(query('import-members-stop-reason')?.textContent).toContain(reason);
       expect(query('import-members-stop-reason')?.textContent).toContain('marked Not yet submitted');
       expect(component.retryableCount()).toBe(30);
 
