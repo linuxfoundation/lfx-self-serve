@@ -254,7 +254,7 @@
             [projectFilter]="projectFilter()"
             [showRollupFilters]="canShowCalendarView()"
             [rollupProjectOptions]="rollupProjectOptions()"
-            [rollupProjectsPlaceholder]="(project()?.name ?? 'This project') + ' only'"
+            [rollupProjectsPlaceholder]="rollupProjectsPlaceholder()"
             [groupOptions]="groupOptions()"
             [groupTypeOptions]="groupTypeOptions()"
             [rollupProjectsFilter]="rollupProjectsFilter()"
@@ -344,6 +344,16 @@
             </div>
           }
         </div>
+      } @else if (showRootOnlyHint() && !isFiltered() && (timeFilter() === 'upcoming' ? upcomingMeetings().length === 0 : pastMeetings().length === 0)) {
+        <lfx-empty-state
+          icon="fa-light fa-folder-tree"
+          [title]="rootOnlyEmptyTitle()"
+          subtitle="Its sub-projects may have meetings. Pick them in the project filter, or show all projects."
+          ctaLabel="Show all projects"
+          ctaIcon="fa-light fa-folder-tree"
+          (ctaClick)="showAllRollupProjects()"
+          data-testid="meetings-empty-state-root-only">
+        </lfx-empty-state>
       } @else if (upcomingMeetings().length === 0 && timeFilter() === 'upcoming' && !isFiltered()) {
         <lfx-empty-state
           icon="fa-light fa-calendar"

@@ -51,6 +51,7 @@ Use the controls above the list to narrow it:
 - In the Foundation or Project lens, you can also choose which of its projects' meetings to show:
   - The project filter starts on the foundation or project alone, shown as, for example, **FINOS only**. Pick one or more projects to show theirs instead, such as the foundation and a few of its sub-projects, or select all of them. It appears when there are sub-projects.
   - Your project choice is remembered for you, for each foundation or project, the next time you open its meetings. It doesn't change what other people see.
+  - If the foundation or project has no meetings of its own, the page says so and offers **Show all projects**, which selects every project.
   - **All groups** limits the list to one group. A group from a sub-project shows that project's name in brackets.
   - **All group types** limits the list to groups of one type, such as Board or Working Group.
   - The lists offer only what fits your other choices: picking projects narrows the groups and group types, and picking a group type narrows the groups.

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { Component, computed, inject, Injector, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
@@ -124,7 +124,6 @@ export class MeetingsDashboardComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly location = inject(Location);
-  private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
   private readonly composer = inject(MeetingComposerService);
@@ -202,6 +201,15 @@ export class MeetingsDashboardComponent {
     if (selected.length === 0) return 'default';
     return all.length > 0 && all.every((option) => selected.includes(option.value)) ? 'all' : 'subset';
   });
+  // The project picker's label while nothing is checked: the default view, the root's own meetings.
+  protected readonly rollupProjectsPlaceholder: Signal<string> = computed(() => `${this.project()?.name ?? 'This project'} only`);
+  // The default view of a tree with sub-projects: an empty list there points to the project filter.
+  protected readonly showRootOnlyHint: Signal<boolean> = computed(
+    () => this.activeLens() !== 'me' && this.rollupProjectsMode() === 'default' && this.rollupProjectOptions().length > 1
+  );
+  protected readonly rootOnlyEmptyTitle: Signal<string> = computed(
+    () => `No ${this.timeFilter() === 'past' ? 'past ' : ''}meetings for ${this.project()?.name ?? 'this project'}`
+  );
   private readonly rollupQueryOptions: Signal<MeetingProjectQueryOptions> = computed(
     () => {
       const mode = this.rollupProjectsMode();
@@ -493,6 +501,11 @@ export class MeetingsDashboardComponent {
       this.groupTypeFilter.set(null);
     }
     this.clearGroupOutsideOptions();
+  }
+
+  /** "Show all projects" on the root-only empty state: checks every project, as the user's own choice. */
+  public showAllRollupProjects(): void {
+    this.onRollupProjectsFilterChange(this.rollupProjectOptions().map((option) => option.value));
   }
 
   public onGroupTypeFilterChange(value: string | null): void {
@@ -1393,6 +1406,9 @@ export class MeetingsDashboardComponent {
       return;
     }
     let linked = this.urlRollupProjects;
+    // Created once here, in injection context: one inside the switchMap would add an effect per root that
+    // lives until the component is destroyed. Its replayed latest value serves each new root.
+    const options$ = toObservable(this.rollupFilterOptions);
     combineLatest([toObservable(this.activeLens), toObservable(computed(() => this.project()?.uid ?? null))])
       .pipe(
         map(([lens, uid]) => ((lens === 'foundation' || lens === 'project') && uid ? uid : null)),
@@ -1408,11 +1424,11 @@ export class MeetingsDashboardComponent {
             this.rollupProjectsFilter.set([]);
           }
           const choice$ = fromLink ? of<string[] | null>(fromLink) : this.meetingService.getRollupProjectsPreference(rootUid);
-          const options$ = toObservable(this.rollupFilterOptions, { injector: this.injector }).pipe(
+          const rootOptions$ = options$.pipe(
             filter((options) => options.projects.some((p) => p.uid === rootUid)),
             take(1)
           );
-          return combineLatest([choice$, options$]).pipe(map(([choice, options]) => ({ rootUid, choice, options })));
+          return combineLatest([choice$, rootOptions$]).pipe(map(([choice, options]) => ({ rootUid, choice, options })));
         }),
         takeUntilDestroyed()
       )

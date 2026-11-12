@@ -1045,6 +1045,56 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         expect(component.rollupProjectsFilter()).toEqual(['child']);
       });
 
+      it('keeps a change the user made before a late saved choice arrives', () => {
+        const saved = new Subject<string[] | null>();
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(saved);
+        const component = mount();
+        openScope(component);
+
+        component.onRollupProjectsFilterChange(['child']);
+        saved.next([]);
+        saved.complete();
+        flush();
+
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+      });
+
+      it('re-seeds from the new root when the foundation or project changes', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockImplementation((root) => of(root === 'scope' ? ['child'] : null));
+        const component = mount();
+        openScope(component);
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+
+        context.set({ uid: 'other', name: 'Other scope' } as ProjectContext);
+        flush();
+
+        expect(meetings.getRollupProjectsPreference).toHaveBeenLastCalledWith('other');
+        expect(component.rollupProjectsFilter()).toEqual([]);
+      });
+
+      it('checks every project for a link to all projects, without reading the saved choice', () => {
+        route.snapshot.queryParamMap = convertToParamMap({ projects: 'all' });
+        const component = mount();
+        openScope(component);
+
+        expect(meetings.getRollupProjectsPreference).not.toHaveBeenCalled();
+        expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
+      it('points an empty default view to the sub-projects, and Show all projects checks them all', () => {
+        const component = mount();
+        openScope(component);
+        const hint = (): boolean => (component as unknown as { showRootOnlyHint: () => boolean }).showRootOnlyHint();
+        expect(hint()).toBe(true);
+
+        component.showAllRollupProjects();
+        flush();
+
+        expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
+        expect(hint()).toBe(false);
+      });
+
       it('saves a change for the root after a pause, and Reset filters saves the default', () => {
         const component = mount();
         openScope(component);
