@@ -338,21 +338,21 @@ describe('getPipelineFormationLead (#5619)', () => {
 
 describe('filterPipelineRowsByFoundationKind (#5619)', () => {
   const rows = [
-    row({ uid: 'n', foundation_kind: 'new_foundation', parent: null }),
+    row({ uid: 'n', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
     row({ uid: 'u', foundation_kind: 'under_foundation' }),
-    row({ uid: 'x', foundation_kind: 'no_foundation', parent: null }),
+    row({ uid: 'x', foundation_kind: 'no_parent', parent: null }),
   ];
 
   it('keeps every row for "all" and exactly one kind otherwise', () => {
     expect(filterPipelineRowsByFoundationKind(rows, 'all').map((r) => r.uid)).toEqual(['n', 'u', 'x']);
-    expect(filterPipelineRowsByFoundationKind(rows, 'new_foundation').map((r) => r.uid)).toEqual(['n']);
+    expect(filterPipelineRowsByFoundationKind(rows, 'under_lf').map((r) => r.uid)).toEqual(['n']);
     expect(filterPipelineRowsByFoundationKind(rows, 'under_foundation').map((r) => r.uid)).toEqual(['u']);
-    expect(filterPipelineRowsByFoundationKind(rows, 'no_foundation').map((r) => r.uid)).toEqual(['x']);
+    expect(filterPipelineRowsByFoundationKind(rows, 'no_parent').map((r) => r.uid)).toEqual(['x']);
   });
 
   it('does not mutate its input', () => {
     const copy = [...rows];
-    filterPipelineRowsByFoundationKind(rows, 'new_foundation');
+    filterPipelineRowsByFoundationKind(rows, 'under_lf');
     expect(rows).toEqual(copy);
   });
 });
@@ -390,7 +390,7 @@ describe('Pipeline URL state (#5619)', () => {
     for (const stage of ['all', 'in_pipeline', 'prospect', 'exploratory', 'engaged', 'on_hold', 'disengaged', 'confidential', 'archived'] as const) {
       expect(fromQuery(toQuery({ ...getDefaultPipelineUrlState(), stage })).stage).toBe(stage);
     }
-    for (const foundationKind of ['all', 'new_foundation', 'under_foundation', 'no_foundation'] as const) {
+    for (const foundationKind of ['all', 'under_lf', 'under_foundation', 'no_parent'] as const) {
       expect(fromQuery(toQuery({ ...getDefaultPipelineUrlState(), foundationKind })).foundationKind).toBe(foundationKind);
     }
   });
@@ -410,6 +410,14 @@ describe('Pipeline URL state (#5619)', () => {
     expect(state).toEqual({ ...getDefaultPipelineUrlState(), search: 'alpha' });
     expect(fromQuery('stage=engaged&type=bogus').stage).toBe('engaged');
     expect(fromQuery('sort=ed_pm&dir=sideways').sort).toEqual({ key: 'ed_pm', direction: 'asc' });
+  });
+
+  it('maps the foundation types of an earlier link to the default rather than guessing', () => {
+    expect(fromQuery('type=new_foundation').foundationKind).toBe('all');
+    expect(fromQuery('type=no_foundation').foundationKind).toBe('all');
+    expect(fromQuery('type=under_lf').foundationKind).toBe('under_lf');
+    expect(fromQuery('type=under_foundation').foundationKind).toBe('under_foundation');
+    expect(fromQuery('type=no_parent').foundationKind).toBe('no_parent');
   });
 
   it('cuts an over-long search to the API limit', () => {

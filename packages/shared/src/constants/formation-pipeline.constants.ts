@@ -105,14 +105,14 @@ export const FORMATION_QUEUE_COPY = {
 } as const;
 
 /** Foundation-type filter values in display order (#5619), and the selection the page opens on. */
-export const FORMATION_PIPELINE_FOUNDATION_KINDS: readonly FormationPipelineFoundationKind[] = ['new_foundation', 'under_foundation', 'no_foundation'];
+export const FORMATION_PIPELINE_FOUNDATION_KINDS: readonly FormationPipelineFoundationKind[] = ['under_lf', 'under_foundation', 'no_parent'];
 export const FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND: FormationPipelineFoundationKindFilter = 'all';
 
 /** Foundation-type filter option labels. */
 export const FORMATION_PIPELINE_FOUNDATION_KIND_LABELS: Record<FormationPipelineFoundationKind, string> = {
-  new_foundation: 'New foundation',
-  under_foundation: 'Under a foundation',
-  no_foundation: 'No foundation',
+  under_lf: 'Directly under LF',
+  under_foundation: 'Under an existing foundation',
+  no_parent: 'No parent yet',
 };
 
 /**

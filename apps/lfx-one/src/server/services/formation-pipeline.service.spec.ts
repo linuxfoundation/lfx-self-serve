@@ -454,49 +454,63 @@ describe('FormationPipelineService.getPipeline', () => {
     });
   });
 
-  // #5619 D7: new foundation (the row itself is one) / under a foundation (a foundation ancestor) / no foundation.
+  // #5619 D7: classified by the row's DIRECT parent, never by `computeIsFoundation` (formation-stage projects almost never pass it).
   describe('foundation kind', () => {
+    const LF = { uid: 'lf', slug: 'tlf', name: 'The Linux Foundation', ...FOUNDATION_FIELDS };
     const FUNDED = { legal_entity_type: 'Non-profit', funding: ProjectFunding.Funded, funding_model: ['Membership'] };
+    const kindsOf = async () => Object.fromEntries((await service.getPipeline(req, allStages)).rows.map((row) => [row.uid, row.foundation_kind]));
 
-    it('classifies a foundation row, a sub-project, a project with no foundation, and a root-level separate entity', async () => {
-      natsRequest.mockResolvedValue({ data: 'root-uid' });
+    it('calls a project directly under The Linux Foundation under_lf, including an Engaged funded foundation and a plain project', async () => {
       mockUpstream({
         projects: [
-          project({ uid: 'fund', name: 'New Fund', stage: 'Formation - Engaged', parent_uid: 'root-uid', ...FUNDED }),
-          project({ uid: 'entity', name: 'Separate Entity', stage: 'Formation - Engaged', parent_uid: '', ...FUNDED }),
-          project({ uid: 'sub', name: 'Sub Project', parent_uid: 'F' }),
-          project({ uid: 'lone', name: 'Lone Project', parent_uid: 'plain' }),
-          project({ uid: 'root', name: 'Rootless', parent_uid: 'root-uid' }),
+          project({ uid: 'plain', name: 'Plain Under LF', parent_uid: 'lf' }),
+          project({ uid: 'fund', name: 'Engaged Fund', stage: 'Formation - Engaged', parent_uid: 'lf', ...FUNDED }),
         ],
+        parents: { lf: LF },
+      });
+
+      expect(await kindsOf()).toEqual({ plain: 'under_lf', fund: 'under_lf' });
+    });
+
+    it('calls a project under any other parent under_foundation, whether that parent is a foundation or a plain project', async () => {
+      mockUpstream({
+        projects: [project({ uid: 'sub', name: 'Under Foundation', parent_uid: 'F' }), project({ uid: 'deep', name: 'Under Active Child', parent_uid: 'mid' })],
         parents: {
-          F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS },
-          plain: { uid: 'plain', name: 'Plain Active', parent_uid: '', ...PLAIN_FIELDS },
+          F: { uid: 'F', slug: 'f', name: 'Existing Foundation', parent_uid: 'lf', ...FOUNDATION_FIELDS },
+          mid: { uid: 'mid', slug: 'mid', name: 'Active Mid', parent_uid: 'lf', ...PLAIN_FIELDS },
+          lf: LF,
         },
       });
 
-      const { rows } = await service.getPipeline(req, allStages);
-      const kind = (uid: string) => rows.find((row) => row.uid === uid)?.foundation_kind;
-
-      expect(kind('fund')).toBe('new_foundation');
-      expect(kind('entity')).toBe('new_foundation');
-      expect(kind('sub')).toBe('under_foundation');
-      expect(kind('lone')).toBe('no_foundation');
-      expect(kind('root')).toBe('no_foundation');
+      expect(await kindsOf()).toEqual({ sub: 'under_foundation', deep: 'under_foundation' });
     });
 
-    it('calls a foundation row new even when it sits under another foundation, and a Draft one is not a foundation', async () => {
+    it("does not read the row's own foundation classification: a funded Engaged project under a foundation is under_foundation, not special", async () => {
       mockUpstream({
-        projects: [
-          project({ uid: 'nested', name: 'Nested Fund', stage: 'Formation - Engaged', parent_uid: 'F', ...FUNDED }),
-          project({ uid: 'draft', name: 'Draft Fund', stage: 'Prospect', parent_uid: '', ...FUNDED }),
-        ],
-        parents: { F: { uid: 'F', name: 'Real Foundation', ...FOUNDATION_FIELDS } },
+        projects: [project({ uid: 'fund', name: 'Funded Under Foundation', stage: 'Formation - Engaged', parent_uid: 'F', ...FUNDED })],
+        parents: { F: { uid: 'F', slug: 'f', name: 'Existing Foundation', ...FOUNDATION_FIELDS } },
       });
 
-      const { rows } = await service.getPipeline(req, allStages);
+      expect(await kindsOf()).toEqual({ fund: 'under_foundation' });
+    });
 
-      expect(rows.find((row) => row.uid === 'nested')?.foundation_kind).toBe('new_foundation');
-      expect(rows.find((row) => row.uid === 'draft')?.foundation_kind).toBe('no_foundation');
+    it('calls a project with no parent, an empty parent or the hidden ROOT parent no_parent, including a root-level separate entity', async () => {
+      natsRequest.mockResolvedValue({ data: 'root-uid' });
+      mockUpstream({
+        projects: [
+          project({ uid: 'none', name: 'No Parent', parent_uid: '' }),
+          project({ uid: 'root', name: 'Under Root', parent_uid: 'root-uid' }),
+          project({ uid: 'entity', name: 'Separate Entity', stage: 'Formation - Engaged', parent_uid: 'root-uid', ...FUNDED }),
+        ],
+      });
+
+      expect(await kindsOf()).toEqual({ none: 'no_parent', root: 'no_parent', entity: 'no_parent' });
+    });
+
+    it('reads a parent query-service did not return as another parent, since it cannot be identified as The Linux Foundation', async () => {
+      mockUpstream({ projects: [project({ uid: 'orphan', name: 'Orphan', parent_uid: 'gone' })], parents: {} });
+
+      expect(await kindsOf()).toEqual({ orphan: 'under_foundation' });
     });
   });
 });

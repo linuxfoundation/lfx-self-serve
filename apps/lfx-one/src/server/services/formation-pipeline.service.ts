@@ -6,6 +6,7 @@ import {
   FORMATION_PIPELINE_STAGE_UPSTREAM,
   FORMATION_PIPELINE_STAGES,
   FORMATION_TEAM_REQUIRED_CODE,
+  LF_FOUNDATION_ROOT_SLUG,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
@@ -317,12 +318,22 @@ export class FormationPipelineService {
     return false;
   }
 
-  /** `new_foundation` when the project is itself a foundation (`computeIsFoundation`; test projects never get here), else `under_foundation` with a foundation ancestor, else `no_foundation`. */
-  private foundationKind(project: UpstreamPipelineProject, parent: FormationPipelineParent | null): FormationPipelineFoundationKind {
-    if (this.isFoundation(project)) {
-      return 'new_foundation';
+  /**
+   * Where the project sits by its DIRECT parent (#5619), not by `computeIsFoundation`, which formation-stage projects almost never pass:
+   * `under_lf` when the parent is The Linux Foundation, `under_foundation` for any other parent, `no_parent` when there is none (a
+   * parent that is the hidden ROOT counts as none). The parent's document comes from the chain `resolveParents` already loaded; one
+   * query-service did not return cannot be identified as The Linux Foundation, so it reads as another parent.
+   */
+  private foundationKind(
+    project: UpstreamPipelineProject,
+    known: ReadonlyMap<string, UpstreamPipelineProject>,
+    rootUid: string | null
+  ): FormationPipelineFoundationKind {
+    const parentUid = collapseRootParentUid(project.parent_uid || null, rootUid);
+    if (!parentUid) {
+      return 'no_parent';
     }
-    return parent ? 'under_foundation' : 'no_foundation';
+    return known.get(parentUid)?.slug === LF_FOUNDATION_ROOT_SLUG ? 'under_lf' : 'under_foundation';
   }
 
   private toRow(project: UpstreamPipelineProject, parents: ReadonlyMap<string, UpstreamPipelineProject>, rootUid: string | null): FormationPipelineRow {
@@ -333,7 +344,7 @@ export class FormationPipelineService {
       name: project.name,
       stage: getPipelineStageKey(project.stage) as FormationPipelineRow['stage'],
       parent,
-      foundation_kind: this.foundationKind(project, parent),
+      foundation_kind: this.foundationKind(project, parents, rootUid),
       announcement_date: null,
       formation_date: project.formation_date || null,
       legal_entity_name: project.legal_entity_name || null,

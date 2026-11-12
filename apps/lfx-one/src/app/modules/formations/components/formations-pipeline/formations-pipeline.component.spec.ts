@@ -175,16 +175,16 @@ describe('FormationsPipelineComponent (#5475)', () => {
 
     it('opens on the state in the URL: stage, foundation type, search and sort', async () => {
       const rows = [
-        row({ uid: 'n', name: 'Alpha Fund', stage: 'engaged', foundation_kind: 'new_foundation', parent: null }),
+        row({ uid: 'n', name: 'Alpha LF Direct', stage: 'engaged', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
         row({ uid: 'u', name: 'Alpha Under', stage: 'engaged', foundation_kind: 'under_foundation' }),
-        row({ uid: 'z', name: 'Zeta Fund', stage: 'engaged', foundation_kind: 'new_foundation', parent: null }),
+        row({ uid: 'z', name: 'Zeta LF Direct', stage: 'engaged', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
       ];
-      await render(of(response(rows)), { stage: 'engaged', type: 'new_foundation', q: 'alpha', sort: 'project', dir: 'desc' });
+      await render(of(response(rows)), { stage: 'engaged', type: 'under_lf', q: 'alpha', sort: 'project', dir: 'desc' });
 
       expect(rowIds()).toEqual(['n']);
       expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
       expect(fixture.componentInstance['filterForm'].controls.search.value).toBe('alpha');
-      expect(fixture.componentInstance['filterForm'].controls.foundationKind.value).toBe('new_foundation');
+      expect(fixture.componentInstance['filterForm'].controls.foundationKind.value).toBe('under_lf');
     });
 
     it('opens scoped to a foundation in the URL, reads once scoped, and lists the foundations for the select', async () => {
@@ -213,7 +213,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(fixture.componentInstance['filterForm'].controls.foundation.value).toBe('f2');
     });
 
-    it('ignores bad values and opens on the defaults', async () => {
+    it('ignores bad values, and the foundation types an earlier link may carry, and opens on the defaults', async () => {
       await render(of(response(ROWS)), { stage: 'bogus', type: 'bogus', sort: 'bogus', foundation: 'no spaces allowed' });
 
       expect(rowIds()).toEqual(['d', 'a', 'b']);
@@ -232,10 +232,10 @@ describe('FormationsPipelineComponent (#5475)', () => {
       await click(q('formations-pipeline-sort-project')!.querySelector('button'));
       expect(lastParams()).toMatchObject({ stage: 'archived', sort: 'project', dir: 'asc' });
 
-      fixture.componentInstance['filterForm'].controls.foundationKind.setValue('no_foundation');
+      fixture.componentInstance['filterForm'].controls.foundationKind.setValue('no_parent');
       fixture.detectChanges();
       await fixture.whenStable();
-      expect(lastParams()).toMatchObject({ type: 'no_foundation' });
+      expect(lastParams()).toMatchObject({ type: 'no_parent' });
 
       fixture.componentInstance['filterForm'].controls.foundation.setValue('f2');
       fixture.detectChanges();
@@ -265,7 +265,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
       const rows = [
         row({ uid: 'u1', name: 'Alpha One', stage: 'archived', foundation_kind: 'under_foundation' }),
         row({ uid: 'u2', name: 'Alpha Two', stage: 'archived', foundation_kind: 'under_foundation' }),
-        row({ uid: 'n', name: 'Alpha Fund', stage: 'archived', foundation_kind: 'new_foundation', parent: null }),
+        row({ uid: 'n', name: 'Alpha LF Direct', stage: 'archived', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
       ];
       await render(of(response(rows)), {});
       await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
@@ -289,10 +289,10 @@ describe('FormationsPipelineComponent (#5475)', () => {
   // #5619 D7
   describe('foundation type filter', () => {
     const KIND_ROWS = [
-      row({ uid: 'n', name: 'New Fund', stage: 'engaged', foundation_kind: 'new_foundation', parent: null }),
+      row({ uid: 'n', name: 'LF Direct', stage: 'engaged', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
       row({ uid: 'u', name: 'Under One', stage: 'engaged', foundation_kind: 'under_foundation' }),
-      row({ uid: 'x', name: 'Loner', stage: 'exploratory', foundation_kind: 'no_foundation', parent: null }),
-      row({ uid: 'a', name: 'Archived Fund', stage: 'archived', foundation_kind: 'new_foundation', parent: null }),
+      row({ uid: 'x', name: 'Loner', stage: 'exploratory', foundation_kind: 'no_parent', parent: null }),
+      row({ uid: 'a', name: 'Archived LF Direct', stage: 'archived', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
     ];
     const pick = async (kind: FormationPipelineFoundationKindFilter): Promise<void> => {
       fixture.componentInstance['filterForm'].controls.foundationKind.setValue(kind);
@@ -306,13 +306,13 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
       const reads = getFormationPipeline.mock.calls.length;
 
-      await pick('new_foundation');
+      await pick('under_lf');
       expect(rowIds()).toEqual(['n']);
       expect(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-in_pipeline"]')?.textContent).toContain('(1)');
 
       await pick('under_foundation');
       expect(rowIds()).toEqual(['u']);
-      await pick('no_foundation');
+      await pick('no_parent');
       expect(rowIds()).toEqual(['x']);
       await pick('all');
       expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
@@ -321,7 +321,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
 
     it('combines with the stage pill and the name search', async () => {
       await render(of(response(KIND_ROWS)));
-      await pick('new_foundation');
+      await pick('under_lf');
       await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
       expect(rowIds()).toEqual(['a']);
 
@@ -347,10 +347,10 @@ describe('FormationsPipelineComponent (#5475)', () => {
       fixture.componentInstance['exportCsv']();
       const text = await (captured as unknown as Blob).text();
       expect(text).toContain('Under One');
-      expect(text).not.toContain('New Fund');
+      expect(text).not.toContain('LF Direct');
       expect(text).not.toContain('Loner');
 
-      await pick('no_foundation');
+      await pick('no_parent');
       await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
       expect(rowIds()).toEqual([]);
       await click(q('formations-pipeline-filtered-empty')!.querySelector('button'));
@@ -364,9 +364,9 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(q('formations-pipeline-foundation-kind')?.querySelector('[aria-label="Foundation type"]')).not.toBeNull();
       expect(fixture.componentInstance['foundationKindOptions']().map((option: { label: string }) => option.label)).toEqual([
         'All projects',
-        'New foundation',
-        'Under a foundation',
-        'No foundation',
+        'Directly under LF',
+        'Under an existing foundation',
+        'No parent yet',
       ]);
     });
   });

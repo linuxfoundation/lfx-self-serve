@@ -12,8 +12,8 @@ export type FormationPipelineStage = 'prospect' | 'exploratory' | 'engaged' | 'o
 /** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages: Draft, Exploratory, Engaged, On hold), or `all`. */
 export type FormationPipelineStageFilter = FormationPipelineStage | 'in_pipeline' | 'all';
 
-/** Where a project stands against foundations (#5619): `new_foundation` is itself one (`computeIsFoundation`, test projects excluded), `under_foundation` has a foundation ancestor, `no_foundation` is neither. */
-export type FormationPipelineFoundationKind = 'new_foundation' | 'under_foundation' | 'no_foundation';
+/** Where a project sits by its DIRECT parent (#5619): `under_lf` has The Linux Foundation as its parent, `under_foundation` has any other parent (an existing foundation), `no_parent` has none. Not derived from `computeIsFoundation`. */
+export type FormationPipelineFoundationKind = 'under_lf' | 'under_foundation' | 'no_parent';
 
 /** Foundation-type selection: one kind, or `all`. */
 export type FormationPipelineFoundationKindFilter = FormationPipelineFoundationKind | 'all';
@@ -38,7 +38,7 @@ export interface FormationPipelineRow {
   stage: FormationPipelineStage;
   /** The nearest foundation ancestor, or `null` when the project has none (top-level, or an ancestor query-service did not return). */
   parent: FormationPipelineParent | null;
-  /** A row that is itself a foundation is `new_foundation` whatever its ancestors; otherwise `under_foundation` when `parent` is set, else `no_foundation`. */
+  /** Classified by the project's direct parent, not by `parent` (the nearest foundation), which is The Linux Foundation for a project directly under it. */
   foundation_kind: FormationPipelineFoundationKind;
   announcement_date: string | null;
   formation_date: string | null;

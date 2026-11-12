@@ -53,7 +53,7 @@ The cards above the pills show the same stages. Select a card to filter by that 
 ## Filter and search
 
 - **Foundation** narrows the list to one foundation and everything beneath it. The choices come from the foundations your projects sit under. Select **All foundations** to clear it. The counts on the pills and cards follow the foundation.
-- **Foundation type** narrows the list by where the project stands. **New foundation** is a project that is itself a foundation or directed fund, **Under a foundation** has a foundation above it, and **No foundation** is neither. Select **All projects** to clear it. The counts follow it, and it works together with the stage, foundation and search.
+- **Foundation type** narrows the list by the project's direct parent. **Directly under LF** projects have The Linux Foundation as their parent, which is where new foundations and directed funds sit. **Under an existing foundation** projects have another project as their parent. **No parent yet** projects have none. Select **All projects** to clear it. The counts follow it, and it works together with the stage, foundation and search.
 - **Search projects** matches part of a project name, whatever the case. The counts follow your search.
 
 If your filters hide every project, the list says so and offers **Reset filters**.
