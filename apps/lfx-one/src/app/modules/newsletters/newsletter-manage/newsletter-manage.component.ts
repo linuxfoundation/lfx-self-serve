@@ -10,6 +10,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  NEWSLETTER_AUDIENCE_POLL_MAX,
+  NEWSLETTER_AUDIENCE_POLL_MS,
   NEWSLETTER_COMMITTEE_CATEGORY,
   NEWSLETTER_ENHANCED_EDITOR_DEFAULT,
   NEWSLETTER_ENHANCED_EDITOR_FLAG,
@@ -31,6 +33,8 @@ import {
   NewsletterScheduleResult,
   NewsletterScheduleWindowError,
   NewsletterSendResult,
+  NewsletterAudience,
+  NewsletterAudienceNotReadyStatus,
   ProjectContext,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -67,17 +71,23 @@ import {
   combineLatest,
   concatMap,
   debounceTime,
+  defer,
   distinctUntilChanged,
   EMPTY,
   filter,
   finalize,
   interval,
+  last,
   map,
   merge,
+  Observable,
   of,
   Subject,
+  pairwise,
+  repeat,
   switchMap,
   take,
+  takeWhile,
   tap,
 } from 'rxjs';
 
@@ -407,7 +417,23 @@ export class NewsletterManageComponent {
   // pipeline (rather than each firing its own independent subscription)
   // cancels the stale in-flight request instead of letting it race the
   // normalized one and clobber the displayed count.
-  private readonly recipientCountTrigger$ = new Subject<string[]>();
+  private readonly recipientCountTrigger$ = new Subject<{ uids: string[]; refresh: boolean }>();
+  // The draft's audience snapshot (#4352). A send reads the recipients from it, so Send and Schedule wait until
+  // it is ready for the committees on screen. Null until a saved draft's committees have been resolved.
+  protected readonly audience = signal<NewsletterAudience | null>(null);
+  // Committees an email was added to since their snapshot was last rebuilt. Their next resolve asks for a
+  // rebuild, even when the add finished while another group was selected or the earlier rebuild was cancelled.
+  private readonly audienceRebuildNeeded = new Set<string>();
+  // The requested_at of each running read this page has seen. The service hands back a running read instead of
+  // starting a new one, so a rebuild that gets one of these back may not include the latest add.
+  private readonly seenAudienceReads = new Set<string>();
+  // Set when a rebuild request is cancelled before it answers. The service may still have started a read for
+  // it, and the next rebuild could get that read back without knowing it predates its add.
+  private rebuildRequestAbandoned = false;
+  // The resolve pipeline stops when the author leaves, but an email add can still finish afterwards.
+  private pageDestroyed = false;
+  // The last resolve request failed, so nothing is preparing the recipient list until the page resolves again.
+  private readonly audienceRequestFailed = signal(false);
 
   // === Audience email adds ===
   // Owned here (not by the audience step) because the stepper destroys the step
@@ -512,9 +538,31 @@ export class NewsletterManageComponent {
   });
   // The editor-only release sends tests only, so a real send or schedule is locked for a layout draft.
   public readonly liveSendLocked = computed(() => isNewsletterLiveSendLocked(this.isBlocksMode()));
+  // A saved draft sends from its audience snapshot, so it has to be ready for the committees on screen.
+  // A draft with no id yet can't be sent anyway: runSend refuses it and asks the author to save first.
+  public readonly audienceReady = computed(() => {
+    if (!this.newsletterId()) return true;
+    const audience = this.audience();
+    return audience?.status === 'ready' && this.uidsEqual([...audience.committee_uids].sort(), [...this.committeeUidsValue()].sort());
+  });
+  // A saved draft whose snapshot isn't ready yet, so the Send step explains why Send and Schedule are waiting.
+  // A failed snapshot or a failed request shows its own error instead.
+  protected readonly audiencePreparing = computed(
+    () =>
+      !!this.newsletterId() &&
+      this.newsletterStatus() === 'draft' &&
+      this.audienceFilled() &&
+      !this.audienceReady() &&
+      this.audience()?.status !== 'failed' &&
+      !this.audienceRequestFailed()
+  );
+  // The Recipients list reads the snapshot once it is ready, so it shows exactly who the send will reach and
+  // doesn't depend on the live committee read. Until then it reads the committees live, as before.
+  protected readonly recipientsNewsletterUid = computed(() => (this.audience()?.status === 'ready' && this.audienceReady() ? this.newsletterId() : null));
   public readonly canSend = computed(
     () =>
       !this.liveSendLocked() &&
+      this.audienceReady() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
@@ -552,6 +600,7 @@ export class NewsletterManageComponent {
   public readonly canSchedule = computed(
     () =>
       !this.liveSendLocked() &&
+      this.audienceReady() &&
       this.audienceFilled() &&
       this.audienceNormalized() &&
       this.subjectFilled() &&
@@ -606,6 +655,8 @@ export class NewsletterManageComponent {
     this.initSaveChannel();
     this.initAutosave();
     this.initRecipientCount();
+    this.initAudienceOnReturnToDraft();
+    this.destroyRef.onDestroy(() => (this.pageDestroyed = true));
     this.initAudienceNormalization();
     this.initScheduleClock();
     this.initSchedulePastGuard();
@@ -896,6 +947,8 @@ export class NewsletterManageComponent {
     this.audienceEmailAdds.update((entries) => [...entries.filter((e) => !(e.committeeUid === committeeUid && e.email === email)), entry]);
 
     if (entry.status === 'invalid') return;
+    // The draft's project, captured now: once the author leaves, projectUid() can follow a different project.
+    const projectUid = this.projectUid();
 
     // Intentionally NOT takeUntilDestroyed: HttpClient aborts the request on
     // unsubscribe, which would silently cancel in-flight adds if the user left
@@ -904,11 +957,14 @@ export class NewsletterManageComponent {
     this.committeeService.createCommitteeMember(committeeUid, { email }, { skipNotification: true }).subscribe({
       next: () => {
         this.updateAudienceEmailAdd(committeeUid, email, { status: 'added' });
-        // Refresh the recipient pill only if this group is still the selected
-        // audience — an add resolving after a group switch must not clobber
-        // the new group's count.
-        if (this.committeeUidsValue()[0] === committeeUid) {
-          this.fetchRecipientCountFor(this.committeeUidsValue());
+        // The group's snapshot doesn't have this email yet, so its next resolve rebuilds it, even when this
+        // add finishes after a group switch. Only a selected group is resolved now, so an add resolving after
+        // a switch doesn't replace the new group's count.
+        this.audienceRebuildNeeded.add(committeeUid);
+        if (this.pageDestroyed) {
+          this.rebuildAudienceAfterLeaving(projectUid, committeeUid);
+        } else if (this.committeeUidsValue().includes(committeeUid)) {
+          this.fetchRecipientCountFor(this.committeeUidsValue(), true);
         }
       },
       error: (err: HttpErrorResponse) => {
@@ -1060,30 +1116,92 @@ export class NewsletterManageComponent {
       });
   }
 
-  private initRecipientCount(): void {
-    merge(this.form.controls.committeeUids.valueChanges.pipe(debounceTime(300), distinctUntilChanged(this.uidsEqual)), this.recipientCountTrigger$)
+  /**
+   * A newsletter that becomes a draft again, e.g. after its schedule is cancelled, needs its audience
+   * resolved: the schedule deleted the snapshot's members, and its committees haven't changed, so nothing else
+   * re-triggers the read. A newsletter's first status (on load or create) is skipped, as the save that sets it
+   * resolves the audience itself.
+   */
+  private initAudienceOnReturnToDraft(): void {
+    toObservable(this.newsletterStatus)
       .pipe(
-        switchMap((uids) => this.fetchRecipientCount$(uids ?? [])),
+        pairwise(),
+        filter(([was, now]) => was !== null && was !== 'draft' && now === 'draft'),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.fetchRecipientCountFor(this.committeeUidsValue()));
+  }
+
+  private initRecipientCount(): void {
+    merge(
+      this.form.controls.committeeUids.valueChanges.pipe(
+        debounceTime(300),
+        distinctUntilChanged(this.uidsEqual),
+        map((uids) => ({ uids: uids ?? [], refresh: false }))
+      ),
+      this.recipientCountTrigger$
+    )
+      .pipe(
+        switchMap(({ uids, refresh }) => this.fetchRecipientCount$(uids ?? [], refresh)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe();
   }
 
-  private fetchRecipientCountFor(uids: string[]): void {
-    this.recipientCountTrigger$.next(uids);
+  /** refresh rebuilds a ready snapshot, e.g. after an email was added to the group. */
+  private fetchRecipientCountFor(uids: string[], refresh = false): void {
+    this.recipientCountTrigger$.next({ uids, refresh });
+  }
+
+  /**
+   * An add that finishes after the author left the page starts the rebuild itself. The page's resolve pipeline
+   * has stopped, and the next visit would otherwise reuse a snapshot without this email.
+   *
+   * The service hands back a read that is already running rather than start another, and that read may have
+   * started before this add. So when the first request gets a running read back, this waits for it to end and
+   * asks once more, which starts a read that includes the add.
+   */
+  private rebuildAudienceAfterLeaving(projectUid: string, committeeUid: string): void {
+    const id = this.newsletterId();
+    const saved = this.lastSavedSnapshot()?.committeeUids ?? [];
+    if (!id || this.newsletterStatus() !== 'draft' || !saved.includes(committeeUid)) return;
+    const rebuild = () => this.newsletterService.resolveAudience(projectUid, id, { committee_uids: saved, refresh: true });
+    // Intentionally not takeUntilDestroyed: the page is already gone, and each request completes on its own.
+    rebuild()
+      .pipe(
+        switchMap((audience) =>
+          audience.status !== 'processing'
+            ? EMPTY
+            : defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
+                repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
+                takeWhile((polled) => polled.status === 'processing', true),
+                last(),
+                switchMap((polled) => (polled.status === 'processing' ? EMPTY : rebuild()))
+              )
+        )
+      )
+      .subscribe({ error: () => undefined });
   }
 
   private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
     this.audienceEmailAdds.update((entries) => entries.map((e) => (e.committeeUid === committeeUid && e.email === email ? { ...e, ...patch } : e)));
   }
 
-  private fetchRecipientCount$(uids: string[]) {
+  private fetchRecipientCount$(uids: string[], refresh = false) {
     if (!uids || uids.length === 0) {
       this.recipientCount.set(0);
+      this.audience.set(null);
       return EMPTY;
     }
     if (!this.hasContext()) {
       return EMPTY;
+    }
+    // A saved draft's committees go through its audience snapshot, which the send reads. A selection not
+    // saved yet (or a scheduled newsletter) keeps the live count as a preview; the autosave that follows
+    // re-triggers this for the saved committees (see recordSavedSnapshot).
+    const id = this.newsletterId();
+    if (id && this.newsletterStatus() === 'draft' && this.uidsEqual(uids, this.lastSavedSnapshot()?.committeeUids)) {
+      return this.resolveAudience$(id, uids, refresh);
     }
     this.recipientCountLoading.set(true);
     return this.newsletterService.getRecipientCount(this.projectUid(), { committee_uids: uids }).pipe(
@@ -1107,6 +1225,119 @@ export class NewsletterManageComponent {
       }),
       catchError(() => EMPTY)
     );
+  }
+
+  /**
+   * Starts (or reuses) the draft's audience snapshot and polls until the background read finishes, for up to
+   * NEWSLETTER_AUDIENCE_POLL_MAX status checks. The count comes from the snapshot, and Send waits on
+   * audienceReady. A long committee can take a while, so the spinner stays up while it is processing.
+   *
+   * The service returns a read that is already running rather than start another, and that read can be for
+   * other committees or can predate an add. Either way, once it ends this resolves again rather than accept it.
+   */
+  private resolveAudience$(id: string, uids: string[], refresh: boolean): Observable<NewsletterAudience> {
+    const projectUid = this.projectUid();
+    const rebuild = refresh || uids.some((uid) => this.audienceRebuildNeeded.has(uid));
+    // Send and Schedule wait from now until this resolve answers, so neither can use a snapshot it replaces.
+    this.audience.set(null);
+    this.audienceRequestFailed.set(false);
+    this.recipientCountLoading.set(true);
+    let lastStatus: NewsletterAudience['status'] | null = null;
+    let reusedRead = false;
+    let answered = false;
+    return this.newsletterService.resolveAudience(projectUid, id, { committee_uids: uids, refresh: rebuild }).pipe(
+      tap(() => (answered = true)),
+      finalize(() => {
+        if (rebuild && !answered) this.rebuildRequestAbandoned = true;
+      }),
+      switchMap((audience) => {
+        if (audience.status !== 'processing') return of(audience);
+        // A read this page saw running before asking for a rebuild, or one an abandoned rebuild request may have
+        // started, began before the latest add.
+        reusedRead = rebuild && (this.seenAudienceReads.has(audience.requested_at) || this.rebuildRequestAbandoned);
+        if (rebuild) this.rebuildRequestAbandoned = false;
+        this.seenAudienceReads.add(audience.requested_at);
+        // One status check at a time: the next starts NEWSLETTER_AUDIENCE_POLL_MS after the last answer,
+        // so a slow response is never cancelled, and the cap counts checks rather than answers.
+        return defer(() => this.newsletterService.getAudience(projectUid, id)).pipe(
+          repeat({ count: NEWSLETTER_AUDIENCE_POLL_MAX, delay: NEWSLETTER_AUDIENCE_POLL_MS }),
+          takeWhile((polled) => polled.status === 'processing', true)
+        );
+      }),
+      tap({
+        next: (audience) => {
+          lastStatus = audience.status;
+        },
+        complete: () => {
+          if (lastStatus === 'processing' && this.uidsEqual(uids, this.committeeUidsValue())) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Still preparing the recipient list',
+              detail: 'This group is taking a while. Reload the page in a few minutes to check again.',
+              life: 8000,
+            });
+          }
+        },
+      }),
+      switchMap((audience) => {
+        if (audience.status === 'processing') return of(audience);
+        const otherCommittees = !this.uidsEqual([...audience.committee_uids].sort(), [...uids].sort());
+        if (reusedRead || otherCommittees) return this.resolveAudience$(id, uids, rebuild);
+        if (rebuild && audience.status === 'ready') uids.forEach((uid) => this.audienceRebuildNeeded.delete(uid));
+        return of(audience);
+      }),
+      tap((audience) => {
+        // Ignore a result for a selection that changed while the read ran.
+        if (!this.uidsEqual(uids, this.committeeUidsValue())) return;
+        this.audience.set(audience);
+        if (audience.status === 'ready') {
+          this.recipientCount.set(audience.recipient_count);
+        } else if (audience.status === 'failed') {
+          this.recipientCount.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Could not build the recipient list',
+            detail: audience.error ? `${audience.error}. Change the group or try again.` : 'Change the group or try again.',
+            life: 8000,
+          });
+        }
+      }),
+      finalize(() => this.recipientCountLoading.set(false)),
+      catchError(() => {
+        if (this.uidsEqual(uids, this.committeeUidsValue())) {
+          this.audience.set(null);
+          this.audienceRequestFailed.set(true);
+          this.recipientCount.set(null);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Could not build the recipient list',
+            detail: 'Sending waits until the recipient list is ready. Reload the page to try again.',
+            life: 8000,
+          });
+        }
+        return EMPTY;
+      })
+    );
+  }
+
+  /** A send or schedule refused because the snapshot isn't ready: rebuild it and tell the author. */
+  private handleAudienceNotReady(err: HttpErrorResponse): boolean {
+    if (err?.status !== 409 || err?.error?.upstreamCode !== 'audience_not_ready') return false;
+    const status = err.error?.audienceStatus as NewsletterAudienceNotReadyStatus | undefined;
+    this.audience.set(null);
+    // A POST starts the read when there is none, rebuilds a failed or stale one, and reports one already
+    // running, so the same call covers every reason; only the message differs.
+    this.fetchRecipientCountFor(this.committeeUidsValue());
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Preparing the recipient list',
+      detail:
+        status === 'processing'
+          ? 'The recipient list is still being prepared. Try again once the count shows.'
+          : 'The recipient list was not ready or the group changed. It is being rebuilt, so try again once the count shows.',
+      life: 8000,
+    });
+    return true;
   }
 
   private initCommittees(): Signal<Committee[]> {
@@ -1252,6 +1483,7 @@ export class NewsletterManageComponent {
    * latter, inviting the duplicate delivery in LFXV2-2604.
    */
   private handleSendError(err: HttpErrorResponse, id: string): void {
+    if (this.handleAudienceNotReady(err)) return;
     this.resolvingSend.set(true);
     this.newsletterService
       .getNewsletter(this.projectUid(), id)
@@ -1385,6 +1617,7 @@ export class NewsletterManageComponent {
    * simpler than a send race, so it gets its own message rather than a refetch.
    */
   private handleScheduleError(err: HttpErrorResponse, id: string): void {
+    if (this.handleAudienceNotReady(err)) return;
     const upstreamCode = err?.error?.upstreamCode;
     // A 503 alone no longer identifies "scheduling is switched off here". The BFF now raises 503
     // for its own TRANSPORT failures too (a lost connection is an unconfirmed outcome, not proof
@@ -1783,7 +2016,7 @@ export class NewsletterManageComponent {
       committeeUids,
       scheduledAt: draft.scheduled_at ? new Date(draft.scheduled_at).toISOString() : null,
     });
-    this.fetchRecipientCountFor(committeeUids);
+    // recordSavedSnapshot fetches the count (or resolves the audience) for these committees.
   }
 
   private initSaveChannel(): void {
@@ -1991,6 +2224,7 @@ export class NewsletterManageComponent {
         const savedUnder = draft.publication_uid ?? publicationUid;
         this.selectedPublication.set(publicationUid && savedUnder === publicationUid ? requestedPublication : null);
         this.newsletterId.set(draft.id);
+        this.newsletterStatus.set(draft.status ?? 'draft');
         this.version.set(draft.version);
         this.syncDerivedBodyHtml(draft);
         this.savedAt.set(new Date());
@@ -2009,6 +2243,7 @@ export class NewsletterManageComponent {
   }
 
   private recordSavedSnapshot(payload: { subject: string; bodyHtml: string; bodyLayout: string; committeeUids: string[]; scheduledAt: string | null }): void {
+    const committeesChanged = !this.uidsEqual(this.lastSavedSnapshot()?.committeeUids, payload.committeeUids);
     this.lastSavedSnapshot.set({
       subject: payload.subject,
       bodyHtml: payload.bodyHtml,
@@ -2016,6 +2251,10 @@ export class NewsletterManageComponent {
       committeeUids: [...payload.committeeUids],
       scheduledAt: payload.scheduledAt,
     });
+    // The draft's audience snapshot is built from its saved committees, so resolve it once they are saved.
+    if (committeesChanged && this.newsletterId()) {
+      this.fetchRecipientCountFor(payload.committeeUids);
+    }
   }
 
   /**
