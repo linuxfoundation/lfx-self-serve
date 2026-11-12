@@ -6,7 +6,7 @@
   <lfx-meeting-details-host-key [hostKey]="key" />
 }
 
-@if (context.organizer() && !ended()) {
+@if (showRsvp()) {
   <lfx-meeting-details-rsvp />
 }
 
@@ -116,7 +116,7 @@
 }
 
 @if (!context.fullAccess()) {
-  <lfx-ui-note variant="secondary" size="small" fill icon="fa-light fa-lock" label="This is a private meeting" data-testid="meeting-details-private"
+  <lfx-ui-note variant="secondary" size="small" icon="fa-light fa-lock" label="This is a private meeting" data-testid="meeting-details-private"
     >Meeting details, recordings, and summaries are only available to meeting participants and committee members. If you believe you should have access, please
     contact the meeting organizer.</lfx-ui-note
   >

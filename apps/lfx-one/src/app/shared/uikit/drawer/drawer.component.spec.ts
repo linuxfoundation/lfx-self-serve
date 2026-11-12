@@ -148,6 +148,15 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(container.querySelector('.cdk-overlay-backdrop')?.className).toContain('bg-ui-overlay');
   });
 
+  it('keeps the drawer and its backdrop below the impersonation banner', async () => {
+    await open();
+
+    const pane = container.querySelector('.cdk-overlay-pane') as HTMLElement;
+    expect(pane.style.marginTop).toBe('calc(8px + var(--lfx-banner-height, 0px))');
+    expect(pane.style.height).toBe('calc(100% - 16px - var(--lfx-banner-height, 0px))');
+    expect((container.querySelector('.cdk-overlay-backdrop') as HTMLElement).style.top).toBe('var(--lfx-banner-height, 0px)');
+  });
+
   it('floats 8px inside the right edge at 560px with the medium radius and the library title style', async () => {
     await open();
 
@@ -158,9 +167,7 @@ describe('UiDrawerComponent and UiDrawerService', () => {
     expect(drawer()?.className).not.toContain('min-w-[');
     const pane = container.querySelector('.cdk-overlay-pane') as HTMLElement;
     expect((container.querySelector('.cdk-global-overlay-wrapper') as HTMLElement).style.justifyContent).toBe('flex-end');
-    expect(pane.style.marginTop).toBe('8px');
     expect(pane.style.marginRight).toBe('8px');
-    expect(pane.style.height).toBe('calc(100% - 16px)');
     expect(pane.style.maxWidth).toBe('calc(100vw - 16px)');
     expect(testId('ui-drawer-title').className).toContain('text-[20px] leading-[28px]');
     expect(testId('ui-drawer-subtitle').className).toContain('copy-13');

@@ -786,7 +786,7 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
         { provide: MessageService, useValue: { add: vi.fn() } },
         // `getLinkedInAccounts` is stubbed because `ngOnInit` calls it unconditionally, even with
         // only Meta selected; without it the component throws before any Meta assertion runs.
-        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
 
@@ -1978,6 +1978,7 @@ describe('ImplementationTabComponent hubspotConfig wiring', () => {
             // `ngOnInit` resolves the LinkedIn ad-account list on mount. Stubbed empty because
             // these tests select google-ads only, so the list is never read.
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
           },
         },
       ],
@@ -2295,7 +2296,7 @@ describe('ImplementationTabComponent reddit objective', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -2414,7 +2415,7 @@ describe('ImplementationTabComponent reddit call to action', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign: vi.fn(), getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -2900,7 +2901,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { getLinkedInAccounts: () => accountsSubject.asObservable() } },
+        { provide: CampaignService, useValue: { getLinkedInAccounts: () => accountsSubject.asObservable(), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -3037,7 +3038,9 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
     c.campaignForm.controls['endDate'].setValue('2026-09-30');
     c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
-    c.linkedInVariants.set([{ headline: 'Attend', introText: 'Join us', destinationUrl: 'https://example.com/kubecon' }]);
+    c.linkedInVariants.set([
+      { key: 'linkedin-variant-test', headline: 'Attend', introText: 'Join us', imageAssetId: '', imageAssetName: '', imageAssetBriefId: '' },
+    ]);
     f.detectChanges();
   }
 
@@ -3100,6 +3103,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
           provide: CampaignService,
           useValue: {
             getLinkedInAccounts: () => accountsSubject.asObservable(),
+            getLinkedInTargetingProfiles: () => of([]),
             createCampaign: (request: Record<string, unknown>) => {
               posted = request;
               return of({ jobId: '' });
@@ -3127,7 +3131,9 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     internals.campaignForm.controls['startDate'].setValue('2026-09-01');
     internals.campaignForm.controls['endDate'].setValue('2026-09-30');
     internals.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
-    internals.linkedInVariants.set([{ headline: 'Attend', introText: 'Join us', destinationUrl: 'https://example.com/kubecon' }]);
+    internals.linkedInVariants.set([
+      { key: 'linkedin-variant-test', headline: 'Attend', introText: 'Join us', imageAssetId: '', imageAssetName: '', imageAssetBriefId: '' },
+    ]);
     fixture.detectChanges();
 
     internals.submit();
@@ -3153,6 +3159,14 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
  * recommendation. Reddit's brief seed is the trap: the component re-runs `populateFromBrief` on
  * every mount, so asserting the brief's own numbers back would pass with the restore deleted.
  */
+/**
+ * The draft with each LinkedIn variant's `key` blanked. A key only names a variant within one mount
+ * and every seed makes new ones, so two mounts of the same brief agree on everything else.
+ */
+function withoutLinkedInVariantKeys(draft: CampaignImplementationDraft | null): CampaignImplementationDraft | null {
+  return draft && { ...draft, linkedInVariants: draft.linkedInVariants?.map((variant) => ({ ...variant, key: '' })) };
+}
+
 describe('ImplementationTabComponent per-platform draft round-trip', () => {
   const EVENT_SLUG = 'kubecon-eu-2026';
 
@@ -3369,6 +3383,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
                 { accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' },
                 { accountId: 'urn:li:sponsoredAccount:2', name: 'LF Events Account', status: 'ACTIVE' },
               ]),
+            getLinkedInTargetingProfiles: () => of([]),
           },
         },
       ],
@@ -3879,7 +3894,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(q('profile-mcp').getAttribute('aria-pressed')).toBe('false');
 
     const fresh = await freshMount(next);
-    expect(mounted.latest()).toEqual(fresh.latest());
+    expect(withoutLinkedInVariantKeys(mounted.latest())).toEqual(withoutLinkedInVariantKeys(fresh.latest()));
 
     const config = submitOne(f, 'linkedin-ads', 'linkedInConfig');
     expect(config).toMatchObject({ budgetUsd: 500, lifetimeBudget: false, targetingProfile: 'cloud-native', adAccountId: 'urn:li:sponsoredAccount:1' });
@@ -3930,7 +3945,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     for (const stale of ['briefsub', 'brief-interest', 'brief-keyword', 'Brief reddit headline']) expect(section(f)).not.toContain(stale);
 
     const fresh = await freshMount(next);
-    expect(mounted.latest()).toEqual(fresh.latest());
+    expect(withoutLinkedInVariantKeys(mounted.latest())).toEqual(withoutLinkedInVariantKeys(fresh.latest()));
     fresh.fixture.componentRef.setInput('redditCreativeEnabled', true);
     at(fresh.fixture).selectedPlatforms.set(['reddit-ads']);
     fresh.fixture.detectChanges();
@@ -4370,9 +4385,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * Mounting with a draft present is the point — it proves the restore leaves them alone rather
    * than overwriting the fresh seed with a stale copy, which is what carrying them used to do.
    *
-   * All SEVEN excluded arrays are asserted, and the count is the point: `emitDraft`'s note names
-   * seven, and an earlier revision checked six. `redditVariants` was the omission, so dropping it
-   * from the brief seed stayed green under a docblock claiming every array was covered.
+   * All SIX excluded arrays are asserted, and the count is the point: `emitDraft`'s note names
+   * six, and an earlier revision missed `redditVariants`, so dropping it from the brief seed stayed
+   * green under a docblock claiming every array was covered. `linkedInVariants` left the set when it
+   * gained an editor (#5547); its round trip is tested with the LinkedIn variant editor.
    */
   it('re-seeds the brief-derived arrays from the brief on remount rather than from the draft', async () => {
     const first = await mount(null);
@@ -4387,7 +4403,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.redditKeywords()).toEqual(['brief-keyword']);
     expect(c.redditGeoTargets()).toEqual(['US']);
     expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
-    expect(c.linkedInVariants()).toEqual([{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }]);
     expect(c.metaVariants()).toEqual([{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }]);
   });
 
@@ -4409,7 +4424,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
       redditKeywords: [],
       redditGeoTargets: ['ZZ'],
       redditVariants: [],
-      linkedInVariants: [],
       metaVariants: [],
     } as unknown as CampaignImplementationDraft;
     first.fixture.destroy();
@@ -4426,7 +4440,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     // length check alone would pass on a replay of any non-empty list, and the seventh array was
     // supplied here but never checked at all until LFXV2-3230 review.
     expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
-    expect(c.linkedInVariants()).toHaveLength(1);
     expect(c.metaVariants()).toHaveLength(1);
   });
 });
@@ -13763,6 +13776,7 @@ describe('ImplementationTabComponent bidding control', () => {
           useValue: {
             createCampaign,
             getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+            getLinkedInTargetingProfiles: () => of([]),
           },
         },
       ],
@@ -14374,6 +14388,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             // The slot grid mounts beside the upload control and reads the plan as soon as this
             // suite's brief is saved. Every list upstream returns is non-nil, so the empty plan
             // is spelled out rather than left undefined.
@@ -15136,6 +15151,7 @@ describe('ImplementationTabComponent meta ad image', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
@@ -15379,7 +15395,7 @@ describe('ImplementationTabComponent microsoft flight dates', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -15526,7 +15542,7 @@ describe('ImplementationTabComponent meta instagram and dsa', () => {
         provideRouter([]),
         ProjectContextService,
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]) } },
+        { provide: CampaignService, useValue: { createCampaign, getLinkedInAccounts: () => of([]), getLinkedInTargetingProfiles: () => of([]) } },
       ],
     }).compileComponents();
   });
@@ -15925,6 +15941,7 @@ describe('ImplementationTabComponent google stored images', () => {
             cancelCreativeAssetUpload,
             listCreativeAssets,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
             // The conversion-action picker's read (#4991): this suite is about images, so the list
             // is empty.
@@ -16442,13 +16459,16 @@ describe('ImplementationTabComponent google stored images', () => {
 });
 
 /**
- * The LinkedIn ad image: one upload, set on every variant as `imageAssetId` (the dark post's
+ * The LinkedIn ad variants (#5547): each one's intro text and headline are edited in the tab,
+ * variants are added and removed between `LINKEDIN_MIN_VARIANTS` and `LINKEDIN_MAX_VARIANTS`, and
+ * each takes its OWN image upload, sent as that variant's `imageAssetId` (the dark post's
  * thumbnail). LinkedIn takes no image URL, so the upload is offered on an explicit yes from
- * `linkedInAssetUploadEnabled` and there is nothing else. With it off, the variants go out as before.
+ * `linkedInAssetUploadEnabled` and there is nothing else. With it off, the variants go out without one.
  */
-describe('ImplementationTabComponent linkedin ad image', () => {
+describe('ImplementationTabComponent linkedin ad variants', () => {
   const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
   const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const OTHER_ASSET_ID = '9b2d8f4e-1c3a-4e5b-8f6d-7a8b9c0d1e2f';
   const ACCOUNT = { accountId: 'urn:li:sponsoredAccount:111', label: 'First Account', orgId: 'urn:li:organization:1', status: 'ACTIVE' };
 
   let createCampaign: ReturnType<typeof vi.fn>;
@@ -16459,10 +16479,13 @@ describe('ImplementationTabComponent linkedin ad image', () => {
   interface Internals {
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
     selectedPlatforms: { set(v: string[]): void };
-    linkedInImageAssetId: () => string;
+    linkedInVariants: () => { key: string; imageAssetId: string }[];
     linkedInImageUploadStatus: () => string;
     linkedInImageUploadError: () => string;
+    createBlockedReason: () => string | null;
     canSubmit: () => boolean;
+    addLinkedInVariant(): void;
+    removeLinkedInVariant(key: string): void;
     submit(): void;
   }
   const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
@@ -16472,17 +16495,27 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     (q(f, id)?.querySelector('button') as HTMLButtonElement).click();
     f.detectChanges();
   };
+  const buttonDisabled = (f: ComponentFixture<ImplementationTabComponent>, id: string): boolean =>
+    (q(f, id)?.querySelector('button') as HTMLButtonElement).disabled;
+  /** Type into a variant's intro text (a textarea) or headline (an input), as the operator does. */
+  function type(f: ComponentFixture<ImplementationTabComponent>, id: string, value: string): void {
+    const box = q(f, id)?.querySelector('textarea, input') as HTMLInputElement | HTMLTextAreaElement;
+    box.value = value;
+    box.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
 
-  const brief = (): CampaignBriefOutput =>
+  const briefVariants = (): { introText: string; headline: string; imageUrn?: string }[] => [
+    { introText: 'First intro', headline: 'First headline' },
+    { introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' },
+  ];
+  const brief = (variants = briefVariants()): CampaignBriefOutput =>
     ({
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
       totalBudget: 500,
       selectedPlatforms: ['linkedin-ads'],
       linkedInCopy: {
-        variants: [
-          { introText: 'First intro', headline: 'First headline' },
-          { introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' },
-        ],
+        variants,
         recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
         recommendedTargetingProfile: 'cloud-native',
       },
@@ -16493,7 +16526,8 @@ describe('ImplementationTabComponent linkedin ad image', () => {
 
   async function mount(
     upload: boolean | null,
-    draft: CampaignImplementationDraft | null = null
+    draft: CampaignImplementationDraft | null = null,
+    briefData: CampaignBriefOutput = brief()
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
     const f = TestBed.createComponent(ImplementationTabComponent);
     let captured: CampaignImplementationDraft | null = null;
@@ -16501,7 +16535,7 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     if (draft) f.componentRef.setInput('draft', draft);
     f.componentRef.setInput('linkedInAssetUploadEnabled', upload);
     f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
-    f.componentRef.setInput('briefData', brief());
+    f.componentRef.setInput('briefData', briefData);
     at(f).selectedPlatforms.set(['linkedin-ads']);
     f.detectChanges();
     await f.whenStable();
@@ -16509,16 +16543,17 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     return { fixture: f, latest: () => captured };
   }
 
-  function choose(f: ComponentFixture<ImplementationTabComponent>, file: File): void {
-    const input = q(f, 'implementation-linkedin-image-file') as HTMLInputElement;
+  function choose(f: ComponentFixture<ImplementationTabComponent>, file: File, variant = 0): void {
+    const input = q(f, `implementation-linkedin-variant-image-file-${variant}`) as HTMLInputElement;
     Object.defineProperty(input, 'files', { configurable: true, value: [file] });
     input.dispatchEvent(new Event('change'));
     f.detectChanges();
   }
 
-  const png = (size = 16): File => new File([new Uint8Array(size)], 'promo.png', { type: 'image/png' });
+  const png = (size = 16, name = 'promo.png'): File => new File([new Uint8Array(size)], name, { type: 'image/png' });
+  const stored = (id = ASSET_ID) => of({ id, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
 
-  /** The draft a real upload leaves behind, as a tab switch hands it to the next mount. */
+  /** The draft a real upload onto the first variant leaves behind, as a tab switch hands it to the next mount. */
   async function uploadedDraft(): Promise<CampaignImplementationDraft> {
     const first = await mount(true);
     choose(first.fixture, png());
@@ -16545,7 +16580,7 @@ describe('ImplementationTabComponent linkedin ad image', () => {
 
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
-    uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
+    uploadCreativeAsset = vi.fn().mockReturnValue(stored());
     resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
     cancelCreativeAssetUpload = vi.fn();
 
@@ -16566,6 +16601,7 @@ describe('ImplementationTabComponent linkedin ad image', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([ACCOUNT]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
@@ -16573,197 +16609,416 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     }).compileComponents();
   });
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('renders no upload while the LinkedIn upload capability is %s, and sends the variants unchanged', async (_label, upload) => {
-    const f = (await mount(upload)).fixture;
+  describe('copy', () => {
+    it('seeds one editable variant per brief variant and sends the brief copy untouched', async () => {
+      const f = (await mount(null)).fixture;
 
-    expect(q(f, 'implementation-linkedin-image-file')).toBeNull();
-    expect(q(f, 'implementation-linkedin-variant-image-0')).toBeNull();
-    expect(submitVariants(f)).toEqual([
-      { introText: 'First intro', headline: 'First headline' },
-      { introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' },
-    ]);
+      expect((q(f, 'implementation-linkedin-variant-intro-0')?.querySelector('textarea') as HTMLTextAreaElement).value).toBe('First intro');
+      expect((q(f, 'implementation-linkedin-variant-headline-1')?.querySelector('input') as HTMLInputElement).value).toBe('Second headline');
+      expect(submitVariants(f)).toEqual(briefVariants());
+    });
+
+    it('sends the intro text and headline as edited, on that variant only', async () => {
+      const f = (await mount(null)).fixture;
+      type(f, 'implementation-linkedin-variant-intro-1', 'A new intro');
+      type(f, 'implementation-linkedin-variant-headline-1', 'A new headline');
+
+      expect(submitVariants(f)).toEqual([
+        { introText: 'First intro', headline: 'First headline' },
+        { introText: 'A new intro', headline: 'A new headline', imageUrn: 'urn:li:image:C4D10AQ' },
+      ]);
+    });
+
+    it('carries the edits in the draft, and a remount restores them over the brief copy', async () => {
+      const first = await mount(null);
+      type(first.fixture, 'implementation-linkedin-variant-headline-0', 'Edited headline');
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      expect(draft.linkedInVariants?.map((v) => v.headline)).toEqual(['Edited headline', 'Second headline']);
+      first.fixture.destroy();
+
+      const second = (await mount(null, draft)).fixture;
+      expect(submitVariants(second).map((v) => v['headline'])).toEqual(['Edited headline', 'Second headline']);
+    });
+
+    it('counts the characters and blocks Create, with the reason under the field, while the intro text is over 600', async () => {
+      const f = (await mount(null)).fixture;
+      fillForm(f);
+      expect(at(f).canSubmit()).toBe(true);
+
+      type(f, 'implementation-linkedin-variant-intro-0', 'a'.repeat(601));
+      expect(q(f, 'implementation-linkedin-variant-intro-0')?.textContent).toContain("The intro text is 601 characters, over LinkedIn's 600. Shorten it.");
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
+
+      type(f, 'implementation-linkedin-variant-intro-0', 'a'.repeat(600));
+      expect(q(f, 'implementation-linkedin-variant-intro-0')?.textContent).toContain('600/600 characters');
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it('blocks Create while a headline is over 200 characters or blank', async () => {
+      const f = (await mount(null)).fixture;
+      fillForm(f);
+
+      type(f, 'implementation-linkedin-variant-headline-1', 'h'.repeat(201));
+      expect(q(f, 'implementation-linkedin-variant-headline-1')?.textContent).toContain("The headline is 201 characters, over LinkedIn's 200. Shorten it.");
+      expect(at(f).canSubmit()).toBe(false);
+
+      type(f, 'implementation-linkedin-variant-headline-1', ' — ');
+      expect(q(f, 'implementation-linkedin-variant-headline-1')?.textContent).toContain('Enter the headline.');
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
+    });
+
+    it('adds an empty variant, which holds Create until its copy is written, and sends it', async () => {
+      const f = (await mount(null)).fixture;
+      fillForm(f);
+      click(f, 'implementation-linkedin-variant-add');
+
+      expect(at(f).linkedInVariants()).toHaveLength(3);
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
+      type(f, 'implementation-linkedin-variant-intro-2', 'Third intro');
+      type(f, 'implementation-linkedin-variant-headline-2', 'Third headline');
+      expect(submitVariants(f)[2]).toEqual({ introText: 'Third intro', headline: 'Third headline' });
+    });
+
+    it('removes the chosen variant and sends the rest', async () => {
+      const f = (await mount(null)).fixture;
+      click(f, 'implementation-linkedin-variant-remove-0');
+
+      expect(submitVariants(f)).toEqual([{ introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' }]);
+    });
+
+    it('keeps at least one variant: Remove is disabled on the last, and refused if reached anyway', async () => {
+      const f = (await mount(null, null, brief([{ introText: 'Only intro', headline: 'Only headline' }]))).fixture;
+
+      expect(buttonDisabled(f, 'implementation-linkedin-variant-remove-0')).toBe(true);
+      at(f).removeLinkedInVariant(at(f).linkedInVariants()[0].key);
+      expect(at(f).linkedInVariants()).toHaveLength(1);
+    });
+
+    it('offers at most 15 variants: Add is disabled at 15, and refused if reached anyway', async () => {
+      const f = (await mount(null)).fixture;
+      for (let i = 2; i < 15; i++) click(f, 'implementation-linkedin-variant-add');
+
+      expect(at(f).linkedInVariants()).toHaveLength(15);
+      expect(buttonDisabled(f, 'implementation-linkedin-variant-add')).toBe(true);
+      at(f).addLinkedInVariant();
+      expect(at(f).linkedInVariants()).toHaveLength(15);
+    });
+
+    it('blocks Create for a brief holding more than 15 variants, until enough are removed', async () => {
+      const many = Array.from({ length: 16 }, (_, i) => ({ introText: `Intro ${i + 1}`, headline: `Headline ${i + 1}` }));
+      const f = (await mount(null, null, brief(many))).fixture;
+      fillForm(f);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: remove ad variants until there are at most 15.');
+      click(f, 'implementation-linkedin-variant-remove-15');
+      expect(at(f).canSubmit()).toBe(true);
+    });
   });
 
-  it('uploads the chosen image for the saved brief and sends its asset id on every variant in place of any image URN', async () => {
-    const f = (await mount(true)).fixture;
-    const file = png();
-    choose(f, file);
+  describe('images', () => {
+    it.each([
+      ['unanswered', null],
+      ['off', false],
+    ])('renders no upload while the LinkedIn upload capability is %s, and sends no image asset', async (_label, upload) => {
+      const f = (await mount(upload)).fixture;
 
-    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'linkedin');
-    expect(at(f).linkedInImageAssetId()).toBe(ASSET_ID);
-    expect(q(f, 'implementation-linkedin-image-status')?.textContent).toContain('Uploaded: promo.png');
-    expect(q(f, 'implementation-linkedin-variant-image-0')?.textContent).toContain('promo.png');
-    expect(q(f, 'implementation-linkedin-variant-image-1')?.textContent).toContain('promo.png');
-    const variants = submitVariants(f);
-    expect(variants.map((v) => v['imageAssetId'])).toEqual([ASSET_ID, ASSET_ID]);
-    // campaign-service refuses a variant carrying both, so the upload replaces the plan's URN.
-    expect(variants.some((v) => 'imageUrn' in v)).toBe(false);
-  });
+      expect(q(f, 'implementation-linkedin-variant-image-file-0')).toBeNull();
+      expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
+    });
 
-  it('refuses a file that is not a PNG or JPEG before any upload', async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+    it("uploads the chosen image for the saved brief and sends it on that variant only, in place of the variant's image URN", async () => {
+      const f = (await mount(true)).fixture;
+      const file = png();
+      choose(f, file, 1);
 
-    expect(uploadCreativeAsset).not.toHaveBeenCalled();
-    expect(at(f).linkedInImageUploadStatus()).toBe('error');
-    expect(q(f, 'implementation-linkedin-image-error')).not.toBeNull();
-  });
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'linkedin');
+      expect(q(f, 'implementation-linkedin-variant-image-status-1')?.textContent).toContain('Uploaded: promo.png');
+      expect(q(f, 'implementation-linkedin-variant-image-status-0')?.textContent?.trim()).toBe('');
+      const variants = submitVariants(f);
+      // The variant with no upload sends no image asset; campaign-service refuses a variant carrying both fields.
+      expect(variants).toEqual([
+        { introText: 'First intro', headline: 'First headline' },
+        { introText: 'Second intro', headline: 'Second headline', imageAssetId: ASSET_ID },
+      ]);
+    });
 
-  it("refuses an image over LinkedIn's 5,000,000-byte limit before any upload, though the shared cap would admit it", async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, png(5_000_001));
+    it('sends a different image on each variant', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(16, 'first.png'), 0);
+      uploadCreativeAsset.mockReturnValue(stored(OTHER_ASSET_ID));
+      choose(f, png(16, 'second.png'), 1);
 
-    expect(uploadCreativeAsset).not.toHaveBeenCalled();
-    expect(at(f).linkedInImageUploadStatus()).toBe('error');
-    expect(q(f, 'implementation-linkedin-image-error')?.textContent).toContain('LinkedIn accepts images up to 5 MB');
-  });
+      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, OTHER_ASSET_ID]);
+    });
 
-  it.each([
-    ['an oversized image', () => png(5_000_001)],
-    ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
-  ])('blocks Create after %s replaces an uploaded one, and keeps the reason across a tab switch', async (_label, file) => {
-    const first = await mount(true);
-    fillForm(first.fixture);
-    choose(first.fixture, png());
-    choose(first.fixture, file());
+    it('refuses a file that is not a PNG or JPEG before any upload', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
 
-    expect(q(first.fixture, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
-    expect(at(first.fixture).canSubmit()).toBe(false);
-    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
-    expect(draft.linkedInImageUploadFailedBriefId).toBe(BRIEF_ID);
-    first.fixture.destroy();
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadStatus()).toBe('error');
+      expect(q(f, 'implementation-linkedin-variant-image-error-0')).not.toBeNull();
+    });
 
-    const second = (await mount(true, draft)).fixture;
-    fillForm(second);
-    expect(q(second, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
-    expect(at(second).canSubmit()).toBe(false);
-  });
+    it("refuses an image over LinkedIn's 5,000,000-byte limit before any upload, though the shared cap would admit it", async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(5_000_001));
 
-  it('suggests removing the image, not pasting a URL, when the image service is unavailable', async () => {
-    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
-    const f = (await mount(true)).fixture;
-    choose(f, png());
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(q(f, 'implementation-linkedin-variant-image-error-0')?.textContent).toContain('LinkedIn accepts images up to 5 MB');
+    });
 
-    expect(at(f).linkedInImageUploadError()).toBe(
-      'The image service is unavailable right now. Try again in a moment, or remove the image to continue without it.'
-    );
-  });
+    it('uploads an image of exactly 5,000,000 bytes', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(5_000_000));
 
-  it.each([
-    ['has no id yet', { status: 'saving', briefId: null, message: null, approved: true }],
-    ['is saving', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true }],
-  ])('disables the picker while the brief %s', async (_label, persistence) => {
-    const f = (await mount(true)).fixture;
-    f.componentRef.setInput('briefPersistence', persistence);
-    f.detectChanges();
+      expect(uploadCreativeAsset).toHaveBeenCalled();
+      expect(at(f).linkedInVariants()[0].imageAssetId).toBe(ASSET_ID);
+    });
 
-    expect((q(f, 'implementation-linkedin-image-file') as HTMLInputElement).disabled).toBe(true);
-  });
+    it.each([
+      ['an oversized image', () => png(5_000_001)],
+      ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
+    ])('blocks Create after %s replaces an uploaded one, and keeps the reason across a tab switch', async (_label, file) => {
+      const first = await mount(true);
+      fillForm(first.fixture);
+      choose(first.fixture, png());
+      choose(first.fixture, file());
 
-  it('uploads an image of exactly 5,000,000 bytes', async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, png(5_000_000));
+      expect(q(first.fixture, 'implementation-linkedin-variant-image-asset-block-uploadFailed-0')).not.toBeNull();
+      expect(at(first.fixture).canSubmit()).toBe(false);
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      expect(draft.linkedInImageUploadFailedBriefId).toBe(BRIEF_ID);
+      first.fixture.destroy();
 
-    expect(uploadCreativeAsset).toHaveBeenCalled();
-    expect(at(f).linkedInImageAssetId()).toBe(ASSET_ID);
-  });
+      const second = (await mount(true, draft)).fixture;
+      fillForm(second);
+      expect(q(second, 'implementation-linkedin-variant-image-asset-block-uploadFailed-0')).not.toBeNull();
+      expect(at(second).canSubmit()).toBe(false);
+    });
 
-  it('holds Create while the upload is in flight, and Cancel aborts the LinkedIn upload only', async () => {
-    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
-    const f = (await mount(true)).fixture;
-    fillForm(f);
-    expect(at(f).canSubmit()).toBe(true);
+    it('suggests removing the image, not pasting a URL, when the image service is unavailable', async () => {
+      uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const f = (await mount(true)).fixture;
+      choose(f, png());
 
-    choose(f, png());
-    expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
-    expect(at(f).canSubmit()).toBe(false);
+      expect(at(f).linkedInImageUploadError()).toBe(
+        'The image service is unavailable right now. Try again in a moment, or remove the image to continue without it.'
+      );
+    });
 
-    click(f, 'implementation-linkedin-image-cancel');
-    expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
-    expect(at(f).linkedInImageUploadStatus()).toBe('idle');
-    expect(at(f).canSubmit()).toBe(true);
-  });
+    it.each([
+      ['has no id yet', { status: 'saving', briefId: null, message: null, approved: true }],
+      ['is saving', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true }],
+    ])('disables every picker while the brief %s', async (_label, persistence) => {
+      const f = (await mount(true)).fixture;
+      f.componentRef.setInput('briefPersistence', persistence);
+      f.detectChanges();
 
-  it('removes an uploaded image, after which the variants go out without it', async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, png());
-    click(f, 'implementation-linkedin-image-remove');
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(true);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(true);
+    });
 
-    expect(at(f).linkedInImageAssetId()).toBe('');
-    expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
-  });
+    it("holds Create and the other variants' pickers while an upload is in flight, and Cancel aborts it", async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      expect(at(f).canSubmit()).toBe(true);
 
-  it('carries the upload in the draft, and a remount resumes an upload still in flight', async () => {
-    const pending = new Subject<unknown>();
-    uploadCreativeAsset.mockReturnValue(pending);
-    const first = await mount(true);
-    choose(first.fixture, png());
-    const draft = first.latest() as CampaignImplementationDraft;
-    expect(draft.linkedInImageUploadPendingName).toBe('promo.png');
-    expect(draft.linkedInImageUploadPendingBriefId).toBe(BRIEF_ID);
-    first.fixture.destroy();
+      choose(f, png(), 0);
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+      expect(at(f).canSubmit()).toBe(false);
+      // A second LinkedIn upload would cancel this one (`uploadCreativeAsset` keeps one per owner).
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(true);
+      expect(q(f, 'implementation-linkedin-variant-image-upload-1')?.textContent).toContain('Finish or remove the image for variant 1 first.');
 
-    resumeCreativeAssetUpload.mockReturnValue(pending);
-    const second = await mount(true, draft);
-    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('linkedin', BRIEF_ID);
-    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
-    second.fixture.detectChanges();
-    expect(at(second.fixture).linkedInImageAssetId()).toBe(ASSET_ID);
-    expect(second.latest()?.linkedInImageAssetId).toBe(ASSET_ID);
-  });
+      click(f, 'implementation-linkedin-variant-image-cancel-0');
+      expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).canSubmit()).toBe(true);
+    });
 
-  it('restores a finished upload from the draft and sends it', async () => {
-    const draft = await uploadedDraft();
-    const f = (await mount(true, draft)).fixture;
+    it("never starts a second upload over another variant's upload in flight, even if its picker fires", async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      choose(f, png(), 0);
+      choose(f, png(16, 'second.png'), 1);
 
-    expect(at(f).linkedInImageAssetId()).toBe(ASSET_ID);
-    expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, ASSET_ID]);
-  });
+      expect(uploadCreativeAsset).toHaveBeenCalledTimes(1);
+      expect(cancelCreativeAssetUpload).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+    });
 
-  it.each([
-    ['off', false, 'ready', 'unsupported'],
-    ['unanswered, with the read failed', null, 'failed', 'failed'],
-    ['unanswered, with the read pending', null, 'pending', 'pending'],
-  ] as const)('blocks Create for a restored upload while the capability is %s, until it is removed', async (_label, upload, read, kind) => {
-    const draft = await uploadedDraft();
-    const f = (await mount(upload, draft)).fixture;
-    f.componentRef.setInput('createCapabilityRead', read);
-    fillForm(f);
+    it('cancels the upload of a variant that is removed while its image is in flight', async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      choose(f, png(), 1);
+      click(f, 'implementation-linkedin-variant-remove-1');
 
-    expect(q(f, `implementation-linkedin-image-asset-block-${kind}`)).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
+      expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+    });
 
-    click(f, 'implementation-linkedin-image-asset-block-remove');
-    expect(q(f, `implementation-linkedin-image-asset-block-${kind}`)).toBeNull();
-    expect(at(f).canSubmit()).toBe(true);
-    expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
-  });
+    it('removes one variant image, after which that variant goes out without it and the other keeps its own', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(), 0);
+      uploadCreativeAsset.mockReturnValue(stored(OTHER_ASSET_ID));
+      choose(f, png(), 1);
+      click(f, 'implementation-linkedin-variant-image-remove-0');
 
-  it('never sends an upload made for another brief, and says so', async () => {
-    const draft = { ...(await uploadedDraft()), linkedInImageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' };
-    const f = (await mount(true, draft)).fixture;
-    fillForm(f);
+      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([undefined, OTHER_ASSET_ID]);
+    });
 
-    expect(q(f, 'implementation-linkedin-image-asset-block-otherBrief')).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
-  });
+    it('carries the upload in the draft, and a remount resumes an upload still in flight onto its variant', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const first = await mount(true);
+      choose(first.fixture, png(), 1);
+      const draft = first.latest() as CampaignImplementationDraft;
+      expect(draft.linkedInImageUploadPendingName).toBe('promo.png');
+      expect(draft.linkedInImageUploadPendingBriefId).toBe(BRIEF_ID);
+      expect(draft.linkedInImageUploadVariantKey).toBe(draft.linkedInVariants?.[1].key);
+      first.fixture.destroy();
 
-  it('keeps Create blocked after a failed upload, until the operator removes it', async () => {
-    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
-    const f = (await mount(true)).fixture;
-    fillForm(f);
-    choose(f, png());
+      resumeCreativeAssetUpload.mockReturnValue(pending);
+      const second = await mount(true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+      expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('linkedin', BRIEF_ID);
+      pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+      second.fixture.detectChanges();
+      expect(
+        at(second.fixture)
+          .linkedInVariants()
+          .map((v) => v.imageAssetId)
+      ).toEqual(['', ASSET_ID]);
+      expect(second.latest()?.linkedInVariants?.[1].imageAssetId).toBe(ASSET_ID);
+    });
 
-    expect(at(f).linkedInImageUploadStatus()).toBe('error');
-    expect(q(f, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
+    it('restores a finished upload from the draft and sends it on its variant', async () => {
+      const draft = await uploadedDraft();
+      const f = (await mount(true, draft)).fixture;
 
-    click(f, 'implementation-linkedin-image-asset-block-remove');
-    expect(q(f, 'implementation-linkedin-image-asset-block-uploadFailed')).toBeNull();
-    expect(at(f).canSubmit()).toBe(true);
+      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, undefined]);
+    });
+
+    it.each([
+      ['off', false, 'ready', 'unsupported'],
+      ['unanswered, with the read failed', null, 'failed', 'failed'],
+      ['unanswered, with the read pending', null, 'pending', 'pending'],
+    ] as const)('blocks Create for a restored upload while the capability is %s, until it is removed', async (_label, upload, read, kind) => {
+      const draft = await uploadedDraft();
+      const f = (await mount(upload, draft)).fixture;
+      f.componentRef.setInput('createCapabilityRead', read);
+      fillForm(f);
+
+      expect(q(f, `implementation-linkedin-variant-image-asset-block-${kind}-0`)).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+
+      click(f, 'implementation-linkedin-variant-image-asset-block-remove-0');
+      expect(q(f, `implementation-linkedin-variant-image-asset-block-${kind}-0`)).toBeNull();
+      expect(at(f).canSubmit()).toBe(true);
+      expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
+    });
+
+    it('never sends an upload made for another brief, and says so on its variant', async () => {
+      const uploaded = await uploadedDraft();
+      const draft = {
+        ...uploaded,
+        linkedInVariants: uploaded.linkedInVariants?.map((v, i) => (i === 0 ? { ...v, imageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' } : v)),
+      };
+      const f = (await mount(true, draft)).fixture;
+      fillForm(f);
+
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-otherBrief-0')).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+    });
+
+    it('keeps an upload running through a re-seed when the parent restores its draft, and lands it on its variant', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const mounted = await mount(true);
+      const f = mounted.fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+
+      // The service still holds the upload (nothing cancelled it), so the draft restore resumes it.
+      resumeCreativeAssetUpload.mockReturnValue(pending);
+      // As the parent does on a refine: it holds the emitted draft and hands the tab a new brief.
+      f.componentRef.setInput('draft', mounted.latest());
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+
+      expect(cancelCreativeAssetUpload).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+      expect(at(f).linkedInImageUploadError()).toBe('');
+
+      pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+      pending.complete();
+      f.detectChanges();
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect(submitVariants(f).map((variant) => variant['imageAssetId'])).toEqual([undefined, ASSET_ID]);
+    });
+
+    it('lets an upload orphaned by a re-seed hold neither the pickers nor Create', async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+      expect(at(f).canSubmit()).toBe(false);
+
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).createBlockedReason()).not.toBe('Waiting for the LinkedIn Ads image upload to finish.');
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it('frees the upload slot when an upload fails after the brief re-seeded its variant away', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+
+      // A refine hands the tab a new brief for the same saved id: the variants get fresh keys.
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+      pending.error(new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } }));
+      f.detectChanges();
+
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect(at(f).linkedInImageUploadError()).toBe('');
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it('keeps Create blocked after a failed upload, on its variant only, and the other pickers held, until the operator removes it', async () => {
+      uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+
+      expect(at(f).linkedInImageUploadStatus()).toBe('error');
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-1')?.textContent).toContain('LinkedIn variant 2');
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-0')).toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(true);
+
+      click(f, 'implementation-linkedin-variant-image-asset-block-remove-1');
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-1')).toBeNull();
+      expect(at(f).canSubmit()).toBe(true);
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+    });
   });
 });
 
@@ -16878,6 +17133,7 @@ describe('ImplementationTabComponent x create', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload: vi.fn(),
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getTwitterAdsAccounts,
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
@@ -17313,6 +17569,7 @@ describe('ImplementationTabComponent microsoft image extension', () => {
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
             getLinkedInAccounts: () => of([]),
+            getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
           },
         },
@@ -22218,5 +22475,427 @@ describe('ImplementationTabComponent display audiences', () => {
         expect(c['displayAudiencesBlock']()).toBeNull();
       });
     });
+  });
+});
+
+/**
+ * The LinkedIn targeting profile's facets (#5546): shown under the profile picker, each member group
+ * and skill removable, reset to the profile, reseeded on another profile, carried by the draft, and
+ * sent as `linkedInConfig.targetingProfileEdit` only when something was removed.
+ */
+describe('ImplementationTabComponent linkedin targeting facets', () => {
+  const EVENT_SLUG = 'kubecon-eu-2026';
+  // Synthetic facet ids.
+  const PROFILES = [
+    { id: 'cloud-native', label: 'Cloud Native', skills: ['urn:li:skill:101', 'urn:li:skill:102'], groups: ['urn:li:group:201', 'urn:li:group:202'] },
+    { id: 'mcp', label: 'AI / MCP', skills: ['urn:li:skill:301'], groups: ['urn:li:group:401'] },
+  ];
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+
+  const brief = (profile = 'cloud-native'): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: EVENT_SLUG, countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
+        recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+        recommendedTargetingProfile: profile,
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  interface Internals {
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void; value: unknown }> };
+    selectedPlatforms: { set(v: string[]): void };
+    createBlockedReason: () => string | null;
+    submit(): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+
+  async function mount(options: {
+    draft?: CampaignImplementationDraft | null;
+    edit?: boolean | null;
+    briefData?: CampaignBriefOutput;
+  }): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (options.draft) f.componentRef.setInput('draft', options.draft);
+    f.componentRef.setInput('linkedInTargetingEditEnabled', options.edit === undefined ? true : options.edit);
+    f.componentRef.setInput('briefData', options.briefData ?? brief());
+    f.detectChanges();
+    await f.whenStable();
+    f.detectChanges();
+    return { fixture: f, latest: () => captured };
+  }
+
+  function makeSubmittable(f: ComponentFixture<ImplementationTabComponent>): void {
+    const c = at(f);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    f.detectChanges();
+  }
+
+  function sentLinkedInConfig(): Record<string, unknown> {
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[0][0]['linkedInConfig'] as Record<string, unknown>;
+  }
+
+  const q = (f: ComponentFixture<ImplementationTabComponent>, testid: string): HTMLElement | null =>
+    f.nativeElement.querySelector(`[data-testid="${testid}"]`) as HTMLElement | null;
+
+  function chips(f: ComponentFixture<ImplementationTabComponent>, section: 'groups' | 'skills'): string[] {
+    const host = q(f, `implementation-linkedin-targeting-${section}`);
+    return Array.from(host?.querySelectorAll('span.font-mono') ?? []).map((el) => (el.textContent ?? '').trim());
+  }
+
+  /** The Reset control stays in the layout and is hidden with `invisible`, so the chips don't shift (frontend-checklist §8). */
+  function resetHidden(f: ComponentFixture<ImplementationTabComponent>): boolean {
+    const el = q(f, 'implementation-linkedin-targeting-reset')!;
+    const hidden = el.classList.contains('invisible');
+    expect(el.getAttribute('aria-hidden')).toBe(hidden ? 'true' : 'false');
+    expect(el.getAttribute('tabindex')).toBe(hidden ? '-1' : null);
+    return hidden;
+  }
+
+  function removeChip(f: ComponentFixture<ImplementationTabComponent>, urn: string): void {
+    const button = f.nativeElement.querySelector(`[data-testid^="implementation-linkedin-targeting-remove-"][aria-label="Remove ${urn}"]`) as HTMLButtonElement;
+    button.click();
+    f.detectChanges();
+  }
+
+  function pickProfile(f: ComponentFixture<ImplementationTabComponent>, profile: 'cloud-native' | 'mcp'): void {
+    q(f, `implementation-linkedin-profile-${profile}`)!.click();
+    f.detectChanges();
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+            getLinkedInTargetingProfiles: () => of(PROFILES),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it('seeds the facets from the selected profile, with counts', async () => {
+    const { fixture } = await mount({});
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-count')?.textContent).toContain('2 of 2');
+    expect(resetHidden(fixture)).toBe(true);
+  });
+
+  it("shows cloud-native's facets for a custom selection, which campaign-service reads as cloud-native", async () => {
+    const { fixture } = await mount({ briefData: brief('custom') });
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+  });
+
+  it('removes an entry, and resets to the profile', async () => {
+    const { fixture } = await mount({});
+
+    removeChip(fixture, 'urn:li:group:201');
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:202']);
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-count')?.textContent).toContain('1 of 2');
+    expect(resetHidden(fixture)).toBe(false);
+
+    q(fixture, 'implementation-linkedin-targeting-reset')!.click();
+    fixture.detectChanges();
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+    expect(resetHidden(fixture)).toBe(true);
+  });
+
+  it('reseeds from the newly picked profile, dropping removals made against the old one', async () => {
+    const { fixture } = await mount({});
+    removeChip(fixture, 'urn:li:skill:101');
+
+    pickProfile(fixture, 'mcp');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:301']);
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:401']);
+
+    pickProfile(fixture, 'cloud-native');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+  });
+
+  it('keeps removals when Cloud Native is picked on a custom selection, whose facets it already shows', async () => {
+    const { fixture } = await mount({ briefData: brief('custom') });
+    removeChip(fixture, 'urn:li:skill:101');
+
+    pickProfile(fixture, 'cloud-native');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:102']);
+  });
+
+  it('keeps removals when the already-selected profile is picked again', async () => {
+    const { fixture } = await mount({});
+    removeChip(fixture, 'urn:li:skill:101');
+
+    pickProfile(fixture, 'cloud-native');
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:102']);
+  });
+
+  it('sends exactly what it always did when nothing was removed', async () => {
+    const { fixture } = await mount({});
+    makeSubmittable(fixture);
+    at(fixture).submit();
+
+    const config = sentLinkedInConfig();
+    expect(config).not.toHaveProperty('targetingProfileEdit');
+    expect(config['targetingProfile']).toBe('cloud-native');
+  });
+
+  it('sends nothing extra after a removal is undone by a reset', async () => {
+    const { fixture } = await mount({});
+    removeChip(fixture, 'urn:li:skill:101');
+    q(fixture, 'implementation-linkedin-targeting-reset')!.click();
+    makeSubmittable(fixture);
+    at(fixture).submit();
+
+    expect(sentLinkedInConfig()).not.toHaveProperty('targetingProfileEdit');
+  });
+
+  it('sends the edited profile, keyed by the profile campaign-service resolves the selection to', async () => {
+    const { fixture } = await mount({ briefData: brief('custom') });
+    removeChip(fixture, 'urn:li:skill:101');
+    removeChip(fixture, 'urn:li:group:202');
+    makeSubmittable(fixture);
+    at(fixture).submit();
+
+    const config = sentLinkedInConfig();
+    expect(config['targetingProfile']).toBe('custom');
+    expect(config['targetingProfileEdit']).toEqual({ id: 'cloud-native', skills: ['urn:li:skill:102'], groups: ['urn:li:group:201'] });
+  });
+
+  it('warns, without blocking, when every member group and skill is removed', async () => {
+    const { fixture } = await mount({});
+    for (const urn of ['urn:li:group:201', 'urn:li:group:202', 'urn:li:skill:101', 'urn:li:skill:102']) removeChip(fixture, urn);
+    makeSubmittable(fixture);
+
+    expect(q(fixture, 'implementation-linkedin-targeting-empty-warning')).not.toBeNull();
+    expect(at(fixture).createBlockedReason()).toBeNull();
+    at(fixture).submit();
+    expect(sentLinkedInConfig()['targetingProfileEdit']).toEqual({ id: 'cloud-native', skills: [], groups: [] });
+  });
+
+  it('shows the profile read-only while the capability is unanswered', async () => {
+    const { fixture } = await mount({ edit: null });
+
+    expect(chips(fixture, 'skills')).toEqual(['urn:li:skill:101', 'urn:li:skill:102']);
+    expect(fixture.nativeElement.querySelector('[data-testid^="implementation-linkedin-targeting-remove-"]')).toBeNull();
+  });
+
+  it('blocks a create holding removals once the capability says no, rather than dropping them', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:skill:101');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const { fixture } = await mount({ draft, edit: false });
+    makeSubmittable(fixture);
+
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
+  });
+
+  it('blocks a create holding removals while the capability is unanswered, rather than reaching the BFF', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:skill:101');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const { fixture } = await mount({ draft, edit: null });
+    makeSubmittable(fixture);
+
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.');
+  });
+
+  it('never blocks an unedited campaign on the capability, whatever it says', async () => {
+    for (const edit of [null, false, true]) {
+      const { fixture } = await mount({ edit });
+      makeSubmittable(fixture);
+
+      expect(at(fixture).createBlockedReason()).toBeNull();
+      fixture.destroy();
+    }
+  });
+
+  it('shows the empty text for each kind once every entry of that kind is removed', async () => {
+    const { fixture } = await mount({});
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-empty')).toBeNull();
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')).toBeNull();
+
+    removeChip(fixture, 'urn:li:group:201');
+    removeChip(fixture, 'urn:li:group:202');
+    expect(q(fixture, 'implementation-linkedin-targeting-groups-empty')?.textContent).toContain('No member groups');
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')).toBeNull();
+
+    removeChip(fixture, 'urn:li:skill:101');
+    removeChip(fixture, 'urn:li:skill:102');
+    expect(q(fixture, 'implementation-linkedin-targeting-skills-empty')?.textContent).toContain('No skills');
+  });
+
+  it("says the profile isn't configured when the catalogue loads without an entry for it", async () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => of([PROFILES[1]]);
+    const { fixture } = await mount({});
+
+    expect(q(fixture, 'implementation-linkedin-targeting-unconfigured')?.textContent).toContain("This profile isn't configured on this deployment.");
+    expect(q(fixture, 'implementation-linkedin-targeting-groups')).toBeNull();
+  });
+
+  it('blocks a create holding removals when the profile catalogue failed to load, rather than sending the profile unedited', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:skill:101');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => throwError(() => new Error('unavailable'));
+    const { fixture } = await mount({ draft });
+    makeSubmittable(fixture);
+
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(at(fixture).createBlockedReason()).toBe(
+      "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile."
+    );
+
+    // The reset the message asks for is offered even though the profile never loaded.
+    q(fixture, 'implementation-linkedin-targeting-reset')!.click();
+    fixture.detectChanges();
+    expect(at(fixture).createBlockedReason()).toBeNull();
+  });
+
+  it('reloads the catalogue on a foundation switch, clearing an earlier failure (a 403 on mount must not stick)', async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const calls: string[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: (slug: string) => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = (slug: string) => {
+      calls.push(slug);
+      return calls.length === 1 ? throwError(() => new HttpErrorResponse({ status: 403 })) : of(PROFILES);
+    };
+    const { fixture } = await mount({});
+
+    expect(calls).toEqual(['a']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(chips(fixture, 'groups')).toEqual([]);
+
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(calls).toEqual(['a', 'b']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).toBeNull();
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+  });
+
+  it("shows the failure, not the previous foundation's profiles, when the reload after a switch fails", async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const calls: string[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: (slug: string) => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = (slug: string) => {
+      calls.push(slug);
+      return calls.length === 1 ? of(PROFILES) : throwError(() => new HttpErrorResponse({ status: 403 }));
+    };
+    const { fixture } = await mount({});
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(calls).toEqual(['a', 'b']);
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).not.toBeNull();
+    expect(chips(fixture, 'groups')).toEqual([]);
+  });
+
+  it("drops the previous foundation's late profile answer after a foundation switch", async () => {
+    const ctx = TestBed.inject(ProjectContextService);
+    ctx.setRouteLensKind('foundation');
+    ctx.setFoundation({ uid: 'uid-a', slug: 'a', name: 'a' } as ProjectContext, false);
+    const answers: Subject<unknown>[] = [];
+    const service = TestBed.inject(CampaignService) as unknown as { getLinkedInTargetingProfiles: () => Observable<unknown> };
+    service.getLinkedInTargetingProfiles = () => {
+      const subject = new Subject<unknown>();
+      answers.push(subject);
+      return subject.asObservable();
+    };
+    const { fixture } = await mount({});
+    ctx.setFoundation({ uid: 'uid-b', slug: 'b', name: 'b' } as ProjectContext, false);
+    fixture.detectChanges();
+    expect(answers).toHaveLength(2);
+
+    answers[0].error(new Error('late 403 for a'));
+    fixture.detectChanges();
+    expect(q(fixture, 'implementation-linkedin-targeting-error')).toBeNull();
+
+    answers[1].next(PROFILES);
+    answers[1].complete();
+    fixture.detectChanges();
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
+  });
+
+  it('carries the removals through a tab round-trip and into the request', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:group:201');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.linkedInTargetingRemovals).toEqual({ skills: [], groups: ['urn:li:group:201'] });
+
+    const { fixture } = await mount({ draft });
+
+    expect(chips(fixture, 'groups')).toEqual(['urn:li:group:202']);
+    makeSubmittable(fixture);
+    at(fixture).submit();
+    expect(sentLinkedInConfig()['targetingProfileEdit']).toEqual({
+      id: 'cloud-native',
+      skills: ['urn:li:skill:101', 'urn:li:skill:102'],
+      groups: ['urn:li:group:202'],
+    });
+  });
+
+  it('starts a different brief from the profile as configured', async () => {
+    const first = await mount({});
+    removeChip(first.fixture, 'urn:li:group:201');
+
+    first.fixture.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, slug: 'another-event' } });
+    first.fixture.detectChanges();
+
+    expect(chips(first.fixture, 'groups')).toEqual(['urn:li:group:201', 'urn:li:group:202']);
   });
 });

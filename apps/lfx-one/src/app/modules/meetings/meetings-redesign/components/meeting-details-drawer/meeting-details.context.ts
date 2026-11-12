@@ -1,41 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
-import {
-  Meeting,
-  MeetingDetailsDrawerData,
-  MeetingDetailsState,
-  MeetingDetailsTab,
-  MeetingHomeRow,
-  MeetingHostCandidate,
-  MeetingOccurrence,
-} from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsState, MeetingDetailsTab, MeetingHomeRow, MeetingHostCandidate, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { canViewMeetingGuests, getMeetingDetailsState, getPastMeetingResourceId, hasMeetingFullAccess, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { catchError, filter, fromEvent, interval, map, merge, of, Subscription, take, timer } from 'rxjs';
+import { catchError, EMPTY, filter, fromEvent, interval, map, merge, of, startWith, Subject, Subscription, switchMap, take, tap, timer } from 'rxjs';
 
-import { MeetingsHomeStore } from '../../services/meetings-home.store';
+import { MeetingDetailsSource } from './meeting-details.source';
 
 /**
  * What every section of the meeting details drawer reads: the row it opened on, the meeting, the shown date and the viewer's relation.
- * @description Provided by the drawer. Sections fetch their own data from it, keyed on `occurrence` and `pastMeetingId`.
+ * @description Provided by the host next to a `MeetingDetailsSource`. Sections fetch their own data from it, keyed on `occurrence` and `pastMeetingId`.
  */
 @Injectable()
 export class MeetingDetailsContext {
-  private readonly data = inject<MeetingDetailsDrawerData>(DIALOG_DATA);
+  private readonly source = inject(MeetingDetailsSource);
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
-  private readonly store = inject(MeetingsHomeStore);
   private readonly toast = inject(UiToastService);
-  private readonly dialogRef = inject(DialogRef, { optional: true });
   private readonly document = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
   /** Time read by the drawer's own clock; 0 until it first ticks. */
@@ -44,16 +33,25 @@ export class MeetingDetailsContext {
   private upcomingLoad: Subscription | null = null;
   /** Registered from the drawer; counts as invited before the list catches up. */
   private readonly registered = signal(false);
+  /** Emits on `retryLoad` to fetch the meeting again. */
+  private readonly reload$ = new Subject<void>();
+  private readonly loadErrorState = signal(false);
+  private readonly retryingState = signal(false);
+
+  /** The meeting could not be refreshed; the drawer shows an error with a retry instead of the row's data. */
+  public readonly loadError: Signal<boolean> = this.loadErrorState.asReadonly();
+  /** A retry after a failed load is in flight. */
+  public readonly retrying: Signal<boolean> = this.retryingState.asReadonly();
 
   /** The row the drawer opened on. */
-  public readonly row: Signal<MeetingHomeRow> = signal(this.data.row).asReadonly();
+  public readonly row: Signal<MeetingHomeRow> = signal(this.source.row).asReadonly();
   /** The meeting: the row's data first, replaced by the fresh detail of an upcoming meeting once it loads. */
   public readonly meeting: Signal<Meeting> = this.initMeeting();
   /** The date shown; null for a one-time or past meeting until another date is picked. */
-  public readonly occurrence: WritableSignal<MeetingOccurrence | null> = signal(this.data.row.occurrence);
+  public readonly occurrence: WritableSignal<MeetingOccurrence | null> = signal(this.source.row.occurrence);
   /** The page clock, or the drawer's own when it is ahead: it ticks every 5s and on focus, so Join opens on time. */
   public readonly now: Signal<Date> = computed(() => {
-    const page = this.store.now();
+    const page = this.source.now();
     return this.tick() > page.getTime() ? new Date(this.tick()) : page;
   });
   /** The row rebuilt for the shown date, for flows that act on one date, such as `MeetingsHomeEditService.edit`. */
@@ -74,7 +72,7 @@ export class MeetingDetailsContext {
   public readonly fullAccess: Signal<boolean> = computed(() => hasMeetingFullAccess(this.meeting(), { organizer: this.organizer(), member: this.member() }));
   /** Resource id of the shown date's past meeting record; null until the date has ended. */
   public readonly pastMeetingId: Signal<string | null> = this.initPastMeetingId();
-  public readonly tab: WritableSignal<MeetingDetailsTab> = signal(this.data.tab);
+  public readonly tab: WritableSignal<MeetingDetailsTab> = signal(this.source.tab);
   /** Guests or participants flagged as host, set by the guests section once it loads them; they join "Organized by". */
   public readonly hosts: WritableSignal<readonly MeetingHostCandidate[]> = signal([]);
   /** Guests or participants count for the tab, set by the guests section once it loads them. */
@@ -110,10 +108,10 @@ export class MeetingDetailsContext {
     if (!isPastMeetingCalendarRow(row.meeting)) return;
     this.upcomingLoad?.unsubscribe();
     const seriesId = row.meeting.meeting_id;
-    const listed = this.store.upcomingRows().filter((upcoming) => upcoming.meeting.id === seriesId);
+    const listed = this.source.upcomingRows().filter((upcoming) => upcoming.meeting.id === seriesId);
     const exact = listed.find((upcoming) => Date.parse(upcoming.startTime) === Date.parse(occurrence.start_time));
     if (exact) {
-      this.data.open(exact);
+      this.source.open(exact);
       return;
     }
     // The feed's copy carries the viewer's invite and answers; the detail stands in when the feed does not list the series.
@@ -125,7 +123,7 @@ export class MeetingDetailsContext {
         if (this.occurrence() !== shown) return;
         // The meeting's own copy of the date carries its title and agenda overrides.
         const full = meeting.occurrences?.find((listed) => Date.parse(listed.start_time) === Date.parse(occurrence.start_time)) ?? occurrence;
-        this.data.open({
+        this.source.open({
           key: `${seriesId}:${full.occurrence_id}`,
           meeting,
           occurrence: full,
@@ -147,6 +145,12 @@ export class MeetingDetailsContext {
     });
   }
 
+  /** Fetches the meeting again after a failed load. */
+  public retryLoad(): void {
+    this.retryingState.set(true);
+    this.reload$.next();
+  }
+
   /** Reloads the home list behind the drawer after an action changed the meeting. */
   public refreshList(): void {
     if (this.state() === 'ended') {
@@ -157,25 +161,31 @@ export class MeetingDetailsContext {
   }
 
   private initMeeting(): Signal<Meeting> {
-    const row = this.data.row;
+    const row = this.source.row;
     if (isPastMeetingCalendarRow(row.meeting)) return signal(row.meeting).asReadonly();
-    const fresh$ = this.meetingService.getMeetingDetail(row.meeting.id, { skipCache: row.meeting.organizer === true }).pipe(
-      // The detail has no feed-only fields (the viewer's RSVP, registrations, counts), so they stay from the row.
-      map((detail): Meeting => ({ ...row.meeting, ...detail })),
-      catchError((error: unknown) => {
-        console.error(`Failed to refresh meeting ${row.meeting.id} for its details drawer:`, error);
-        if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403)) {
-          this.closeUnavailable();
-          return of(row.meeting);
-        }
-        this.toast.show({
-          variant: 'error',
-          position: 'bottom-center',
-          message: 'Meeting details unavailable',
-          description: 'Some details may be out of date. Please try again later.',
-        });
-        return of(row.meeting);
-      })
+    const fresh$ = this.reload$.pipe(
+      startWith(undefined),
+      switchMap(() =>
+        this.meetingService.getMeetingDetail(row.meeting.id, { skipCache: row.meeting.organizer === true }).pipe(
+          // The detail has no feed-only fields (the viewer's RSVP, registrations, counts), so they stay from the row.
+          map((detail): Meeting => ({ ...row.meeting, ...detail })),
+          // Cleared on settle, not finalize: a retry cancelled by a newer one must not clear the newer one's spinner.
+          tap(() => {
+            this.loadErrorState.set(false);
+            this.retryingState.set(false);
+          }),
+          catchError((error: unknown) => {
+            this.retryingState.set(false);
+            console.error(`Failed to refresh meeting ${row.meeting.id} for its details drawer:`, error);
+            if (error instanceof HttpErrorResponse && (error.status === 404 || error.status === 403)) {
+              this.closeUnavailable();
+              return of(row.meeting);
+            }
+            this.loadErrorState.set(true);
+            return EMPTY;
+          })
+        )
+      )
     );
     return toSignal(fresh$, { initialValue: row.meeting });
   }
@@ -231,7 +241,7 @@ export class MeetingDetailsContext {
       description: 'This meeting was deleted or you no longer have access to it.',
     });
     this.userService.refreshUserMeetings();
-    this.dialogRef?.close();
+    this.source.hostRef?.close();
   }
 
   /** Re-reads the time every 5s, and when the tab comes back, since background tabs freeze timers. Browser only. */

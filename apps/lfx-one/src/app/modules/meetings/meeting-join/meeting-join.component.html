@@ -12,11 +12,10 @@
          later terminal failure (each failing `catchError` returns `EMPTY`, no new emission), so
          checking `meeting()` first would keep showing stale content instead of this error state
          (GH-2041 follow-up). 404/403/400 already redirect to /meetings/not-found in
-         initializeMeeting(), so this only covers the case that would otherwise leave the skeleton
+         MeetingPageDataService, so this only covers the case that would otherwise leave the skeleton
          spinning forever on the *initial* load (e.g. a 5xx or network error). `!meeting()` scopes
-         this to loads with no settled meeting yet — `refreshTrigger$` re-entering the pipeline
-         after a successful registration or materials change (meeting-join.component.ts:619, 667)
-         can also call `setMeetingLoadFailed()` on a transient failure, but `meeting()` still holds
+         this to loads with no settled meeting yet — a `pageData.refresh()` after a successful
+         registration or materials change can also flag a transient failure, but `meeting()` still holds
          the working meeting then, and a blipped background refetch must not tear down an
          otherwise-working page (dealako review on #2046). `!meetingMatchesRoute()` additionally
          catches a failed fetch after navigating to a *different* `/meetings/:id` — without it,
@@ -1013,7 +1012,7 @@
     </div>
   } @else {
     <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
-         the seeded first paint in `initializeMeeting()` means this never flashes on a fresh load. -->
+         the seeded first paint in `MeetingPageDataService.load()` means this never flashes on a fresh load. -->
     <div class="bg-gray-50 min-h-screen" role="status" aria-live="polite" data-testid="meeting-join-skeleton">
       <span class="sr-only">Loading meeting details…</span>
       <div class="container mx-auto py-6 px-8">

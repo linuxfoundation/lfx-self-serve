@@ -80,6 +80,7 @@ function listResult(campaigns: CampaignIndexDoc[]): CampaignListResult {
     metaCreativeEnabled: false,
     metaAssetUploadEnabled: false,
     linkedInAssetUploadEnabled: false,
+    linkedInTargetingEditEnabled: false,
     microsoftAssetUploadEnabled: false,
     biddingEnabled: false,
     microsoftScheduleEnabled: false,
@@ -131,5 +132,64 @@ test.describe('Campaigns Implement tab — already created for this event (#4983
     await expect(page.getByTestId('implementation-existing-unavailable')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('implementation-existing-retry')).toBeVisible();
     await expect(page.getByTestId('implementation-existing-campaigns')).toHaveCount(0);
+  });
+});
+
+/** The saved brief again, but for LinkedIn, so Implement shows the targeting profile (#5546). */
+const linkedInBrief: CampaignBriefLoadResult = {
+  ...savedBrief,
+  brief: {
+    ...(savedBrief as Extract<CampaignBriefLoadResult, { status: 'loaded' }>).brief,
+    selectedPlatforms: ['linkedin-ads'],
+    linkedInCopy: {
+      variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: EVENT_URL }],
+      recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+      recommendedTargetingProfile: 'cloud-native',
+    },
+  } as unknown as CampaignBriefOutput,
+};
+
+const linkedInProfiles = [{ id: 'cloud-native', label: 'Cloud Native', skills: ['urn:li:skill:101'], groups: ['urn:li:group:201'] }];
+
+/** Restore the LinkedIn brief with the targeting catalogue and account list stubbed. */
+async function restoreLinkedInToImplement(page: Page, profiles: unknown[]): Promise<void> {
+  await mockPlanningApis(page, {
+    lookup: notFound(),
+    savedBrief: linkedInBrief,
+    briefCampaigns: { ...listResult([]), linkedInTargetingEditEnabled: true },
+  });
+  await page.route('**/api/campaigns/linkedin/accounts**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+    })
+  );
+  await page.route('**/api/campaigns/linkedin/targeting-profiles**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(profiles) })
+  );
+  await restoreToImplement(page);
+}
+
+test.describe('Campaigns Implement tab — LinkedIn targeting profile (#5546)', () => {
+  test("says the profile isn't configured when the catalogue has no entry for it", async ({ page }) => {
+    await restoreLinkedInToImplement(page, []);
+
+    await expect(page.getByTestId('implementation-linkedin-targeting-unconfigured')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('implementation-linkedin-targeting-groups')).toHaveCount(0);
+  });
+
+  test('warns, without blocking, when every member group and skill is removed', async ({ page }) => {
+    await restoreLinkedInToImplement(page, linkedInProfiles);
+
+    await expect(page.getByTestId('implementation-linkedin-targeting-groups')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByRole('button', { name: 'Remove urn:li:group:201' }).click();
+    await page.getByRole('button', { name: 'Remove urn:li:skill:101' }).click();
+
+    await expect(page.getByTestId('implementation-linkedin-targeting-groups-empty')).toBeVisible();
+    await expect(page.getByTestId('implementation-linkedin-targeting-skills-empty')).toBeVisible();
+    await expect(page.getByTestId('implementation-linkedin-targeting-empty-warning')).toBeVisible();
+    // The warning does not block: no blocked-reason text mentions targeting (Create may be blocked for unrelated reasons here).
+    await expect(page.getByTestId('implementation-submit-blocked-reason').filter({ hasText: /targeting/i })).toHaveCount(0);
   });
 });

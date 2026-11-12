@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -30,6 +29,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingEditScopeModalComponent } from '../../meeting-edit-scope-modal/meeting-edit-scope-modal.component';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsGuestsComponent } from './meeting-details-guests.component';
 
 const meeting = (overrides: Partial<Meeting> = {}): Meeting =>
@@ -178,7 +178,7 @@ describe('MeetingDetailsGuestsComponent', () => {
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
-        { provide: DialogRef, useValue: { close: closeDialog, closed: dialogClosed } },
+        { provide: MeetingDetailsSource, useValue: { hostRef: { close: closeDialog, closed: dialogClosed } } },
       ],
     });
   });

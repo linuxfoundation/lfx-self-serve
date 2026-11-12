@@ -115,13 +115,13 @@ test.describe('Admin program detail — header and tabs', () => {
   test('offers the row actions that fit each status', async ({ page }) => {
     const pendingActions = page.getByTestId(`mentorship-current-mentee-actions-${FIRST_ID}`);
     await pendingActions.click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
-    await expect(page.getByRole('menuitem')).toHaveText(['Accept', 'Decline', 'Withdraw']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
     // The trigger toggles its popup, so a second click closes it before the next row's opens.
     await pendingActions.click();
     await expect(page.getByRole('menuitem')).toHaveCount(0);
 
     await page.getByTestId(`mentorship-current-mentee-actions-${adminApplicationId(3)}`).click();
-    await expect(page.getByRole('menuitem')).toHaveText(['Create task', 'Graduate', 'Decline', 'Withdraw']);
+    await expect(page.getByRole('menuitem')).toHaveText(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
   });
 
   test('names the statuses the table shows in the status filter, and lists only the open terms', async ({ page }) => {

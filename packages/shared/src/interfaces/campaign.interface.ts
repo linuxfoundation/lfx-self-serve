@@ -62,6 +62,34 @@ export interface LinkedInTargetingProfileConfig {
   groups: readonly string[];
 }
 
+/**
+ * A set of LinkedIn targeting facet URNs, with no claim about which side of an edit it is on (#5546).
+ * Empty lists mean no entries in the set, so what that implies depends on the extending type or the
+ * value holding it: the KEPT facets of an edited profile, or the REMOVED ones.
+ */
+export interface LinkedInTargetingFacets {
+  skills: string[];
+  groups: string[];
+}
+
+/**
+ * The facet URNs an operator took OUT of the selected LinkedIn targeting profile on the Implement tab
+ * (#5546). Removal only: nothing can be added until campaign-service offers a name-to-URN lookup
+ * (linuxfoundation/lfx-v2-campaign-service#585). Empty lists mean nothing was removed, i.e. the
+ * profile as configured. For the entries that are KEPT, use `LinkedInTargetingFacets`.
+ */
+export interface LinkedInTargetingRemovals extends LinkedInTargetingFacets {}
+
+/**
+ * The selected profile as edited, sent as `linkedInConfig.targetingProfileEdit` (#5546) only when
+ * the operator removed something. `id` is the profile campaign-service resolves the selection to
+ * (`custom` resolves to `cloud-native`); `skills` and `groups` are the entries KEPT, not removed. The
+ * BFF accepts it only when every URN is one the configured profile already carries.
+ */
+export interface LinkedInTargetingProfileEdit extends LinkedInTargetingFacets {
+  id: LinkedInTargetingProfile;
+}
+
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
 /**
@@ -1187,6 +1215,11 @@ export interface CampaignImplementationDraft {
   linkedInGeoTargets: LinkedInGeoTarget[];
   linkedInTargetingProfile: LinkedInTargetingProfile;
   /**
+   * The URNs removed from the selected targeting profile (#5546). Optional because absent and empty
+   * mean the same thing here: the profile as configured.
+   */
+  linkedInTargetingRemovals?: LinkedInTargetingRemovals;
+  /**
    * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
    * Without it, generating a brief for event B and opening Implement would restore event A's
    * copy over it — the same class of bug the `(project, event)` ownership keys exist to prevent.
@@ -1253,11 +1286,12 @@ export interface CampaignImplementationDraft {
    * WHAT IS DELIBERATELY ABSENT, and why, because the obvious next edit is to add it back:
    *
    * The brief-derived arrays — Reddit's variants, subreddits, interests, keywords and geos, plus
-   * `linkedInVariants` and `metaVariants` — are NOT carried. They have no user mutation path: the
-   * complete set of event bindings in the implementation tab's template contains no handler that
-   * writes any of them, and `populateFromBrief` is now their ONLY writer — `applyDraft` has no
-   * restore arm for any of the seven, which is precisely what this change removed. A draft that
-   * carried them round-tripped the brief's own recommendation back to itself.
+   * `metaVariants` — are NOT carried. They have no user mutation path: the complete set of event
+   * bindings in the implementation tab's template contains no handler that writes any of them, and
+   * `populateFromBrief` is now their ONLY writer — `applyDraft` has no restore arm for any of the
+   * six, which is precisely what this change removed. A draft that carried them round-tripped the
+   * brief's own recommendation back to itself. (`linkedInVariants` was one of them until it gained
+   * an editor, #5547; it is carried below.)
    *
    * That single-writer fact is the reason the exclusion is safe, so do not "restore" them here on
    * the assumption that `applyDraft` still writes them: re-adding them re-creates the bug below.
@@ -1352,12 +1386,17 @@ export interface CampaignImplementationDraft {
   metaImageUploadFailedMessage?: string;
   metaImageUploadFailedBriefId?: string;
   /**
-   * The LinkedIn ad image, an upload only (LinkedIn has no image-URL path), on the Meta upload
-   * fields' terms above. Round-trips regardless of `linkedInAssetUploadEnabled`.
+   * The LinkedIn ad variants as edited (#5547): each one's intro text, headline and its own uploaded
+   * image. A real editor, so carried and restored over the brief's seed, as the Search copy is.
+   * Restored only when present; an empty list is the operator's own (Create then asks for a variant).
    */
-  linkedInImageAssetId?: string;
-  linkedInImageAssetName?: string;
-  linkedInImageAssetBriefId?: string;
+  linkedInVariants?: LinkedInVariantDraft[];
+  /**
+   * The LinkedIn image upload in flight or failed, on the Meta upload fields' terms above, and the
+   * `key` of the variant it is for. One at a time: a second LinkedIn upload would cancel the first
+   * (`CampaignService.uploadCreativeAsset`). Round-trips regardless of `linkedInAssetUploadEnabled`.
+   */
+  linkedInImageUploadVariantKey?: string;
   linkedInImageUploadPendingName?: string;
   linkedInImageUploadPendingBriefId?: string;
   linkedInImageUploadFailedMessage?: string;
@@ -1833,10 +1872,30 @@ export interface LinkedInCreativeVariant {
   /**
    * A creative asset uploaded to the brief, which campaign-service uploads through LinkedIn's Images
    * API at dispatch and uses as the dark post's article thumbnail. Mutually exclusive with
-   * `imageUrn`: campaign-service refuses a variant carrying both. The Implement tab sets the same
-   * asset on every variant.
+   * `imageUrn`: campaign-service refuses a variant carrying both. The Implement tab sends each
+   * variant its own upload, and campaign-service uploads each distinct asset once
+   * (`resolveLinkedInImages`, `internal/dispatch/linkedin_creative.go`).
    */
   imageAssetId?: string;
+}
+
+/**
+ * One LinkedIn ad variant as the Implement tab edits it: the copy, plus the image uploaded for this
+ * variant alone. Mapped to a {@link LinkedInCreativeVariant} at create; `key` and the asset's name
+ * and brief are never sent.
+ */
+export interface LinkedInVariantDraft {
+  /** Stable for the variant's life in the tab, so an upload lands on the variant it was chosen for after another is removed. */
+  key: string;
+  introText: string;
+  headline: string;
+  /** The brief's own `imageUrn`, sent while the variant has no upload of its own. */
+  imageUrn?: string;
+  /** The upload for this variant, or `''`. Sent only when made for the open brief and the upload capability is an explicit yes. */
+  imageAssetId: string;
+  imageAssetName: string;
+  /** The brief the upload was made for. */
+  imageAssetBriefId: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -2031,6 +2090,8 @@ export interface LinkedInCampaignCreateRequest {
   adAccountId?: string;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
+  /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
+  targetingProfileEdit?: LinkedInTargetingProfileEdit;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -6733,7 +6794,7 @@ export interface CampaignListResult {
   metaAssetUploadEnabled: boolean;
   /**
    * Whether the LinkedIn section may offer an image UPLOAD, sent as
-   * `LinkedInCreativeVariant.imageAssetId` on every variant.
+   * `LinkedInCreativeVariant.imageAssetId`, each variant its own upload.
    *
    * Needs the campaign-service create path to serve the create AND the
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` flag. Like the Meta sibling it asserts no URL
@@ -6742,6 +6803,16 @@ export interface CampaignListResult {
    * the client like the capabilities above.
    */
   linkedInAssetUploadEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer removing entries from the selected targeting profile,
+   * sent as `linkedInConfig.targetingProfileEdit` (#5546).
+   *
+   * `cutoverOwnsCreate()` and nothing else, like `metaCreativeEnabled`: campaign-service builds the
+   * targeting from the profiles the request carries, while the legacy creator reads the mounted
+   * ConfigMap and would drop the edit. Modelled on the client like the capabilities above, which
+   * shows the profile read-only.
+   */
+  linkedInTargetingEditEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
@@ -7183,6 +7254,33 @@ export interface CampaignGoogleImageAssetBlock {
 export interface CampaignLinkedInImageAssetBlock {
   kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
+}
+
+/**
+ * What the Implement tab shows for one LinkedIn ad variant (#5547): its copy with the lengths and
+ * refusals campaign-service would apply, and the state of its own image. Errors and messages are
+ * `''` when there is none.
+ */
+export interface LinkedInVariantView {
+  key: string;
+  introText: string;
+  headline: string;
+  introTextLength: number;
+  headlineLength: number;
+  introTextError: string;
+  headlineError: string;
+  /** "Uploading image…", "Uploaded: <name>", or `''`. */
+  imageStatusMessage: string;
+  imageUploading: boolean;
+  /** Whether the variant holds an upload (for any brief), so Remove is offered. */
+  imageHeld: boolean;
+  /** Why this variant's last pick or upload failed, or `''`. */
+  imageError: string;
+  imagePickerDisabled: boolean;
+  /** Why the picker is disabled while another variant's upload is running or failed, or `''`. */
+  imagePickerNote: string;
+  /** Why Create is blocked for this variant's image, or `null`. */
+  imageBlock: CampaignLinkedInImageAssetBlock | null;
 }
 
 /** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */

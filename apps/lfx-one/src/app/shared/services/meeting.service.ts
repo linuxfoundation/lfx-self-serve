@@ -154,9 +154,9 @@ export class MeetingService {
     return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
-  /** Fetches meeting count scoped to a committee. */
+  /** Fetches count of meetings scoped to a committee that haven't started yet. */
   public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
-    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`);
+    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`, this.upcomingDateFilterParams());
   }
 
   /** Fetches upcoming meetings scoped to a committee. */
@@ -182,8 +182,9 @@ export class MeetingService {
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
+  /** Fetches count of meetings scoped to a project (and, with `includeSubProjects`, its sub-projects) that haven't started yet. */
   public getMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
-    return this.getCount('/api/meetings/count', this.projectScopeParams(uid, options));
+    return this.getCount('/api/meetings/count', this.projectScopeParams(uid, options), this.upcomingDateFilterParams());
   }
 
   public getPastMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
@@ -984,11 +985,34 @@ export class MeetingService {
     }
   }
 
-  private getCountByTag(endpoint: string, tag: string): Observable<number> {
-    return this.getCount(endpoint, new HttpParams().set('tags', tag));
+  /**
+   * date_field/date_from are query-service's own `/query/resources/count` params (passed through
+   * verbatim by the server), used here to exclude meetings that have already started from an
+   * "upcoming" count — otherwise the count includes every meeting ever tagged to the project/committee,
+   * regardless of how far in the past it started (see linuxfoundation/lfx-self-serve-ops#1313).
+   *
+   * date_field must be the bare field name — query-service's applyCommonFields (cmd/service/converters.go)
+   * always prepends "data." itself, so sending an already-prefixed name double-prefixes and matches nothing.
+   *
+   * Known gap: this filters on the series' root `start_time`, which for a recurring meeting is the
+   * original series start date, not the next/current occurrence `hasMeetingEnded()` (the list's own
+   * filter) checks. A recurring meeting whose series began in the past but still has future occurrences
+   * is wrongly excluded here. There's no indexed field today that cleanly supports occurrence-aware
+   * filtering on the count endpoint — tracked as linuxfoundation/lfx-self-serve-ops#1471.
+   */
+  private upcomingDateFilterParams(): Record<string, string> {
+    return { date_field: 'start_time', date_from: new Date().toISOString() };
   }
 
-  private getCount(endpoint: string, params: HttpParams): Observable<number> {
+  private getCountByTag(endpoint: string, tag: string, extraParams?: Record<string, string>): Observable<number> {
+    return this.getCount(endpoint, new HttpParams().set('tags', tag), extraParams);
+  }
+
+  private getCount(endpoint: string, scopeParams: HttpParams, extraParams?: Record<string, string>): Observable<number> {
+    let params = scopeParams;
+    for (const [key, value] of Object.entries(extraParams ?? {})) {
+      params = params.set(key, value);
+    }
     return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load count from ${endpoint}:`, error);

@@ -132,7 +132,9 @@ export class OrgPeopleKeyContactsService {
 
     const { assignments } = await this.getKeyContacts(req, orgUid);
     const matched = assignments.filter((assignment) => assignmentBelongsToPerson(assignment, username, emails));
-    if (matched.length === 0 && identity.emailsStatus !== 'resolved') {
+    // "Holds no roles" needs addresses to rule out the assignments recorded without a username: a resolved lookup that
+    // found none (an LF account with no company email here) cannot, so an unmatched result stays unidentified.
+    if (matched.length === 0 && (identity.emailsStatus !== 'resolved' || emails.size === 0)) {
       return unmatched;
     }
     return { assignments: matched, status: 'resolved' };

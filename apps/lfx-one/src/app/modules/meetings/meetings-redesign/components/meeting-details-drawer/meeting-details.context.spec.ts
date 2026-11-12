@@ -1,19 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
+import { DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Injector, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Meeting, MeetingDetailsDrawerData, MeetingHomeRow, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHomeRow, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingsHomeStore } from '../../services/meetings-home.store';
 import { MeetingDetailsContext } from './meeting-details.context';
+import { MeetingDetailsSource } from './meeting-details.source';
 
 const START = '2050-01-01T09:00:00.000Z';
 const NEXT: MeetingOccurrence = { occurrence_id: '2525245200', title: '', start_time: '2050-01-08T09:00:00.000Z', duration: 45 } as MeetingOccurrence;
@@ -33,21 +33,20 @@ describe('MeetingDetailsContext', () => {
   const upcomingRows = signal<MeetingHomeRow[]>([]);
   const now = signal(new Date('2049-12-31T09:00:00.000Z'));
 
-  const create = (row: MeetingHomeRow, detail$: Observable<Meeting> = of(row.meeting)): MeetingDetailsContext => {
+  const create = (row: MeetingHomeRow, detail$: Observable<Meeting> = of(row.meeting), hosted = true): MeetingDetailsContext => {
     detail = vi.fn().mockReturnValue(detail$);
     toast = vi.fn();
     close = vi.fn();
     refreshUserMeetings = vi.fn();
     open = vi.fn<(row: MeetingHomeRow) => void>();
-    const data: MeetingDetailsDrawerData = { row, tab: 'agenda', injector: Injector.NULL, open };
+    const hostRef = hosted ? ({ close } as unknown as DialogRef) : null;
+    const source: MeetingDetailsSource = { row, tab: 'agenda', now, upcomingRows, hostRef, open, applySummaryChange: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         MeetingDetailsContext,
-        { provide: DIALOG_DATA, useValue: data },
-        { provide: DialogRef, useValue: { close } },
+        { provide: MeetingDetailsSource, useValue: source },
         { provide: MeetingService, useValue: { getMeetingDetail: detail, removedRegistrationMeetingIds: signal(new Set<string>()) } },
         { provide: UserService, useValue: { refreshUserMeetings, refreshUserPastMeetings: vi.fn() } },
-        { provide: MeetingsHomeStore, useValue: { now, upcomingRows } },
         { provide: UiToastService, useValue: { show: toast } },
       ],
     });
@@ -83,15 +82,57 @@ describe('MeetingDetailsContext', () => {
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting unavailable' }));
   });
 
-  it('keeps the row data open with a toast on any other error', () => {
+  it('flags a load error on any other error, and clears it once a retry loads', () => {
     const context = create(
       buildRow(MEETING),
       throwError(() => new HttpErrorResponse({ status: 500 }))
     );
 
-    expect(context.meeting()).toBe(MEETING);
+    expect(context.loadError()).toBe(true);
     expect(close).not.toHaveBeenCalled();
-    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting details unavailable' }));
+    expect(toast).not.toHaveBeenCalled();
+
+    detail.mockReturnValue(of({ ...MEETING, title: 'Renamed' }));
+    context.retryLoad();
+
+    expect(context.loadError()).toBe(false);
+    expect(context.retrying()).toBe(false);
+    expect(context.meeting().title).toBe('Renamed');
+  });
+
+  it('keeps retrying while a newer retry replaces a pending one', () => {
+    const context = create(
+      buildRow(MEETING),
+      throwError(() => new HttpErrorResponse({ status: 500 }))
+    );
+    const first = new Subject<Meeting>();
+    const second = new Subject<Meeting>();
+    context.meeting();
+
+    detail.mockReturnValue(first);
+    context.retryLoad();
+    detail.mockReturnValue(second);
+    context.retryLoad();
+
+    expect(context.retrying()).toBe(true);
+
+    second.next({ ...MEETING, title: 'Renamed' });
+
+    expect(context.retrying()).toBe(false);
+    expect(context.loadError()).toBe(false);
+  });
+
+  it('runs from a source alone, outside a dialog and the meetings home page', () => {
+    const context = create(
+      buildRow(MEETING),
+      throwError(() => new HttpErrorResponse({ status: 404 })),
+      false
+    );
+
+    expect(context.meeting()).toBe(MEETING);
+    expect(context.now()).toEqual(now());
+    expect(close).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Meeting unavailable' }));
   });
 
   it('rebuilds the row for another date without the first date answer', () => {

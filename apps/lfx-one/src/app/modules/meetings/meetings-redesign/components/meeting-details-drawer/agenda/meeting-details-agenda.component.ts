@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DialogRef } from '@angular/cdk/dialog';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, linkedSignal, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -39,6 +38,7 @@ import { catchError, distinctUntilChanged, Observable, of, startWith, switchMap,
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingMaterialsDrawerComponent } from './materials-drawer/meeting-materials-drawer.component';
 
 /**
@@ -68,7 +68,7 @@ export class MeetingDetailsAgendaComponent {
   private readonly context = inject(MeetingDetailsContext);
   private readonly meetingService = inject(MeetingService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly dialogRef = inject(DialogRef, { optional: true });
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   private readonly drawerService = inject(UiDrawerService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
@@ -131,7 +131,7 @@ export class MeetingDetailsAgendaComponent {
   }
 
   protected edit(): void {
-    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.dialogRef);
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.hostRef);
   }
 
   /** Opens the series in the composer, or Manage Materials over this drawer for an ended date's past record. */
@@ -145,7 +145,7 @@ export class MeetingDetailsAgendaComponent {
       this.openMaterialsDrawer({ pastMeetingId, pastChanges: this.pastChanges(), occurrence: null, canScopeToOccurrence: false, onChanged });
       return;
     }
-    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.dialogRef, true);
+    this.editService.edit(this.context.shownRow(), 'agenda-resources', this.hostRef, true);
   }
 
   protected download(attachment: MeetingAttachment | PastMeetingAttachment): void {
