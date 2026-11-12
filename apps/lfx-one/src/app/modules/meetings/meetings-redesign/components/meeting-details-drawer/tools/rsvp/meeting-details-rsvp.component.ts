@@ -23,7 +23,7 @@ import { MeetingHomeAttendanceComponent } from '../../../meeting-home-attendance
 import { MeetingDetailsContext } from '../../meeting-details.context';
 import { MeetingDetailsSource } from '../../meeting-details.source';
 
-/** The organizer's RSVP counts for the date the meeting details drawer shows, and Invite people. */
+/** RSVP counts for the date the meeting details drawer shows; organizers also get Invite people. */
 @Component({
   selector: 'lfx-meeting-details-rsvp',
   imports: [MeetingAttendeeGridComponent, MeetingHomeAttendanceComponent, UiButtonComponent, UiSkeletonComponent],
@@ -58,13 +58,18 @@ export class MeetingDetailsRsvpComponent {
       const meeting = this.context.meeting();
       const occurrenceId = this.context.shownRow().occurrenceId ?? undefined;
       const responsesOn = this.responsesOn();
+      const organizer = this.context.organizer();
       // A series row without a date counts only answers for all dates, as the meeting page does.
-      return { id: meeting.id, occurrenceId, responsesOn, allDatesOnly: responsesOn && !!meeting.recurrence && !occurrenceId };
+      return { id: meeting.id, occurrenceId, responsesOn, organizer, allDatesOnly: responsesOn && !!meeting.recurrence && !occurrenceId };
     });
     const roster$ = toObservable(key).pipe(
       distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
       switchMap((params) =>
-        this.meetingService.getMeetingRegistrants(params.id, params.responsesOn, params.occurrenceId, true, undefined, false, params.allDatesOnly).pipe(
+        // Guests read the roster the Guests tab reads; the BFF shares it only when the meeting does.
+        (params.organizer
+          ? this.meetingService.getMeetingRegistrants(params.id, params.responsesOn, params.occurrenceId, true, undefined, false, params.allDatesOnly)
+          : this.meetingService.getMyMeetingRegistrants(params.id, params.responsesOn, params.occurrenceId, false, params.allDatesOnly)
+        ).pipe(
           map((registrants): MeetingRegistrant[] | null => registrants),
           catchError((error: unknown) => {
             console.error('Failed to load the meeting registrants:', error);
@@ -83,7 +88,7 @@ export class MeetingDetailsRsvpComponent {
       const meeting = this.context.meeting();
       const occurrenceId = this.context.shownRow().occurrenceId;
       const allDatesOnly = !!meeting.recurrence && !occurrenceId;
-      // Answers the organizer saved here can be newer than the roster.
+      // Answers saved here can be newer than the roster.
       const confirmed = this.userService.confirmedMeetingRsvps(meeting.id).filter((rsvp) => !allDatesOnly || rsvp.scope === 'all');
       if (confirmed.length === 0) return roster;
       return roster.map((registrant) => {

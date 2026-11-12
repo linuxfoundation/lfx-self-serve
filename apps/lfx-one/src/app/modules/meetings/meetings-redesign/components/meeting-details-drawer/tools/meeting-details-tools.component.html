@@ -6,7 +6,7 @@
   <lfx-meeting-details-host-key [hostKey]="key" />
 }
 
-@if (context.organizer() && !ended()) {
+@if (showRsvp()) {
   <lfx-meeting-details-rsvp />
 }
 
