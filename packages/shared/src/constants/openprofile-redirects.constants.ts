@@ -3,10 +3,22 @@
 
 import type { EventTabId } from '../interfaces';
 
-import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from './profile.constants';
+import { PROFILE_DEVELOPER_SETTINGS_PATH, PROFILE_EMAIL_PATH, PROFILE_PASSWORD_PATH } from './profile.constants';
 
 /** Query param added to every openprofile redirect target, so old-path hits are searchable in Datadog RUM. */
 export const OPENPROFILE_REDIRECT_MARKER = { key: 'from', value: 'openprofile' } as const;
+
+/** No old openprofile path comes close; longer paths skip the lookup entirely. */
+export const OPENPROFILE_MAX_PATH_LENGTH = 512;
+
+/** Raw (still percent-encoded) path segment safe to carry over as an event id or username. */
+export const OPENPROFILE_SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
+
+/** Parameterised old paths, matched against the slash-trimmed raw path. */
+export const OPENPROFILE_TRAVEL_FUNDING_PATH = /^\/myevents\/travel-funding\/([^/]+)$/i;
+export const OPENPROFILE_EVENT_SLUG_PATH = /^\/myevents\/[^/]+$/i;
+export const OPENPROFILE_NEWSLETTER_PATH = /^\/newsletter\/[^/]+$/i;
+export const OPENPROFILE_PROFILE_USERNAME_PATH = /^\/profile\/([^/]+)$/i;
 
 /**
  * Exact old Individual Dashboard (openprofile.dev) paths and their Self Serve targets. Keys are lowercase
@@ -17,9 +29,10 @@ export const OPENPROFILE_REDIRECTS: Readonly<Record<string, string>> = {
   '/edit/profile': '/profile/attributions',
   '/edit/visibility': '/profile/attributions',
   '/edit/visbility': '/profile/attributions',
-  '/edit/password': `${PROFILE_SETTINGS_PATH}#${ACCOUNT_SETTINGS_SECTIONS.PASSWORD}`,
-  '/edit/email-management': `${PROFILE_SETTINGS_PATH}#${ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS}`,
-  '/edit/registered-emails': `${PROFILE_SETTINGS_PATH}#${ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS}`,
+  // Settings sections go through path aliases: a #fragment would not survive the server-side login returnTo.
+  '/edit/password': PROFILE_PASSWORD_PATH,
+  '/edit/email-management': PROFILE_EMAIL_PATH,
+  '/edit/registered-emails': PROFILE_EMAIL_PATH,
   '/edit/linux-email': '/profile/identities',
   '/edit/connected-accounts': '/profile/identities',
   '/myevents': '/events',
@@ -33,7 +46,7 @@ export const OPENPROFILE_REDIRECTS: Readonly<Record<string, string>> = {
   '/myrewards/coupons': '/me/training?tab=rewards',
   '/myrewards/transactions': '/profile/transactions',
   '/myenrollments': '/profile/individual-enrollment',
-  '/developer-settings': `${PROFILE_SETTINGS_PATH}#${ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS}`,
+  '/developer-settings': PROFILE_DEVELOPER_SETTINGS_PATH,
   '/code': '/profile/attributions',
   '/code/affiliations': '/profile/attributions',
   '/data-visibility': '/profile/attributions',
@@ -62,6 +75,7 @@ export const PROFILE_ROUTE_SEGMENTS: ReadonlySet<string> = new Set([
   'clas',
   'transactions',
   'settings',
+  'developer-settings',
   'linux-email',
   'password',
   'email',

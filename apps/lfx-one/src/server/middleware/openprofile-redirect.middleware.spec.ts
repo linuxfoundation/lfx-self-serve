@@ -14,9 +14,9 @@ describe('resolveOpenprofileRedirect', () => {
     ['/edit/profile', '/profile/attributions?from=openprofile'],
     ['/edit/visibility', '/profile/attributions?from=openprofile'],
     ['/edit/visbility', '/profile/attributions?from=openprofile'],
-    ['/edit/password', '/profile/settings?from=openprofile#password'],
-    ['/edit/email-management', '/profile/settings?from=openprofile#email-settings'],
-    ['/edit/registered-emails', '/profile/settings?from=openprofile#email-settings'],
+    ['/edit/password', '/profile/password?from=openprofile'],
+    ['/edit/email-management', '/profile/email?from=openprofile'],
+    ['/edit/registered-emails', '/profile/email?from=openprofile'],
     ['/edit/linux-email', '/profile/identities?from=openprofile'],
     ['/edit/connected-accounts', '/profile/identities?from=openprofile'],
     ['/myevents', '/events?from=openprofile'],
@@ -31,7 +31,7 @@ describe('resolveOpenprofileRedirect', () => {
     ['/myrewards/coupons', '/me/training?tab=rewards&from=openprofile'],
     ['/myrewards/transactions', '/profile/transactions?from=openprofile'],
     ['/myenrollments', '/profile/individual-enrollment?from=openprofile'],
-    ['/developer-settings', '/profile/settings?from=openprofile#developer-settings'],
+    ['/developer-settings', '/profile/developer-settings?from=openprofile'],
     ['/code', '/profile/attributions?from=openprofile'],
     ['/code/affiliations', '/profile/attributions?from=openprofile'],
     ['/data-visibility', '/profile/attributions?from=openprofile'],
@@ -96,7 +96,7 @@ describe('resolveOpenprofileRedirect', () => {
     expect(resolve('/profile/jdoe')).toBe('/u/jdoe?from=openprofile');
   });
 
-  it.each(['/profile/settings', '/profile/identities', '/profile/Settings', '/profile/visibility', '/profile/password'])(
+  it.each(['/profile/settings', '/profile/identities', '/profile/Settings', '/profile/visibility', '/profile/password', '/profile/developer-settings'])(
     'leaves Self Serve profile path %s alone',
     (path) => {
       expect(resolve(path)).toBeNull();

@@ -1,18 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { OPENPROFILE_APPLYFOR_TABS, OPENPROFILE_REDIRECT_MARKER, OPENPROFILE_REDIRECTS, PROFILE_ROUTE_SEGMENTS } from '@lfx-one/shared/constants';
+import {
+  OPENPROFILE_APPLYFOR_TABS,
+  OPENPROFILE_EVENT_SLUG_PATH,
+  OPENPROFILE_MAX_PATH_LENGTH,
+  OPENPROFILE_NEWSLETTER_PATH,
+  OPENPROFILE_PROFILE_USERNAME_PATH,
+  OPENPROFILE_REDIRECT_MARKER,
+  OPENPROFILE_REDIRECTS,
+  OPENPROFILE_SAFE_SEGMENT,
+  OPENPROFILE_TRAVEL_FUNDING_PATH,
+  PROFILE_ROUTE_SEGMENTS,
+} from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
-
-// Raw (still percent-encoded) path segments; anything with `%` or other characters is not carried over.
-const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/;
-const TRAVEL_FUNDING_ID = /^\/myevents\/travel-funding\/([^/]+)$/i;
-const EVENT_SLUG = /^\/myevents\/[^/]+$/i;
-const NEWSLETTER_ID = /^\/newsletter\/[^/]+$/i;
-const PROFILE_USERNAME = /^\/profile\/([^/]+)$/i;
-// No old openprofile path comes close; longer paths skip the lookup entirely.
-const MAX_PATH_LENGTH = 512;
-const SLASH = 47;
 
 function firstString(value: Request['query'][string]): string | undefined {
   const first = Array.isArray(value) ? value[0] : value;
@@ -20,7 +21,7 @@ function firstString(value: Request['query'][string]): string | undefined {
 }
 
 function safeSegment(value: string | undefined): string | undefined {
-  return value && SAFE_SEGMENT.test(value) ? value : undefined;
+  return value && OPENPROFILE_SAFE_SEGMENT.test(value) ? value : undefined;
 }
 
 function withQuery(target: string, query: Request['query'], extra: Record<string, string | undefined>): string {
@@ -41,10 +42,10 @@ function withQuery(target: string, query: Request['query'], extra: Record<string
  * isn't an old one. Self Serve paths that overlap with old ones (`/`, `/profile`, `/settings`) are left alone.
  */
 export function resolveOpenprofileRedirect(path: string, query: Request['query']): string | null {
-  if (path.length > MAX_PATH_LENGTH) return null;
+  if (path.length > OPENPROFILE_MAX_PATH_LENGTH) return null;
   // Loop instead of /\/+$/, which backtracks quadratically on long slash runs (this runs before auth).
   let end = path.length;
-  while (end > 1 && path.charCodeAt(end - 1) === SLASH) end--;
+  while (end > 1 && path[end - 1] === '/') end--;
   const normalized = path.slice(0, end);
   const lower = normalized.toLowerCase();
 
@@ -57,13 +58,13 @@ export function resolveOpenprofileRedirect(path: string, query: Request['query']
   const exact = OPENPROFILE_REDIRECTS[lower];
   if (exact) return withQuery(exact, query, {});
 
-  const travelFunding = TRAVEL_FUNDING_ID.exec(normalized);
+  const travelFunding = OPENPROFILE_TRAVEL_FUNDING_PATH.exec(normalized);
   if (travelFunding) return withQuery('/events', query, { tab: 'travel-funding', event: safeSegment(travelFunding[1]) });
 
-  if (EVENT_SLUG.test(normalized)) return withQuery('/events', query, {});
-  if (NEWSLETTER_ID.test(normalized)) return withQuery('/newsletters/my', query, {});
+  if (OPENPROFILE_EVENT_SLUG_PATH.test(normalized)) return withQuery('/events', query, {});
+  if (OPENPROFILE_NEWSLETTER_PATH.test(normalized)) return withQuery('/newsletters/my', query, {});
 
-  const username = safeSegment(PROFILE_USERNAME.exec(normalized)?.[1]);
+  const username = safeSegment(OPENPROFILE_PROFILE_USERNAME_PATH.exec(normalized)?.[1]);
   if (username && !PROFILE_ROUTE_SEGMENTS.has(username.toLowerCase())) return withQuery(`/u/${username}`, query, {});
 
   return null;
