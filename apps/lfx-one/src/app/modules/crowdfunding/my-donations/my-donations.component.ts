@@ -8,7 +8,16 @@ import { environment } from '@environments/environment';
 import { ButtonComponent } from '@components/button/button.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { MyDonationsResponse, DonationStats, PaymentMethod, RecurringDonation, RecurringDonationsResponse, StatCardItem } from '@lfx-one/shared/interfaces';
+import {
+  DonationAnonymityTargetKind,
+  DonationStats,
+  MyDonation,
+  MyDonationsResponse,
+  PaymentMethod,
+  RecurringDonation,
+  RecurringDonationsResponse,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
 import { DEFAULT_CROWDFUNDING_PAGE_SIZE, EMPTY_DONATION_STATS, EMPTY_MY_DONATIONS, EMPTY_RECURRING_DONATION_LIST } from '@lfx-one/shared/constants';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { CrowdfundingService } from '@app/shared/services/crowdfunding.service';
@@ -18,7 +27,7 @@ import { RecurringDonationsListComponent } from './components/recurring-donation
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject } from 'rxjs';
-import { finalize, map, scan, switchMap, tap } from 'rxjs/operators';
+import { finalize, map, scan, switchMap, take, tap } from 'rxjs/operators';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
@@ -52,6 +61,10 @@ export class MyDonationsComponent {
   protected readonly cancelledCount = signal(0);
   protected readonly isLoading = signal(true);
   protected readonly loadingMore = signal(false);
+  // Name-visibility settings saved this session, keyed `donation:<id>` / `subscription:<id>` (lfx-crowdfunding#466).
+  // Applied over the fetched rows so one subscription change updates all its charges and survives Load more.
+  private readonly anonymityOverrides = signal<Record<string, boolean>>({});
+  private readonly anonymityPending = signal<ReadonlySet<string>>(new Set());
 
   // ─── Pagination Drivers ───────────────────────────────────────────────────
   private readonly recurringRefresh$ = new BehaviorSubject<void>(undefined);
@@ -61,11 +74,12 @@ export class MyDonationsComponent {
   // ─── Complex Signals ──────────────────────────────────────────────────────
   protected readonly stats: Signal<DonationStats> = this.initStats();
   protected readonly statCards: Signal<StatCardItem[]> = this.initStatCards();
-  protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initAllRecurringDonations();
+  private readonly fetchedRecurringDonations: Signal<RecurringDonation[]> = this.initAllRecurringDonations();
+  protected readonly recurringDonations: Signal<RecurringDonation[]> = this.initRecurringDonations();
   private readonly paymentMethod: Signal<PaymentMethod | null> = this.initPaymentMethod();
   protected readonly paymentMethods = computed(() => (this.paymentMethod() ? [this.paymentMethod()!] : []));
   private readonly donationHistoryState: Signal<MyDonationsResponse> = this.initDonationHistory();
-  protected readonly donationHistory = computed(() => this.donationHistoryState().data);
+  protected readonly donationHistory: Signal<MyDonation[]> = this.initDonationHistoryRows();
   protected readonly donationHistoryHasMore = computed(() => this.donationHistoryState().data.length < this.donationHistoryState().total);
 
   // ─── Protected Methods ────────────────────────────────────────────────────
@@ -127,7 +141,41 @@ export class MyDonationsComponent {
     this.paymentMethodRefresh$.next();
   }
 
+  /** Hides or shows the donor's name on a donation history row; a recurring row changes its whole subscription. */
+  protected onToggleDonationAnonymity(donation: MyDonation): void {
+    if (donation.subscriptionId) {
+      this.updateAnonymity('subscription', donation.subscriptionId, !donation.anonymous);
+    } else if (donation.donationId) {
+      this.updateAnonymity('donation', donation.donationId, !donation.anonymous);
+    }
+  }
+
+  protected onToggleRecurringAnonymity(donation: RecurringDonation): void {
+    this.updateAnonymity('subscription', donation.id, !donation.anonymous);
+  }
+
   // ─── Private Initializers ─────────────────────────────────────────────────
+  private initRecurringDonations(): Signal<RecurringDonation[]> {
+    return computed(() => {
+      const overrides = this.anonymityOverrides();
+      return this.fetchedRecurringDonations().map((d) => {
+        const anonymous = overrides[`subscription:${d.id}`];
+        return anonymous === undefined ? d : { ...d, anonymous };
+      });
+    });
+  }
+
+  private initDonationHistoryRows(): Signal<MyDonation[]> {
+    return computed(() => {
+      const overrides = this.anonymityOverrides();
+      return this.donationHistoryState().data.map((d) => {
+        const key = this.anonymityKeyFor(d);
+        const anonymous = key ? overrides[key] : undefined;
+        return anonymous === undefined ? d : { ...d, anonymous };
+      });
+    });
+  }
+
   private initPaymentMethod(): Signal<PaymentMethod | null> {
     return toSignal(this.paymentMethodRefresh$.pipe(switchMap(() => this.crowdfundingService.getMyPaymentMethod())), { initialValue: null });
   }
@@ -180,5 +228,53 @@ export class MyDonationsComponent {
       ),
       { initialValue: EMPTY_MY_DONATIONS }
     );
+  }
+
+  // ─── Private Helpers ──────────────────────────────────────────────────────
+  private anonymityKeyFor(donation: MyDonation): string | null {
+    if (donation.subscriptionId) return `subscription:${donation.subscriptionId}`;
+    if (donation.donationId) return `donation:${donation.donationId}`;
+    return null;
+  }
+
+  private updateAnonymity(kind: DonationAnonymityTargetKind, id: string, anonymous: boolean): void {
+    const key = `${kind}:${id}`;
+    if (this.anonymityPending().has(key)) return;
+    this.anonymityPending.update((pending) => new Set(pending).add(key));
+
+    const request =
+      kind === 'subscription'
+        ? this.crowdfundingService.updateSubscriptionAnonymity(id, anonymous)
+        : this.crowdfundingService.updateDonationAnonymity(id, anonymous);
+
+    request
+      .pipe(
+        take(1),
+        finalize(() =>
+          this.anonymityPending.update((pending) => {
+            const next = new Set(pending);
+            next.delete(key);
+            return next;
+          })
+        )
+      )
+      .subscribe({
+        next: (result) => {
+          this.anonymityOverrides.update((overrides) => ({ ...overrides, [key]: result.anonymous }));
+          this.messageService.add({ severity: 'success', summary: 'Saved', detail: this.anonymitySavedMessage(kind, result.anonymous) });
+        },
+        error: () =>
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to update who can see your name on this donation. Please try again.',
+          }),
+      });
+  }
+
+  private anonymitySavedMessage(kind: DonationAnonymityTargetKind, anonymous: boolean): string {
+    const target = kind === 'subscription' ? 'every charge of this recurring donation' : 'this donation';
+    if (anonymous) return `Your name is now hidden on ${target}. It shows as Anonymous.`;
+    return `Your name is now shown on ${target}.`;
   }
 }

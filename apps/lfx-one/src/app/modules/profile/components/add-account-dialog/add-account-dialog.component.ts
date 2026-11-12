@@ -19,7 +19,7 @@ import {
   IDENTITY_PROVIDER_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { AddAccountDialogData, AddAccountDialogResult, IdentityProvider, IdentityProviderOption } from '@lfx-one/shared/interfaces';
-import { isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
+import { buildLinkedEmailSupportMessage, isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { useResendCooldown } from '@shared/utils/resend-cooldown';
@@ -65,6 +65,8 @@ export class AddAccountDialogComponent {
   // Shows "contact support" for already-linked conflicts — detected via the shared util the
   // backend uses, so it works regardless of which subscribe callback set the error.
   public readonly showSupportLink = computed(() => isIdentityAlreadyLinkedError(this.verificationError()));
+  // Support-chat pre-fill naming the address being verified; set when the code is submitted.
+  public readonly linkedSupportMessage = signal('');
   public isVerifying = signal(false);
 
   private readonly resendCooldownUtil = useResendCooldown(this.destroyRef);
@@ -127,6 +129,7 @@ export class AddAccountDialogComponent {
     this.verificationError.set('');
 
     const email = this.form.getRawValue().email;
+    this.linkedSupportMessage.set(buildLinkedEmailSupportMessage(email));
 
     this.userService.verifyAndLinkEmail(email, code).subscribe({
       next: (response) => {

@@ -2633,6 +2633,10 @@
             </div>
           }
 
+          @if (googleTargetCpaWithheldMessage(); as message) {
+            <p class="text-xs text-gray-500" data-testid="implementation-google-target-cpa-withheld">{{ message }}</p>
+          }
+
           @if (googleTakesTargetRoas()) {
             <div class="flex flex-col gap-2">
               <label class="block text-xs font-medium text-gray-700" for="google-target-roas">Target ROAS (ratio)</label>
@@ -3940,119 +3944,156 @@
             </div>
           }
 
-          <!-- Ad image (one upload on every variant, as each dark post's thumbnail). LinkedIn takes no
-               image URL, so the upload is the whole control, offered only on an explicit yes from
-               `linkedInAssetUploadAvailable()`. -->
+          <!-- The upload's status and any image notice, announced. Always mounted; only their text changes. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-status-live">
             {{ linkedInImageUploadLiveMessage() }}
           </div>
-          @if (linkedInAssetUploadAvailable()) {
-            <div class="mb-4 flex flex-col gap-1" data-testid="implementation-linkedin-image-upload">
-              <label class="text-xs font-medium text-gray-700" for="linkedin-image-file">Ad image</label>
-              <input
-                id="linkedin-image-file"
-                type="file"
-                [attr.accept]="creativeAssetAccept"
-                (change)="onLinkedInImageFileChange($event)"
-                [disabled]="linkedInImagePickerDisabled()"
-                [attr.aria-describedby]="linkedInImageFileDescribedBy()"
-                [attr.aria-invalid]="linkedInImageUploadStatus() === 'error' ? 'true' : null"
-                class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
-                data-testid="implementation-linkedin-image-file" />
-              <p id="linkedin-image-file-hint" class="text-xs text-gray-500">
-                PNG or JPEG, up to 5 MB, at least 640x360 (horizontal), 360x360 (square) or 360x640 (vertical). Used as the thumbnail on every LinkedIn ad.
-              </p>
-              <p id="linkedin-image-file-status" class="text-xs text-gray-700" data-testid="implementation-linkedin-image-status">
-                {{ linkedInImageUploadStatusMessage() }}
-              </p>
-              @if (linkedInImageUploadStatus() === 'uploading') {
-                <div>
-                  <lfx-button
-                    label="Cancel upload"
-                    size="small"
-                    severity="secondary"
-                    [text]="true"
-                    (onClick)="onLinkedInImageAssetRemove()"
-                    data-testid="implementation-linkedin-image-cancel" />
-                </div>
-              } @else if (linkedInImageAssetId()) {
-                <div>
-                  <lfx-button
-                    label="Remove uploaded image"
-                    size="small"
-                    severity="secondary"
-                    [text]="true"
-                    (onClick)="onLinkedInImageAssetRemove()"
-                    data-testid="implementation-linkedin-image-remove" />
-                </div>
-              }
-              @if (linkedInImageUploadStatus() === 'error') {
-                <p id="linkedin-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-linkedin-image-error">
-                  {{ linkedInImageUploadError() }}
-                </p>
-              }
-            </div>
-          }
-
-          <!-- A LinkedIn upload the request cannot carry, or a failed upload; see `initLinkedInImageAssetBlock`. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-asset-block-live">
             {{ linkedInImageAssetBlockMessage() }}
           </div>
-          @if (linkedInImageAssetBlock(); as block) {
-            <div
-              class="mb-4 flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
-              [class.bg-gray-50]="block.kind === 'pending'"
-              [class.text-gray-700]="block.kind === 'pending'"
-              [class.bg-amber-50]="block.kind !== 'pending'"
-              [class.text-amber-800]="block.kind !== 'pending'"
-              [attr.data-testid]="'implementation-linkedin-image-asset-block-' + block.kind">
-              <p class="flex items-center gap-2">
-                @if (block.kind === 'pending') {
-                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                }
-                {{ block.message }}
-              </p>
-              <div class="flex items-center gap-2">
-                @if (block.kind === 'failed') {
-                  <lfx-button
-                    label="Retry"
-                    size="small"
-                    severity="secondary"
-                    [outlined]="true"
-                    (onClick)="retryCreateCapabilities.emit()"
-                    data-testid="implementation-linkedin-image-asset-block-retry" />
-                }
-                <lfx-button
-                  label="Remove image"
-                  size="small"
-                  severity="secondary"
-                  [text]="true"
-                  (onClick)="onLinkedInImageAssetRemove()"
-                  data-testid="implementation-linkedin-image-asset-block-remove" />
-              </div>
-            </div>
-          }
 
-          <!-- Variant Preview -->
-          @if (linkedInVariants().length > 0) {
-            <div>
-              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ linkedInVariants().length }})</label>
-              <div class="flex flex-col gap-2">
-                @for (variant of linkedInVariants(); track $index; let i = $index) {
-                  <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-linkedin-variant-' + i">
-                    <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
-                    @if (linkedInPreviewImageLabel(); as imageLabel) {
-                      <p class="mb-1 text-xs text-gray-500" [attr.data-testid]="'implementation-linkedin-variant-image-' + i">
-                        <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+          <!-- Ad variants: each one is its own LinkedIn ad, with its own copy and, when uploads are on, its own image (#5547). -->
+          <fieldset class="flex flex-col gap-3" aria-describedby="linkedin-variants-hint" data-testid="implementation-linkedin-variants">
+            <legend class="float-left text-xs font-medium text-gray-700">Ad variants ({{ linkedInVariants().length }}/{{ linkedInMaxVariants }})</legend>
+            <p id="linkedin-variants-hint" class="text-xs text-gray-500">
+              Each variant is a separate ad in the campaign, with its own intro text (up to {{ linkedInCharLimits.introText }} characters) and headline (up to
+              {{ linkedInCharLimits.headline }}). Keep between {{ linkedInMinVariants }} and {{ linkedInMaxVariants }}.
+            </p>
+            @for (view of linkedInVariantViews(); track view.key; let i = $index) {
+              <fieldset
+                class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+                [attr.data-testid]="'implementation-linkedin-variant-' + i">
+                <legend class="float-left text-xs font-medium text-gray-700">Variant {{ i + 1 }}</legend>
+                <lfx-ui-textarea
+                  label="Intro text"
+                  [value]="view.introText"
+                  (valueChange)="onLinkedInVariantTextChange(view.key, 'introText', $event)"
+                  [error]="view.introTextError"
+                  [hint]="view.introTextLength + '/' + linkedInCharLimits.introText + ' characters'"
+                  [attr.data-testid]="'implementation-linkedin-variant-intro-' + i" />
+                <lfx-ui-input
+                  label="Headline"
+                  size="small"
+                  [value]="view.headline"
+                  (valueChange)="onLinkedInVariantTextChange(view.key, 'headline', $event)"
+                  [error]="view.headlineError"
+                  [hint]="view.headlineLength + '/' + linkedInCharLimits.headline + ' characters'"
+                  [attr.data-testid]="'implementation-linkedin-variant-headline-' + i" />
+
+                <!-- The variant's own image. LinkedIn takes no image URL, so the upload is the whole control,
+                     offered only on an explicit yes from `linkedInAssetUploadAvailable()`. -->
+                @if (linkedInAssetUploadAvailable()) {
+                  <div class="flex flex-col gap-1" [attr.data-testid]="'implementation-linkedin-variant-image-upload-' + i">
+                    <label class="text-xs font-medium text-gray-700" [attr.for]="'linkedin-variant-image-file-' + i">Image</label>
+                    <input
+                      [id]="'linkedin-variant-image-file-' + i"
+                      type="file"
+                      [attr.accept]="creativeAssetAccept"
+                      (change)="onLinkedInVariantImageFileChange(view.key, $event)"
+                      [disabled]="view.imagePickerDisabled"
+                      [attr.aria-describedby]="'linkedin-variant-image-hint-' + i + ' linkedin-variant-image-status-' + i"
+                      [attr.aria-invalid]="view.imageError ? 'true' : null"
+                      class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                      [attr.data-testid]="'implementation-linkedin-variant-image-file-' + i" />
+                    <p [id]="'linkedin-variant-image-hint-' + i" class="text-xs text-gray-500">
+                      PNG or JPEG, up to 5 MB, at least 640x360 (horizontal), 360x360 (square) or 360x640 (vertical). Used as this ad's thumbnail only.
+                      {{ view.imagePickerNote }}
+                    </p>
+                    <p
+                      [id]="'linkedin-variant-image-status-' + i"
+                      class="text-xs text-gray-700"
+                      [attr.data-testid]="'implementation-linkedin-variant-image-status-' + i">
+                      {{ view.imageStatusMessage }}
+                    </p>
+                    @if (view.imageUploading) {
+                      <div>
+                        <lfx-button
+                          label="Cancel upload"
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          (onClick)="onLinkedInVariantImageRemove(view.key)"
+                          [attr.data-testid]="'implementation-linkedin-variant-image-cancel-' + i" />
+                      </div>
+                    } @else if (view.imageHeld) {
+                      <div>
+                        <lfx-button
+                          label="Remove uploaded image"
+                          size="small"
+                          severity="secondary"
+                          [text]="true"
+                          (onClick)="onLinkedInVariantImageRemove(view.key)"
+                          [attr.data-testid]="'implementation-linkedin-variant-image-remove-' + i" />
+                      </div>
+                    }
+                    @if (view.imageError) {
+                      <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'implementation-linkedin-variant-image-error-' + i">
+                        {{ view.imageError }}
                       </p>
                     }
-                    <p class="text-sm text-gray-800">{{ variant.introText | slice: 0 : 120 }}{{ variant.introText.length > 120 ? '...' : '' }}</p>
-                    <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline }}</p>
                   </div>
                 }
-              </div>
-            </div>
-          }
+
+                <!-- This variant's upload the request cannot carry, or its failed upload; see `linkedInVariantImageBlock`. -->
+                @if (view.imageBlock; as block) {
+                  <div
+                    class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+                    [class.bg-white]="block.kind === 'pending'"
+                    [class.text-gray-700]="block.kind === 'pending'"
+                    [class.bg-amber-50]="block.kind !== 'pending'"
+                    [class.text-amber-800]="block.kind !== 'pending'"
+                    [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-' + block.kind + '-' + i">
+                    <p class="flex items-center gap-2">
+                      @if (block.kind === 'pending') {
+                        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                      }
+                      {{ block.message }}
+                    </p>
+                    <div class="flex items-center gap-2">
+                      @if (block.kind === 'failed') {
+                        <lfx-button
+                          label="Retry"
+                          size="small"
+                          severity="secondary"
+                          [outlined]="true"
+                          (onClick)="retryCreateCapabilities.emit()"
+                          [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-retry-' + i" />
+                      }
+                      <lfx-button
+                        label="Remove image"
+                        size="small"
+                        severity="secondary"
+                        [text]="true"
+                        (onClick)="onLinkedInVariantImageRemove(view.key)"
+                        [attr.data-testid]="'implementation-linkedin-variant-image-asset-block-remove-' + i" />
+                    </div>
+                  </div>
+                }
+
+                <lfx-button
+                  class="self-start"
+                  label="Remove variant"
+                  icon="fa-light fa-trash"
+                  size="small"
+                  severity="secondary"
+                  [outlined]="true"
+                  [disabled]="linkedInVariants().length <= linkedInMinVariants"
+                  [ariaLabel]="'Remove variant ' + (i + 1)"
+                  (onClick)="removeLinkedInVariant(view.key)"
+                  [attr.data-testid]="'implementation-linkedin-variant-remove-' + i" />
+              </fieldset>
+            }
+            <lfx-button
+              class="self-start"
+              label="Add variant"
+              icon="fa-light fa-plus"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              [disabled]="linkedInVariants().length >= linkedInMaxVariants"
+              (onClick)="addLinkedInVariant()"
+              data-testid="implementation-linkedin-variant-add" />
+          </fieldset>
         </div>
       }
 

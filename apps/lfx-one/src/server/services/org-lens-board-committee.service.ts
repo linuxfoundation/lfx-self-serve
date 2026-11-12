@@ -455,6 +455,8 @@ export class OrgLensBoardCommitteeService {
           .slice(0, 2)
           .toUpperCase(),
       avatarUrl: resolveSeatAvatar(s),
+      // A committee seat carries no key-contact role; the key-contact source supplies those when the two merge by email.
+      roles: [],
     };
   }
 }

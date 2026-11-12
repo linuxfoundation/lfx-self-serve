@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid]
-last_updated: 2026-11-09
+tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
+last_updated: 2026-11-11
 intercom_collection: Account
 ---
 
@@ -18,7 +18,7 @@ No. The **Identities** tab lists the accounts and email addresses linked to your
 
 ## How do I change my email address?
 
-Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. A 6-digit verification code is sent to the address; enter it to confirm the address. A wrong or expired code shows **Verification failed. Please try again or request a new code.** If the code is correct but the address is already linked to an LFX account, you see **This email is already linked to an LFX account. Contact support if you need help.** — the address is not added, and support can help if it should belong to this account. The **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. While the request is pending, the button shows **Requesting code…** and is disabled. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
+Email addresses are managed in the **Settings** tab (`/profile/settings`). Go to **Settings** > **Email Settings** > **Add New Email Address**, enter the address, then select **Send Code**. A 6-digit verification code is sent to the address; enter it to confirm the address. A wrong or expired code shows **Verification failed. Please try again or request a new code.** If the code is correct but the address is already linked to an LFX account, an **Email already linked** callout shows **This email is already linked to an LFX account. Contact support if you need help.** — the address is not added. Its **Contact support** button opens a support chat with an editable message already filled in that names the address and asks for it to be added to your account. The **No code yet?** guidance asks you to check the email address and your spam or junk folder; **Contact support** is available from the start. After the cooldown, select **Resend code** once if needed. While the request is pending, the button shows **Requesting code…** and is disabled. After one successful resend request, **Still waiting for your code?** appears with a prominent **Contact support** button. You can still enter a code if it arrives later. A failed resend shows **We couldn’t request another code. Please try again.** and does not use up your resend allowance. Select **Use a different email** to return to an empty address form and start again; this action is disabled while requesting or verifying a code. To choose which verified address is primary, use the [Edit Profile drawer](../../profile/edit-profile/).
 
 ## How do I change my password?
 
@@ -86,7 +86,7 @@ An **ICLA** (Individual CLA) is an agreement you signed as yourself — you can 
 
 ## Why don't my signed CLAs show up on the CLAs tab?
 
-The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub accounts. If those values do not match the identity you used when signing (for example a work email or GitHub account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-don-t-my-signed-clas-show-up).
+The CLAs tab matches agreements to your LF username, verified emails, and linked GitHub and GitLab accounts. If those values do not match the identity you used when signing (for example a work email, GitHub or GitLab account that is not linked to this LFX profile), the CLA will not appear. Open [Identities](/profile/identities), link the Email or GitHub accounts you used when signing, then return to **CLAs**. A GitLab account already connected to your profile is matched too; connecting a new GitLab account from Identities is coming soon. More detail: [Why don't my signed CLAs show up?](../my-clas/#why-don-t-my-signed-clas-show-up).
 
 ## Can I sign a CLA from the CLAs tab?
 
@@ -142,9 +142,13 @@ You can only see your own transactions. Other users and project administrators c
 
 For a training course, certification exam, bundle, or subscription, contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). For other purchases, contact LFX support. Either way, include the transaction date, amount, item name, and order ID so the team can investigate.
 
+## Can I merge two LFX accounts?
+
+Yes. LFX support can merge two LFX accounts into one — for example, a personal account and a work account. There is no merge option in LFX Self Serve. Contact support with the LFX usernames (LFIDs) or email addresses of both accounts and tell them which account to keep. Merging does not move training course or certification exam records. See [Merge two LFX accounts](../identities/#merge-two-lfx-accounts).
+
 ## How do I delete my account or personal data?
 
-You can't delete your Linux Foundation account from LFX Self Serve. To request deletion of your account or personal data, email privacyrights@linuxfoundation.org. See the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for how your data is handled.
+You can't delete your Linux Foundation account from LFX Self Serve. To request deletion of your account or personal data, email privacyrights@linuxfoundation.org. See the [Linux Foundation Privacy Policy](https://www.linuxfoundation.org/legal/privacy-policy) for how your data is handled. If you want to combine a duplicate account with the one you use, ask support to [merge the accounts](../identities/#merge-two-lfx-accounts) instead of requesting deletion.
 
 ## Who do I contact if a setting isn't working?
 

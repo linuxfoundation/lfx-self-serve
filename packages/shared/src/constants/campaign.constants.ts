@@ -749,10 +749,29 @@ export function parseCampaignName(raw: string): ParsedCampaignName {
 
 export const LINKEDIN_API_VERSION = '202602';
 
+/**
+ * LinkedIn single image ad text limits, in characters (code points). campaign-service's
+ * `createDarkPost` (`internal/platform/linkedin/client.go`) cuts the normalized intro text at 600
+ * runes and the headline at 200 without saying so, so the Implement tab refuses longer copy rather
+ * than let campaign-service shorten it (`linkedInVariantTextError`).
+ */
 export const LINKEDIN_CHAR_LIMITS = {
   introText: 600,
   headline: 200,
 } as const;
+
+/**
+ * The fewest ad variants a LinkedIn create takes: campaign-service refuses an empty set before
+ * anything is created (`len(cfg.Variants) == 0`, `internal/dispatch/linkedin.go`).
+ */
+export const LINKEDIN_MIN_VARIANTS = 1;
+
+/**
+ * The most ad variants the Implement tab offers. campaign-service sets no cap of its own, and every
+ * variant becomes one creative, so this is LinkedIn's: at most 15 ACTIVE creatives per campaign
+ * (LinkedIn Marketing API, "Account Structure and Hierarchy").
+ */
+export const LINKEDIN_MAX_VARIANTS = 15;
 
 export const META_CHAR_LIMITS = {
   primaryText: 125,
@@ -1458,6 +1477,13 @@ export const MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE = 'MONITOR_SHARED_ACCOUNT_RE
 /** The user-facing message of that refusal: the account is shared by every foundation, so only LF administrators can monitor it. */
 export const MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE =
   'This ad account is shared by every foundation, so its campaigns and spend can only be monitored by LF administrators.';
+
+/**
+ * The Monitor tab's detail line when the Google Ads monitor is refused for the caller's project role
+ * (#4837) and the 403 carries no reason of its own. The campaign-service arm answers only the project's
+ * `campaign_manager` holders.
+ */
+export const MONITOR_GOOGLE_ROLE_REFUSAL_FALLBACK_MESSAGE = 'Your account needs the campaign manager role on this project to see its Google Ads campaigns.';
 
 /** The BFF's own Google Ads account read is missing a credential or account setting (#4526). */
 export const GOOGLE_ADS_NOT_CONFIGURED_MESSAGE = 'Google Ads is not configured on this server. Ask an LF administrator to check its credentials.';
@@ -4245,6 +4271,18 @@ export const CAMPAIGN_SURVEY_GENERIC_PAGE_SEGMENTS: ReadonlySet<string> = new Se
 ]);
 
 /**
+ * How many years AFTER the current one the saved-brief lookup also tries as a slug suffix (#5492).
+ *
+ * A brief is stored under the slug the generator writes (`eventDetails.slug`), which often adds the
+ * event's year to the URL's last segment: the KubeCon Europe page `/kubecon-cloudnativecon-europe/`
+ * is stored as `kubecon-cloudnativecon-europe-2027`. Before generating, the page knows only the
+ * URL, so the lookup tries the bare segment, then the segment with each of the next
+ * `CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD` years and this one, latest first (`briefSlugYearCandidates`).
+ * Events are planned up to about two years out.
+ */
+export const CAMPAIGN_BRIEF_SLUG_YEAR_LOOKAHEAD = 2;
+
+/**
  * The longest survey source document campaign-service accepts, in characters, counted as
  * `campaignSurveySourceTextLength` counts them. Longer is a 400 at brief save and at copy
  * generation upstream: the copy would otherwise be written from a cut document, silently losing a
@@ -6095,7 +6133,9 @@ export const GOOGLE_BIDDING_STRATEGY_LABELS = {
  * not because Google refuses it.
  *
  * This is a picker's option list, so it cannot over-refuse: every entry is a value the dispatcher
- * accepts on that channel, and the refusals upstream still owns stay upstream's to make.
+ * accepts on that channel, and the refusals upstream still owns stay upstream's to make. The
+ * Implement tab offers one fewer on Display, where Google refuses a target CPA after the budget is
+ * created: see {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA}.
  */
 export const GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL = {
   search: GOOGLE_BIDDING_STRATEGIES,
@@ -6139,6 +6179,26 @@ export const GOOGLE_BIDDING_ROAS_STRATEGIES = ['maximize-conversion-value', 'tar
  * standalone `targetCpa` strategy from it.
  */
 export const GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS = ['demand-gen'] as const;
+
+/**
+ * The channels that take no target CPA from LFX One for now: Display. campaign-service v1.0.35 sends
+ * a target CPA there folded into `maximizeConversions.targetCpaMicros`, which Google refuses on
+ * Display, so every Display create carrying one fails AFTER its budget is created
+ * (linuxfoundation/lfx-v2-campaign-service#578 — Display needs the standalone `targetCpa` strategy).
+ * The Target CPA field is hidden and its value withheld on these channels, and the Target CPA
+ * strategy is not offered, so a pick of it falls back to the channel default (Maximize Conversions
+ * with no target) exactly as a Target ROAS pick does on Demand Gen. Unlike
+ * {@link GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS} this is a WORKAROUND, not upstream's contract:
+ * remove it once campaign-service#578 is released and that release is pinned in lfx-v2-argocd.
+ */
+export const GOOGLE_CHANNELS_WITHOUT_TARGET_CPA = ['display'] as const;
+
+/**
+ * Why a channel in {@link GOOGLE_CHANNELS_WITHOUT_TARGET_CPA} shows no Target CPA field, shown where
+ * the field would have been. Goes with that constant when campaign-service#578 ships.
+ */
+export const GOOGLE_TARGET_CPA_WITHHELD_MESSAGE =
+  "Google Display doesn't accept a target CPA from LFX One yet, so this campaign bids on Maximize Conversions without one.";
 
 /**
  * The two spellings whose target is REQUIRED rather than optional.

@@ -64,6 +64,7 @@ describe('MeetingDetailsOccurrenceNavComponent', () => {
   let occurrence: WritableSignal<MeetingOccurrence | null>;
   let series: PublicMeetingOccurrencesResponse;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
+  let showUpcoming: ReturnType<typeof vi.fn>;
 
   const render = async (): Promise<ComponentFixture<MeetingDetailsOccurrenceNavComponent>> => {
     const fixture = TestBed.createComponent(MeetingDetailsOccurrenceNavComponent);
@@ -82,6 +83,7 @@ describe('MeetingDetailsOccurrenceNavComponent', () => {
     occurrence = signal<MeetingOccurrence | null>(date(12));
     series = { past: [pastDate(5)], future: [] };
     getPublicMeetingOccurrences = vi.fn(() => of(series));
+    showUpcoming = vi.fn();
     row = signal({ ...buildRow(meeting(), date(12).start_time), occurrenceId: date(12).occurrence_id });
     TestBed.configureTestingModule({
       providers: [
@@ -94,6 +96,7 @@ describe('MeetingDetailsOccurrenceNavComponent', () => {
             shownRow: computed(() => ({ ...row(), startTime: occurrence()?.start_time ?? row().startTime })),
             state: signal('far'),
             now: signal(new Date('2026-11-10T12:00:00Z')),
+            showUpcoming,
           },
         },
         { provide: MeetingService, useValue: { getPublicMeetingOccurrences } },
@@ -149,24 +152,34 @@ describe('MeetingDetailsOccurrenceNavComponent', () => {
     expect(query(fixture, 'meeting-details-occurrence-nav')).toBeNull();
   });
 
-  it('keeps a past row among past dates, since an upcoming date needs the live meeting', async () => {
+  it('lists the series upcoming dates on a past row, and opens one on the live meeting', async () => {
+    const pastId = `synthetic-meeting-${Date.UTC(2026, 10, 5, 17)}`;
     const past: PastMeeting = {
-      ...buildMeeting({ id: `synthetic-meeting-${Date.UTC(2026, 10, 12, 17)}`, recurrence: null, occurrences: [] }),
-      scheduled_start_time: date(12).start_time,
-      scheduled_end_time: date(12).start_time,
+      ...buildMeeting({ id: pastId, recurrence: null, occurrences: [] }),
+      scheduled_start_time: pastDate(5).scheduled_start_time,
+      scheduled_end_time: pastDate(5).scheduled_start_time,
       meeting_id: 'synthetic-meeting',
-      occurrence_id: date(12).occurrence_id,
-      meeting_and_occurrence_id: `synthetic-meeting-${Date.UTC(2026, 10, 12, 17)}`,
+      occurrence_id: String(Date.UTC(2026, 10, 5, 17) / 1000),
+      meeting_and_occurrence_id: pastId,
       platform_meeting_id: '',
       sessions: [],
     };
     meeting.set(past);
-    row.set(buildRow(past, date(12).start_time));
+    row.set(buildRow(past, pastDate(5).scheduled_start_time));
     occurrence.set(null);
-    series = { past: [pastDate(5), pastDate(12)], future: [date(26)] };
+    series = { past: [pastDate(5)], future: [date(26)] };
     const fixture = await render();
 
-    expect(query(fixture, 'meeting-details-occurrence-menu-button')?.textContent?.trim()).toBe('Occurrence 2 of 2');
-    expect(query(fixture, 'meeting-details-occurrence-next')?.querySelector('button')?.disabled).toBe(true);
+    expect(query(fixture, 'meeting-details-occurrence-menu-button')?.textContent?.trim()).toBe('Occurrence 1 of 2');
+    await click(fixture, 'meeting-details-occurrence-menu-button');
+    const options = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="meeting-details-occurrence-option"]'));
+    expect(options.map((option) => option.textContent)).toEqual([expect.stringContaining('November 26, 2026')]);
+
+    options[0].click();
+    expect(showUpcoming).toHaveBeenCalledWith(expect.objectContaining({ start_time: date(26).start_time }));
+    expect(occurrence()).toBeNull();
+
+    await click(fixture, 'meeting-details-occurrence-next');
+    expect(showUpcoming).toHaveBeenCalledTimes(2);
   });
 });

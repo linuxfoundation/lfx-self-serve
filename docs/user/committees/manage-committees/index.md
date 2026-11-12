@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Committees
 ---
 
@@ -59,7 +59,7 @@ The Members tab loads the complete roster before enabling **Add Member** and **I
 
 ### Pending invitations
 
-When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog.
+When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires, or **No expiration** for an older invitation that never expires, which can be revoked but not resent. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and organization from the original.
 
 ### Pending applications
 
@@ -79,7 +79,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 1. Open the group and go to its **Members** tab.
 2. Select **Import Members**, after **Add Member** on the right of the member filter pills. The button becomes available after the complete member roster and pending invitations finish loading. If the roster fails, use **Retry** in its error message. Import also refreshes both lists before opening the dialog; if either fresh list cannot be loaded completely, no import opens and you can try again.
 3. Select **Download template**. The template contains only the columns that apply to this group. Open **Column reference** to see which columns are required and the complete accepted role and appointed-by values.
-4. Fill in one member per row and save the file as **CSV UTF-8 (comma delimited)**. Keep the template's lowercase column names; column order does not matter, and any other column is rejected.
+4. Fill in one member per row and save the file as **CSV UTF-8 (comma delimited)**. Column order and capitalization don't matter, and spaces, hyphens and underscores in column names are ignored, so `First Name` matches `first_name` and `E-mail` matches `email`. Columns the import doesn't use are ignored and listed in a notice above the preview.
 5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.
 6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. To fix a value, correct the file and choose it again; you can also remove a row from the preview. The import cannot start while any row is invalid.
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
@@ -105,6 +105,8 @@ People already in the group or already staged in the form are skipped. Imports u
 - Voting groups also need `role` and `voting_status` (Voting Rep, Alternate Voting Rep, Observer, or Emeritus) for every row. Leave the voting columns empty for groups without voting.
 - Dates use `YYYY-MM-DD`, and an end date cannot be before its start date.
 - A file can have up to 500 member rows and be up to 5 MB. Split larger lists into several files.
+- Role, voting status, and appointed by values are not case-sensitive, and extra spaces are ignored: `chair` is read as **Chair**. Ready rows in the preview show the value that will be saved.
+- If a file isn't saved as UTF-8 (for example, Excel's **CSV (Comma delimited)**), it is read as Windows (Western European) text and a notice says so. Check that names with accents look right in the preview before adding anyone.
 - Usernames, member status, and group permissions can't be set from a CSV. Imported people get standard member access; change permissions afterwards from the member's **Edit** option.
 
 ### Members-tab results and retry

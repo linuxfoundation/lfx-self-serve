@@ -38,6 +38,7 @@ import {
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_CPA,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_AUDIENCE_PICKER_EMPTY,
   GOOGLE_AUDIENCE_PICKER_LOADING,
@@ -47,6 +48,7 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_TARGET_CPA_WITHHELD_MESSAGE,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_SEARCH_ASSETS_NOTICE,
@@ -3035,7 +3037,9 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
     c.campaignForm.controls['endDate'].setValue('2026-09-30');
     c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
-    c.linkedInVariants.set([{ headline: 'Attend', introText: 'Join us', destinationUrl: 'https://example.com/kubecon' }]);
+    c.linkedInVariants.set([
+      { key: 'linkedin-variant-test', headline: 'Attend', introText: 'Join us', imageAssetId: '', imageAssetName: '', imageAssetBriefId: '' },
+    ]);
     f.detectChanges();
   }
 
@@ -3125,7 +3129,9 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
     internals.campaignForm.controls['startDate'].setValue('2026-09-01');
     internals.campaignForm.controls['endDate'].setValue('2026-09-30');
     internals.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
-    internals.linkedInVariants.set([{ headline: 'Attend', introText: 'Join us', destinationUrl: 'https://example.com/kubecon' }]);
+    internals.linkedInVariants.set([
+      { key: 'linkedin-variant-test', headline: 'Attend', introText: 'Join us', imageAssetId: '', imageAssetName: '', imageAssetBriefId: '' },
+    ]);
     fixture.detectChanges();
 
     internals.submit();
@@ -3151,6 +3157,14 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
  * recommendation. Reddit's brief seed is the trap: the component re-runs `populateFromBrief` on
  * every mount, so asserting the brief's own numbers back would pass with the restore deleted.
  */
+/**
+ * The draft with each LinkedIn variant's `key` blanked. A key only names a variant within one mount
+ * and every seed makes new ones, so two mounts of the same brief agree on everything else.
+ */
+function withoutLinkedInVariantKeys(draft: CampaignImplementationDraft | null): CampaignImplementationDraft | null {
+  return draft && { ...draft, linkedInVariants: draft.linkedInVariants?.map((variant) => ({ ...variant, key: '' })) };
+}
+
 describe('ImplementationTabComponent per-platform draft round-trip', () => {
   const EVENT_SLUG = 'kubecon-eu-2026';
 
@@ -3877,7 +3891,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(q('profile-mcp').getAttribute('aria-pressed')).toBe('false');
 
     const fresh = await freshMount(next);
-    expect(mounted.latest()).toEqual(fresh.latest());
+    expect(withoutLinkedInVariantKeys(mounted.latest())).toEqual(withoutLinkedInVariantKeys(fresh.latest()));
 
     const config = submitOne(f, 'linkedin-ads', 'linkedInConfig');
     expect(config).toMatchObject({ budgetUsd: 500, lifetimeBudget: false, targetingProfile: 'cloud-native', adAccountId: 'urn:li:sponsoredAccount:1' });
@@ -3928,7 +3942,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     for (const stale of ['briefsub', 'brief-interest', 'brief-keyword', 'Brief reddit headline']) expect(section(f)).not.toContain(stale);
 
     const fresh = await freshMount(next);
-    expect(mounted.latest()).toEqual(fresh.latest());
+    expect(withoutLinkedInVariantKeys(mounted.latest())).toEqual(withoutLinkedInVariantKeys(fresh.latest()));
     fresh.fixture.componentRef.setInput('redditCreativeEnabled', true);
     at(fresh.fixture).selectedPlatforms.set(['reddit-ads']);
     fresh.fixture.detectChanges();
@@ -4368,9 +4382,10 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
    * Mounting with a draft present is the point — it proves the restore leaves them alone rather
    * than overwriting the fresh seed with a stale copy, which is what carrying them used to do.
    *
-   * All SEVEN excluded arrays are asserted, and the count is the point: `emitDraft`'s note names
-   * seven, and an earlier revision checked six. `redditVariants` was the omission, so dropping it
-   * from the brief seed stayed green under a docblock claiming every array was covered.
+   * All SIX excluded arrays are asserted, and the count is the point: `emitDraft`'s note names
+   * six, and an earlier revision missed `redditVariants`, so dropping it from the brief seed stayed
+   * green under a docblock claiming every array was covered. `linkedInVariants` left the set when it
+   * gained an editor (#5547); its round trip is tested with the LinkedIn variant editor.
    */
   it('re-seeds the brief-derived arrays from the brief on remount rather than from the draft', async () => {
     const first = await mount(null);
@@ -4385,7 +4400,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(c.redditKeywords()).toEqual(['brief-keyword']);
     expect(c.redditGeoTargets()).toEqual(['US']);
     expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
-    expect(c.linkedInVariants()).toEqual([{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }]);
     expect(c.metaVariants()).toEqual([{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }]);
   });
 
@@ -4407,7 +4421,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
       redditKeywords: [],
       redditGeoTargets: ['ZZ'],
       redditVariants: [],
-      linkedInVariants: [],
       metaVariants: [],
     } as unknown as CampaignImplementationDraft;
     first.fixture.destroy();
@@ -4424,7 +4437,6 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     // length check alone would pass on a replay of any non-empty list, and the seventh array was
     // supplied here but never checked at all until LFXV2-3230 review.
     expect(c.redditVariants()).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
-    expect(c.linkedInVariants()).toHaveLength(1);
     expect(c.metaVariants()).toHaveLength(1);
   });
 });
@@ -13157,7 +13169,6 @@ describe('ImplementationTabComponent google bidding', () => {
     ['includeSearch', 'search'],
     ['includeDemandGen', 'demand-gen'],
     ['includePerformanceMax', 'performance-max'],
-    ['includeDisplay', 'display'],
   ])('offers exactly the strategies %s accepts', (control, channel) => {
     const c = seedChannel(fixture, { [control]: true });
     const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel as keyof typeof GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL];
@@ -13213,7 +13224,7 @@ describe('ImplementationTabComponent google bidding', () => {
   });
 
   it('sends a picked strategy the channel accepts', () => {
-    const c = seedChannel(fixture, { includeDisplay: true });
+    const c = seedChannel(fixture, { includeSearch: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
     c['campaignForm'].controls.googleTargetCpa.setValue('25');
 
@@ -13225,7 +13236,7 @@ describe('ImplementationTabComponent google bidding', () => {
    * REFUSES a target on a strategy that cannot carry it rather than dropping it.
    */
   it('shows the target CPA field only under a CPA strategy', () => {
-    const c = seedChannel(fixture, { includeDisplay: true });
+    const c = seedChannel(fixture, { includeSearch: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
     expect(c['googleTakesTargetCpa']()).toBe(false);
 
@@ -13270,6 +13281,102 @@ describe('ImplementationTabComponent google bidding', () => {
     c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
     c['campaignForm'].controls.googleTargetCpa.setValue('25');
     expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
+  });
+
+  /**
+   * Display takes no target CPA from LFX One until linuxfoundation/lfx-v2-campaign-service#578
+   * ships (#5536): v1.0.35 folds it into `maximizeConversions.targetCpaMicros`, which Google refuses
+   * on Display after the budget is created. The field, the Target CPA strategy and the value all go,
+   * and Maximize Conversions stays, without its target.
+   */
+  describe('display target CPA (#5536)', () => {
+    const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    it('keeps display in the withheld list', () => {
+      expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_CPA]).toEqual(['display']);
+    });
+
+    it('does not offer the target CPA strategy on display, but keeps maximize conversions', () => {
+      const c = seedChannel(fixture, { includeDisplay: true });
+      const offered = c['googleBiddingOptions']().map((o: { value: string }) => o.value);
+
+      expect(offered).toEqual(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display.filter((s) => s !== 'target-cpa'));
+      expect(offered).toContain('maximize-conversions');
+      expect(offered).not.toContain('target-cpa');
+    });
+
+    it('hides the field, withholds a held value and says why under maximize conversions', () => {
+      const c = seedChannel(fixture, { includeDisplay: true, googleBiddingStrategy: 'maximize-conversions', googleTargetCpa: '25' });
+      fixture.detectChanges();
+
+      expect(c['googleTakesTargetCpa']()).toBe(false);
+      expect(query('implementation-google-target-cpa')).toBeNull();
+      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'maximize-conversions' });
+      expect(c['googleBiddingError']()).toBeNull();
+      expect(c['googleTargetCpaWithheldMessage']()).toBe(GOOGLE_TARGET_CPA_WITHHELD_MESSAGE);
+      expect(query('implementation-google-target-cpa-withheld')?.textContent?.trim()).toBe(GOOGLE_TARGET_CPA_WITHHELD_MESSAGE);
+    });
+
+    it('says nothing on display under a strategy that never carries a target CPA', () => {
+      const c = seedChannel(fixture, { includeDisplay: true, googleBiddingStrategy: 'maximize-clicks' });
+      fixture.detectChanges();
+
+      expect(c['googleTargetCpaWithheldMessage']()).toBeNull();
+      expect(query('implementation-google-target-cpa-withheld')).toBeNull();
+    });
+
+    /**
+     * The same route a Target ROAS pick takes on a switch to Demand Gen (see "resolves an out-of-set
+     * pick to the default"): the unoffered strategy resolves to the channel default and is left out
+     * of the request, and its target goes with it — and the "needs a target CPA" refusal goes too.
+     */
+    it('falls a target CPA pick back to the display default on a switch to display', () => {
+      const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' });
+      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
+      fixture.detectChanges();
+
+      expect(c['googleBiddingChannel']()).toBe('display');
+      expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL.display);
+      expect(c['googleBiddingPayload']()).toEqual({});
+      expect(c['googleBiddingError']()).toBeNull();
+      expect(query('implementation-google-target-cpa')).toBeNull();
+      expect(c['googleTargetCpaWithheldMessage']()).toBe(GOOGLE_TARGET_CPA_WITHHELD_MESSAGE);
+
+      c['campaignForm'].patchValue({ includeDisplay: false, includeSearch: true });
+      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
+      expect(c['googleTargetCpaWithheldMessage']()).toBeNull();
+    });
+
+    it('falls a restored target CPA draft back the same way on display', () => {
+      const c = seedChannel(fixture, { includeDisplay: true });
+      c['restoreGoogleBidding']({ googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' } as CampaignImplementationDraft);
+
+      expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('target-cpa');
+      expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL.display);
+      expect(c['googleBiddingPayload']()).toEqual({});
+      expect(c['googleBiddingError']()).toBeNull();
+    });
+
+    it.each([
+      ['search', 'maximize-conversions', { includeSearch: true }],
+      ['search', 'target-cpa', { includeSearch: true }],
+      ['performance max', 'maximize-conversions', { includePerformanceMax: true }],
+      ['performance max', 'target-cpa', { includePerformanceMax: true }],
+      ['demand gen', 'maximize-conversions', { includeDemandGen: true }],
+      ['demand gen', 'target-cpa', { includeDemandGen: true }],
+    ])('still sends a target CPA on %s under %s', (_label, strategy, patch) => {
+      const c = seedChannel(fixture, { ...patch, googleBiddingStrategy: strategy, googleTargetCpa: '25' });
+      fixture.detectChanges();
+
+      expect(c['googleTakesTargetCpa']()).toBe(true);
+      expect(query('implementation-google-target-cpa')).not.toBeNull();
+      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: strategy, targetCpa: 25 });
+      expect(c['googleTargetCpaWithheldMessage']()).toBeNull();
+      expect(query('implementation-google-target-cpa-withheld')).toBeNull();
+      expect(c['googleBiddingOptions']().map((o: { value: string }) => o.value)).toContain('target-cpa');
+    });
   });
 
   /** The CPC bid is manual CPC's alone, and manual CPC is Search's alone. */
@@ -16345,13 +16452,16 @@ describe('ImplementationTabComponent google stored images', () => {
 });
 
 /**
- * The LinkedIn ad image: one upload, set on every variant as `imageAssetId` (the dark post's
+ * The LinkedIn ad variants (#5547): each one's intro text and headline are edited in the tab,
+ * variants are added and removed between `LINKEDIN_MIN_VARIANTS` and `LINKEDIN_MAX_VARIANTS`, and
+ * each takes its OWN image upload, sent as that variant's `imageAssetId` (the dark post's
  * thumbnail). LinkedIn takes no image URL, so the upload is offered on an explicit yes from
- * `linkedInAssetUploadEnabled` and there is nothing else. With it off, the variants go out as before.
+ * `linkedInAssetUploadEnabled` and there is nothing else. With it off, the variants go out without one.
  */
-describe('ImplementationTabComponent linkedin ad image', () => {
+describe('ImplementationTabComponent linkedin ad variants', () => {
   const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
   const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const OTHER_ASSET_ID = '9b2d8f4e-1c3a-4e5b-8f6d-7a8b9c0d1e2f';
   const ACCOUNT = { accountId: 'urn:li:sponsoredAccount:111', label: 'First Account', orgId: 'urn:li:organization:1', status: 'ACTIVE' };
 
   let createCampaign: ReturnType<typeof vi.fn>;
@@ -16362,10 +16472,13 @@ describe('ImplementationTabComponent linkedin ad image', () => {
   interface Internals {
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
     selectedPlatforms: { set(v: string[]): void };
-    linkedInImageAssetId: () => string;
+    linkedInVariants: () => { key: string; imageAssetId: string }[];
     linkedInImageUploadStatus: () => string;
     linkedInImageUploadError: () => string;
+    createBlockedReason: () => string | null;
     canSubmit: () => boolean;
+    addLinkedInVariant(): void;
+    removeLinkedInVariant(key: string): void;
     submit(): void;
   }
   const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
@@ -16375,17 +16488,27 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     (q(f, id)?.querySelector('button') as HTMLButtonElement).click();
     f.detectChanges();
   };
+  const buttonDisabled = (f: ComponentFixture<ImplementationTabComponent>, id: string): boolean =>
+    (q(f, id)?.querySelector('button') as HTMLButtonElement).disabled;
+  /** Type into a variant's intro text (a textarea) or headline (an input), as the operator does. */
+  function type(f: ComponentFixture<ImplementationTabComponent>, id: string, value: string): void {
+    const box = q(f, id)?.querySelector('textarea, input') as HTMLInputElement | HTMLTextAreaElement;
+    box.value = value;
+    box.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
 
-  const brief = (): CampaignBriefOutput =>
+  const briefVariants = (): { introText: string; headline: string; imageUrn?: string }[] => [
+    { introText: 'First intro', headline: 'First headline' },
+    { introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' },
+  ];
+  const brief = (variants = briefVariants()): CampaignBriefOutput =>
     ({
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
       totalBudget: 500,
       selectedPlatforms: ['linkedin-ads'],
       linkedInCopy: {
-        variants: [
-          { introText: 'First intro', headline: 'First headline' },
-          { introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' },
-        ],
+        variants,
         recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
         recommendedTargetingProfile: 'cloud-native',
       },
@@ -16396,7 +16519,8 @@ describe('ImplementationTabComponent linkedin ad image', () => {
 
   async function mount(
     upload: boolean | null,
-    draft: CampaignImplementationDraft | null = null
+    draft: CampaignImplementationDraft | null = null,
+    briefData: CampaignBriefOutput = brief()
   ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
     const f = TestBed.createComponent(ImplementationTabComponent);
     let captured: CampaignImplementationDraft | null = null;
@@ -16404,7 +16528,7 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     if (draft) f.componentRef.setInput('draft', draft);
     f.componentRef.setInput('linkedInAssetUploadEnabled', upload);
     f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
-    f.componentRef.setInput('briefData', brief());
+    f.componentRef.setInput('briefData', briefData);
     at(f).selectedPlatforms.set(['linkedin-ads']);
     f.detectChanges();
     await f.whenStable();
@@ -16412,16 +16536,17 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     return { fixture: f, latest: () => captured };
   }
 
-  function choose(f: ComponentFixture<ImplementationTabComponent>, file: File): void {
-    const input = q(f, 'implementation-linkedin-image-file') as HTMLInputElement;
+  function choose(f: ComponentFixture<ImplementationTabComponent>, file: File, variant = 0): void {
+    const input = q(f, `implementation-linkedin-variant-image-file-${variant}`) as HTMLInputElement;
     Object.defineProperty(input, 'files', { configurable: true, value: [file] });
     input.dispatchEvent(new Event('change'));
     f.detectChanges();
   }
 
-  const png = (size = 16): File => new File([new Uint8Array(size)], 'promo.png', { type: 'image/png' });
+  const png = (size = 16, name = 'promo.png'): File => new File([new Uint8Array(size)], name, { type: 'image/png' });
+  const stored = (id = ASSET_ID) => of({ id, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
 
-  /** The draft a real upload leaves behind, as a tab switch hands it to the next mount. */
+  /** The draft a real upload onto the first variant leaves behind, as a tab switch hands it to the next mount. */
   async function uploadedDraft(): Promise<CampaignImplementationDraft> {
     const first = await mount(true);
     choose(first.fixture, png());
@@ -16448,7 +16573,7 @@ describe('ImplementationTabComponent linkedin ad image', () => {
 
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
-    uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
+    uploadCreativeAsset = vi.fn().mockReturnValue(stored());
     resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
     cancelCreativeAssetUpload = vi.fn();
 
@@ -16476,197 +16601,416 @@ describe('ImplementationTabComponent linkedin ad image', () => {
     }).compileComponents();
   });
 
-  it.each([
-    ['unanswered', null],
-    ['off', false],
-  ])('renders no upload while the LinkedIn upload capability is %s, and sends the variants unchanged', async (_label, upload) => {
-    const f = (await mount(upload)).fixture;
+  describe('copy', () => {
+    it('seeds one editable variant per brief variant and sends the brief copy untouched', async () => {
+      const f = (await mount(null)).fixture;
 
-    expect(q(f, 'implementation-linkedin-image-file')).toBeNull();
-    expect(q(f, 'implementation-linkedin-variant-image-0')).toBeNull();
-    expect(submitVariants(f)).toEqual([
-      { introText: 'First intro', headline: 'First headline' },
-      { introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' },
-    ]);
+      expect((q(f, 'implementation-linkedin-variant-intro-0')?.querySelector('textarea') as HTMLTextAreaElement).value).toBe('First intro');
+      expect((q(f, 'implementation-linkedin-variant-headline-1')?.querySelector('input') as HTMLInputElement).value).toBe('Second headline');
+      expect(submitVariants(f)).toEqual(briefVariants());
+    });
+
+    it('sends the intro text and headline as edited, on that variant only', async () => {
+      const f = (await mount(null)).fixture;
+      type(f, 'implementation-linkedin-variant-intro-1', 'A new intro');
+      type(f, 'implementation-linkedin-variant-headline-1', 'A new headline');
+
+      expect(submitVariants(f)).toEqual([
+        { introText: 'First intro', headline: 'First headline' },
+        { introText: 'A new intro', headline: 'A new headline', imageUrn: 'urn:li:image:C4D10AQ' },
+      ]);
+    });
+
+    it('carries the edits in the draft, and a remount restores them over the brief copy', async () => {
+      const first = await mount(null);
+      type(first.fixture, 'implementation-linkedin-variant-headline-0', 'Edited headline');
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      expect(draft.linkedInVariants?.map((v) => v.headline)).toEqual(['Edited headline', 'Second headline']);
+      first.fixture.destroy();
+
+      const second = (await mount(null, draft)).fixture;
+      expect(submitVariants(second).map((v) => v['headline'])).toEqual(['Edited headline', 'Second headline']);
+    });
+
+    it('counts the characters and blocks Create, with the reason under the field, while the intro text is over 600', async () => {
+      const f = (await mount(null)).fixture;
+      fillForm(f);
+      expect(at(f).canSubmit()).toBe(true);
+
+      type(f, 'implementation-linkedin-variant-intro-0', 'a'.repeat(601));
+      expect(q(f, 'implementation-linkedin-variant-intro-0')?.textContent).toContain("The intro text is 601 characters, over LinkedIn's 600. Shorten it.");
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
+
+      type(f, 'implementation-linkedin-variant-intro-0', 'a'.repeat(600));
+      expect(q(f, 'implementation-linkedin-variant-intro-0')?.textContent).toContain('600/600 characters');
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it('blocks Create while a headline is over 200 characters or blank', async () => {
+      const f = (await mount(null)).fixture;
+      fillForm(f);
+
+      type(f, 'implementation-linkedin-variant-headline-1', 'h'.repeat(201));
+      expect(q(f, 'implementation-linkedin-variant-headline-1')?.textContent).toContain("The headline is 201 characters, over LinkedIn's 200. Shorten it.");
+      expect(at(f).canSubmit()).toBe(false);
+
+      type(f, 'implementation-linkedin-variant-headline-1', ' — ');
+      expect(q(f, 'implementation-linkedin-variant-headline-1')?.textContent).toContain('Enter the headline.');
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
+    });
+
+    it('adds an empty variant, which holds Create until its copy is written, and sends it', async () => {
+      const f = (await mount(null)).fixture;
+      fillForm(f);
+      click(f, 'implementation-linkedin-variant-add');
+
+      expect(at(f).linkedInVariants()).toHaveLength(3);
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
+      type(f, 'implementation-linkedin-variant-intro-2', 'Third intro');
+      type(f, 'implementation-linkedin-variant-headline-2', 'Third headline');
+      expect(submitVariants(f)[2]).toEqual({ introText: 'Third intro', headline: 'Third headline' });
+    });
+
+    it('removes the chosen variant and sends the rest', async () => {
+      const f = (await mount(null)).fixture;
+      click(f, 'implementation-linkedin-variant-remove-0');
+
+      expect(submitVariants(f)).toEqual([{ introText: 'Second intro', headline: 'Second headline', imageUrn: 'urn:li:image:C4D10AQ' }]);
+    });
+
+    it('keeps at least one variant: Remove is disabled on the last, and refused if reached anyway', async () => {
+      const f = (await mount(null, null, brief([{ introText: 'Only intro', headline: 'Only headline' }]))).fixture;
+
+      expect(buttonDisabled(f, 'implementation-linkedin-variant-remove-0')).toBe(true);
+      at(f).removeLinkedInVariant(at(f).linkedInVariants()[0].key);
+      expect(at(f).linkedInVariants()).toHaveLength(1);
+    });
+
+    it('offers at most 15 variants: Add is disabled at 15, and refused if reached anyway', async () => {
+      const f = (await mount(null)).fixture;
+      for (let i = 2; i < 15; i++) click(f, 'implementation-linkedin-variant-add');
+
+      expect(at(f).linkedInVariants()).toHaveLength(15);
+      expect(buttonDisabled(f, 'implementation-linkedin-variant-add')).toBe(true);
+      at(f).addLinkedInVariant();
+      expect(at(f).linkedInVariants()).toHaveLength(15);
+    });
+
+    it('blocks Create for a brief holding more than 15 variants, until enough are removed', async () => {
+      const many = Array.from({ length: 16 }, (_, i) => ({ introText: `Intro ${i + 1}`, headline: `Headline ${i + 1}` }));
+      const f = (await mount(null, null, brief(many))).fixture;
+      fillForm(f);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: remove ad variants until there are at most 15.');
+      click(f, 'implementation-linkedin-variant-remove-15');
+      expect(at(f).canSubmit()).toBe(true);
+    });
   });
 
-  it('uploads the chosen image for the saved brief and sends its asset id on every variant in place of any image URN', async () => {
-    const f = (await mount(true)).fixture;
-    const file = png();
-    choose(f, file);
+  describe('images', () => {
+    it.each([
+      ['unanswered', null],
+      ['off', false],
+    ])('renders no upload while the LinkedIn upload capability is %s, and sends no image asset', async (_label, upload) => {
+      const f = (await mount(upload)).fixture;
 
-    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'linkedin');
-    expect(at(f).linkedInImageAssetId()).toBe(ASSET_ID);
-    expect(q(f, 'implementation-linkedin-image-status')?.textContent).toContain('Uploaded: promo.png');
-    expect(q(f, 'implementation-linkedin-variant-image-0')?.textContent).toContain('promo.png');
-    expect(q(f, 'implementation-linkedin-variant-image-1')?.textContent).toContain('promo.png');
-    const variants = submitVariants(f);
-    expect(variants.map((v) => v['imageAssetId'])).toEqual([ASSET_ID, ASSET_ID]);
-    // campaign-service refuses a variant carrying both, so the upload replaces the plan's URN.
-    expect(variants.some((v) => 'imageUrn' in v)).toBe(false);
-  });
+      expect(q(f, 'implementation-linkedin-variant-image-file-0')).toBeNull();
+      expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
+    });
 
-  it('refuses a file that is not a PNG or JPEG before any upload', async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+    it("uploads the chosen image for the saved brief and sends it on that variant only, in place of the variant's image URN", async () => {
+      const f = (await mount(true)).fixture;
+      const file = png();
+      choose(f, file, 1);
 
-    expect(uploadCreativeAsset).not.toHaveBeenCalled();
-    expect(at(f).linkedInImageUploadStatus()).toBe('error');
-    expect(q(f, 'implementation-linkedin-image-error')).not.toBeNull();
-  });
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'linkedin');
+      expect(q(f, 'implementation-linkedin-variant-image-status-1')?.textContent).toContain('Uploaded: promo.png');
+      expect(q(f, 'implementation-linkedin-variant-image-status-0')?.textContent?.trim()).toBe('');
+      const variants = submitVariants(f);
+      // The variant with no upload sends no image asset; campaign-service refuses a variant carrying both fields.
+      expect(variants).toEqual([
+        { introText: 'First intro', headline: 'First headline' },
+        { introText: 'Second intro', headline: 'Second headline', imageAssetId: ASSET_ID },
+      ]);
+    });
 
-  it("refuses an image over LinkedIn's 5,000,000-byte limit before any upload, though the shared cap would admit it", async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, png(5_000_001));
+    it('sends a different image on each variant', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(16, 'first.png'), 0);
+      uploadCreativeAsset.mockReturnValue(stored(OTHER_ASSET_ID));
+      choose(f, png(16, 'second.png'), 1);
 
-    expect(uploadCreativeAsset).not.toHaveBeenCalled();
-    expect(at(f).linkedInImageUploadStatus()).toBe('error');
-    expect(q(f, 'implementation-linkedin-image-error')?.textContent).toContain('LinkedIn accepts images up to 5 MB');
-  });
+      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, OTHER_ASSET_ID]);
+    });
 
-  it.each([
-    ['an oversized image', () => png(5_000_001)],
-    ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
-  ])('blocks Create after %s replaces an uploaded one, and keeps the reason across a tab switch', async (_label, file) => {
-    const first = await mount(true);
-    fillForm(first.fixture);
-    choose(first.fixture, png());
-    choose(first.fixture, file());
+    it('refuses a file that is not a PNG or JPEG before any upload', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
 
-    expect(q(first.fixture, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
-    expect(at(first.fixture).canSubmit()).toBe(false);
-    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
-    expect(draft.linkedInImageUploadFailedBriefId).toBe(BRIEF_ID);
-    first.fixture.destroy();
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadStatus()).toBe('error');
+      expect(q(f, 'implementation-linkedin-variant-image-error-0')).not.toBeNull();
+    });
 
-    const second = (await mount(true, draft)).fixture;
-    fillForm(second);
-    expect(q(second, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
-    expect(at(second).canSubmit()).toBe(false);
-  });
+    it("refuses an image over LinkedIn's 5,000,000-byte limit before any upload, though the shared cap would admit it", async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(5_000_001));
 
-  it('suggests removing the image, not pasting a URL, when the image service is unavailable', async () => {
-    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
-    const f = (await mount(true)).fixture;
-    choose(f, png());
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(q(f, 'implementation-linkedin-variant-image-error-0')?.textContent).toContain('LinkedIn accepts images up to 5 MB');
+    });
 
-    expect(at(f).linkedInImageUploadError()).toBe(
-      'The image service is unavailable right now. Try again in a moment, or remove the image to continue without it.'
-    );
-  });
+    it('uploads an image of exactly 5,000,000 bytes', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(5_000_000));
 
-  it.each([
-    ['has no id yet', { status: 'saving', briefId: null, message: null, approved: true }],
-    ['is saving', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true }],
-  ])('disables the picker while the brief %s', async (_label, persistence) => {
-    const f = (await mount(true)).fixture;
-    f.componentRef.setInput('briefPersistence', persistence);
-    f.detectChanges();
+      expect(uploadCreativeAsset).toHaveBeenCalled();
+      expect(at(f).linkedInVariants()[0].imageAssetId).toBe(ASSET_ID);
+    });
 
-    expect((q(f, 'implementation-linkedin-image-file') as HTMLInputElement).disabled).toBe(true);
-  });
+    it.each([
+      ['an oversized image', () => png(5_000_001)],
+      ['a file that is not a PNG or JPEG', () => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
+    ])('blocks Create after %s replaces an uploaded one, and keeps the reason across a tab switch', async (_label, file) => {
+      const first = await mount(true);
+      fillForm(first.fixture);
+      choose(first.fixture, png());
+      choose(first.fixture, file());
 
-  it('uploads an image of exactly 5,000,000 bytes', async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, png(5_000_000));
+      expect(q(first.fixture, 'implementation-linkedin-variant-image-asset-block-uploadFailed-0')).not.toBeNull();
+      expect(at(first.fixture).canSubmit()).toBe(false);
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      expect(draft.linkedInImageUploadFailedBriefId).toBe(BRIEF_ID);
+      first.fixture.destroy();
 
-    expect(uploadCreativeAsset).toHaveBeenCalled();
-    expect(at(f).linkedInImageAssetId()).toBe(ASSET_ID);
-  });
+      const second = (await mount(true, draft)).fixture;
+      fillForm(second);
+      expect(q(second, 'implementation-linkedin-variant-image-asset-block-uploadFailed-0')).not.toBeNull();
+      expect(at(second).canSubmit()).toBe(false);
+    });
 
-  it('holds Create while the upload is in flight, and Cancel aborts the LinkedIn upload only', async () => {
-    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
-    const f = (await mount(true)).fixture;
-    fillForm(f);
-    expect(at(f).canSubmit()).toBe(true);
+    it('suggests removing the image, not pasting a URL, when the image service is unavailable', async () => {
+      uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const f = (await mount(true)).fixture;
+      choose(f, png());
 
-    choose(f, png());
-    expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
-    expect(at(f).canSubmit()).toBe(false);
+      expect(at(f).linkedInImageUploadError()).toBe(
+        'The image service is unavailable right now. Try again in a moment, or remove the image to continue without it.'
+      );
+    });
 
-    click(f, 'implementation-linkedin-image-cancel');
-    expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
-    expect(at(f).linkedInImageUploadStatus()).toBe('idle');
-    expect(at(f).canSubmit()).toBe(true);
-  });
+    it.each([
+      ['has no id yet', { status: 'saving', briefId: null, message: null, approved: true }],
+      ['is saving', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true }],
+    ])('disables every picker while the brief %s', async (_label, persistence) => {
+      const f = (await mount(true)).fixture;
+      f.componentRef.setInput('briefPersistence', persistence);
+      f.detectChanges();
 
-  it('removes an uploaded image, after which the variants go out without it', async () => {
-    const f = (await mount(true)).fixture;
-    choose(f, png());
-    click(f, 'implementation-linkedin-image-remove');
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(true);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(true);
+    });
 
-    expect(at(f).linkedInImageAssetId()).toBe('');
-    expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
-  });
+    it("holds Create and the other variants' pickers while an upload is in flight, and Cancel aborts it", async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      expect(at(f).canSubmit()).toBe(true);
 
-  it('carries the upload in the draft, and a remount resumes an upload still in flight', async () => {
-    const pending = new Subject<unknown>();
-    uploadCreativeAsset.mockReturnValue(pending);
-    const first = await mount(true);
-    choose(first.fixture, png());
-    const draft = first.latest() as CampaignImplementationDraft;
-    expect(draft.linkedInImageUploadPendingName).toBe('promo.png');
-    expect(draft.linkedInImageUploadPendingBriefId).toBe(BRIEF_ID);
-    first.fixture.destroy();
+      choose(f, png(), 0);
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+      expect(at(f).canSubmit()).toBe(false);
+      // A second LinkedIn upload would cancel this one (`uploadCreativeAsset` keeps one per owner).
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(true);
+      expect(q(f, 'implementation-linkedin-variant-image-upload-1')?.textContent).toContain('Finish or remove the image for variant 1 first.');
 
-    resumeCreativeAssetUpload.mockReturnValue(pending);
-    const second = await mount(true, draft);
-    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('linkedin', BRIEF_ID);
-    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
-    second.fixture.detectChanges();
-    expect(at(second.fixture).linkedInImageAssetId()).toBe(ASSET_ID);
-    expect(second.latest()?.linkedInImageAssetId).toBe(ASSET_ID);
-  });
+      click(f, 'implementation-linkedin-variant-image-cancel-0');
+      expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).canSubmit()).toBe(true);
+    });
 
-  it('restores a finished upload from the draft and sends it', async () => {
-    const draft = await uploadedDraft();
-    const f = (await mount(true, draft)).fixture;
+    it("never starts a second upload over another variant's upload in flight, even if its picker fires", async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      choose(f, png(), 0);
+      choose(f, png(16, 'second.png'), 1);
 
-    expect(at(f).linkedInImageAssetId()).toBe(ASSET_ID);
-    expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, ASSET_ID]);
-  });
+      expect(uploadCreativeAsset).toHaveBeenCalledTimes(1);
+      expect(cancelCreativeAssetUpload).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+    });
 
-  it.each([
-    ['off', false, 'ready', 'unsupported'],
-    ['unanswered, with the read failed', null, 'failed', 'failed'],
-    ['unanswered, with the read pending', null, 'pending', 'pending'],
-  ] as const)('blocks Create for a restored upload while the capability is %s, until it is removed', async (_label, upload, read, kind) => {
-    const draft = await uploadedDraft();
-    const f = (await mount(upload, draft)).fixture;
-    f.componentRef.setInput('createCapabilityRead', read);
-    fillForm(f);
+    it('cancels the upload of a variant that is removed while its image is in flight', async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      choose(f, png(), 1);
+      click(f, 'implementation-linkedin-variant-remove-1');
 
-    expect(q(f, `implementation-linkedin-image-asset-block-${kind}`)).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
+      expect(cancelCreativeAssetUpload).toHaveBeenCalledWith('linkedin');
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+    });
 
-    click(f, 'implementation-linkedin-image-asset-block-remove');
-    expect(q(f, `implementation-linkedin-image-asset-block-${kind}`)).toBeNull();
-    expect(at(f).canSubmit()).toBe(true);
-    expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
-  });
+    it('removes one variant image, after which that variant goes out without it and the other keeps its own', async () => {
+      const f = (await mount(true)).fixture;
+      choose(f, png(), 0);
+      uploadCreativeAsset.mockReturnValue(stored(OTHER_ASSET_ID));
+      choose(f, png(), 1);
+      click(f, 'implementation-linkedin-variant-image-remove-0');
 
-  it('never sends an upload made for another brief, and says so', async () => {
-    const draft = { ...(await uploadedDraft()), linkedInImageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' };
-    const f = (await mount(true, draft)).fixture;
-    fillForm(f);
+      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([undefined, OTHER_ASSET_ID]);
+    });
 
-    expect(q(f, 'implementation-linkedin-image-asset-block-otherBrief')).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
-  });
+    it('carries the upload in the draft, and a remount resumes an upload still in flight onto its variant', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const first = await mount(true);
+      choose(first.fixture, png(), 1);
+      const draft = first.latest() as CampaignImplementationDraft;
+      expect(draft.linkedInImageUploadPendingName).toBe('promo.png');
+      expect(draft.linkedInImageUploadPendingBriefId).toBe(BRIEF_ID);
+      expect(draft.linkedInImageUploadVariantKey).toBe(draft.linkedInVariants?.[1].key);
+      first.fixture.destroy();
 
-  it('keeps Create blocked after a failed upload, until the operator removes it', async () => {
-    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
-    const f = (await mount(true)).fixture;
-    fillForm(f);
-    choose(f, png());
+      resumeCreativeAssetUpload.mockReturnValue(pending);
+      const second = await mount(true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+      expect(resumeCreativeAssetUpload).toHaveBeenCalledWith('linkedin', BRIEF_ID);
+      pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+      second.fixture.detectChanges();
+      expect(
+        at(second.fixture)
+          .linkedInVariants()
+          .map((v) => v.imageAssetId)
+      ).toEqual(['', ASSET_ID]);
+      expect(second.latest()?.linkedInVariants?.[1].imageAssetId).toBe(ASSET_ID);
+    });
 
-    expect(at(f).linkedInImageUploadStatus()).toBe('error');
-    expect(q(f, 'implementation-linkedin-image-asset-block-uploadFailed')).not.toBeNull();
-    expect(at(f).canSubmit()).toBe(false);
+    it('restores a finished upload from the draft and sends it on its variant', async () => {
+      const draft = await uploadedDraft();
+      const f = (await mount(true, draft)).fixture;
 
-    click(f, 'implementation-linkedin-image-asset-block-remove');
-    expect(q(f, 'implementation-linkedin-image-asset-block-uploadFailed')).toBeNull();
-    expect(at(f).canSubmit()).toBe(true);
+      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, undefined]);
+    });
+
+    it.each([
+      ['off', false, 'ready', 'unsupported'],
+      ['unanswered, with the read failed', null, 'failed', 'failed'],
+      ['unanswered, with the read pending', null, 'pending', 'pending'],
+    ] as const)('blocks Create for a restored upload while the capability is %s, until it is removed', async (_label, upload, read, kind) => {
+      const draft = await uploadedDraft();
+      const f = (await mount(upload, draft)).fixture;
+      f.componentRef.setInput('createCapabilityRead', read);
+      fillForm(f);
+
+      expect(q(f, `implementation-linkedin-variant-image-asset-block-${kind}-0`)).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+
+      click(f, 'implementation-linkedin-variant-image-asset-block-remove-0');
+      expect(q(f, `implementation-linkedin-variant-image-asset-block-${kind}-0`)).toBeNull();
+      expect(at(f).canSubmit()).toBe(true);
+      expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
+    });
+
+    it('never sends an upload made for another brief, and says so on its variant', async () => {
+      const uploaded = await uploadedDraft();
+      const draft = {
+        ...uploaded,
+        linkedInVariants: uploaded.linkedInVariants?.map((v, i) => (i === 0 ? { ...v, imageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' } : v)),
+      };
+      const f = (await mount(true, draft)).fixture;
+      fillForm(f);
+
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-otherBrief-0')).not.toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+    });
+
+    it('keeps an upload running through a re-seed when the parent restores its draft, and lands it on its variant', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const mounted = await mount(true);
+      const f = mounted.fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+
+      // The service still holds the upload (nothing cancelled it), so the draft restore resumes it.
+      resumeCreativeAssetUpload.mockReturnValue(pending);
+      // As the parent does on a refine: it holds the emitted draft and hands the tab a new brief.
+      f.componentRef.setInput('draft', mounted.latest());
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+
+      expect(cancelCreativeAssetUpload).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+      expect(at(f).linkedInImageUploadError()).toBe('');
+
+      pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+      pending.complete();
+      f.detectChanges();
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect(submitVariants(f).map((variant) => variant['imageAssetId'])).toEqual([undefined, ASSET_ID]);
+    });
+
+    it('lets an upload orphaned by a re-seed hold neither the pickers nor Create', async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+      expect(at(f).canSubmit()).toBe(false);
+
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).createBlockedReason()).not.toBe('Waiting for the LinkedIn Ads image upload to finish.');
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it('frees the upload slot when an upload fails after the brief re-seeded its variant away', async () => {
+      const pending = new Subject<unknown>();
+      uploadCreativeAsset.mockReturnValue(pending);
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+      expect(at(f).linkedInImageUploadStatus()).toBe('uploading');
+
+      // A refine hands the tab a new brief for the same saved id: the variants get fresh keys.
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+      pending.error(new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } }));
+      f.detectChanges();
+
+      expect(at(f).linkedInImageUploadStatus()).toBe('idle');
+      expect(at(f).linkedInImageUploadError()).toBe('');
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it('keeps Create blocked after a failed upload, on its variant only, and the other pickers held, until the operator removes it', async () => {
+      uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { message: 'the image is truncated' } })));
+      const f = (await mount(true)).fixture;
+      fillForm(f);
+      choose(f, png(), 1);
+
+      expect(at(f).linkedInImageUploadStatus()).toBe('error');
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-1')?.textContent).toContain('LinkedIn variant 2');
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-0')).toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(true);
+
+      click(f, 'implementation-linkedin-variant-image-asset-block-remove-1');
+      expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-1')).toBeNull();
+      expect(at(f).canSubmit()).toBe(true);
+      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+    });
   });
 });
 

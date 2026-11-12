@@ -19,6 +19,7 @@ import type { CommitteeMemberBulkCreateRowResult, CreateCommitteeMemberRequest }
 import type {
   MemberImportCells,
   MemberImportColumn,
+  MemberImportDecodedFile,
   MemberImportFieldDefinition,
   MemberImportFieldGuide,
   MemberImportGroupRules,
@@ -29,10 +30,10 @@ import type {
 } from '../interfaces/member-import.interface';
 import { buildCommitteeOrganizationPayload } from './invitation.utils';
 
-const KNOWN_COLUMNS = new Set<string>(MEMBER_IMPORT_COLUMNS);
-const ROLE_BY_NAME = new Map(MEMBER_ROLES.map(({ value }) => [value as string, value]));
-const VOTING_STATUS_BY_NAME = new Map(MEMBER_FORM_VOTING_STATUSES.map(({ value }) => [value as string, value]));
-const APPOINTED_BY_BY_NAME = new Map(APPOINTED_BY_OPTIONS.map(({ value }) => [value as string, value]));
+const COLUMN_BY_HEADER_KEY = new Map<string, MemberImportColumn>(MEMBER_IMPORT_COLUMNS.map((column) => [headerKey(column), column]));
+const ROLE_BY_NAME = new Map(MEMBER_ROLES.map(({ value }) => [valueKey(value), value]));
+const VOTING_STATUS_BY_NAME = new Map(MEMBER_FORM_VOTING_STATUSES.map(({ value }) => [valueKey(value), value]));
+const APPOINTED_BY_BY_NAME = new Map(APPOINTED_BY_OPTIONS.map(({ value }) => [valueKey(value), value]));
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const RETRY_AFTER_SECONDS_PATTERN = /^\d+$/;
 
@@ -55,50 +56,77 @@ export function getMemberImportTemplateHeaders(rules: MemberImportGroupRules): M
  *
  * Handles a UTF-8 BOM, CRLF/LF line endings, quoted commas/newlines and escaped `""` quotes, and
  * skips blank records while still counting them, so every `rowNumber` matches the source record
- * (the first record is row 1). Anything that could shift or lose data — unterminated quotes, text after a
- * closing quote, a cell count that differs from the header, unknown/repeated/missing headers — is
- * reported in `errors` and no records are returned. Never truncates: more than
- * {@link MEMBER_IMPORT_MAX_RECORDS} member rows is an error.
+ * (the first record is row 1). Headers match the template's columns ignoring case, whitespace,
+ * hyphens and underscores; other columns are left out of the records and named in `ignoredColumns`.
+ * Anything that could shift or lose data — unterminated quotes, text after a closing quote, a cell
+ * count that differs from the header, repeated/missing headers — is reported in `errors` and no
+ * records are returned. Never truncates: more than {@link MEMBER_IMPORT_MAX_RECORDS} member rows is an error.
  */
 export function parseMemberImportCsv(text: string, rules: MemberImportGroupRules): MemberImportParseResult {
+  const failed = (errors: string[]): MemberImportParseResult => ({ headers: [], records: [], ignoredColumns: [], errors });
+
   const tokenized = tokenizeCsv(text.startsWith('﻿') ? text.slice(1) : text);
   if ('error' in tokenized) {
-    return { headers: [], records: [], errors: [tokenized.error] };
+    return failed([tokenized.error]);
   }
 
   // Tokenization discards blank records but keeps each retained record's original logical row number.
   const header = tokenized.rows[0];
   if (!header) {
-    return { headers: [], records: [], errors: ['The file is empty. Download the template and add one member per row.'] };
+    return failed(['The file is empty. Download the template and add one member per row.']);
   }
 
   const headerResult = readHeaders(header.cells, rules);
   if (headerResult.errors.length > 0) {
-    return { headers: [], records: [], errors: headerResult.errors };
+    return failed(headerResult.errors);
   }
-  const headers = headerResult.headers;
+  const { columns, ignored } = headerResult;
+  const headers = columns.filter((column): column is MemberImportColumn => column !== null);
 
   const errors: string[] = [];
   const records: MemberImportRecord[] = [];
+  const ignoredWithValues = new Set<number>();
   tokenized.rows.slice(1).forEach(({ cells, rowNumber }) => {
-    if (cells.length !== headers.length) {
-      errors.push(`Row ${rowNumber} has ${cells.length} cells but the header has ${headers.length}. Put quotes around values that contain commas.`);
+    // Ignored columns still count, so a value with an unquoted comma cannot shift into a used column.
+    if (cells.length !== columns.length) {
+      errors.push(`Row ${rowNumber} has ${cells.length} cells but the header has ${columns.length}. Put quotes around values that contain commas.`);
       return;
     }
     const record: MemberImportCells = {};
-    headers.forEach((header, column) => {
-      record[header] = cells[column].trim();
+    cells.forEach((cell, index) => {
+      const column = columns[index];
+      if (column) {
+        record[column] = cell.trim();
+      } else if (cell.trim()) {
+        ignoredWithValues.add(index);
+      }
     });
     records.push({ rowNumber, cells: record });
   });
 
   if (errors.length > 0) {
-    return { headers: [], records: [], errors };
+    return failed(errors);
   }
   if (records.length === 0) {
-    return { headers: [], records: [], errors: ['The file has a header but no member rows.'] };
+    return failed(['The file has a header but no member rows.']);
   }
-  return { headers, records, errors: [] };
+  const ignoredColumns = ignored
+    .filter(({ index, label }) => label || ignoredWithValues.has(index))
+    .map(({ index, label }) => label || `Column ${index + 1} (no header)`);
+  return { headers, records, ignoredColumns, errors: [] };
+}
+
+/**
+ * Reads an uploaded import file as UTF-8, or as Windows-1252 — what Excel's "CSV (Comma delimited)"
+ * saves — when the bytes are not valid UTF-8. A UTF-8 BOM is kept for {@link parseMemberImportCsv}.
+ */
+export function decodeMemberImportFile(buffer: ArrayBuffer): MemberImportDecodedFile {
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer), encoding: 'utf-8' };
+  } catch {
+    // Windows-1252 maps every byte, so the preview is the user's chance to spot another encoding.
+    return { text: new TextDecoder('windows-1252').decode(buffer), encoding: 'windows-1252' };
+  }
 }
 
 /** Row-specific problems for one record, judged against the group's member requirements. */
@@ -130,7 +158,7 @@ export function validateMemberImportRow(cells: MemberImportCells, rules: MemberI
   const role = value('role');
   if (!role && rules.votingEnabled) {
     add('role', 'Role is required for voting groups.');
-  } else if (role && !ROLE_BY_NAME.has(role)) {
+  } else if (role && !ROLE_BY_NAME.has(valueKey(role))) {
     add('role', `Role "${role}" is not a recognized role.`);
   }
   validateDateRange(cells, 'role_start_date', 'role_end_date', !!role, 'role', add);
@@ -139,7 +167,7 @@ export function validateMemberImportRow(cells: MemberImportCells, rules: MemberI
     const votingStatus = value('voting_status');
     if (!votingStatus) {
       add('voting_status', 'Voting status is required for voting groups.');
-    } else if (!VOTING_STATUS_BY_NAME.has(votingStatus)) {
+    } else if (!VOTING_STATUS_BY_NAME.has(valueKey(votingStatus))) {
       add('voting_status', `Voting status "${votingStatus}" is not allowed. Use ${MEMBER_IMPORT_VOTING_STATUS_LABELS}.`);
     }
     validateDateRange(cells, 'voting_start_date', 'voting_end_date', !!votingStatus, 'voting status', add);
@@ -152,7 +180,7 @@ export function validateMemberImportRow(cells: MemberImportCells, rules: MemberI
   }
 
   const appointedBy = value('appointed_by');
-  if (appointedBy && !APPOINTED_BY_BY_NAME.has(appointedBy)) {
+  if (appointedBy && !APPOINTED_BY_BY_NAME.has(valueKey(appointedBy))) {
     add('appointed_by', `Appointed by "${appointedBy}" is not a recognized option.`);
   }
 
@@ -182,21 +210,21 @@ export function buildMemberImportPayload(cells: MemberImportCells): CreateCommit
     payload.organization = organization;
   }
 
-  const role = ROLE_BY_NAME.get(value('role'));
+  const role = ROLE_BY_NAME.get(valueKey(value('role')));
   if (role) {
     payload.role = { name: role };
     if (value('role_start_date')) payload.role.start_date = value('role_start_date');
     if (value('role_end_date')) payload.role.end_date = value('role_end_date');
   }
 
-  const votingStatus = VOTING_STATUS_BY_NAME.get(value('voting_status'));
+  const votingStatus = VOTING_STATUS_BY_NAME.get(valueKey(value('voting_status')));
   if (votingStatus) {
     payload.voting = { status: votingStatus };
     if (value('voting_start_date')) payload.voting.start_date = value('voting_start_date');
     if (value('voting_end_date')) payload.voting.end_date = value('voting_end_date');
   }
 
-  const appointedBy = APPOINTED_BY_BY_NAME.get(value('appointed_by'));
+  const appointedBy = APPOINTED_BY_BY_NAME.get(valueKey(value('appointed_by')));
   if (appointedBy) {
     payload.appointed_by = appointedBy;
   }
@@ -208,6 +236,8 @@ export function buildMemberImportPayload(cells: MemberImportCells): CreateCommit
  * Turns parsed records into preview rows: validates each, then skips people already in the group
  * and later repeats of an email earlier in the file (trimmed + lowercased comparison). The first
  * occurrence is always the one kept — even when it is invalid — so fixing it is the user's call.
+ * Ready rows show the canonical role, voting status and appointed-by values their payload sends;
+ * invalid and skipped rows keep the values as written.
  */
 export function prepareMemberImportRows(
   records: MemberImportRecord[],
@@ -238,7 +268,7 @@ export function prepareMemberImportRows(
     if (issues.length > 0) {
       return { ...base, status: 'invalid', issues, payload: null };
     }
-    return { ...base, status: 'ready', issues, payload: buildMemberImportPayload(cells) };
+    return { ...base, cells: withCanonicalValues(cells), status: 'ready', issues, payload: buildMemberImportPayload(cells) };
   });
 }
 
@@ -411,38 +441,64 @@ function isBlankRecord(cells: string[]): boolean {
   return cells.every((cell) => cell.trim() === '');
 }
 
-function readHeaders(headerCells: string[], rules: MemberImportGroupRules): { headers: MemberImportColumn[]; errors: string[] } {
+/** Header comparison key: lowercase with whitespace, hyphens and underscores removed (`First Name` → `firstname`). */
+function headerKey(header: string): string {
+  return header.toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+/** Value comparison key: trimmed, lowercase, inner whitespace collapsed (` Voting  Rep ` → `voting rep`). */
+function valueKey(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Cells with recognized role, voting status and appointed-by values replaced by their canonical spelling. */
+function withCanonicalValues(cells: MemberImportCells): MemberImportCells {
+  const canonical = { ...cells };
+  const role = ROLE_BY_NAME.get(valueKey(cells.role ?? ''));
+  const votingStatus = VOTING_STATUS_BY_NAME.get(valueKey(cells.voting_status ?? ''));
+  const appointedBy = APPOINTED_BY_BY_NAME.get(valueKey(cells.appointed_by ?? ''));
+  if (role) canonical.role = role;
+  if (votingStatus) canonical.voting_status = votingStatus;
+  if (appointedBy) canonical.appointed_by = appointedBy;
+  return canonical;
+}
+
+/**
+ * Maps each header position to its template column, or null for a column the import ignores
+ * (unrecognized or without a header). Repeated columns and missing required columns are errors.
+ */
+function readHeaders(
+  headerCells: string[],
+  rules: MemberImportGroupRules
+): { columns: (MemberImportColumn | null)[]; ignored: { index: number; label: string }[]; errors: string[] } {
   const errors: string[] = [];
-  const headers: MemberImportColumn[] = [];
-  const seen = new Set<string>();
-  const unknown: string[] = [];
+  const columns: (MemberImportColumn | null)[] = [];
+  const ignored: { index: number; label: string }[] = [];
+  const seen = new Set<MemberImportColumn>();
 
   headerCells.forEach((raw, index) => {
-    const header = raw.trim();
-    if (!header) {
-      errors.push(`Column ${index + 1} has no header.`);
-    } else if (!KNOWN_COLUMNS.has(header)) {
-      unknown.push(header);
-    } else if (seen.has(header)) {
-      errors.push(`The column "${header}" appears more than once.`);
+    const label = raw.trim();
+    const column = COLUMN_BY_HEADER_KEY.get(headerKey(label)) ?? null;
+    if (!column) {
+      ignored.push({ index, label });
+    } else if (seen.has(column)) {
+      errors.push(`The column "${column}" appears more than once.`);
     } else {
-      seen.add(header);
-      headers.push(header as MemberImportColumn);
+      seen.add(column);
     }
+    columns.push(column);
   });
-
-  if (unknown.length > 0) {
-    errors.push(`Unknown columns: ${unknown.map((header) => `"${header}"`).join(', ')}. Use only the template's lowercase column names.`);
-  }
 
   const missing = getMemberImportFieldGuide(rules)
     .filter((field) => field.required && !seen.has(field.column))
     .map((field) => `"${field.column}"`);
   if (missing.length > 0) {
-    errors.push(`Missing required columns for this group: ${missing.join(', ')}.`);
+    const unrecognized = ignored.filter(({ label }) => label).map(({ label }) => `"${label}"`);
+    const hint = unrecognized.length > 0 ? ` Columns not recognized: ${unrecognized.join(', ')}.` : '';
+    errors.push(`Missing required columns for this group: ${missing.join(', ')}.${hint}`);
   }
 
-  return { headers, errors };
+  return { columns, ignored, errors };
 }
 
 function checkLength(value: string, max: number, column: MemberImportColumn, label: string, add: (column: MemberImportColumn, message: string) => void): void {

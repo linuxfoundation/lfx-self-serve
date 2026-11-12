@@ -5,6 +5,7 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import type { OrgLensOrgScope } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils';
 import { catchError, combineLatest, distinctUntilChanged, map, Observable, of, shareReplay, startWith, switchMap } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
@@ -66,7 +67,8 @@ export class OrgLensOrgScopeService {
         switchMap(([orgUid]) => {
           this.selectedOrgUid = orgUid;
           // `null` first, so the previous account's name, count and availability never show while this one loads.
-          return orgUid ? this.getOrgScope(orgUid).pipe(startWith(null)) : of(null);
+          // A family roll-up is not one organization and has no organization scope to read.
+          return orgUid && !isOrgRollUpSegment(orgUid) ? this.getOrgScope(orgUid).pipe(startWith(null)) : of(null);
         })
       ),
       { initialValue: null }

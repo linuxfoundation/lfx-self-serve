@@ -64,8 +64,6 @@ import {
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
-  MEETING_V2_ENABLED_DEFAULT,
-  MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
   PastMeetingAttachment,
@@ -94,6 +92,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
@@ -347,7 +346,7 @@ export class MeetingCardComponent implements OnInit {
    * full-page editor rather than a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
 
   // The two signals below are the flag-off edit target. They carry the same URL and query params
   // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with

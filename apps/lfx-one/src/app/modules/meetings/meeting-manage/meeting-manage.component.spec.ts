@@ -203,6 +203,161 @@ describe('MeetingManageComponent', () => {
     });
   });
 
+  // GH-4944: editing the entire series of an ongoing recurring meeting must show the next
+  // upcoming occurrence as Start date, not the series' original (and often long-past) start_time
+  // -- matching PCC's own behavior. Only the series-origin fallback (no next occurrence left)
+  // still needs minDate's past-date allowance; see meeting-details.component.spec.ts.
+  describe('Start date hydration for an edit (GH-4944)', () => {
+    it('uses the next upcoming occurrence, not the series origin, when editing the entire series', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          start_time: '2025-05-27T16:45:00Z', // the series' original, long-past start
+          next_occurrence_start_time: '2026-11-11T20:00:00Z', // the next upcoming Wednesday
+          timezone: 'America/New_York',
+          recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+
+      const fixture = await createComponent();
+      const startDate = fixture.componentInstance.form().get('startDate')?.value as Date;
+
+      expect(startDate.getFullYear()).toBe(2026);
+      expect(startDate.getMonth()).toBe(10); // November
+      expect(startDate.getDate()).toBe(11);
+    });
+
+    it('falls back to the series origin once no future occurrence remains', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          start_time: '2025-05-27T16:45:00Z',
+          next_occurrence_start_time: undefined,
+          timezone: 'America/New_York',
+          recurrence: { type: 2, repeat_interval: 1, weekly_days: '2' },
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+
+      const fixture = await createComponent();
+      const startDate = fixture.componentInstance.form().get('startDate')?.value as Date;
+
+      expect(startDate.getFullYear()).toBe(2025);
+      expect(startDate.getMonth()).toBe(4); // May
+      expect(startDate.getDate()).toBe(27);
+    });
+
+    it('resends the untouched series origin on save, not the displayed next-occurrence default', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          start_time: '2025-05-27T16:45:00Z',
+          next_occurrence_start_time: '2026-11-11T20:00:00Z',
+          timezone: 'America/New_York',
+          recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+
+      const fixture = await createComponent();
+      // Edit something unrelated; Start date/time are left exactly as hydrated.
+      fixture.componentInstance.form().get('title')?.setValue('Renamed');
+      const payload = (fixture.componentInstance as any).prepareMeetingData();
+
+      expect(new Date(payload.start_time).toISOString()).toBe(new Date('2025-05-27T16:45:00Z').toISOString());
+    });
+
+    it('sends the organizer-chosen date on save when Start date is deliberately changed', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          start_time: '2025-05-27T16:45:00Z',
+          next_occurrence_start_time: '2026-11-11T20:00:00Z',
+          timezone: 'America/New_York',
+          recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+
+      const fixture = await createComponent();
+      fixture.componentInstance
+        .form()
+        .get('startDate')
+        ?.setValue(new Date(2026, 11, 2)); // a deliberate, different date
+      const payload = (fixture.componentInstance as any).prepareMeetingData();
+
+      const saved = new Date(payload.start_time);
+      expect(saved.getUTCFullYear()).toBe(2026);
+      expect(saved.getUTCMonth()).toBe(11); // December
+      expect(saved.getUTCDate()).toBe(2);
+    });
+
+    it('sends a deliberate one-minute Start time edit, not the stale origin', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          start_time: '2025-05-27T16:45:00Z',
+          next_occurrence_start_time: '2026-11-11T20:00:00Z',
+          timezone: 'America/New_York',
+          recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+
+      const fixture = await createComponent();
+      // The displayed time is 3:00 PM ET (20:00 UTC); move it one minute later, the time
+      // picker's smallest increment.
+      fixture.componentInstance.form().get('startTime')?.setValue('03:01 PM');
+      const payload = (fixture.componentInstance as any).prepareMeetingData();
+
+      expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:01:00Z').toISOString());
+    });
+
+    it('sends the displayed date, not the stale series origin, when recurrence is turned off', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          start_time: '2025-05-27T16:45:00Z',
+          next_occurrence_start_time: '2026-11-11T20:00:00Z',
+          timezone: 'America/New_York',
+          recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+
+      const fixture = await createComponent();
+      // Start date/time are left exactly as hydrated (the next occurrence); only recurrence changes.
+      fixture.componentInstance.form().get('isRecurring')?.setValue(false);
+      const payload = (fixture.componentInstance as any).prepareMeetingData();
+
+      expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:00:00Z').toISOString());
+    });
+
+    it('sends the displayed date under the new timezone when only the timezone is changed', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          start_time: '2025-05-27T16:45:00Z',
+          next_occurrence_start_time: '2026-11-11T20:00:00Z', // 3:00 PM America/New_York
+          timezone: 'America/New_York',
+          recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+
+      const fixture = await createComponent();
+      // Lima shares New York's November offset (both UTC-5), so the UTC instant for the same
+      // displayed wall time coincidentally matches -- the case the timezone guard exists for.
+      fixture.componentInstance.form().get('timezone')?.setValue('America/Lima');
+      const payload = (fixture.componentInstance as any).prepareMeetingData();
+
+      // Must reflect 3:00 PM in the NEW zone (America/Lima, UTC-5 year-round), not the stale
+      // 2025 origin reinterpreted under it.
+      expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:00:00Z').toISOString());
+    });
+  });
+
   describe('committee roster readiness', () => {
     const mountReadyForm = async () => {
       getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));

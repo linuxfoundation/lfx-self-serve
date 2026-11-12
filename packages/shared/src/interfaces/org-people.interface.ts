@@ -4,6 +4,7 @@
 import type { OrgCommitFilters, OrgCountUnit, OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgKeyContactRolePillVm } from './org-people-key-contacts.interface';
 
 /** Tab identifier for the Org People page tab strip. */
 export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
@@ -82,7 +83,7 @@ export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 export type OrgAllEmployeeTrainingStatus = 'Certified' | 'Enrolled';
 
 /** Sortable column on the All Employees table. */
-export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'commits' | 'events' | 'courses' | 'access';
+export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'keyContact' | 'commits' | 'events' | 'courses' | 'access';
 
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgAllEmployeeSortDirection = 1 | -1;
@@ -144,6 +145,8 @@ export interface OrgAllEmployeeRow {
   seatsCount: number;
   boardSeatsCount: number;
   committeeSeatsCount: number;
+  /** Distinct key-contact roles held on the org's active memberships, deduped across foundations and sorted. Empty when the person holds none. */
+  keyContactRoles: string[];
   /** The count the request's commit filters pick: authored commits, commits merged to the main branch, or code-contribution activities. */
   commitsCount: number;
   /**
@@ -167,10 +170,13 @@ export interface OrgAllEmployeeRow {
    */
   isUnclassified?: boolean;
   /**
-   * What the person drawer's company-email lookup answers for this row, from the account's company-email keys:
-   * `has` an address on file; `none` on file (a person key the warehouse knows, with no address); `unconfirmed` (a
-   * `cdp:` or live-only row whose username has no address — the lookup cannot confirm either way). Absent when the
-   * keys could not be read; such rows are listed only under the filter's `all`.
+   * What the person drawer's company-email lookup answers for this row, from the account's company-email keys and, for
+   * live-only rows off the warehouse roster, their LF accounts or (without a username) the key-contact records at their
+   * address: `has` an address on file; `none` on file (a person key the warehouse knows, or a username naming exactly one
+   * roster person or one LF account, with no qualifying address); `unconfirmed` (a `cdp:` row, a live-only row whose
+   * username is unknown or names more than one person or account, or one without a username whose records carry no
+   * qualifying address — the lookup cannot confirm either way). Absent when the keys could not be read; such rows are
+   * listed only under the filter's `all`.
    */
   companyEmailStatus?: OrgAllEmployeeCompanyEmailStatus;
 }
@@ -197,6 +203,10 @@ export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   access: OrgAccessBadgeState | null;
   /** `true` when this row was synthesised from the access roster (no detected activity, no detail to fetch). */
   isSynthetic: boolean;
+  /** Pre-decorated role pills for the Key Contact cell — only populated when the person holds exactly one role, since several collapse to a count chip. */
+  keyContactRolePills: OrgKeyContactRolePillVm[];
+  /** Tooltip text listing every key-contact role, shown on the multi-role count chip. Empty when fewer than two roles. */
+  keyContactRolesTooltip: string;
   /** Precomputed `<tr>` class list — keeps the template free of conditional class bindings on every cell. */
   rowClass: string;
 }
@@ -332,8 +342,10 @@ export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
 /**
  * Why a company-email lookup answered `unavailable`. `no_identity`: the opener supplied nothing to look up (set
  * client-side; no request is made). `unlinked_identity`: a `cdp:` person key, an identity not linked to an LF account in
- * the warehouse — not a claim that the person has no LF account. `unconfirmed`: a username or key-contact lookup finished
- * without a qualifying address, and cannot tell a known person with none from an unknown one.
+ * the warehouse, or a key contact whose records name no LF username — not a claim that the person has no LF account.
+ * `unconfirmed`: a username the warehouse does not know (or that names more than one LF account), a client-supplied
+ * username not proven to be in the org, or a key-contact lookup without an agreed username, finished without a
+ * qualifying address.
  */
 export type OrgCompanyEmailsUnavailableReason = 'no_identity' | 'unlinked_identity' | 'unconfirmed';
 

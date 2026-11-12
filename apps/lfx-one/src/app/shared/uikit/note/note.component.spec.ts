@@ -41,74 +41,96 @@ describe('UiNoteComponent', () => {
     expect(host.getAttribute('role')).toBe('alert');
   });
 
-  it('is the info variant by default: outline only, accent text, decorative icon', () => {
-    expect(host.className).toContain('ring-ui-accent-200');
-    expect(host.className).toContain('text-ui-accent-700');
-    expect(host.className).not.toContain('bg-ui-accent-50');
+  it('is the info variant by default: a 50-step panel with no edge, 800 text and a decorative icon', () => {
+    expect(host.className).toContain('bg-ui-accent-50');
+    expect(host.className).toContain('text-ui-accent-800');
+    expect(host.className).not.toContain('ring-');
     expect(icon()).toContain('fa-circle-info');
     expect(host.querySelector('[data-testid="ui-note-icon"]')?.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('colours every variant with its text step and its own icon', async () => {
-    const cases: [string, string, string][] = [
-      ['secondary', 'text-ui-neutral-600', 'fa-circle-info'],
-      ['success', 'text-ui-success-700', 'fa-circle-check'],
-      ['warning', 'text-ui-warning-700', 'fa-triangle-exclamation'],
-      ['error', 'text-ui-danger-700', 'fa-circle-exclamation'],
-      ['violet', 'text-ui-feature-700', 'fa-wand-magic-sparkles'],
+  it('colours every variant with its panel, its text step and its own icon', async () => {
+    const cases: [string, string, string, string][] = [
+      ['secondary', 'bg-ui-neutral-50', 'text-ui-neutral-600', 'fa-circle-info'],
+      ['success', 'bg-ui-success-50', 'text-ui-success-800', 'fa-circle-check'],
+      ['warning', 'bg-ui-warning-50', 'text-ui-warning-800', 'fa-triangle-exclamation'],
+      ['error', 'bg-ui-danger-50', 'text-ui-danger-800', 'fa-circle-exclamation'],
+      ['violet', 'bg-ui-feature-50', 'text-ui-feature-800', 'fa-wand-magic-sparkles'],
     ];
-    for (const [variant, text, iconClass] of cases) {
+    for (const [variant, bg, text, iconClass] of cases) {
       await set('variant', variant);
+      expect(host.className).toContain(bg);
       expect(host.className).toContain(text);
       expect(icon()).toContain(iconClass);
     }
   });
 
-  it('adds the tinted background with fill', async () => {
+  it('deepens the panel to the 100 step with fill', async () => {
     await set('variant', 'success');
     await set('fill', true);
 
-    expect(host.className).toContain('bg-ui-success-50');
+    expect(host.className).toContain('bg-ui-success-100');
+    expect(host.className).not.toContain('bg-ui-success-50');
   });
 
-  it('is 40px tall by default and 32px when small', async () => {
+  it('greys out when disabled, whatever the variant', async () => {
+    await set('variant', 'error');
+    await set('disabled', true);
+
+    expect(host.className).toContain('bg-ui-neutral-50');
+    expect(host.className).toContain('text-ui-neutral-500');
+    expect(host.className).not.toContain('text-ui-danger-800');
+    expect(host.className).not.toContain('bg-ui-danger-50');
+  });
+
+  it('centres the icon on the first line at every size', async () => {
+    for (const [size, iconSize] of [
+      ['default', 'text-[16px]'],
+      ['small', 'text-[12px]'],
+      ['tiny', 'text-[12px]'],
+    ]) {
+      await set('size', size);
+      const wrapper = (host.querySelector('[data-testid="ui-note-icon"]') as HTMLElement).className;
+      expect(wrapper).toContain(iconSize);
+      expect(wrapper).toContain('h-[1lh]');
+      expect(wrapper).toContain('items-center');
+      expect(wrapper).not.toContain('pt-[2px]');
+    }
+  });
+
+  it('is 40px tall with 14px text by default and 32px with 12px text when small', async () => {
     expect(host.className).toContain('min-h-[40px]');
+    expect(host.className).toContain('copy-14');
 
     await set('size', 'small');
 
     expect(host.className).toContain('min-h-[32px]');
-    expect(host.className).toContain('copy-13');
-    expect((host.querySelector('[data-testid="ui-note-icon"]') as HTMLElement).className).toContain('text-[14px]');
+    expect(host.className).toContain('px-[12px]');
+    expect(host.className).toContain('py-[8px]');
+    expect(host.className).toContain('label-12');
   });
 
-  it('is 24px tall with 12px text and a centred 12px icon when tiny', async () => {
+  it('is 24px tall with 12px text and an 8px radius when tiny', async () => {
     await set('size', 'tiny');
 
     expect(host.className).toContain('min-h-[24px]');
     expect(host.className).toContain('px-[8px]');
     expect(host.className).toContain('label-12');
     expect(host.className).toContain('rounded-[8px]');
-    const wrapper = (host.querySelector('[data-testid="ui-note-icon"]') as HTMLElement).className;
-    expect(wrapper).toContain('text-[12px]');
-    expect(wrapper).toContain('h-[16px]');
-    expect(wrapper).not.toContain('pt-[2px]');
   });
 
-  it('drops the edge, fill and padding when plain and keeps the colour and size', async () => {
+  it('drops the panel and padding when plain and keeps the colour and size', async () => {
     await set('variant', 'error');
     await set('fill', true);
     await set('size', 'small');
     await set('plain', true);
 
-    expect(host.className).toContain('text-ui-danger-700');
-    expect(host.className).toContain('copy-13');
+    expect(host.className).toContain('text-ui-danger-800');
+    expect(host.className).toContain('label-12');
     expect(host.className).toContain('gap-[6px]');
-    for (const boxed of ['ring-1', 'bg-ui-danger-50', 'px-[10px]', 'min-h-[32px]', 'rounded-ui-sm']) {
+    for (const boxed of ['bg-ui-danger-50', 'bg-ui-danger-100', 'px-[12px]', 'min-h-[32px]', 'rounded-ui-sm']) {
       expect(host.className).not.toContain(boxed);
     }
-    const wrapper = (host.querySelector('[data-testid="ui-note-icon"]') as HTMLElement).className;
-    expect(wrapper).toContain('h-[18px]');
-    expect(wrapper).toContain('items-center');
   });
 
   it('prefixes a medium-weight label only when given', async () => {

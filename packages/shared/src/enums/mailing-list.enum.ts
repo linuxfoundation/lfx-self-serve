@@ -83,6 +83,17 @@ export enum MailingListSyncMode {
 }
 
 /**
+ * Explicit sync direction override for a manual/unset-`sync_mode` mailing list's sync-diff/sync-apply.
+ * @description Rejected with 400 upstream if supplied for an `auto_c_to_ml`/`auto_ml_to_c` list, which
+ * always uses its own configured direction. Required for a `manual`/unset list, since it has no
+ * direction of its own to fall back on.
+ */
+export enum MailingListSyncDirection {
+  COMMITTEE_TO_MAILING_LIST = 'c_to_ml',
+  MAILING_LIST_TO_COMMITTEE = 'ml_to_c',
+}
+
+/**
  * Sync-diff/sync-apply member type (committee ↔ mailing list sync)
  * @description Indicates which side of the sync a member originates from
  */

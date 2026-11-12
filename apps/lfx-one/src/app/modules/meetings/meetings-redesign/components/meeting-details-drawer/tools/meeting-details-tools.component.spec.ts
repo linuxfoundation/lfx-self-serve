@@ -204,8 +204,7 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-rsvp-grid')?.querySelectorAll('lfx-ui-avatar').length).toBe(3);
 
       await click('meeting-details-invite');
-      expect(closeDialog).toHaveBeenCalled();
-      expect(edit).toHaveBeenCalledWith(expect.objectContaining({ key: 'synthetic-meeting' }));
+      expect(edit).toHaveBeenCalledWith(expect.objectContaining({ key: 'synthetic-meeting' }), 'guests', expect.anything());
     });
 
     it('shows no counts when the roster fails, and logs it', async () => {
@@ -368,15 +367,22 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(find('meeting-details-summary')?.querySelector('lfx-ui-badge')).toBeNull();
     });
 
-    it('greys out what does not exist', async () => {
+    it('disables what does not exist and says why in a tooltip', async () => {
       meetingService['getPastMeetingRecording'].mockReturnValue(of({ sessions: [] }));
       meetingService['getPastMeetingTranscript'].mockReturnValue(of({ recording_files: [] }));
       meetingService['getPastMeetingSummary'].mockReturnValue(of({ ...SUMMARY, summary_data: { content: ' ', edited_content: '' } }));
       await render({}, 'ended');
 
-      expect((find('meeting-details-recording-unavailable')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
-      expect(text('meeting-details-summary-unavailable')).toBe('AI Summary Not Available');
-      expect(text('meeting-details-transcript-unavailable')).toBe('Transcript Unavailable');
+      const cases = [
+        ['meeting-details-recording-unavailable', 'Recording', 'Recording unavailable'],
+        ['meeting-details-summary-unavailable', 'AI Summary', 'AI Summary unavailable'],
+        ['meeting-details-transcript-unavailable', 'Transcript', 'Transcript unavailable'],
+      ];
+      for (const [testId, label, reason] of cases) {
+        expect((find(testId)?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+        expect(text(testId)).toBe(label);
+        expect(document.getElementById(find(testId)?.getAttribute('aria-describedby') ?? '')?.textContent).toBe(reason);
+      }
     });
 
     it('shows the private notice instead of tools without access', async () => {

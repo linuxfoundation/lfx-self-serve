@@ -3,7 +3,7 @@
 
 /**
  * Mentor program detail — header, tab counts, tab rows, empty, not-found and error states
- * (linuxfoundation/lfx-mentorship#212).
+ * (linuxfoundation/lfx-mentorship#212), and Contact Mentee on each mentee and applicant (#376).
  *
  * The page reads `/api/mentorship/mentor/programs/:programId`, which the BFF builds from the applications
  * and tasks of all the program's terms, each row carrying its own application's term. Each test stubs that read via `page.route` with a synthetic payload,
@@ -187,6 +187,26 @@ test.describe('Mentor program detail — loaded', () => {
     await page.getByTestId('mentorship-mentor-applicants-status-pill-all').click();
 
     await expect(page.locator('[data-testid^="mentorship-mentor-applicant-row-"]')).toHaveCount(3);
+  });
+
+  // Contact Mentee (linuxfoundation/lfx-mentorship#376): an envelope link on every row, at any status.
+  test('links each mentee to their address in a new tab on Mentees', async ({ page }) => {
+    await page.getByTestId('mentorship-mentor-program-detail-tab-mentees').click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+
+    for (const mentee of [ACCEPTED_MENTEE, GRADUATED_MENTEE]) {
+      const link = page.getByTestId(`mentorship-mentor-mentee-contact-${mentee.id}`).locator('a');
+      await expect(link).toHaveAttribute('href', `mailto:${mentee.email}`);
+      await expect(link).toHaveAttribute('target', '_blank');
+    }
+  });
+
+  test('links every applicant to their address, whatever the status, on Applicants', async ({ page }) => {
+    await page.getByTestId('mentorship-mentor-program-detail-tab-applicants').click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await page.getByTestId('mentorship-mentor-applicants-status-pill-all').click();
+
+    for (const applicant of POPULATED.applicants) {
+      await expect(page.getByTestId(`mentorship-mentor-applicant-contact-${applicant.id}`).locator('a')).toHaveAttribute('href', `mailto:${applicant.email}`);
+    }
   });
 });
 

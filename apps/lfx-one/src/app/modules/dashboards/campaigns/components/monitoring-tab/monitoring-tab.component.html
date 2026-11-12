@@ -184,20 +184,25 @@
         </p>
       </div>
       <ng-container [ngTemplateOutlet]="googleInsights" />
+    } @else if (googleRoleRefusal()) {
+      <!-- Refused for the caller's project role (#4837): a notice, not a load failure, and no Retry, since reading again cannot grant the role. -->
+      <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="monitoring-role-refused">
+        <i class="fa-light fa-lock text-3xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-gray-700" data-testid="monitoring-role-refused-title">Google Ads monitoring needs the campaign manager role</p>
+        <p class="max-w-lg text-center text-xs text-gray-500" data-testid="monitoring-role-refused-message">{{ googleRoleRefusal() }}</p>
+      </div>
     } @else if (error()) {
       <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="monitoring-error">
         <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
         <p class="text-sm font-medium text-red-700">Failed to load campaign data</p>
         <p class="max-w-md text-center text-xs text-red-500">{{ error() }}</p>
-        @if (!refusedReads().has('google')) {
-          <button
-            type="button"
-            (click)="fetchData()"
-            class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-            data-testid="monitoring-retry">
-            Retry
-          </button>
-        }
+        <button
+          type="button"
+          (click)="fetchData()"
+          class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+          data-testid="monitoring-retry">
+          Retry
+        </button>
       </div>
     } @else if (!hasCampaigns()) {
       <div

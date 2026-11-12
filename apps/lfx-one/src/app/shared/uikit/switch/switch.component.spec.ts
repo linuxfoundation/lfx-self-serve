@@ -81,10 +81,12 @@ describe('UiSwitchComponent and UiSwitchOptionComponent', () => {
       expect(inputs().map((input) => input.checked)).toEqual([false, false, true, false, false, false]);
     });
 
-    it('raises only the checked segment', async () => {
+    it('raises and bolds only the checked segment', async () => {
       expect(segments()[1].classList).toContain('bg-ui-background-100');
       expect(segments()[1].classList).toContain('shadow-small');
+      expect(segments()[1].classList).toContain('font-medium');
       expect(segments()[0].classList).not.toContain('bg-ui-background-100');
+      expect(segments()[0].classList).not.toContain('font-medium');
       inputs()[0].click();
       await fixture.whenStable();
       expect(segments()[0].classList).toContain('bg-ui-background-100');
@@ -109,9 +111,9 @@ describe('UiSwitchComponent and UiSwitchOptionComponent', () => {
     });
 
     it.each([
-      ['tiny', 'h-ui-tiny', 'p-[2px]', 'button-12'],
+      ['tiny', 'h-ui-tiny', 'p-[2px]', 'label-12'],
       ['small', 'h-ui-small', 'p-[3px]', 'label-13'],
-      ['medium', 'h-ui-medium', 'p-[3px]', 'button-14'],
+      ['medium', 'h-ui-medium', 'p-[3px]', 'label-14'],
     ] as const)('sizes the %s switch', async (size, height, padding, type) => {
       fixture.componentInstance.size.set(size);
       await fixture.whenStable();

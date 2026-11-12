@@ -93,16 +93,29 @@ describe('MeetingTranscriptDialogComponent', () => {
     expect(query(fixture, 'meeting-transcript-dialog-loading')).toBeNull();
   });
 
-  it('shows the empty line for a blank transcript and for a failed load', async () => {
-    const blank = await render(of({ content: '' }));
-    expect(query(blank, 'meeting-transcript-dialog-empty')?.textContent?.trim()).toBe('No transcript content available.');
+  it('shows the empty line only for a blank transcript', async () => {
+    const fixture = await render(of({ content: '' }));
 
-    TestBed.resetTestingModule();
+    expect(query(fixture, 'meeting-transcript-dialog-empty')?.textContent?.trim()).toBe('No transcript content available.');
+    expect(query(fixture, 'meeting-transcript-dialog-error')).toBeNull();
+  });
+
+  it('shows an error with Retry for a failed load, and Retry fetches again', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const failed = await render(throwError(() => new Error('synthetic failure')));
-    expect(query(failed, 'meeting-transcript-dialog-empty')?.textContent?.trim()).toBe('No transcript content available.');
+    const fixture = await render(throwError(() => new Error('synthetic failure')));
+
+    expect(query(fixture, 'meeting-transcript-dialog-error')?.textContent).toContain("Couldn't load the transcript");
+    expect(query(fixture, 'meeting-transcript-dialog-empty')).toBeNull();
     expect(consoleError).toHaveBeenCalledWith('Failed to load the meeting transcript:', expect.any(Error));
     consoleError.mockRestore();
+
+    getContent.mockReturnValue(of({ content: VTT }));
+    query(fixture, 'meeting-transcript-dialog-retry')?.querySelector('button')?.click();
+    await fixture.whenStable();
+
+    expect(getContent).toHaveBeenCalledTimes(2);
+    expect(query(fixture, 'meeting-transcript-dialog-error')).toBeNull();
+    expect(queryAll(fixture, 'meeting-transcript-dialog-cue')).toHaveLength(2);
   });
 
   it('hides the meeting context block when opened from the drawer', async () => {

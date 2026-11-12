@@ -4,7 +4,7 @@ description: How to read the People page for the selected organization — its A
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-10
+last_updated: 2026-11-11
 intercom_collection: Organization
 ---
 
@@ -33,13 +33,13 @@ Select a person's name on any tab to open their details. On **Event Attendees**,
 
 Under the person's name, their details list the email addresses they have on one of the organization's own domains, the primary one first. Personal addresses and addresses at other employers are never shown. Former employees keep the addresses they had, and the **Former employee** badge still marks them. A key contact with no LF account shows the email on their key contact record, marked **from key contact record**. When no address is shown, the line says why:
 
-| Message                                                                               | What it means                                                                                                                                      |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **No** _organization_ **email on file**                                               | The person was looked up and has no address on the organization's domains                                                                          |
-| **This profile isn't linked to an LF account, so we can't check for a company email** | The row is a contributor profile with no LF account behind it, so there are no addresses to check; it does not mean the person has none            |
-| **We can't tell whether this person has an email at** _organization_                  | The lookup finished but cannot tell a person with no address on the organization's domains from one we don't know; it does not mean they have none |
-| **Emails aren't shown on this page**                                                  | The page you opened them from carries nothing to look their addresses up with                                                                      |
-| **Couldn't load emails.**                                                             | The lookup failed. Select **Try again**                                                                                                            |
+| Message                                                                   | What it means                                                                                                                                                        |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No verified company email associated with this LF profile**             | The person has an LF account, and it holds no verified address on the organization's domains                                                                         |
+| **This profile isn't linked to an LF profile - no company email on file** | This profile (a contributor profile, or a key contact with no LF username on their record) isn't linked to an LF profile, so there is no company email to show       |
+| **We can't tell whether this person has an email at** _organization_      | The LF username could not be matched to one LF account, so we can't tell whether they have an address on the organization's domains; it does not mean they have none |
+| **Emails aren't shown on this page**                                      | The page you opened them from carries nothing to look their addresses up with                                                                                        |
+| **Couldn't load emails.**                                                 | The lookup failed. Select **Try again**                                                                                                                              |
 
 ## How do I open People?
 
@@ -64,6 +64,7 @@ Five cards at the top count **Employees Active in Open Source**, **In Governance
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Employee**           | The person's name and job title. **Former** marks someone who no longer works at the organization                                                          |
 | **Board & Committee**  | How many board and committee seats they hold, such as **2 seats**                                                                                          |
+| **Key Contact**        | The key contact roles they hold on the organization's memberships, such as **Billing Contact** or **2 roles**                                              |
 | **Code contributions** | Their code count under the chosen code count. The heading changes to **Commits** when you count commits. Hover it for what it counts                       |
 | **Events**             | How many events they attended                                                                                                                              |
 | **Training**           | How many courses they took                                                                                                                                 |
@@ -74,6 +75,20 @@ A dash (**—**) means none. Select a row with a chevron to expand it. Rows with
 A question-mark icon next to a name means the person has code credited to the organization but no employment record there. They are listed only when **Employment** is **All employees**, not as a current or former employee.
 
 The tab shows 30 people at first. Select **Show All** at the bottom to see the rest.
+
+### What does the Key Contact column show?
+
+The **Key Contact** column shows the key contact roles a person holds on the organization's foundation memberships — the people named as the ones to reach for a particular purpose, such as billing or legal. The **Key Contacts** tab lists the same roles by foundation; this column puts them beside everything else the person does.
+
+- **One role** — the role's name, coloured as it is on the **Key Contacts** tab. The roles are Representative/Voting Contact, Authorized Signatory, Billing Contact, Technical Contact, Marketing Contact, PO Contact, PR Contact, Legal Contact and Event Sponsorship Contact.
+- **More than one role** — one chip counting them, such as **2 roles**, so a person with several roles does not stretch the row. Point at the chip, or move to it with the keyboard and leave it focused, to see the roles listed. Screen readers read the full list without focusing it.
+- **No roles** — a dash (**—**).
+
+Sorting by **Key Contact** orders people by how many roles they hold, most first.
+
+Only roles that are currently in force count, and the **Key Contacts** tab counts them the same way. A role is left out of both when the membership it belongs to is no longer active, such as a lapsed or cancelled one; when the contact record itself is not active, such as a pending one; or when the role cannot be matched to any of the organization's memberships. So a role missing here is missing from the **Key Contacts** tab too.
+
+Someone whose roles are all left out still appears in **All Employees**, with a dash in this column, whenever they are listed for something else — a board or committee seat, recorded activity in the time range, or Org Lens access. Being listed in the table and holding a role that counts are separate things.
 
 ## What does the Contributors tab show?
 
@@ -162,7 +177,7 @@ You filter a People tab with the search box and menus above its table. Which men
 
 **Employment** offers **Current employees**, **Former employees** and **All employees** (the default). On **All Employees** under **Current employees**, the **Code Contributors** card leaves out people who have since left. With **All employees** it shows the same number as the **Contributors** tab's **Contributors** card for the same time range, project type, organization scope and team members choice.
 
-**Company email**, on **All Employees**, offers **All email statuses** (the default), **Has company email**, **No company email** and **Unlinked profile**. **No company email** means the person was looked up and has no address on the organization's domains. **Unlinked profile** means their emails could not be checked: mostly contributor profiles with no LF account behind them, plus people just added who are not in the organization data yet. These match the answer a person's details give (see [Which emails do a person's details show?](#which-emails-do-a-persons-details-show)). The filter is kept in the page address (`?companyEmail=`). The statuses are refreshed with the organization data, so a just-added address can take up to a day to count. When they cannot be read, everyone is listed under **All email statuses** only.
+**Company email**, on **All Employees**, offers **All email statuses** (the default), **Has company email**, **No verified company email** and **Unlinked profile**. **No verified company email** means the person has an LF account with no verified address on the organization's domains. **Has company email** includes a key contact with no LF account whose key contact record carries an address on the organization's domains. **Unlinked profile** means their emails could not be checked: mostly contributor profiles and key contacts with no LF account behind them, plus people whose LF username could not be matched to one LF account. These match the answer a person's details give (see [Which emails do a person's details show?](#which-emails-do-a-persons-details-show)). The filter is kept in the page address (`?companyEmail=`). The statuses are refreshed with the organization data, so a just-added address can take up to a day to count. When they cannot be read, everyone is listed under **All email statuses** only.
 
 The code count offers **All code contributions** (the default), **All commits** and **Only main branch commits**. It changes the code numbers, not who is listed, with one exception: when the **All Employees** activity filter is on **Code contributions** (or **Commits**), only people whose count under the chosen option is above zero are shown. Someone with reviews or comments but no commits drops out when you switch to **All commits**. What each option counts is in [What do All code contributions, All commits and Only main branch commits count?](../code-contributions/#what-do-all-code-contributions-all-commits-and-only-main-branch-commits-count).
 

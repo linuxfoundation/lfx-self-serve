@@ -9,6 +9,7 @@ import {
   CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
+  DonationAnonymityResult,
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
@@ -33,6 +34,7 @@ import { Request } from 'express';
 
 import {
   BackendAnnouncement,
+  BackendAnonymityResponse,
   BackendAttribution,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
@@ -359,6 +361,36 @@ export class CrowdfundingService {
     const startTime = logger.startOperation(req, 'cf_cancel_subscription', { subscriptionId });
     await cfFetch<void>(req, 'cancelSubscription', `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE', noBody: true });
     logger.success(req, 'cf_cancel_subscription', startTime, { subscriptionId });
+  }
+
+  /**
+   * Hides or shows the caller's name on one of their one-time donations (lfx-crowdfunding#466). `donationId` is the
+   * CF donation id from a `/me/transactions` row; CF returns 404 when the donation isn't the caller's.
+   */
+  public async updateMyDonationAnonymity(req: Request, donationId: string, anonymous: boolean): Promise<DonationAnonymityResult> {
+    const startTime = logger.startOperation(req, 'cf_update_my_donation_anonymity', { donationId, anonymous });
+    const raw = await cfFetch<BackendAnonymityResponse>(req, 'updateMyDonationAnonymity', `/crowdfunding/me/donations/${encodeURIComponent(donationId)}`, {
+      method: 'PATCH',
+      body: { anonymous },
+    });
+    logger.success(req, 'cf_update_my_donation_anonymity', startTime, { donationId, anonymous: raw.anonymous });
+    return { id: raw.id, anonymous: raw.anonymous === true };
+  }
+
+  /**
+   * Hides or shows the caller's name on every charge of one of their recurring donations (lfx-crowdfunding#466).
+   * CF returns 404 when the subscription isn't the caller's.
+   */
+  public async updateMySubscriptionAnonymity(req: Request, subscriptionId: string, anonymous: boolean): Promise<DonationAnonymityResult> {
+    const startTime = logger.startOperation(req, 'cf_update_my_subscription_anonymity', { subscriptionId, anonymous });
+    const raw = await cfFetch<BackendAnonymityResponse>(
+      req,
+      'updateMySubscriptionAnonymity',
+      `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`,
+      { method: 'PATCH', body: { anonymous } }
+    );
+    logger.success(req, 'cf_update_my_subscription_anonymity', startTime, { subscriptionId, anonymous: raw.anonymous });
+    return { id: raw.id, anonymous: raw.anonymous === true };
   }
 
   public async updateInitiative(req: Request, id: string, input: UpdateInitiativeInput): Promise<InitiativeDetail> {
