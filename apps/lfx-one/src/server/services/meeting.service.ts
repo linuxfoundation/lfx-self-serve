@@ -2563,8 +2563,9 @@ export class MeetingService {
     const { MEETING_ROLLUP_SCOPE_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
     const username = getEffectiveUsername(req) ?? '';
     // A failed child lookup leaves that branch out; such a scope is still served, but never cached, so
-    // the next request retries instead of hiding those meetings for the whole TTL.
-    const scopeUids = await coalescePerUserOrgFetch(namespace, username, rootUid, () => {
+    // the next request retries instead of hiding those meetings for the whole TTL. A flight that was
+    // superseded while it ran (`isCurrent` false) does not write either, like the other per-user caches.
+    const scopeUids = await coalescePerUserOrgFetch(namespace, username, rootUid, (isCurrent) => {
       let complete = true;
       return withPerUserCache(
         namespace,
@@ -2573,7 +2574,7 @@ export class MeetingService {
         ttlSeconds,
         () => this.projectService.getFoundationProjectUids(req, rootUid, { onIncomplete: () => (complete = false) }),
         isRollupScope,
-        () => complete
+        () => complete && isCurrent()
       );
     });
 

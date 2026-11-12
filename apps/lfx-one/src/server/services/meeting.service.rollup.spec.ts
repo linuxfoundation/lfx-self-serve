@@ -5,12 +5,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Covers the GH-5566 roll-up wiring only: that `root_project_uid` resolves the project tree with the
 // caller's own request and reaches query-service as a `filters_or` scope, for both meeting indexes.
-const { proxyRequest, getFoundationProjectUids, withPerUserCache } = vi.hoisted(() => ({
-  proxyRequest: vi.fn(),
-  getFoundationProjectUids: vi.fn(),
-  // Runs the fetcher (args[4]) uncached; specs read the `storable` gate (args[6]) off the recorded call.
-  withPerUserCache: vi.fn((...args: unknown[]) => (args[4] as () => Promise<unknown>)()),
-}));
+const { proxyRequest, getFoundationProjectUids, withPerUserCache, storeDecisions } = vi.hoisted(() => {
+  const decisions: boolean[] = [];
+  return {
+    proxyRequest: vi.fn(),
+    getFoundationProjectUids: vi.fn(),
+    storeDecisions: decisions,
+    // Runs the fetcher (args[4]) and records what the `storable` gate (args[6]) decides right after it, while
+    // the flight is still in progress — the same point the real cache asks before writing.
+    withPerUserCache: vi.fn(async (...args: unknown[]) => {
+      const value = await (args[4] as () => Promise<unknown>)();
+      decisions.push((args[6] as (v: unknown) => boolean)(value));
+      return value;
+    }),
+  };
+});
 
 // The utils barrel reaches Angular-only modules; this spec needs the two normalizers getMeetings calls and
 // the real identifier checks single-flight uses to decide whether a fetch may be shared.
@@ -48,7 +57,7 @@ vi.mock('./logger.service', () => ({
 import type { Request } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { resetSingleFlightForTests } from '../utils/single-flight';
+import { evictPerUserOrgFetch, resetSingleFlightForTests } from '../utils/single-flight';
 import { MeetingService } from './meeting.service';
 
 const req = { id: 'caller' } as unknown as Request;
@@ -61,6 +70,7 @@ describe('MeetingService roll-up scope', () => {
     proxyRequest.mockReset();
     getFoundationProjectUids.mockReset().mockResolvedValue([ROOT, 'child-uid']);
     withPerUserCache.mockClear();
+    storeDecisions.length = 0;
     resetSingleFlightForTests();
     service = new MeetingService();
   });
@@ -110,12 +120,25 @@ describe('MeetingService roll-up scope', () => {
 
     await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_meeting');
 
-    const storable = withPerUserCache.mock.calls[0][6] as (value: string[]) => boolean;
-    expect(storable([ROOT])).toBe(false);
+    expect(storeDecisions).toEqual([false]);
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
       filters_or: [`project_uid:${ROOT}`],
       type: 'v1_meeting',
     });
+  });
+
+  it('does not cache a scope whose flight was superseded while it ran', async () => {
+    proxyRequest.mockResolvedValue({ count: 3 });
+    getFoundationProjectUids.mockImplementation(async (_req: unknown, root: string) => {
+      // After a tick, so the flight is registered before it is evicted (a write invalidating it mid-walk).
+      await Promise.resolve();
+      evictPerUserOrgFetch('meeting-rollup-scope:v1', 'jdoe', ROOT);
+      return [root];
+    });
+
+    await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_meeting');
+
+    expect(storeDecisions).toEqual([false]);
   });
 
   it('caches a complete scope', async () => {
@@ -123,8 +146,7 @@ describe('MeetingService roll-up scope', () => {
 
     await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_meeting');
 
-    const storable = withPerUserCache.mock.calls[0][6] as (value: string[]) => boolean;
-    expect(storable([ROOT, 'child-uid'])).toBe(true);
+    expect(storeDecisions).toEqual([true]);
   });
 
   it('passes a query without the roll-up param through unchanged', async () => {
