@@ -75,7 +75,8 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw forbidden();
   }
 
-  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation)));
+  const roster = roleGrants.getAccessAwareOrgs(req, username);
+  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation, roster)));
   const members: OrgRollUpSetOrg[] = [];
   checks.forEach((check, index) => {
     if (check.status === 'fulfilled') {

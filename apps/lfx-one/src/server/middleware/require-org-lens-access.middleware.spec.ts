@@ -345,6 +345,13 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     expect(getRollUpSet).toHaveBeenCalledTimes(1);
   });
 
+  it('loads the caller roster once for the whole family, not once per member', async () => {
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe('allow');
+    expect(getAccessAwareOrgs).toHaveBeenCalledTimes(1);
+  });
+
   it('serves the verified members of a family present in a partial roll-up set, marked incomplete', async () => {
     getRollUpSet.mockResolvedValue(rollUpSet([org(ROOT, 'Parent Co')], { degraded: true, lookupOutcome: 'partial' }));
     getAccessAwareOrgs.mockResolvedValue({ ...grants([ROOT]), degraded: true });
