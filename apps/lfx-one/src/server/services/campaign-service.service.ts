@@ -751,6 +751,20 @@ export function canUseLinkedInCreativeAssets(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may carry `linkedInConfig.targetingProfileEdit` (#5546): the selected
+ * targeting profile with entries removed.
+ *
+ * Needs only the campaign-service create path. campaign-service builds its LinkedIn runtime config
+ * from the `targetingProfiles` the request carries (`internal/dispatch/linkedin.go`), so the
+ * controller can hand it the edited profile. The LEGACY creator reads the mounted ConfigMap and
+ * never this key, so with the cutover dark an edit would be dropped while the create still reported
+ * success.
+ */
+export function canEditLinkedInTargeting(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -973,6 +987,7 @@ export class CampaignServiceClient {
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+        linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1044,6 +1059,7 @@ export class CampaignServiceClient {
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
+      linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

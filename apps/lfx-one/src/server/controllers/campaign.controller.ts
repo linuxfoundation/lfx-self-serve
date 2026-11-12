@@ -9,6 +9,7 @@ import { emailLinkDestinations, hasVisibleHtmlText, sanitizeDisplayText, stripRe
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
+import { resolveLinkedInTargetingProfileId } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -125,6 +126,9 @@ import type {
   GoogleCreativeWireFields,
   GoogleDisplayAudienceLists,
   GoogleDisplayCampaignAudiences,
+  LinkedInTargetingProfile,
+  LinkedInTargetingProfileConfig,
+  LinkedInTargetingProfileEdit,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
   TwitterCampaignCreateRequest,
@@ -266,6 +270,7 @@ import {
   LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
+  LINKEDIN_TARGETING_PROFILE_EDIT_FIELD,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
@@ -348,6 +353,7 @@ import {
   canCreateWithBidding,
   canCreateWithFinerGoogleGeo,
   canCreateWithGoogleCriteria,
+  canEditLinkedInTargeting,
   canSearchGoogleGeoTargets,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1174,6 +1180,22 @@ export class CampaignController {
       if (unservedLinkedInAssetField !== null) {
         next(
           ServiceValidationError.forField(unservedLinkedInAssetField, 'uploaded LinkedIn images are not enabled on this deployment; remove the image', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An edited LinkedIn targeting profile (#5546), refused rather than dropped when the legacy creator
+      // would serve, and refused unless it only REMOVES entries from the configured profile the
+      // selection resolves to. Adding needs a name-to-URN lookup campaign-service does not offer yet
+      // (linuxfoundation/lfx-v2-campaign-service#585), so a URN the ConfigMap does not already carry
+      // is never forwarded: the Implement tab cannot produce one, and a direct caller must not.
+      const linkedInTargetingRefusal = this.linkedInTargetingEditRefusal(body);
+      if (linkedInTargetingRefusal !== null) {
+        next(
+          ServiceValidationError.forField(LINKEDIN_TARGETING_PROFILE_EDIT_FIELD, linkedInTargetingRefusal, {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -3864,6 +3886,23 @@ export class CampaignController {
     res.json(sorted);
   }
 
+  /**
+   * The configured LinkedIn targeting profiles (#5546), from the same mounted ConfigMap
+   * `getLinkedInAccounts` and `buildLinkedInConfig` read, so the Implement tab shows exactly the
+   * facets a create would send. Each entry is a URN only: the ConfigMap carries no display names.
+   */
+  public getLinkedInTargetingProfiles(req: Request, res: Response, next: NextFunction): void {
+    const operation = 'get_linkedin_targeting_profiles';
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const profiles = getLinkedInConfig().targetingProfiles;
+      logger.success(req, operation, startTime, { count: profiles.length });
+      res.json(profiles);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   public async getLinkedInMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const rawDays = String(req.query['days'] ?? '30');
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
@@ -6187,6 +6226,79 @@ export class CampaignController {
       if (index !== -1) return `${field}[${index}].imageAssetId`;
     }
     return null;
+  }
+
+  /**
+   * Why `linkedInConfig.targetingProfileEdit` (#5546) cannot be forwarded, or `null` when it is
+   * absent or acceptable.
+   *
+   * campaign-service uses the profiles the request carries as they come (`internal/dispatch/linkedin.go`
+   * `linkedinConfig.TargetingProfiles` into `linkedin.RuntimeConfig`), checking only that each URN is
+   * shaped `urn:li:skill:<n>` / `urn:li:group:<n>` (`targeting.go` `validFacets`). So this is the one
+   * place an edit is held to removal only:
+   *
+   * - the deployment must route the create through campaign-service (`canEditLinkedInTargeting`);
+   * - `id` must be the profile the selection resolves to (`custom` reads `cloud-native`), since an
+   *   edit to any other profile would never be read, and that profile must be configured;
+   * - `skills` and `groups` must each be a list of URNs the configured profile already carries, each
+   *   at most once.
+   *
+   * An empty list is accepted. campaign-service refuses a profile only when skills, groups AND its
+   * fixed job functions are all empty (`client.go` `validatePrerequisites`), and the job functions
+   * never are (`config.go` `jobFunctions`).
+   *
+   * Messages never echo a caller value.
+   */
+  private linkedInTargetingEditRefusal(body: CampaignCreateRequest): string | null {
+    const config: unknown = body?.linkedInConfig;
+    if (config === null || typeof config !== 'object' || !('targetingProfileEdit' in config)) return null;
+    if (!canEditLinkedInTargeting()) {
+      return 'LinkedIn targeting changes are not enabled on this deployment; omit targetingProfileEdit to use the profile as configured';
+    }
+    const { targetingProfile, targetingProfileEdit } = config as Record<string, unknown>;
+    if (targetingProfileEdit === null || typeof targetingProfileEdit !== 'object' || Array.isArray(targetingProfileEdit)) {
+      return 'the targeting profile edit must be an object with id, skills and groups';
+    }
+    const { id, skills, groups } = targetingProfileEdit as Record<string, unknown>;
+    if (typeof targetingProfile !== 'string' || id !== resolveLinkedInTargetingProfileId(targetingProfile as LinkedInTargetingProfile)) {
+      return 'the targeting profile edit must be for the selected targeting profile';
+    }
+    const configured = getLinkedInConfig().targetingProfiles.find((profile) => profile.id === id);
+    if (!configured) return 'the selected targeting profile is not configured on this deployment';
+    return this.linkedInFacetRemovalRefusal('skills', skills, configured.skills) ?? this.linkedInFacetRemovalRefusal('groups', groups, configured.groups);
+  }
+
+  /**
+   * Why one edited facet list is not a removal from `configured`, or `null`. The length is checked
+   * first so an oversized list costs no more than the configured profile's size.
+   */
+  private linkedInFacetRemovalRefusal(kind: 'skills' | 'groups', value: unknown, configured: readonly string[]): string | null {
+    if (!Array.isArray(value)) return `the targeting profile edit's ${kind} must be a list`;
+    const notCarried = `the targeting profile edit's ${kind} may only keep entries the configured profile already carries; adding targeting is not supported`;
+    if (value.length > configured.length) return notCarried;
+    const seen = new Set<string>();
+    for (const urn of value) {
+      if (typeof urn !== 'string' || !configured.includes(urn)) return notCarried;
+      if (seen.has(urn)) return `the targeting profile edit's ${kind} lists an entry more than once`;
+      seen.add(urn);
+    }
+    return null;
+  }
+
+  /**
+   * The configured catalogue with the edited profile's facets narrowed to the ones the edit kept
+   * (#5546). Built FROM the configured lists, in their order and with their label, so what is sent
+   * is a subset of the ConfigMap by construction as well as by `linkedInTargetingEditRefusal`.
+   */
+  private linkedInProfilesWithEdit(
+    profiles: readonly LinkedInTargetingProfileConfig[],
+    edit: LinkedInTargetingProfileEdit
+  ): readonly LinkedInTargetingProfileConfig[] {
+    return profiles.map((profile) =>
+      profile.id === edit.id
+        ? { ...profile, skills: profile.skills.filter((urn) => edit.skills.includes(urn)), groups: profile.groups.filter((urn) => edit.groups.includes(urn)) }
+        : profile
+    );
   }
 
   /** `unservedMetaAssetField`'s LinkedIn sibling: the first `linkedInConfig.variants[i].imageAssetId` this deployment cannot honour. */
@@ -8867,18 +8979,25 @@ export class CampaignController {
    *
    * The singular `targetingProfile` still travels: it is the user's SELECTION, and the catalogue
    * is what that selection is resolved against. They are not duplicates of each other.
+   *
+   * 3. `targetingProfileEdit` (#5546) is not an upstream field. When present — already held to
+   *    removal only by `linkedInTargetingEditRefusal` in `createCampaign` — it narrows that one
+   *    profile in the catalogue and is then dropped. Absent, the catalogue goes out exactly as
+   *    configured, as before.
    */
   private buildLinkedInConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.linkedInConfig) return null;
 
     const rest: Record<string, unknown> = { ...body.linkedInConfig };
     const runtime = getLinkedInConfig();
+    const edit = body.linkedInConfig.targetingProfileEdit;
 
     delete rest['adAccountId'];
+    delete rest['targetingProfileEdit'];
 
     return {
       ...rest,
-      targetingProfiles: runtime.targetingProfiles,
+      targetingProfiles: edit ? this.linkedInProfilesWithEdit(runtime.targetingProfiles, edit) : runtime.targetingProfiles,
       employerExclusions: runtime.employerExclusions,
     };
   }

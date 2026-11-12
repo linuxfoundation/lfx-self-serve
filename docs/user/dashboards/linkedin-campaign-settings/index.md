@@ -1,14 +1,14 @@
 ---
-title: LinkedIn ad variants
-description: Edit each LinkedIn ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
+title: LinkedIn targeting and ad variants
+description: See and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
-tags: [campaigns, paid marketing, linkedin ads, sponsored content, ad variants, intro text, headline, images, implement]
-last_updated: 2026-11-11
+tags: [campaigns, paid marketing, linkedin ads, sponsored content, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
+last_updated: 2026-11-12
 intercom_collection: Dashboards
 ---
 
-When you create a LinkedIn campaign from the **Campaigns** page in the Foundation lens, each ad variant in the LinkedIn section becomes its own ad in the campaign. The **Implement** tab fills the variants in from the brief, and you can edit each one's intro text and headline, add or remove variants, and give each variant its own image.
+When you create a LinkedIn campaign from the **Campaigns** page in the Foundation lens, each ad variant in the LinkedIn section becomes its own ad in the campaign. The **Implement** tab fills the variants in from the brief, and you can edit each one's intro text and headline, add or remove variants, and give each variant its own image. You can also see what the chosen targeting profile targets and take entries out of it.
 
 ## Where to find them
 
@@ -57,3 +57,25 @@ Your edits and images are kept when you switch to another tab and back, as long 
 - LinkedIn ad image support could not be confirmed. Retry the check, or remove the image.
 - LinkedIn ad image support can't be checked until the brief is saved. Save the brief, or remove the image.
 - Checking LinkedIn ad image support…, shown while the check runs.
+
+## Targeting profile
+
+The **Targeting Profile** buttons in the LinkedIn section choose who sees the ads: **Cloud Native / CNCF** or **AI / MCP**. The brief picks one to start with. Under the buttons, the section lists what the chosen profile targets:
+
+- **Member groups**: LinkedIn groups, shown by their LinkedIn ID (for example `urn:li:group:12345`).
+- **Skills**: LinkedIn skills, shown by their LinkedIn ID (for example `urn:li:skill:12345`).
+
+In the chosen locations, LinkedIn shows the ads to members who are in any of these groups, have any of these skills, or work in one of a fixed set of job functions. The campaign service adds the same job functions to every LinkedIn campaign, and they can't be changed here. Each heading shows how many entries this campaign keeps, then the profile's total, for example **Member groups (1 of 2)**.
+
+### Remove entries
+
+When targeting changes are available on your deployment, each group and skill has a remove button (×). Removing one takes it out of this campaign only. The profile itself does not change.
+
+- **Reset to profile** puts back everything you removed. It appears once you have removed something.
+- Choosing the other profile starts again from that profile's full list, so anything you removed is put back. If the brief chose a custom profile, it is shown as Cloud Native / CNCF. Choosing Cloud Native / CNCF then keeps your removals.
+- If you remove every group and skill, a note says the campaign reaches everyone in those job functions in the chosen locations. You can still create the campaign.
+- You can't add groups or skills. Only entries already in the profile can be kept or removed.
+
+Your removals are kept when you switch to another tab and back on the same event. Generating a brief for another event starts from the full profile.
+
+If targeting changes aren't available, the lists are shown without remove buttons. **Create** stays disabled while removals you made earlier can't be sent: "LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile." If the profile's details didn't load, the section says so, and **Create** stays disabled while you hold removals until you reload the page or select **Reset to profile**.

@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { LINKEDIN_CHAR_LIMITS } from '../constants/campaign.constants';
-import { linkedInCreativeTextLength, linkedInVariantTextError, normalizeLinkedInCreativeText } from './campaign-linkedin.utils';
+import type { LinkedInTargetingProfileConfig } from '../interfaces/campaign.interface';
+import {
+  linkedInCreativeTextLength,
+  linkedInTargetingAfterRemovals,
+  linkedInVariantTextError,
+  normalizeLinkedInCreativeText,
+  resolveLinkedInTargetingProfileId,
+} from './campaign-linkedin.utils';
 
 describe('normalizeLinkedInCreativeText', () => {
   it('trims and turns em and en dashes into commas, as campaign-service does', () => {
@@ -65,5 +72,40 @@ describe('linkedInVariantTextError', () => {
     expect(linkedInVariantTextError('headline', `\uFEFF${'a'.repeat(LINKEDIN_CHAR_LIMITS.headline)}`)).toBe(
       "The headline is 201 characters, over LinkedIn's 200. Shorten it."
     );
+  });
+});
+
+describe('resolveLinkedInTargetingProfileId', () => {
+  it('reads custom as cloud-native and every other selection as itself, as campaign-service does', () => {
+    expect(resolveLinkedInTargetingProfileId('custom')).toBe('cloud-native');
+    expect(resolveLinkedInTargetingProfileId('cloud-native')).toBe('cloud-native');
+    expect(resolveLinkedInTargetingProfileId('mcp')).toBe('mcp');
+  });
+});
+
+describe('linkedInTargetingAfterRemovals', () => {
+  const profile: LinkedInTargetingProfileConfig = {
+    id: 'cloud-native',
+    label: 'Cloud Native',
+    skills: ['urn:li:skill:1', 'urn:li:skill:2', 'urn:li:skill:3'],
+    groups: ['urn:li:group:10', 'urn:li:group:20'],
+  };
+
+  it('keeps the profile as configured when nothing is removed', () => {
+    expect(linkedInTargetingAfterRemovals(profile, { skills: [], groups: [] })).toEqual({ skills: profile.skills, groups: profile.groups });
+  });
+
+  it('takes the removed URNs out and keeps the profile order', () => {
+    expect(linkedInTargetingAfterRemovals(profile, { skills: ['urn:li:skill:2'], groups: ['urn:li:group:10'] })).toEqual({
+      skills: ['urn:li:skill:1', 'urn:li:skill:3'],
+      groups: ['urn:li:group:20'],
+    });
+  });
+
+  it('ignores a removal the profile does not carry, and does not read a skill removal as a group one', () => {
+    expect(linkedInTargetingAfterRemovals(profile, { skills: ['urn:li:group:10', 'urn:li:skill:99'], groups: [] })).toEqual({
+      skills: profile.skills,
+      groups: profile.groups,
+    });
   });
 });
