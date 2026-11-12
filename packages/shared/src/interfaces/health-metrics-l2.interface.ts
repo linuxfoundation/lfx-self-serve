@@ -108,3 +108,36 @@ export interface HealthMetricsChartTipView {
   title: string;
   rows: HealthMetricsChartTipRowView[];
 }
+
+/** How a metrics row colours a trend: a rise, a fall, flat or not available, or plain context in place of a change. */
+export type HealthMetricsMetricTrendTone = 'up' | 'down' | 'flat' | 'context';
+
+/** A metrics row item's 120 × 4 bar with its caption. */
+export interface HealthMetricsMetricBar {
+  /** Fill width, 0 to 100. */
+  pct: number;
+  /** Tailwind background class for the fill, such as `bg-blue-500`. */
+  fillClass: string;
+  /** Text after the bar, such as `{N} of {M}`. */
+  label: string;
+}
+
+/** One headline number in the drill-down tabs' shared metrics row. */
+export interface HealthMetricsMetricItem {
+  key: string;
+  label: string;
+  value: string;
+  /** Signed change under the value, such as `+12%`, or plain context when `trendTone` is `context`. */
+  trend?: string;
+  trendTone?: HealthMetricsMetricTrendTone;
+  /** Tailwind background class for the 8px status dot before the label, such as `bg-emerald-500`. */
+  dotClass?: string;
+  /** Help text behind the question mark after the label. */
+  tip?: string;
+  /** Muted line under the value, such as ` vs {Month}`. */
+  description?: string;
+  /** Coloured lead before the description, such as `+{N}%`. */
+  descriptionLead?: string;
+  descriptionLeadTone?: 'up' | 'down';
+  bar?: HealthMetricsMetricBar;
+}

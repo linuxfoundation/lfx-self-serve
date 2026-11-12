@@ -37,6 +37,7 @@ import {
 import {
   classifyMemberImportBulkResult,
   committeeRequiresOrganization,
+  decodeMemberImportFile,
   downloadCsv,
   getMemberImportFieldGuide,
   getMemberImportRetryDelayMs,
@@ -125,6 +126,8 @@ export class ImportMembersDialogComponent {
   public phase = signal<MemberImportDialogPhase>('select');
   public fileName = signal<string | null>(null);
   public fileErrors = signal<string[]>([]);
+  /** Non-blocking notes about how the chosen file was read (encoding fallback, ignored columns). */
+  public fileNotices = signal<string[]>([]);
   public reading = signal(false);
   public rows = signal<MemberImportRow[]>([]);
   /** Set when auth/not-found, the pause cap, an excessive server cooldown or Stop import ends the run. */
@@ -188,6 +191,7 @@ export class ImportMembersDialogComponent {
 
     this.fileName.set(file.name);
     this.rows.set([]);
+    this.fileNotices.set([]);
     this.phase.set('select');
 
     if (!file.name.toLowerCase().endsWith('.csv')) {
@@ -203,8 +207,16 @@ export class ImportMembersDialogComponent {
     this.reading.set(true);
     file
       .arrayBuffer()
-      .then((buffer) => this.applyFileText(new TextDecoder('utf-8', { fatal: true }).decode(buffer)))
-      .catch(() => this.fileErrors.set(['The file could not be read as UTF-8 text. Save it as "CSV UTF-8" and choose it again.']))
+      .then((buffer) => {
+        const { text, encoding } = decodeMemberImportFile(buffer);
+        if (encoding === 'windows-1252') {
+          this.fileNotices.set([
+            "This file wasn't saved as UTF-8, so it was read as Windows (Western European) text. Check that names with accents look right before adding.",
+          ]);
+        }
+        this.applyFileText(text);
+      })
+      .catch(() => this.fileErrors.set(['The file could not be read. Choose it again.']))
       .finally(() => this.reading.set(false));
   }
 
@@ -307,8 +319,10 @@ export class ImportMembersDialogComponent {
   private initStatusMessage(): Signal<string> {
     return computed(() => {
       switch (this.phase()) {
-        case 'preview':
-          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.`;
+        case 'preview': {
+          const notices = this.fileNotices().length > 0 ? ` ${this.fileNotices().join(' ')}` : '';
+          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.${notices}`;
+        }
         case 'importing':
           if (this.paused()) {
             return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
@@ -330,6 +344,9 @@ export class ImportMembersDialogComponent {
     if (parsed.errors.length > 0) {
       this.fileErrors.set(parsed.errors);
       return;
+    }
+    if (parsed.ignoredColumns.length > 0) {
+      this.fileNotices.update((notices) => [...notices, `Ignored columns: ${parsed.ignoredColumns.join(', ')}. The import doesn't use them.`]);
     }
     this.rows.set(prepareMemberImportRows(parsed.records, this.rules, this.existingMemberEmails));
     this.phase.set('preview');

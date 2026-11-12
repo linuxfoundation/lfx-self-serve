@@ -10,8 +10,9 @@ import {
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewPastTrendView, buildHealthMetricsOverviewTrendView, pickHealthMetricsEventsForecastFormat } from '@lfx-one/shared/utils';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
-import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { SkeletonModule } from 'primeng/skeleton';
+
+import { HealthMetricsInfoTipComponent } from '../../../components/health-metrics-info-tip/health-metrics-info-tip.component';
 
 import type {
   FilterPillOption,
@@ -32,7 +33,7 @@ import type {
  */
 @Component({
   selector: 'lfx-overview-event-trend',
-  imports: [FilterPillsComponent, SkeletonModule, UiButtonComponent, UiTooltipDirective],
+  imports: [FilterPillsComponent, HealthMetricsInfoTipComponent, SkeletonModule, UiButtonComponent],
   templateUrl: './overview-event-trend.component.html',
 })
 export class OverviewEventTrendComponent {

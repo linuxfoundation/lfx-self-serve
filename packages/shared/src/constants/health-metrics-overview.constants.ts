@@ -447,8 +447,11 @@ export const HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS = 180;
 /** Board attendance at or above this share draws green; above zero amber, zero red. */
 export const HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE = 0.67;
 
-/** The narrowest a KPI strip item may get before the strip stacks (the design's 170px). */
+/** The narrowest a KPI strip item may get in one row before the strip goes two per row (the design's 170px). */
 export const HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX = 170;
+
+/** The narrowest half of a KPI strip that still reads two per row; narrower strips stack (the design's 130px). */
+export const HEALTH_METRICS_OVERVIEW_KPI_MIN_HALF_WIDTH_PX = 130;
 
 /** The event dialog's tabs, in the design's order. */
 export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_TABS = [

@@ -747,5 +747,5 @@ export interface HealthMetricsOverviewSnapshotSectionView {
   emptyCopy: string | null;
 }
 
-/** How a KPI strip lays out at its measured width: one row, one stacked column, or a 2 × 2 grid for four items. */
+/** How a KPI strip lays out at its measured width: one row, two per row (`grid`), or one stacked column. */
 export type HealthMetricsOverviewKpiStripLayout = 'row' | 'stack' | 'grid';
