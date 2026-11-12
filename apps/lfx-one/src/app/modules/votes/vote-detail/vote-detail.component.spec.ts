@@ -8,7 +8,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { VOTE_DETAIL_RESULTS_FINALIZATION_MAX_ATTEMPTS, VOTE_DETAIL_RESULTS_POLL_OPTIONS } from '@lfx-one/shared/constants';
@@ -41,7 +40,6 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteAbstainResultComponent } from '../components/vote-abstain-result/vote-abstain-result.component';
 import { VoteCommentItemComponent } from '../components/vote-comment-item/vote-comment-item.component';
 import { VoteDetailFactsComponent } from '../components/vote-detail-facts/vote-detail-facts.component';
@@ -633,13 +631,13 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
     });
 
-    it('reads an invited manager’s own ballot without replacing their management results', async () => {
+    it('keeps the manager page focused on results without loading a personal ballot', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const fixture = await setup();
 
       expect(read(fixture, 'audience')).toBe('creator');
-      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
+      expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
       expect(testId(fixture, 'vote-detail-overview-results')).not.toBeNull();
       expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
     });
@@ -654,220 +652,16 @@ describe('VoteDetailComponent', () => {
     });
   });
 
-  describe('change vote (#4723)', () => {
-    const ballot: MyVoteBallot = { vote_response_uid: 'resp-1', vote_uid: 'vote-1', abstained: false, poll_answers: [], comment_responses: [] };
+  it.each([false, true])('never offers ballot-changing controls on the vote page (manager %s)', async (manager) => {
+    projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
+    voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: true })));
+    voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+    const fixture = await setup();
 
-    async function submittedVoter(vote: Partial<Vote>, myBallot: MyVoteBallot | null = ballot): Promise<ComponentFixture<VoteDetailComponent>> {
-      voteService.fetchVote.mockReturnValue(of(makeVote(vote)));
-      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
-      voteService.getMyVoteBallot.mockReturnValue(of(myBallot));
-      return setup();
-    }
-
-    it.each([
-      ['an allowed vote', { allow_vote_change: true }, ballot],
-      ['a legacy vote without the setting', {}, ballot],
-      ['ITX reporting the ballot changeable', { allow_vote_change: false }, { ...ballot, can_change_vote: true }],
-    ])('offers Change vote on %s', async (_label, vote, myBallot) => {
-      const fixture = await submittedVoter(vote, myBallot);
-
-      expect(read(fixture, 'canChangeVote')).toBe(true);
-      expect(testId(fixture, 'vote-detail-voter-change-vote')).not.toBeNull();
-    });
-
-    it('opens the cast drawer in change mode, and a later first-ballot open resets it', async () => {
-      const fixture = await submittedVoter({ allow_vote_change: true });
-
-      call(fixture, 'onChangeVote');
-      expect(read(fixture, 'castDrawerVisible')).toBe(true);
-      expect(read(fixture, 'castDrawerChangeMode')).toBe(true);
-
-      call(fixture, 'onCastVote');
-      expect(read(fixture, 'castDrawerChangeMode')).toBe(false);
-    });
-
-    it('re-reads the ballot and leaves change mode after a change is saved', async () => {
-      const fixture = await submittedVoter({ allow_vote_change: true });
-      call(fixture, 'onChangeVote');
-      voteService.getMyVoteBallot.mockClear();
-
-      call(fixture, 'onVoteSubmitted', 'vote-1');
-      TestBed.tick();
-      fixture.detectChanges();
-
-      expect(read(fixture, 'castDrawerChangeMode')).toBe(false);
-      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
-    });
-
-    it('marks a locked ballot final, with no Change vote action', async () => {
-      const fixture = await submittedVoter({ allow_vote_change: false });
-
-      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
-      expect(testId(fixture, 'vote-detail-voter-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
-      call(fixture, 'onChangeVote');
-      expect(read(fixture, 'castDrawerVisible')).toBe(false);
-    });
-
-    it('hides Change vote when ITX reports can_change_vote: false on an allowed vote', async () => {
-      const fixture = await submittedVoter({ allow_vote_change: true }, { ...ballot, can_change_vote: false });
-
-      expect(read(fixture, 'canChangeVote')).toBe(false);
-      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
-    });
-
-    it('hides Change vote until the ballot loads', async () => {
-      const fixture = await submittedVoter({ allow_vote_change: true }, null);
-
-      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
-    });
-
-    it('hides Change vote while impersonating', async () => {
-      impersonating.set(true);
-      const fixture = await submittedVoter({ allow_vote_change: true, pseudo_anonymity: false });
-
-      expect(read(fixture, 'canChangeVote')).toBe(false);
-      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
-    });
-
-    it('offers no Change vote or final text to a voter who has not voted', async () => {
-      voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: false })));
-      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.AWAITING_RESPONSE)));
-      const fixture = await setup();
-
-      expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
-      expect(testId(fixture, 'vote-detail-voter-ballot-final')).toBeNull();
-    });
-
-    it.each([
-      ['project', false],
-      ['project', true],
-      ['committee', false],
-      ['committee', true],
-    ] as const)('opens a %s writer’s own change ballot with privacy %s while retaining results', async (writer, privacy) => {
-      if (writer === 'project') projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
-      else committeeService.fetchCommittee.mockReturnValue(of({ writer: true }));
-      const vote = makeVote({
-        pseudo_anonymity: privacy,
-        allow_vote_change: true,
-        poll_questions: [{ question_id: 'q1', prompt: 'Approve?', type: 'single_choice', choices: [{ choice_id: 'c1', choice_text: 'Yes' }] }],
-      });
-      voteService.fetchVote.mockReturnValue(of(vote));
-      voteService.getVote.mockReturnValue(of(vote));
-      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
-      voteService.getMyVoteBallot.mockReturnValue(
-        of({
-          ...ballot,
-          poll_answers: [
-            { question_id: 'q1', prompt: 'Approve?', type: 'single_choice', user_choice: [{ choice_id: 'c1', choice_text: 'Yes' }], ranked_user_choice: [] },
-          ],
-        })
-      );
-      const fixture = await setup('browser', [ButtonComponent, VoteCastDrawerComponent]);
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(voteService.getMyVoteBallot).toHaveBeenCalledWith('vote-1');
-      expect(read(fixture, 'audience')).toBe('creator');
-      expect(testId(fixture, 'vote-detail-overview-results')).not.toBeNull();
-      testId(fixture, 'vote-detail-manager-change-vote')!.querySelector('button')!.click();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      const drawer = fixture.debugElement.query(By.directive(VoteCastDrawerComponent)).componentInstance as VoteCastDrawerComponent;
-      expect(drawer.visible()).toBe(true);
-      expect(drawer.changeMode()).toBe(true);
-      expect(drawer.form.get('q1')?.value).toBe('c1');
-      expect(testId(fixture, 'vote-detail-overview-results')).not.toBeNull();
-      drawer.visible.set(false);
-      await fixture.whenStable();
-    });
-
-    it.each(['locked', 'ended', 'removed', 'not invited', 'impersonating'] as const)('does not offer a manager a change action when %s', async (scenario) => {
-      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
-      impersonating.set(scenario === 'impersonating');
-      voteService.fetchVote.mockReturnValue(
-        of(
-          makeVote({
-            allow_vote_change: scenario !== 'locked',
-            status: scenario === 'ended' ? PollStatus.ENDED : PollStatus.ACTIVE,
-            pseudo_anonymity: true,
-          })
-        )
-      );
-      voteService.getMyVoteResponse.mockReturnValue(
-        of(scenario === 'not invited' ? null : makeResponse(IndexedVoteResponseStatus.RESPONDED, { voter_removed: scenario === 'removed' }))
-      );
-      voteService.getMyVoteBallot.mockReturnValue(of(ballot));
-      const fixture = await setup();
-
-      expect(testId(fixture, 'vote-detail-overview-results')).not.toBeNull();
-      expect(testId(fixture, 'vote-detail-manager-change-vote')).toBeNull();
-      call(fixture, 'onChangeVote');
-      expect(read(fixture, 'castDrawerVisible')).toBe(false);
-      if (scenario !== 'locked') expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
-    });
-
-    it.each([false, true])('settles a drawer finality conflict into the parent final state (manager %s)', async (manager) => {
-      projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
-      voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: true })));
-      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
-      // Deliberately keep returning stale allowed metadata after the authoritative conflict.
-      voteService.getMyVoteBallot.mockReturnValue(of({ ...ballot, can_change_vote: true }));
-      voteService.updateMyResponse.mockReturnValue(
-        throwError(
-          () =>
-            new HttpErrorResponse({
-              status: 409,
-              error: { error: 'this poll does not allow changing a submitted vote' },
-            })
-        )
-      );
-      const fixture = await setup('browser', [ButtonComponent, VoteCastDrawerComponent]);
-      const actionId = manager ? 'vote-detail-manager-change-vote' : 'vote-detail-voter-change-vote';
-      testId(fixture, actionId)!.querySelector('button')!.click();
-      await fixture.whenStable();
-      fixture.detectChanges();
-      const drawer = fixture.debugElement.query(By.directive(VoteCastDrawerComponent)).componentInstance as VoteCastDrawerComponent;
-      const success = vi.fn();
-      drawer.voteSubmitted.subscribe(success);
-      const oldReads = voteService.getMyVoteBallot.mock.calls.length;
-
-      drawer['onSubmit']();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(voteService.updateMyResponse).toHaveBeenCalledOnce();
-      expect(success).not.toHaveBeenCalled();
-      expect(drawer.visible()).toBe(false);
-      expect(read(fixture, 'canChangeVote')).toBe(false);
-      expect(testId(fixture, actionId)).toBeNull();
-      expect(testId(fixture, manager ? 'vote-detail-manager-ballot-final' : 'vote-detail-voter-ballot-final')?.textContent).toContain(
-        "Your vote is final and can't be changed."
-      );
-      expect(voteService.getMyVoteBallot.mock.calls.length).toBeGreaterThan(oldReads);
-      call(fixture, 'onChangeVote');
-      expect(read(fixture, 'castDrawerVisible')).toBe(false);
-    });
-
-    it('ignores a delayed finality event for another vote and keeps rejection state vote-keyed', async () => {
-      const fixture = await submittedVoter({ allow_vote_change: true });
-      call(fixture, 'onVoteChangeBlocked', 'other-vote');
-      expect(read(fixture, 'canChangeVote')).toBe(true);
-      call(fixture, 'onVoteChangeBlocked', 'vote-1');
-      TestBed.tick();
-      fixture.detectChanges();
-      expect(read(fixture, 'canChangeVote')).toBe(false);
-
-      voteService.fetchVote.mockReturnValue(of(makeVote({ uid: 'vote-2', allow_vote_change: true })));
-      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED, { vote_uid: 'vote-2' })));
-      voteService.getMyVoteBallot.mockReturnValue(of({ ...ballot, vote_uid: 'vote-2' }));
-      paramMap.next(convertToParamMap({ id: 'vote-2' }));
-      TestBed.tick();
-      fixture.detectChanges();
-      call(fixture, 'onVoteChangeBlocked', 'vote-1');
-      expect(read(fixture, 'canChangeVote')).toBe(true);
-      expect(read(fixture, 'ballotFinal')).toBe(false);
-    });
+    expect(testId(fixture, 'vote-detail-manager-ballot')).toBeNull();
+    expect(testId(fixture, 'vote-detail-manager-change-vote')).toBeNull();
+    expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    expect(read(fixture, 'castDrawerVisible')).toBe(false);
   });
 
   describe('participation card', () => {

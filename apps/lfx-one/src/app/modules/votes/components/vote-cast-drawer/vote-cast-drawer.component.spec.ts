@@ -875,6 +875,62 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(component.visible()).toBe(false);
   });
 
+  it.each([
+    ['changes are disabled', { allow_vote_change: false }, undefined],
+    ['ITX locks the ballot', { allow_vote_change: true }, false],
+    ['the vote has ended', { status: PollStatus.ENDED }, undefined],
+  ] as const)('reviews the saved ballot without edit or submit controls when %s', async (_label, vote, canChangeVote) => {
+    const updateMyResponse = vi.fn();
+    const submitMyResponse = vi.fn();
+    await open(
+      { ...CHANGE_VOTE, ...vote },
+      { getMyVoteBallot: vi.fn().mockReturnValue(of({ ...BALLOT, can_change_vote: canChangeVote })), updateMyResponse, submitMyResponse },
+      { changeMode: true }
+    );
+
+    expect(fixture.componentInstance.form.get('q1')?.value).toBe('c2');
+    expect(fixture.componentInstance.form.disabled).toBe(true);
+    expect(fixture.componentInstance.commentForm.disabled).toBe(true);
+    expect(fixture.componentInstance.abstainControl.disabled).toBe(true);
+    expect(el('vote-cast-submit-button')).toBeNull();
+    expect(el('vote-cast-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+    fixture.componentInstance['onSubmit']();
+    expect(updateMyResponse).not.toHaveBeenCalled();
+    expect(submitMyResponse).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a legacy vote', undefined, undefined],
+    ['an allowed vote', true, undefined],
+    ['ITX explicitly allows changes', false, true],
+  ] as const)('allows updating the recorded ballot when %s', async (_label, allowVoteChange, canChangeVote) => {
+    await open(
+      { ...CHANGE_VOTE, allow_vote_change: allowVoteChange },
+      { getMyVoteBallot: vi.fn().mockReturnValue(of({ ...BALLOT, can_change_vote: canChangeVote })) },
+      { changeMode: true }
+    );
+
+    expect(fixture.componentInstance.form.enabled).toBe(true);
+    expect(submitButton()?.disabled).toBe(false);
+    expect(el('vote-cast-submit-button')?.textContent).toContain('Update Vote');
+    expect(el('vote-cast-ballot-final')).toBeNull();
+  });
+
+  it('keeps Me-lens change review read-only in Admin Mode', async () => {
+    const updateMyResponse = vi.fn();
+    await open({ ...CHANGE_VOTE, pseudo_anonymity: false }, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
+    impersonating.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.disabled).toBe(true);
+    expect(el('vote-cast-submit-button')).toBeNull();
+    expect(el('vote-cast-ballot-final')).toBeNull();
+    expect(el('vote-cast-impersonation-notice')).not.toBeNull();
+    fixture.componentInstance['onSubmit']();
+    expect(updateMyResponse).not.toHaveBeenCalled();
+  });
+
   it('changes a ballot to an abstention without answers', async () => {
     const updateMyResponse = vi.fn().mockReturnValue(of(undefined));
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(of(BALLOT)), updateMyResponse }, { changeMode: true });
@@ -1056,7 +1112,7 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r1']);
   });
 
-  it('keeps Update disabled until the submitted ballot loads, and shows the load error', async () => {
+  it('blocks updates until the submitted ballot loads, and shows the load error', async () => {
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(throwError(() => new Error('synthetic failure'))) }, { changeMode: true });
 
     expect(el('vote-cast-ballot-error')).not.toBeNull();
@@ -1064,7 +1120,7 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(fixture.componentInstance['submitDisabled']()).toBe(true);
   });
 
-  it("shows a doesn't-allow-changes toast and closes on a 409", async () => {
+  it('keeps review locked after a finality conflict, even if a reopened ballot still claims changes are allowed', async () => {
     const updateMyResponse = vi
       .fn()
       .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'this poll does not allow changing a submitted vote' } })));
@@ -1081,6 +1137,15 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(component.visible()).toBe(false);
     expect(blocked).toEqual([VOTE.uid]);
     expect(success).not.toHaveBeenCalled();
+
+    await fixture.whenStable();
+    component.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el('vote-cast-ballot-final')).not.toBeNull();
+    expect(el('vote-cast-submit-button')).toBeNull();
+    component['onSubmit']();
+    expect(updateMyResponse).toHaveBeenCalledOnce();
   });
 
   it('keeps the drawer open with an error toast for any other update failure', async () => {

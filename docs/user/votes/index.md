@@ -4,7 +4,7 @@ description: Create votes, cast your ballot, and view results for project govern
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, governance, decisions, elections]
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 intercom_collection: Votes
 ---
 
@@ -23,7 +23,7 @@ The Votes section lets you create and manage votes for formal project governance
 
 ## Navigation
 
-To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the votes you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other votes. Selecting an active vote you haven't voted on yet opens its ballot right on the list, so you can vote without leaving the page. Selecting **Review** on an active vote you've already voted on opens the same ballot drawer with your recorded choices locked. **Review** is read-only. To change an active ballot when the vote allows it, select **Change vote** on the vote's page or use your personalized ballot link. Selecting any other vote opens its page.
+To view and cast votes, select **Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the votes you're eligible for across your projects and foundations. Votes opens on the **Active** tab; select **All** or **Ended** to see your other votes. Selecting an active vote you haven't voted on yet opens its ballot right on the list, so you can vote without leaving the page. Selecting **Review** on an active vote you've already voted on opens the same ballot drawer with your recorded choices. When changes are allowed, edit your choices, abstention or comments and select **Update Vote** to resubmit your own ballot. Otherwise, the drawer is read-only and explains that your vote is final. You can also use your personalized ballot link when changes are allowed. Selecting any other vote opens its page.
 
 To manage votes for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the votes for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see votes with every status.
 
