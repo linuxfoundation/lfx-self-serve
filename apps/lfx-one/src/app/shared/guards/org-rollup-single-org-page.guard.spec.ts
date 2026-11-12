@@ -77,6 +77,12 @@ describe('orgRollUpSingleOrgPageGuard', () => {
     expect(run({ page: 'easycla', queryParams: { company: '0014100000AaaAAAAA', signed: '1' } })).toBe(true);
   });
 
+  it('also lets through a return still carrying the pre-rename ?org= parameter', () => {
+    isRollUp.set(true);
+
+    expect(run({ page: 'easycla', queryParams: { org: '0014100000AaaAAAAA', signed: '1' } })).toBe(true);
+  });
+
   /**
    * Copilot again, on the first fix: keying on `?company=` alone was too wide. Only EasyCLA adopts the
    * parameter, only the legacy mount can carry such a return, and an empty value adopts nothing —
