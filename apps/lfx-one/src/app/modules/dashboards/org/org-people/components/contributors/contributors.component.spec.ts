@@ -29,7 +29,7 @@ import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { Tooltip } from 'primeng/tooltip';
 import { Observable, of } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { ContributorsService } from '../../services/contributors.service';
@@ -1027,6 +1027,7 @@ describe('ContributorsComponent — organization scope (lfx-self-serve-ops#1219)
 
 describe('ContributorsComponent — search (lfx-self-serve#5662)', () => {
   let fixture: ComponentFixture<ContributorsComponent>;
+  let getContributors: Mock;
 
   const PERSON_KEYS = ['p-compat', 'p-ideo-space', 'p-accent', 'p-title', 'p-other'];
   const el = (): HTMLElement => fixture.nativeElement;
@@ -1041,13 +1042,15 @@ describe('ContributorsComponent — search (lfx-self-serve#5662)', () => {
 
   async function search(term: string): Promise<string[]> {
     form().controls['search'].setValue(term);
-    // Past the filter bar's 150ms debounce.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await settle();
+    await vi.advanceTimersByTimeAsync(150);
     await settle();
     return rowKeys();
   }
 
   beforeEach(async () => {
+    // Virtualize RxJS's clock/intervals without faking Angular's timeout/animation-frame scheduling.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     const base = contributorsResponse();
     const contributor = (personKey: string, displayName: string, title: string | null = null) => ({ ...base.contributors[0], personKey, displayName, title });
     const response: OrgContributorsResponse = {
@@ -1061,13 +1064,14 @@ describe('ContributorsComponent — search (lfx-self-serve#5662)', () => {
         contributor('p-other', 'Alan Turing'),
       ],
     };
+    getContributors = vi.fn(() => of(response));
 
     await TestBed.configureTestingModule({
       imports: [ContributorsComponent],
       providers: [
         provideRouter([]),
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: ORG, accountName: SYNTHETIC_ORG_NAME }) } },
-        { provide: ContributorsService, useValue: { getContributors: vi.fn(() => of(response)) } },
+        { provide: ContributorsService, useValue: { getContributors } },
         { provide: PersonDetailDrawerService, useValue: { open: vi.fn() } },
         { provide: OrgLensOrgScopeService, useValue: { current: orgScopeInfo, retryFailedRead: () => undefined } },
       ],
@@ -1076,6 +1080,12 @@ describe('ContributorsComponent — search (lfx-self-serve#5662)', () => {
     await TestBed.inject(Router).navigateByUrl('/?tab=contributors');
     fixture = TestBed.createComponent(ContributorsComponent);
     await settle();
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   it('finds a name stored with lookalike characters or an ideographic space, with or without a space in the query', async () => {
@@ -1094,7 +1104,28 @@ describe('ContributorsComponent — search (lfx-self-serve#5662)', () => {
     expect(await search('staff engineer')).toEqual(['p-title']);
   });
 
-  it('lists everyone for a query that is only spaces', async () => {
-    expect(await search('   ')).toEqual(PERSON_KEYS);
+  it('treats effective-empty queries as unfiltered and hides Clear filters', async () => {
+    expect(await search('JOSE')).toEqual(['p-accent']);
+    expect(el().querySelector('[data-testid="org-people-contributors-clear-filters"]')).not.toBeNull();
+
+    for (const term of ['', '   ', '\u3000', '\u200B', ' \u200B ', '\u0085']) {
+      expect(await search(term)).toEqual(PERSON_KEYS);
+      expect(el().querySelector('[data-testid="org-people-contributors-clear-filters"]')).toBeNull();
+    }
+  });
+
+  it('keeps the organization-empty wording for effective-empty queries', async () => {
+    getContributors.mockReturnValue(of({ ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, accountId: ORG }));
+    (fixture.componentInstance as unknown as { retry: () => void }).retry();
+    await settle();
+
+    expect(await search('no matching person')).toEqual([]);
+    expect(el().querySelector('[data-testid="org-people-contributors-empty"]')?.textContent).toContain('No contributors match the current filters.');
+
+    for (const term of ['', '\u200B', ' \u200B ', '\u0085']) {
+      expect(await search(term)).toEqual([]);
+      expect(el().querySelector('[data-testid="org-people-contributors-empty"]')?.textContent).toContain('No contributors found for this organization');
+      expect(el().querySelector('[data-testid="org-people-contributors-clear-filters"]')).toBeNull();
+    }
   });
 });

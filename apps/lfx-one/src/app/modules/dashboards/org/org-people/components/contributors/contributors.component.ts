@@ -507,7 +507,7 @@ export class ContributorsComponent {
 
   private initIsFiltering(): boolean {
     const values = this.filterValues();
-    const hasSearch = (values.search ?? '').trim().length > 0;
+    const hasSearch = foldForSearch(values.search).length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasProject = !!(values.project ?? '');
     const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;

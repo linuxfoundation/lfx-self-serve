@@ -10,7 +10,7 @@ import type { OrgDropdownOption, OrgEventAttendeeDetailRow, OrgEventAttendeesRes
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../../../../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { EventAttendeesService } from '../../services/event-attendees.service';
@@ -67,7 +67,7 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     fixture.detectChanges();
   }
 
-  async function mount(initialUrl: string, response: OrgEventAttendeesResponse = RESPONSE): Promise<void> {
+  async function mount(initialUrl: string, response: OrgEventAttendeesResponse = RESPONSE, settleFixture: () => Promise<void> = settle): Promise<void> {
     getEventAttendees = vi.fn(() => of(response));
     await TestBed.configureTestingModule({
       imports: [EventAttendeesComponent],
@@ -81,7 +81,7 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
 
     await TestBed.inject(Router).navigateByUrl(initialUrl);
     fixture = TestBed.createComponent(EventAttendeesComponent);
-    await settle();
+    await settleFixture();
   }
 
   it('reads with the defaults and drops them from the URL', async () => {
@@ -259,25 +259,48 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
     const PARTICIPANT_REFS = [1, 2, 3, 4];
     const rowCount = (ref: number): number => el().querySelectorAll(`[data-testid="org-people-event-attendees-row-${ref}"]`).length;
     const rowRefs = (): number[] => PARTICIPANT_REFS.filter((ref) => rowCount(ref) > 0);
+    const stat = (name: string): string | undefined => testId(`org-people-event-attendees-stat-${name}`)?.firstElementChild?.textContent?.trim();
+
+    async function settleSearch(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await vi.advanceTimersByTimeAsync(150);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
 
     async function search(term: string): Promise<number[]> {
       form().controls['search'].setValue(term);
-      await settle();
+      await settleSearch();
       return rowRefs();
     }
 
     beforeEach(async () => {
-      await mount('/?tab=events', {
-        ...RESPONSE,
-        details: [
-          // A CJK compatibility ideograph (U+F92E) that renders like 冷 (U+51B7), at two events.
-          detail(1, 'event-a', { displayName: '王小冷' }),
-          detail(1, 'event-b', { displayName: '王小冷' }),
-          detail(2, 'event-a', { displayName: 'José Ramírez' }),
-          detail(3, 'event-a', { displayName: 'Ada Lovelace', jobTitle: 'Staff Engineer' }),
-          detail(4, 'event-a', { displayName: 'Alan Turing' }),
-        ],
-      });
+      // Leave Angular's timeout/animation-frame scheduling real while advancing RxJS's debounce.
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      await mount(
+        '/?tab=events',
+        {
+          ...RESPONSE,
+          // The summary includes an accepted speaker who has no attendee detail row.
+          summary: { attendeesCount: 4, speakersCount: 1, eventsCount: 2, foundationsCount: 1 },
+          details: [
+            // A CJK compatibility ideograph (U+F92E) that renders like 冷 (U+51B7), at two events.
+            detail(1, 'event-a', { displayName: '王小冷' }),
+            detail(1, 'event-b', { displayName: '王小冷' }),
+            detail(2, 'event-a', { displayName: 'José Ramírez' }),
+            detail(3, 'event-a', { displayName: 'Ada Lovelace', jobTitle: 'Staff Engineer' }),
+            detail(4, 'event-a', { displayName: 'Alan Turing' }),
+          ],
+        },
+        settleSearch
+      );
+    });
+
+    afterEach(() => {
+      TestBed.resetTestingModule();
+      vi.clearAllTimers();
+      vi.useRealTimers();
     });
 
     it('finds a name stored with lookalike characters, with or without a space or an ideographic space, listing the person once', async () => {
@@ -295,8 +318,34 @@ describe('EventAttendeesComponent — Events filters (lfx-self-serve#4598)', () 
       expect(await search('staff engineer')).toEqual([3]);
     });
 
-    it('lists everyone for a query that is only spaces', async () => {
-      expect(await search('   ')).toEqual(PARTICIPANT_REFS);
+    it('retains the warehouse summary and every row for effective-empty queries', async () => {
+      expect(await search('JOSE')).toEqual([2]);
+      expect(stat('speakers')).toBe('0');
+      expect(stat('attendees')).toBe('1');
+      expect(stat('events')).toBe('1');
+      expect(stat('foundations')).toBe('1');
+
+      for (const term of ['', '   ', '\u3000', '\u200B', ' \u200B ', '\u0085']) {
+        expect(await search(term)).toEqual(PARTICIPANT_REFS);
+        expect(stat('speakers')).toBe('1');
+        expect(stat('attendees')).toBe('4');
+        expect(stat('events')).toBe('2');
+        expect(stat('foundations')).toBe('1');
+      }
+    });
+
+    it('keeps the organization-empty wording for effective-empty queries', async () => {
+      getEventAttendees.mockReturnValue(of({ ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, accountId: ORG }));
+      (fixture.componentInstance as unknown as { retry: () => void }).retry();
+      await settleSearch();
+
+      expect(await search('no matching person')).toEqual([]);
+      expect(testId('org-people-event-attendees-empty')?.textContent).toContain('No event attendees match the current filters.');
+
+      for (const term of ['', '\u200B', ' \u200B ', '\u0085']) {
+        expect(await search(term)).toEqual([]);
+        expect(testId('org-people-event-attendees-empty')?.textContent).toContain('No event attendees found for this organization');
+      }
     });
 
     it('narrows together with the event filter', async () => {

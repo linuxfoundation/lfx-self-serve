@@ -356,7 +356,7 @@ export class EventAttendeesComponent {
   /** Search, foundation or event narrow the rows (not the server read), so the tiles follow the rows. */
   private initIsRowFiltering(): boolean {
     const values = this.filterValues();
-    const hasSearch = (values.search ?? '').trim().length > 0;
+    const hasSearch = foldForSearch(values.search).length > 0;
     return hasSearch || !!this.offeredValue(values.foundation, this.foundationOptions()) || !!this.offeredValue(values.event, this.eventOptions());
   }
 
