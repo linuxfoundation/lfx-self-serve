@@ -21,10 +21,10 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { take } from 'rxjs';
 
 import { MeetingsHomeJoinService } from '../../../services/meetings-home-join.service';
-import { MeetingsHomeStore } from '../../../services/meetings-home.store';
 import { MeetingDateTileComponent } from '../../meeting-date-tile/meeting-date-tile.component';
 import { MeetingRsvpControlsComponent } from '../../meeting-rsvp-controls/meeting-rsvp-controls.component';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsRegisterModalComponent } from '../register/meeting-details-register-modal.component';
 
 /**
@@ -43,7 +43,7 @@ import { MeetingDetailsRegisterModalComponent } from '../register/meeting-detail
 export class MeetingDetailsScheduleComponent {
   private readonly userService = inject(UserService);
   private readonly joinService = inject(MeetingsHomeJoinService);
-  private readonly store = inject(MeetingsHomeStore);
+  private readonly source = inject(MeetingDetailsSource);
   private readonly modal = inject(UiModalService);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly context = inject(MeetingDetailsContext);
@@ -96,7 +96,7 @@ export class MeetingDetailsScheduleComponent {
   private initRsvpRow(): Signal<MeetingHomeRow> {
     return computed(() => {
       const shown = this.row();
-      const row = this.store.upcomingRows().find((candidate) => candidate.key === shown.key) ?? shown;
+      const row = this.source.upcomingRows().find((candidate) => candidate.key === shown.key) ?? shown;
       const registrantId = this.registrantId();
       if (registrantId === null || row.meeting.invited) return row;
       const meeting = { ...row.meeting, invited: true, my_registrant_ids: registrantId ? [registrantId] : undefined };

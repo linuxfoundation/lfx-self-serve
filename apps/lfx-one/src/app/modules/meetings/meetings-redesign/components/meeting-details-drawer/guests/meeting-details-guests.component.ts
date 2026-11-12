@@ -58,6 +58,7 @@ import { catchError, combineLatest, debounceTime, filter, map, Observable, of, s
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
+import { MeetingDetailsSource } from '../meeting-details.source';
 
 /**
  * Guests tab of the meeting details drawer, Participants once the meeting has ended.
@@ -93,7 +94,7 @@ export class MeetingDetailsGuestsComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly dialogRef = inject(DialogRef, { optional: true });
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
   private readonly stickSentinel = viewChild<ElementRef<HTMLElement>>('stickSentinel');
@@ -180,7 +181,7 @@ export class MeetingDetailsGuestsComponent {
 
   /** Runs Edit Meeting's checks and scope question over the drawer and opens the editor at its Guests step. */
   protected addGuests(): void {
-    this.editService.edit(this.context.shownRow(), 'guests', this.dialogRef);
+    this.editService.edit(this.context.shownRow(), 'guests', this.hostRef);
   }
 
   protected confirmResend(registrant: MeetingRegistrant): void {

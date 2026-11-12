@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingHomeAttendance, MeetingRegistrant } from '@lfx-one/shared/interfaces';
@@ -22,6 +21,7 @@ import { MeetingsHomeEditService } from '../../../../services/meetings-home-edit
 import { MeetingAttendeeGridComponent } from '../../../meeting-attendee-grid/meeting-attendee-grid.component';
 import { MeetingHomeAttendanceComponent } from '../../../meeting-home-attendance/meeting-home-attendance.component';
 import { MeetingDetailsContext } from '../../meeting-details.context';
+import { MeetingDetailsSource } from '../../meeting-details.source';
 
 /** The organizer's RSVP counts for the date the meeting details drawer shows, and Invite people. */
 @Component({
@@ -35,7 +35,7 @@ export class MeetingDetailsRsvpComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly editService = inject(MeetingsHomeEditService);
-  private readonly dialogRef = inject(DialogRef);
+  private readonly hostRef = inject(MeetingDetailsSource).hostRef;
   protected readonly context = inject(MeetingDetailsContext);
 
   protected readonly responsesOn: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.context.meeting()));
@@ -50,7 +50,7 @@ export class MeetingDetailsRsvpComponent {
 
   protected invitePeople(): void {
     // As Edit Meeting at its Guests step: the drawer stays open under the scope question and closes once the editor opens.
-    this.editService.edit(this.context.shownRow(), 'guests', this.dialogRef);
+    this.editService.edit(this.context.shownRow(), 'guests', this.hostRef);
   }
 
   private initRoster(): Signal<MeetingRegistrant[] | null | undefined> {
