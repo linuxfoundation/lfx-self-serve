@@ -54,7 +54,7 @@ const ROW: MeetingHomeRow = {
 };
 
 describe('MeetingDetailsBodyComponent', () => {
-  it('renders the header and project link from a source alone, outside a drawer and the meetings home page', async () => {
+  it('renders as a page from a source alone, outside a drawer: an h1, and the project leading the header row', async () => {
     const source: MeetingDetailsSource = {
       row: ROW,
       tab: 'agenda',
@@ -97,13 +97,15 @@ describe('MeetingDetailsBodyComponent', () => {
     const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
     expect(find('meeting-details-title')?.textContent?.trim()).toBe('Synthetic sync');
+    expect(find('meeting-details-title')?.tagName).toBe('H1');
+    expect(find('meeting-details-header-compact')).toBeNull();
     expect(find('meeting-details-tabs')).not.toBeNull();
     expect(find('meeting-details-agenda')?.classList.contains('hidden')).toBe(false);
     expect(find('meeting-details-header')).not.toBeNull();
     expect(find('meeting-details-close')).toBeNull();
 
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
-    const link = fixture.nativeElement.querySelector('[data-testid="meeting-details-title-block"] [data-testid="meeting-details-project"]') as HTMLElement;
+    const link = fixture.nativeElement.querySelector('[data-testid="meeting-details-header"] [data-testid="meeting-details-project"]') as HTMLElement;
     link.click();
     expect(navigate).toHaveBeenCalled();
   });

@@ -12,6 +12,12 @@ export type FormationPipelineStage = 'prospect' | 'exploratory' | 'engaged' | 'o
 /** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages: Draft, Exploratory, Engaged, On hold), or `all`. */
 export type FormationPipelineStageFilter = FormationPipelineStage | 'in_pipeline' | 'all';
 
+/** Where a project sits by its DIRECT parent (#5619): `under_lf` has The Linux Foundation as its parent, `under_foundation` has any other parent (an existing foundation), `no_parent` has none. Not derived from `computeIsFoundation`. */
+export type FormationPipelineFoundationKind = 'under_lf' | 'under_foundation' | 'no_parent';
+
+/** Foundation-type selection: one kind, or `all`. */
+export type FormationPipelineFoundationKindFilter = FormationPipelineFoundationKind | 'all';
+
 /** Per-stage row counts plus the total, taken before any stage selection or UI search. */
 export type FormationPipelineCounts = Record<FormationPipelineStage, number> & { total: number };
 
@@ -32,6 +38,8 @@ export interface FormationPipelineRow {
   stage: FormationPipelineStage;
   /** The nearest foundation ancestor, or `null` when the project has none (top-level, or an ancestor query-service did not return). */
   parent: FormationPipelineParent | null;
+  /** Classified by the project's direct parent, not by `parent` (the nearest foundation), which is The Linux Foundation for a project directly under it. */
+  foundation_kind: FormationPipelineFoundationKind;
   announcement_date: string | null;
   formation_date: string | null;
   legal_entity_name: string | null;
@@ -39,6 +47,8 @@ export interface FormationPipelineRow {
   executive_director: FormationPipelinePerson | null;
   program_manager: FormationPipelinePerson | null;
   opportunity_owner: FormationPipelinePerson | null;
+  /** The project's Formation Lead (`project_settings.formation_lead`); `null` when unset or the field is not served yet. */
+  formation_lead: FormationPipelinePerson | null;
   created_at: string | null;
   updated_at: string | null;
   /** True when a `formation` checklist document exists for the project, in any lifecycle (a frozen one counts). */
@@ -59,13 +69,32 @@ export interface FormationPipelineQuery {
 }
 
 /** Columns the pipeline table can sort by. */
-export type FormationPipelineSortKey = 'project' | 'stage' | 'expected_launch' | 'formation_date' | 'legal_entity' | 'ed_pm' | 'opportunity_owner' | 'updated';
+export type FormationPipelineSortKey =
+  | 'project'
+  | 'stage'
+  | 'expected_launch'
+  | 'formation_lead'
+  | 'formation_date'
+  | 'legal_entity'
+  | 'ed_pm'
+  | 'opportunity_owner'
+  | 'updated';
 
 export type FormationPipelineSortDirection = 'asc' | 'desc';
 
 export interface FormationPipelineSort {
   key: FormationPipelineSortKey;
   direction: FormationPipelineSortDirection;
+}
+
+/** The Pipeline's filter and sort state as it lives in the URL (#5619): stage, foundation, foundation type, name search and sort. */
+export interface FormationPipelineUrlState {
+  stage: FormationPipelineStageFilter;
+  /** The chosen foundation's uid, or `null` for all foundations. */
+  foundationUid: string | null;
+  foundationKind: FormationPipelineFoundationKindFilter;
+  search: string;
+  sort: FormationPipelineSort;
 }
 
 /** What the "Expected launch" cell shows for one date. */
@@ -104,6 +133,8 @@ export interface UpstreamPipelineSettings {
   executive_director?: UserInfo | null;
   program_manager?: UserInfo | null;
   opportunity_owner?: UserInfo | null;
+  /** Added by lfx-v2-project-service#184; present once the v1 sync and backfill (lfx-v1-sync-helper#216) have run. */
+  formation_lead?: UserInfo | null;
 }
 
 /** Page tabs of the LF-root Formations page: the pipeline, plus the existing formations and proposals tabs. */
@@ -125,6 +156,10 @@ export interface FormationPipelineTableRow extends FormationPipelineRow {
   legalEntityLabel: string;
   edLine: string;
   pmLine: string;
+  /** The lead's name (email or username when there is no name), or the "Not set" copy. */
+  formationLeadLabel: string;
+  /** The lead's email for the hover/focus tooltip; `''` when none. */
+  formationLeadEmail: string;
   ownerLabel: string;
   updatedLabel: string;
   link: FormationPipelineRowLink;

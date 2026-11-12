@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { FORMATION_PIPELINE_SEARCH_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
-import type { FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
+import type { FormationPipelineFoundationKindFilter, FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
 import { countPipelineRows } from '@lfx-one/shared/utils';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,8 @@ function row(overrides: Partial<FormationPipelineRow>): FormationPipelineRow {
     executive_director: null,
     program_manager: null,
     opportunity_owner: null,
+    formation_lead: null,
+    foundation_kind: 'under_foundation',
     created_at: null,
     updated_at: null,
     has_checklist: false,
@@ -55,13 +58,21 @@ describe('FormationsPipelineComponent (#5475)', () => {
   let fixture: ComponentFixture<FormationsPipelineComponent>;
   let getFormationPipeline: ReturnType<typeof vi.fn>;
 
-  const render = async (result: Observable<FormationPipelineResponse> = of(response(ROWS))): Promise<void> => {
+  const render = async (result: Observable<FormationPipelineResponse> = of(response(ROWS)), query: Record<string, string> | null = null): Promise<void> => {
     TestBed.resetTestingModule();
     getFormationPipeline = vi.fn(() => result);
     await TestBed.configureTestingModule({
       imports: [FormationsPipelineComponent],
-      providers: [provideRouter([]), { provide: FormationService, useValue: { getFormationPipeline } }],
+      providers: [
+        provideRouter([]),
+        { provide: FormationService, useValue: { getFormationPipeline } },
+        ...(query ? [{ provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(query) } } }] : []),
+      ],
     }).compileComponents();
+    if (query) {
+      // A mocked ActivatedRoute is not a real route to navigate relative to.
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    }
     fixture = TestBed.createComponent(FormationsPipelineComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -143,7 +154,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
     await render();
     await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-all"]'));
 
-    for (const key of ['project', 'stage', 'expected_launch', 'formation_date', 'legal_entity', 'ed_pm', 'opportunity_owner', 'updated']) {
+    for (const key of ['project', 'stage', 'expected_launch', 'formation_date', 'legal_entity', 'ed_pm', 'formation_lead', 'opportunity_owner', 'updated']) {
       await click(q(`formations-pipeline-sort-${key}`)!.querySelector('button'));
       expect(q(`formations-pipeline-sort-${key}`)?.getAttribute('aria-sort')).toBe('ascending');
       expect(rowIds()).toHaveLength(4);
@@ -154,6 +165,293 @@ describe('FormationsPipelineComponent (#5475)', () => {
     await click(q('formations-pipeline-sort-project')!.querySelector('button'));
     expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
     expect(rowIds()).toEqual(['d', 'b', 'a', 'c']);
+  });
+
+  // #5619: the filters and sort live in the URL, so a shared or reloaded link reopens the same view.
+  describe('URL state', () => {
+    const lastParams = (): Record<string, string | null> => {
+      const calls = vi.mocked(TestBed.inject(Router).navigate).mock.calls;
+      return (calls[calls.length - 1][1] as { queryParams: Record<string, string | null> }).queryParams;
+    };
+
+    it('opens on the state in the URL: stage, foundation type, search and sort', async () => {
+      const rows = [
+        row({ uid: 'n', name: 'Alpha LF Direct', stage: 'engaged', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
+        row({ uid: 'u', name: 'Alpha Under', stage: 'engaged', foundation_kind: 'under_foundation' }),
+        row({ uid: 'z', name: 'Zeta LF Direct', stage: 'engaged', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
+      ];
+      await render(of(response(rows)), { stage: 'engaged', type: 'under_lf', q: 'alpha', sort: 'project', dir: 'desc' });
+
+      expect(rowIds()).toEqual(['n']);
+      expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
+      expect(fixture.componentInstance['filterForm'].controls.search.value).toBe('alpha');
+      expect(fixture.componentInstance['filterForm'].controls.foundationKind.value).toBe('under_lf');
+    });
+
+    it('opens scoped to a foundation in the URL, reads once scoped, and lists the foundations for the select', async () => {
+      getFormationPipeline = vi.fn((foundationUid: string | null) =>
+        of(foundationUid ? response([row({ uid: 'only', name: 'Only' })]) : response([row({ uid: 'p', parent: { uid: 'f2', name: 'Foundation Two' } })]))
+      );
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationsPipelineComponent],
+        providers: [
+          provideRouter([]),
+          { provide: FormationService, useValue: { getFormationPipeline } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ foundation: 'f2' }) } } },
+        ],
+      }).compileComponents();
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture = TestBed.createComponent(FormationsPipelineComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getFormationPipeline).toHaveBeenNthCalledWith(1, 'f2');
+      expect(getFormationPipeline).toHaveBeenCalledTimes(2); // the unfiltered read that names the foundations
+      expect(rowIds()).toEqual(['only']);
+      expect(fixture.componentInstance['foundationOptions']().map((option: { label: string }) => option.label)).toContain('Foundation Two');
+      expect(fixture.componentInstance['filterForm'].controls.foundation.value).toBe('f2');
+    });
+
+    it('ignores bad values, and the foundation types an earlier link may carry, and opens on the defaults', async () => {
+      await render(of(response(ROWS)), { stage: 'bogus', type: 'bogus', sort: 'bogus', foundation: 'no spaces allowed' });
+
+      expect(rowIds()).toEqual(['d', 'a', 'b']);
+      expect(getFormationPipeline).toHaveBeenCalledWith(null);
+    });
+
+    it('writes nothing for the default view, then each change to the URL (merge, no history entry)', async () => {
+      await render(of(response(ROWS)), {});
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+      expect(navigate).not.toHaveBeenCalled();
+
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParamsHandling: 'merge', replaceUrl: true }));
+      expect(lastParams()).toMatchObject({ stage: 'archived', foundation: null, type: null, q: null, sort: null, dir: null });
+
+      await click(q('formations-pipeline-sort-project')!.querySelector('button'));
+      expect(lastParams()).toMatchObject({ stage: 'archived', sort: 'project', dir: 'asc' });
+
+      fixture.componentInstance['filterForm'].controls.foundationKind.setValue('no_parent');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(lastParams()).toMatchObject({ type: 'no_parent' });
+
+      fixture.componentInstance['filterForm'].controls.foundation.setValue('f2');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(lastParams()).toMatchObject({ foundation: 'f2' });
+    });
+
+    it('writes the search only after the debounce, and clears every param on reset', async () => {
+      await render(of(response(ROWS)), {});
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+
+      fixture.componentInstance['filterForm'].controls.search.setValue('alp');
+      fixture.detectChanges();
+      expect(navigate).not.toHaveBeenCalled();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      fixture.detectChanges();
+      expect(lastParams()).toMatchObject({ q: 'alp' });
+
+      fixture.componentInstance['resetFilters']();
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      fixture.detectChanges();
+      expect(lastParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null });
+    });
+
+    it('round-trips: what one view writes, a fresh page reads back as the same view', async () => {
+      const rows = [
+        row({ uid: 'u1', name: 'Alpha One', stage: 'archived', foundation_kind: 'under_foundation' }),
+        row({ uid: 'u2', name: 'Alpha Two', stage: 'archived', foundation_kind: 'under_foundation' }),
+        row({ uid: 'n', name: 'Alpha LF Direct', stage: 'archived', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
+      ];
+      await render(of(response(rows)), {});
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      fixture.componentInstance['filterForm'].controls.foundationKind.setValue('under_foundation');
+      fixture.componentInstance['filterForm'].controls.search.setValue('alpha');
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await click(q('formations-pipeline-sort-project')!.querySelector('button'));
+      await click(q('formations-pipeline-sort-project')!.querySelector('button'));
+      const written = Object.fromEntries(Object.entries(lastParams()).filter(([, value]) => value !== null)) as Record<string, string>;
+      const before = rowIds();
+
+      expect(written).toEqual({ stage: 'archived', type: 'under_foundation', q: 'alpha', sort: 'project', dir: 'desc' });
+      expect(before).toEqual(['u2', 'u1']);
+
+      await render(of(response(rows)), written);
+      expect(rowIds()).toEqual(before);
+      expect(q('formations-pipeline-sort-project')?.getAttribute('aria-sort')).toBe('descending');
+    });
+  });
+
+  // #5619 D7
+  describe('foundation type filter', () => {
+    const KIND_ROWS = [
+      row({ uid: 'n', name: 'LF Direct', stage: 'engaged', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
+      row({ uid: 'u', name: 'Under One', stage: 'engaged', foundation_kind: 'under_foundation' }),
+      row({ uid: 'x', name: 'Loner', stage: 'exploratory', foundation_kind: 'no_parent', parent: null }),
+      row({ uid: 'a', name: 'Archived LF Direct', stage: 'archived', foundation_kind: 'under_lf', parent: { uid: 'lf', name: 'The Linux Foundation' } }),
+    ];
+    const pick = async (kind: FormationPipelineFoundationKindFilter): Promise<void> => {
+      fixture.componentInstance['filterForm'].controls.foundationKind.setValue(kind);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('narrows rows, counts and pills to the chosen kind without another read', async () => {
+      await render(of(response(KIND_ROWS)));
+      expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
+      const reads = getFormationPipeline.mock.calls.length;
+
+      await pick('under_lf');
+      expect(rowIds()).toEqual(['n']);
+      expect(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-in_pipeline"]')?.textContent).toContain('(1)');
+
+      await pick('under_foundation');
+      expect(rowIds()).toEqual(['u']);
+      await pick('no_parent');
+      expect(rowIds()).toEqual(['x']);
+      await pick('all');
+      expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
+      expect(getFormationPipeline.mock.calls.length).toBe(reads);
+    });
+
+    it('combines with the stage pill and the name search', async () => {
+      await render(of(response(KIND_ROWS)));
+      await pick('under_lf');
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      expect(rowIds()).toEqual(['a']);
+
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-engaged"]'));
+      expect(rowIds()).toEqual(['n']);
+      fixture.componentInstance['filterForm'].controls.search.setValue('zzz');
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      fixture.detectChanges();
+      expect(rowIds()).toEqual([]);
+    });
+
+    it('exports only the filtered rows and resets with the other filters', async () => {
+      await render(of(response(KIND_ROWS)));
+      let captured: Blob | null = null;
+      URL.createObjectURL = vi.fn((blob: Blob) => {
+        captured = blob;
+        return 'blob:x';
+      });
+      URL.revokeObjectURL = vi.fn();
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+      await pick('under_foundation');
+      fixture.componentInstance['exportCsv']();
+      const text = await (captured as unknown as Blob).text();
+      expect(text).toContain('Under One');
+      expect(text).not.toContain('LF Direct');
+      expect(text).not.toContain('Loner');
+
+      await pick('no_parent');
+      await click(q('formations-pipeline-pills')!.querySelector('[data-testid="filter-pill-archived"]'));
+      expect(rowIds()).toEqual([]);
+      await click(q('formations-pipeline-filtered-empty')!.querySelector('button'));
+      expect(fixture.componentInstance['filterForm'].controls.foundationKind.value).toBe('all');
+      expect(rowIds().sort()).toEqual(['n', 'u', 'x']);
+    });
+
+    it('has an accessible name and the three kind options plus All', async () => {
+      await render(of(response(KIND_ROWS)));
+
+      expect(q('formations-pipeline-foundation-kind')?.querySelector('[aria-label="Foundation type"]')).not.toBeNull();
+      expect(fixture.componentInstance['foundationKindOptions']().map((option: { label: string }) => option.label)).toEqual([
+        'All projects',
+        'Directly under LF',
+        'Under an existing foundation',
+        'No parent yet',
+      ]);
+    });
+  });
+
+  it('shows the formation lead with the email on hover and focus, and "Not set" when there is none', async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } }),
+          row({ uid: 'n', name: 'Unled', stage: 'engaged', formation_lead: null }),
+        ])
+      )
+    );
+
+    const led = q('formations-pipeline-lead-l')!;
+    expect(led.textContent).toContain('Lee Lead');
+    const host = led.querySelector('[tabindex="0"]');
+    expect(host?.getAttribute('role')).toBe('group');
+    expect(host?.getAttribute('aria-label')).toBe('Lee Lead, lee@example.com'); // read aloud by screen readers; the tooltip shows the email on hover and focus
+    const unset = q('formations-pipeline-lead-n')!;
+    expect(unset.textContent).toContain('Not set');
+    expect(unset.querySelector('[tabindex]')).toBeNull();
+  });
+
+  it('shows the formation lead on the phone card too, wrapping a long value instead of overflowing', async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: '', email: 'a-very-long-address-without-spaces@example.com' } }),
+          row({ uid: 'n', name: 'Unled', stage: 'engaged', formation_lead: null }),
+        ])
+      )
+    );
+
+    expect(q('formations-pipeline-mobile-lead-l')?.textContent).toContain('a-very-long-address-without-spaces@example.com');
+    expect(q('formations-pipeline-mobile-lead-l')?.querySelector('span')?.classList).toContain('break-words');
+    expect(q('formations-pipeline-lead-l')?.classList).toContain('break-words');
+    expect(q('formations-pipeline-mobile-lead-n')?.textContent).toContain('Not set');
+  });
+
+  it("shows a lead's email as text on the phone card when the lead also has a name, and not twice when there is no name", async () => {
+    await render(
+      of(
+        response([
+          row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } }),
+          row({ uid: 'e', name: 'Emailed', stage: 'engaged', formation_lead: { name: '', email: 'only@example.com' } }),
+        ])
+      )
+    );
+
+    expect(q('formations-pipeline-mobile-lead-l')?.textContent).toContain('Lee Lead');
+    expect(q('formations-pipeline-mobile-lead-email-l')?.textContent?.trim()).toBe('lee@example.com');
+    expect(q('formations-pipeline-mobile-lead-e')?.textContent?.trim()).toBe('only@example.com');
+    expect(q('formations-pipeline-mobile-lead-email-e')).toBeNull();
+  });
+
+  it('caps the search input at the shared length and keeps a longer typed search identical in the filter and the URL', async () => {
+    await render(of(response(ROWS)), {});
+    const navigate = vi.mocked(TestBed.inject(Router).navigate);
+    const input = q('formations-pipeline-search')?.querySelector('input');
+    expect(input?.getAttribute('maxlength')).toBe(String(FORMATION_PIPELINE_SEARCH_MAX_LENGTH));
+
+    fixture.componentInstance['filterForm'].controls.search.setValue('x'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH + 30));
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    const written = navigate.mock.calls.at(-1)?.[1]?.queryParams?.['q'] as string;
+    expect(written).toBe('x'.repeat(FORMATION_PIPELINE_SEARCH_MAX_LENGTH));
+  });
+
+  it('exports the formation lead in the CSV', async () => {
+    await render(of(response([row({ uid: 'l', name: 'Led', stage: 'engaged', formation_lead: { name: 'Lee Lead', email: 'lee@example.com' } })])));
+    let captured: Blob | null = null;
+    URL.createObjectURL = vi.fn((blob: Blob) => {
+      captured = blob;
+      return 'blob:x';
+    });
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    fixture.componentInstance['exportCsv']();
+
+    const text = await (captured as unknown as Blob).text();
+    expect(text.split('\r\n')[0]).toContain('Formation lead');
+    expect(text).toContain('Lee Lead');
   });
 
   it('links a row to the formation page whether or not it has a checklist', async () => {

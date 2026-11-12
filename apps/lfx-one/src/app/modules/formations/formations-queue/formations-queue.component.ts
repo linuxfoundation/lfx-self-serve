@@ -21,13 +21,14 @@ import {
   createEmptyFormationsQueueResponse,
   FORMATION_PIPELINE_COPY,
   FORMATION_PIPELINE_TAB_ID,
+  FORMATION_QUEUE_COPY,
   FORMATIONS_QUEUE_PAGE_TAB_OPTIONS,
   LF_FOUNDATION_ROOT_SLUG,
   PROJECT_APPLICATION_FROM_FOUNDATION_COPY,
   PROJECT_APPLICATION_PARENT_QUERY_PARAM,
   PROJECT_APPLICATION_TABS,
 } from '@lfx-one/shared/constants';
-import { withProposalsPendingCount } from '@lfx-one/shared/utils';
+import { clearedPipelineUrlParams, withProposalsPendingCount } from '@lfx-one/shared/utils';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, EMPTY, filter, finalize, map, of, switchMap } from 'rxjs';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { FormationsPipelineComponent } from '../components/formations-pipeline/formations-pipeline.component';
@@ -140,9 +141,7 @@ export class FormationsQueueComponent {
       return FORMATION_PIPELINE_COPY.description;
     }
     const foundation = this.projectContextService.selectedFoundation();
-    return foundation
-      ? `${foundation.name}'s formations between Prospect and Active.`
-      : 'Every foundation, project, and child project between Prospect and Active.';
+    return foundation ? FORMATION_QUEUE_COPY.foundationSubtitle(foundation.name) : FORMATION_QUEUE_COPY.allSubtitle;
   });
 
   public constructor() {
@@ -162,7 +161,8 @@ export class FormationsQueueComponent {
     this.router.navigate([], {
       relativeTo: this.route,
       // Pipeline is the default for those who see the tab, so it carries no param; Formations must say so.
-      queryParams: { tab: tab === FORMATION_PIPELINE_TAB_ID ? null : tab },
+      // Leaving the Pipeline drops its filter and sort params; they belong to that tab only (#5619).
+      queryParams: { tab: tab === FORMATION_PIPELINE_TAB_ID ? null : tab, ...(tab === FORMATION_PIPELINE_TAB_ID ? {} : clearedPipelineUrlParams()) },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

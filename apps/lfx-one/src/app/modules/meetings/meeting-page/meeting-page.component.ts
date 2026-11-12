@@ -4,7 +4,6 @@
 import { Component, computed, DestroyRef, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { HeaderComponent } from '@components/header/header.component';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeRow, MeetingPageView, PublicMeetingProject } from '@lfx-one/shared/interfaces';
@@ -18,16 +17,26 @@ import { distinctUntilChanged, filter, map } from 'rxjs';
 
 import { MeetingPageDataService } from '../services/meeting-page-data.service';
 import { MeetingPageDetailsComponent, MeetingPageRowHost } from './details/meeting-page-details.component';
+import { MeetingPageFooterComponent } from './footer/meeting-page-footer.component';
+import { MeetingPageTopBarComponent } from './top-bar/meeting-page-top-bar.component';
 
 /**
  * The redesigned `/meetings/:id` page, matched by `meetingPageRedesignGuard`: the meeting details for a signed-in viewer
  * with full access, with loading and error states. Not-found goes to `/meetings/not-found` like the legacy page.
- * @description Fallback rule: only an ended meeting, opened by a non-organizer with full access, renders here; anything
+ * @description Fallback rule: only an ended meeting, opened by a viewer with full access, renders here; anything
  * else re-navigates the same URL to the legacy page, on the server too, so hydration keeps the page it rendered.
  */
 @Component({
   selector: 'lfx-meeting-page',
-  imports: [HeaderComponent, ImpersonationBannerComponent, MeetingPageDetailsComponent, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent],
+  imports: [
+    ImpersonationBannerComponent,
+    MeetingPageDetailsComponent,
+    MeetingPageFooterComponent,
+    MeetingPageTopBarComponent,
+    UiButtonComponent,
+    UiEmptyStateComponent,
+    UiSkeletonComponent,
+  ],
   providers: [MeetingPageDataService, { provide: MeetingPageRowHost, useExisting: MeetingPageComponent }],
   templateUrl: './meeting-page.component.html',
 })
@@ -41,6 +50,14 @@ export class MeetingPageComponent implements MeetingPageRowHost {
   /** The row the details show; null until the meeting loaded and this page serves it. */
   public readonly row: Signal<MeetingHomeRow | null> = this.initRow();
   protected readonly view: Signal<MeetingPageView> = this.initView();
+  /** Banner offset and the details' sticky offset: the 72px top bar (56px on phones), plus the 36px banner while impersonating. */
+  protected readonly pageOffsets: Signal<string> = computed(() =>
+    this.userService.impersonating()
+      ? 'pt-[36px] [--mp-offset:36px] [--md-head:108px] max-sm:[--md-head:92px]'
+      : '[--mp-offset:0px] [--md-head:72px] max-sm:[--md-head:56px]'
+  );
+  /** Loaded as a past date, which greys the top bar's date tile. */
+  protected readonly past: Signal<boolean> = this.pageData.loadedViaPastMeetingId;
 
   public constructor() {
     bindLfxDocumentTitle(computed(() => this.row()?.title ?? ''));
@@ -64,7 +81,7 @@ export class MeetingPageComponent implements MeetingPageRowHost {
   private initRow(): Signal<MeetingHomeRow | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting || !this.pageData.meetingMatchesRoute() || !this.serves(meeting) || !isPastMeetingCalendarRow(meeting)) return null;
+      if (!meeting || !this.pageData.meetingMatchesRoute() || !this.serves() || !isPastMeetingCalendarRow(meeting)) return null;
       // The public payload carries its project apart; the details read the flattened fields.
       const { project } = meeting;
       return toPastMeetingHomeRow({
@@ -86,9 +103,9 @@ export class MeetingPageComponent implements MeetingPageRowHost {
     });
   }
 
-  /** An ended meeting the viewer fully sees and does not organize; organizer tools and live join stay on the legacy page. */
-  private serves(meeting: Meeting): boolean {
-    return this.pageData.loadedViaPastMeetingId() && this.pageData.pastMeetingFullAccess() && !meeting.organizer;
+  /** An ended meeting the viewer fully sees; live join stays on the legacy page. */
+  private serves(): boolean {
+    return this.pageData.loadedViaPastMeetingId() && this.pageData.pastMeetingFullAccess();
   }
 
   // The guard skips this page for a navigation carrying the legacy state, and records that for hydration on the server.

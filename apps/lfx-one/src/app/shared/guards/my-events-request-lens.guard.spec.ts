@@ -46,10 +46,10 @@ describe('myEventsRequestLensGuard', () => {
     expect(setLens).not.toHaveBeenCalled();
   });
 
-  it('does not touch the lens when there is no event id', () => {
-    const { setLens } = runGuard({ tab: 'visa-letters' }, 'foundation');
+  it.each(['visa-letters', 'travel-funding'])('forces the me lens for a tab-only %s link with no event id', (tab) => {
+    const { setLens } = runGuard({ tab }, 'org');
 
-    expect(setLens).not.toHaveBeenCalled();
+    expect(setLens).toHaveBeenCalledWith('me');
   });
 
   it('does not touch the lens when there is no tab', () => {
