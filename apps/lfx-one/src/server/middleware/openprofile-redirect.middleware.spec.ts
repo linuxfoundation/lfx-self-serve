@@ -62,6 +62,22 @@ describe('resolveOpenprofileRedirect', () => {
     expect(resolve('/myevents', { applyfor: 'speaking', event: 'lfEvt123' })).toBe('/events?from=openprofile');
   });
 
+  it.each(['constructor', '__proto__', 'toString'])('ignores the built-in object key applyfor=%s', (applyfor) => {
+    expect(resolve('/myevents', { applyfor, event: 'lfEvt123' })).toBe('/events?from=openprofile');
+  });
+
+  it('keeps targets on this site for traversal and encoded-slash attempts', () => {
+    expect(resolve('/profile/%2F%2Fevil.example')).toBeNull();
+    expect(resolve('/profile/..')).toBe('/?from=openprofile');
+    expect(resolve('/my-meetings', { utm_x: 'a\r\nSet-Cookie: x=1' })).toBe('/meetings?utm_x=a%0D%0ASet-Cookie%3A+x%3D1&from=openprofile');
+  });
+
+  it('skips over-long paths and trims long slash runs without backtracking', () => {
+    expect(resolve(`/${'a'.repeat(600)}`)).toBeNull();
+    expect(resolve(`/my-meetings${'/'.repeat(400)}`)).toBe('/meetings?from=openprofile');
+    expect(resolve(`${'/'.repeat(500)}x`)).toBeNull();
+  });
+
   it('drops an event id with unsafe characters but keeps the tab', () => {
     expect(resolve('/myevents', { applyfor: 'visa-letter', event: '<x>' })).toBe('/events?tab=visa-letters&from=openprofile');
   });

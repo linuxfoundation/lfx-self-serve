@@ -10,6 +10,9 @@ const TRAVEL_FUNDING_ID = /^\/myevents\/travel-funding\/([^/]+)$/i;
 const EVENT_SLUG = /^\/myevents\/[^/]+$/i;
 const NEWSLETTER_ID = /^\/newsletter\/[^/]+$/i;
 const PROFILE_USERNAME = /^\/profile\/([^/]+)$/i;
+// No old openprofile path comes close; longer paths skip the lookup entirely.
+const MAX_PATH_LENGTH = 512;
+const SLASH = 47;
 
 function firstString(value: Request['query'][string]): string | undefined {
   const first = Array.isArray(value) ? value[0] : value;
@@ -38,11 +41,16 @@ function withQuery(target: string, query: Request['query'], extra: Record<string
  * isn't an old one. Self Serve paths that overlap with old ones (`/`, `/profile`, `/settings`) are left alone.
  */
 export function resolveOpenprofileRedirect(path: string, query: Request['query']): string | null {
-  const normalized = path.length > 1 ? path.replace(/\/+$/, '') : path;
+  if (path.length > MAX_PATH_LENGTH) return null;
+  // Loop instead of /\/+$/, which backtracks quadratically on long slash runs (this runs before auth).
+  let end = path.length;
+  while (end > 1 && path.charCodeAt(end - 1) === SLASH) end--;
+  const normalized = path.slice(0, end);
   const lower = normalized.toLowerCase();
 
   if (lower === '/myevents') {
-    const tab = OPENPROFILE_APPLYFOR_TABS[firstString(query['applyfor']) ?? ''];
+    const applyfor = firstString(query['applyfor']);
+    const tab = applyfor && Object.hasOwn(OPENPROFILE_APPLYFOR_TABS, applyfor) ? OPENPROFILE_APPLYFOR_TABS[applyfor] : undefined;
     return withQuery('/events', query, { tab, event: tab ? safeSegment(firstString(query['event'])) : undefined });
   }
 
