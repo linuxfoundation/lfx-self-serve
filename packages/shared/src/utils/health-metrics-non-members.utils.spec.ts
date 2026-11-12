@@ -58,17 +58,11 @@ const PERSON: HealthMetricsNonMembersPerson = {
 };
 
 describe('buildHealthMetricsNonMembersSubNavItems', () => {
-  it('lists every section in render order, with its label', () => {
+  it('lists every section in render order, with its label and no note', () => {
     const items = buildHealthMetricsNonMembersSubNavItems();
 
     expect(items.map((item) => item.key)).toEqual(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.key));
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => section.label));
-  });
-
-  it('badges only the sections given a count', () => {
-    const items = buildHealthMetricsNonMembersSubNavItems({ orgs: 412 });
-
-    expect(items.map((item) => item.count)).toEqual([412, null, null]);
     expect(items.every((item) => item.note === '')).toBe(true);
   });
 });

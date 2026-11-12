@@ -101,3 +101,9 @@ export const NAVBAR_MORPH_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
 
 /** After a collapse / expand, re-fit anything that measured the navbar or page width mid-morph (ms). */
 export const NAVBAR_MORPH_SETTLE_MS = 400;
+
+/** Viewports below `lg`, where a touch device swaps the navbar for the main layout's sticky top bar. */
+export const NAVBAR_MOBILE_TOP_BAR_MEDIA_QUERY = '(max-width: 1023.98px)';
+
+/** Rendered height of that top bar at the 14px root: 10.5px padding around the 35px menu button, plus its 1px rule. */
+export const NAVBAR_MOBILE_TOP_BAR_HEIGHT_PX = 57;

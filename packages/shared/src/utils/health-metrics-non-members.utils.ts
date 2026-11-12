@@ -17,17 +17,14 @@ import type {
   HealthMetricsNonMembersOrgRowView,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersPersonRowView,
-  HealthMetricsNonMembersSectionKey,
   HealthMetricsNonMembersSubNavItem,
   HealthMetricsNonMembersWarmOrg,
   HealthMetricsNonMembersWarmOrgRowView,
 } from '../interfaces/health-metrics-non-members.interface';
 
-/** Sub-nav items for the Non-Members tab; a section without a count carries no badge. */
-export function buildHealthMetricsNonMembersSubNavItems(
-  counts: Partial<Record<HealthMetricsNonMembersSectionKey, number | null>> = {}
-): HealthMetricsNonMembersSubNavItem[] {
-  return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: counts[section.key] ?? null, note: '' }));
+/** Sub-nav items for the Non-Members tab; no section here carries a note. */
+export function buildHealthMetricsNonMembersSubNavItems(): HealthMetricsNonMembersSubNavItem[] {
+  return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
 }
 
 /** Company participation rows. A zero or NULL count renders a dash. */

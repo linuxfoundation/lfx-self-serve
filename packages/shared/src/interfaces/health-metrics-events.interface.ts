@@ -15,7 +15,7 @@ import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-me
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEventsSectionKey = (typeof HEALTH_METRICS_EVENTS_SECTIONS)[number]['key'];
 
-/** Events' sub-nav badge, keyed to its own sections. */
+/** Events' sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsEventsSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsEventsSectionKey;
 }
@@ -717,8 +717,6 @@ export interface HealthMetricsEventsGeographyView {
   foundationMeasured: boolean;
   /** `false` when no country has a registration in the period, so nothing reads as a measured zero. */
   measured: boolean;
-  /** Countries represented, for the sub-nav badge; `null` when unmeasured. */
-  countries: number | null;
   /** e.g. `42 countries`; empty when unmeasured. */
   countriesLabel: string;
   headline: HealthMetricsEventsAtAGlanceStatView;

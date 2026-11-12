@@ -22,7 +22,6 @@ import type { TablePageEvent } from 'primeng/table';
 
 import type {
   HealthMetricsEngagementNonMemberParticipation,
-  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementNonMemberRowView,
   HealthMetricsRange,
@@ -44,11 +43,6 @@ export class EngagementNonMemberParticipationComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /**
-   * Feeds the container's sub-nav badge. The view counts its scope per period, so the badge follows the
-   * pill; `null` is "no measured counts" and renders no badge rather than a believable zero.
-   */
-  public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -90,10 +84,10 @@ export class EngagementNonMemberParticipationComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // The badge count is per period, so a pill change re-reports it off the loaded response.
+      // Emptiness is per period, so a pill change re-settles off the loaded response.
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
-        .subscribe(() => this.emitCounts());
+        .subscribe(() => this.resettle());
     }
   }
 
@@ -123,7 +117,6 @@ export class EngagementNonMemberParticipationComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countsChange.emit(null);
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
@@ -140,10 +133,6 @@ export class EngagementNonMemberParticipationComponent {
               // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
               // the table cannot caption an unread scope as "no rows".
               this.loading.set(!foundationSeen);
-              // No foundation means no read happened, so there is no measured count to report.
-              this.countsChange.emit(
-                query.foundationSlug && !this.loadFailed() ? selectHealthMetricsEngagementNonMemberCounts(response.counts, this.chrome.selectedRange()) : null
-              );
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response, this.chrome.selectedRange()));
@@ -155,13 +144,10 @@ export class EngagementNonMemberParticipationComponent {
     );
   }
 
-  /** Re-reports the badge off the already-loaded response; a failed or unread scope stays `null`. */
-  private emitCounts(): void {
-    // A read in flight still holds the previous foundation's payload, so a pill change mid-load
-    // would republish counts the badge has already been told to drop.
+  /** Re-settles off the already-loaded response; a failed read or one still in flight has nothing to re-settle. */
+  private resettle(): void {
     if (this.loadFailed() || this.loading()) return;
 
-    this.countsChange.emit(selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
     // Whether the period has any non-member moves with it, and so may the section's height.
     this.settled.emit(isEmptyScope(this.response(), this.chrome.selectedRange()));
   }

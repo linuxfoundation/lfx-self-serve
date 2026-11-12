@@ -25,15 +25,12 @@ import type {
   HealthMetricsTrainingEnrollmentType,
   HealthMetricsTrainingEnrollmentTypeView,
   HealthMetricsTrainingEnrollmentView,
-  HealthMetricsTrainingSectionKey,
   HealthMetricsTrainingSubNavItem,
 } from '../interfaces/health-metrics-training.interface';
 
-/** Sub-nav items for the Training tab; a section without a count carries no badge. */
-export function buildHealthMetricsTrainingSubNavItems(
-  counts: Partial<Record<HealthMetricsTrainingSectionKey, number | null>> = {}
-): HealthMetricsTrainingSubNavItem[] {
-  return HEALTH_METRICS_TRAINING_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: counts[section.key] ?? null, note: '' }));
+/** Sub-nav items for the Training tab; no section here carries a note. */
+export function buildHealthMetricsTrainingSubNavItems(): HealthMetricsTrainingSubNavItem[] {
+  return HEALTH_METRICS_TRAINING_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
 }
 
 /** A rounded, `en-US`-pinned count, so the server render and the hydrated one agree; `not available` for unmeasured. */

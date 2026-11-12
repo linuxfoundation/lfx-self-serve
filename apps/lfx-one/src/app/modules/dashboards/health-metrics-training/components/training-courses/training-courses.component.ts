@@ -52,8 +52,6 @@ export class TrainingCoursesComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every course ever enrolled in, for the sub-nav badge; `null` while a read is pending or failed. */
-  public readonly countChange = output<number | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -146,7 +144,6 @@ export class TrainingCoursesComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countChange.emit(null);
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -158,11 +155,10 @@ export class TrainingCoursesComponent {
               return of(HEALTH_METRICS_TRAINING_COURSES_UNMEASURED);
             }),
             tap((response) => {
-              // A clamped page fires a follow-up read, so this one neither settles nor reports a count.
+              // A clamped page fires a follow-up read, so this one does not settle.
               if (this.clampPage(response.totalRecords)) return;
 
               this.loading.set(!foundationSeen);
-              this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response, query));
             })

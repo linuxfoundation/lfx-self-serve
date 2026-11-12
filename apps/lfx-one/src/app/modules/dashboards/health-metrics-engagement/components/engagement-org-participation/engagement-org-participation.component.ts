@@ -36,8 +36,8 @@ import type { TablePageEvent } from 'primeng/table';
 
 import type {
   FilterPillOption,
-  HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementOrgFilter,
+  HealthMetricsEngagementOrgNoteCounts,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgQuery,
   HealthMetricsEngagementOrgRow,
@@ -63,10 +63,10 @@ export class EngagementOrgParticipationComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   /**
-   * Feeds the container's sub-nav badge. `null` is "no measured counts" — a read starting, a failed
-   * read, or no foundation selected — and renders no badge rather than a believable zero.
+   * Feeds the container's sub-nav note. `null` is "no measured counts" — a read starting, a failed
+   * read, or no foundation selected — and renders no note.
    */
-  public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
+  public readonly countsChange = output<HealthMetricsEngagementOrgNoteCounts | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */

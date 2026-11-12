@@ -56,11 +56,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let verdicts: boolean[];
 
-  async function render(
-    payload: HealthMetricsEngagementNonMemberParticipation | Error = response(),
-    onCounts?: (counts: unknown) => void,
-    lifecycle?: string[]
-  ): Promise<void> {
+  async function render(payload: HealthMetricsEngagementNonMemberParticipation | Error = response(), lifecycle?: string[]): Promise<void> {
     getEngagementNonMemberParticipation = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
 
     await TestBed.configureTestingModule({
@@ -75,7 +71,6 @@ describe('EngagementNonMemberParticipationComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementNonMemberParticipationComponent);
-    if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
     fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
     if (lifecycle) {
@@ -171,18 +166,15 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
   });
 
-  it('emits the selected period scope count for the sub-nav badge, and nothing while a read is in flight', async () => {
-    const emitted: unknown[] = [];
-    await render(response({ counts: periodCounts(19, 33) }), (counts) => emitted.push(counts));
+  it('captions the selected period scope count', async () => {
+    await render(response({ counts: periodCounts(19, 33) }));
 
-    expect(emitted).toEqual([null, { range: 'YTD', orgs: 19 }]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('19 companies');
   });
 
-  // The view counts its scope per period, so the caption and badge follow the pill without a re-read.
-  it('re-captions and re-reports the badge when the period changes', async () => {
-    const emitted: unknown[] = [];
-    await render(response({ counts: periodCounts(19, 33) }), (counts) => emitted.push(counts));
+  // The view counts its scope per period, so the caption follows the pill without a re-read.
+  it('re-captions and re-settles when the period changes', async () => {
+    await render(response({ counts: periodCounts(19, 33) }));
     getEngagementNonMemberParticipation.mockClear();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
@@ -190,7 +182,6 @@ describe('EngagementNonMemberParticipationComponent', () => {
     await fixture.whenStable();
 
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
-    expect(emitted.at(-1)).toEqual({ range: 'COMPLETED_YEAR', orgs: 33 });
     // The period re-settles too, since whether it has any non-member moves the section's height.
     expect(verdicts).toEqual([false, false]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('33 companies');
@@ -243,10 +234,8 @@ describe('EngagementNonMemberParticipationComponent', () => {
 
   // A view that reports no scope count has not measured zero organizations, and the table says so.
   it('captions an unmeasured scope with an em dash rather than a confident zero, keeping its rows', async () => {
-    const emitted: unknown[] = [];
-    await render(response({ counts: null }), (counts) => emitted.push(counts));
+    await render(response({ counts: null }));
 
-    expect(emitted).toEqual([null, null]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('—');
     // Unmeasured counts only caption the rows; the table still has them, so the section is not empty.
     expect(verdicts).toEqual([false]);
@@ -254,12 +243,10 @@ describe('EngagementNonMemberParticipationComponent', () => {
 
   // A failed read is not an empty foundation, and the two states must not render the same card.
   it('renders the error state, not the empty state, when the read fails', async () => {
-    const emitted: unknown[] = [];
-    await render(new Error('boom'), (counts) => emitted.push(counts));
+    await render(new Error('boom'));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-error"]')).not.toBeNull();
     expect(verdicts).toEqual([false]);
-    expect(emitted).toEqual([null, null]);
   });
 
   // The server answers a zero-row read with null counts, so the section settles empty.
@@ -273,19 +260,17 @@ describe('EngagementNonMemberParticipationComponent', () => {
   // The container holds a deep link's scroll until every section reports, so both ends must fire.
   it('reports each read starting and settling', async () => {
     const lifecycle: string[] = [];
-    await render(response(), undefined, lifecycle);
+    await render(response(), lifecycle);
 
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
   it('holds the skeleton and withholds the settle while no foundation is selected', async () => {
-    const emitted: unknown[] = [];
     const lifecycle: string[] = [];
     selectedFoundation.set(null);
-    await render(response(), (counts) => emitted.push(counts), lifecycle);
+    await render(response(), lifecycle);
 
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
-    expect(emitted).toEqual([null, null]);
     // Settling here would release the container's pending deep link before any read has reflowed
     // the pane, and no later read can re-arm a fragment that is already gone.
     expect(lifecycle).toEqual(['reading']);
@@ -297,7 +282,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
   it('reads the new foundation and restarts paging when the selection switches', async () => {
     const lifecycle: string[] = [];
     selectedFoundation.set(null);
-    await render(response(), undefined, lifecycle);
+    await render(response(), lifecycle);
     fixture.componentInstance['onTablePage']({ first: 25, rows: 25 });
 
     selectedFoundation.set({ slug: 'globex' });

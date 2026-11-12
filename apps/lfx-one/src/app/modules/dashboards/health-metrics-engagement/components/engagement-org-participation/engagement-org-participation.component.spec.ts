@@ -132,7 +132,7 @@ describe('EngagementOrgParticipationComponent', () => {
   });
 
   // The caption counts the whole foundation, not the filtered cut, so it comes off the response.
-  it('emits the scope counts for the sub-nav badge, and nothing while a read is in flight', async () => {
+  it('emits the scope counts for the sub-nav note, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: { orgs: 136, lapsedOrgs: 54 } }), (counts) => emitted.push(counts));
 

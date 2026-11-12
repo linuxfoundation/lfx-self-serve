@@ -59,7 +59,6 @@ describe('EventsPastEventsComponent', () => {
   let fixture: ComponentFixture<EventsPastEventsComponent>;
   let getEventsPast: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
   let verdicts: boolean[];
   let picked: HealthMetricsEventsSectionKey[];
@@ -80,7 +79,6 @@ describe('EventsPastEventsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventsPastEventsComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -107,7 +105,6 @@ describe('EventsPastEventsComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
-    counts = [];
     lifecycle = [];
     verdicts = [];
     picked = [];
@@ -150,10 +147,9 @@ describe('EventsPastEventsComponent', () => {
     expect(query('events-past-events-goal-met')?.querySelector('dt')?.textContent?.trim()).toBe('Hit goal');
   });
 
-  it('reports the period count for the badge and settles once the list lands', async () => {
+  it('settles once the list lands', async () => {
     await render();
 
-    expect(counts).toEqual([null, 2]);
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
@@ -165,7 +161,6 @@ describe('EventsPastEventsComponent', () => {
     await settle();
 
     expect(getEventsPast).toHaveBeenCalledTimes(1);
-    expect(counts).toEqual([null, 2, 1]);
     expect(query('events-past-events-row-past-1')).toBeNull();
     expect(query('events-past-events-row-past-2')).not.toBeNull();
     expect(text('events-past-events-goal-met-value')).toBe('no goals set');
@@ -198,7 +193,7 @@ describe('EventsPastEventsComponent', () => {
     expect(text('events-past-events-goal-met-value')).toBe('0 of 1');
   });
 
-  it('settles empty, with no body, and a zero badge for a period with no closed events', async () => {
+  it('settles empty, with no body, for a period with no closed events', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_2');
@@ -207,10 +202,9 @@ describe('EventsPastEventsComponent', () => {
     expect(verdicts).toEqual([false, true]);
     expect(query('events-past-events-card')).toBeNull();
     expect(query('events-past-events-table')).toBeNull();
-    expect(counts.at(-1)).toBe(0);
   });
 
-  it('settles empty, with no body, and no badge rather than a measured zero for a period never measured', async () => {
+  it('settles empty, with no body, for a period never measured', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_3');
@@ -219,20 +213,18 @@ describe('EventsPastEventsComponent', () => {
     expect(verdicts).toEqual([false, true]);
     expect(query('events-past-events-card')).toBeNull();
     expect(query('events-past-events-table')).toBeNull();
-    expect(counts.at(-1)).toBeNull();
   });
 
-  it('shows the error state and keeps the badge unmeasured when the read fails', async () => {
+  it('shows the error state and does not re-settle a failed read on a period change', async () => {
     await render(new Error('warehouse down'));
 
     expect(query('events-past-events-error')).not.toBeNull();
     expect(verdicts).toEqual([false]);
-    expect(counts).toEqual([null]);
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
-    expect(counts).toEqual([null]);
+    expect(verdicts).toEqual([false]);
   });
 
   it('holds the skeleton until a foundation resolves', async () => {

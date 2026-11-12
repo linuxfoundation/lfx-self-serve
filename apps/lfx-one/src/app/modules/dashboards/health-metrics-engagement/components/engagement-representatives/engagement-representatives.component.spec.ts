@@ -204,9 +204,9 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]').textContent).toContain('3 / 6');
   });
 
-  // Unlike the org and non-member captions, this view counts its scope per period, so the badge and
+  // Unlike the org and non-member captions, this view counts its scope per period, so the note and
   // the caption both have to follow the pill off the already-loaded response.
-  it('re-reports the badge counts for the newly selected period, off the loaded response', async () => {
+  it('re-reports the note counts for the newly selected period, off the loaded response', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: counts(48, 12) }), (value) => emitted.push(value));
     getEngagementRepresentatives.mockClear();
@@ -434,7 +434,7 @@ describe('EngagementRepresentativesComponent', () => {
   });
 
   // The pill re-reports off the loaded response, and a failed read has none to report.
-  it('keeps the badge empty when the period changes after a failed read', async () => {
+  it('keeps the note empty when the period changes after a failed read', async () => {
     const emitted: unknown[] = [];
     await render(new Error('snowflake down'), (value) => emitted.push(value));
 
@@ -445,7 +445,7 @@ describe('EngagementRepresentativesComponent', () => {
   });
 
   // A read in flight still holds the previous foundation's payload, so the pill must not republish it.
-  it('keeps the badge empty when the period changes while the next foundation is still loading', async () => {
+  it('keeps the note empty when the period changes while the next foundation is still loading', async () => {
     const emitted: unknown[] = [];
     await render(response(), (value) => emitted.push(value));
     emitted.length = 0;

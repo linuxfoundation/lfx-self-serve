@@ -60,20 +60,14 @@ describe('buildHealthMetricsMembersSubNavItems', () => {
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => section.label));
   });
 
-  it('renders no badge or note while no section reports a count', () => {
-    expect(buildHealthMetricsMembersSubNavItems().every((item) => item.count === null && item.note === '')).toBe(true);
+  it('renders no note while no section reports one', () => {
+    expect(buildHealthMetricsMembersSubNavItems().every((item) => item.note === '')).toBe(true);
   });
 
-  it('badges only the sections that report a count', () => {
-    const items = buildHealthMetricsMembersSubNavItems({ list: 725 });
-
-    expect(items.find((item) => item.key === 'list')?.count).toBe(725);
-    expect(items.filter((item) => item.key !== 'list').every((item) => item.count === null)).toBe(true);
-  });
   it('notes only the sections that report a note', () => {
-    const items = buildHealthMetricsMembersSubNavItems({}, { risk: '3 overdue · $120K' });
+    const items = buildHealthMetricsMembersSubNavItems({ risk: '3 overdue · $120K' });
 
-    expect(items.find((item) => item.key === 'risk')).toMatchObject({ count: null, note: '3 overdue · $120K' });
+    expect(items.find((item) => item.key === 'risk')?.note).toBe('3 overdue · $120K');
     expect(items.filter((item) => item.key !== 'risk').every((item) => item.note === '')).toBe(true);
   });
 });
@@ -187,7 +181,7 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
       memberCount: count,
       revenueUsd: count * 1000,
     }));
-  const build = (rows: HealthMetricsMembersTierYear[], range: HealthMetricsRange = 'YTD') => buildHealthMetricsMembersBreakdownView({ rows }, range);
+  const build = (rows: HealthMetricsMembersTierYear[]) => buildHealthMetricsMembersBreakdownView({ rows });
   const PGS = [
     ...tier('Platinum Membership', 1, [110, 118, 124, 131, 138, 142, 150, 158]),
     ...tier('Gold Membership', 2, [210, 224, 240, 262, 270, 281, 296, 322]),
@@ -237,11 +231,9 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     expect(view.rows.some((row) => row.label === 'Others')).toBe(false);
   });
 
-  it('counts the selected year’s members for the sub-nav, and drops tiers with no member in any year shown', () => {
+  it('drops tiers with no member in any year shown', () => {
     const rows = [...PGS, ...tier('Former', 9, [0, 0, 0, 0, 0, 0, 0, 0])];
 
-    expect(build(rows).count).toBe(1845);
-    expect(build(rows, 'COMPLETED_YEAR').count).toBe(1527);
     expect(build(rows).rows.map((row) => row.label)).not.toContain('Former');
   });
 
@@ -249,7 +241,6 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     const view = build(tier('Platinum Membership', 1, [0, 0, 0, 0, 0, 0, 0, 0]));
 
     expect(view.measured).toBe(true);
-    expect(view.count).toBe(0);
     expect(view.rows.find((row) => row.key === 'members')?.cells[7]).toBe('0');
   });
 
@@ -270,7 +261,7 @@ describe('buildHealthMetricsMembersBreakdownView', () => {
     const view = build(tier('Gold', 1, [0, 0, 0, 0, 0, 5, 6, 7]).slice(5));
 
     expect(view.columns.map((column) => column.year)).toEqual([2024, 2025, 2026]);
-    expect(build([])).toEqual({ measured: false, columns: [], rows: [], count: null });
+    expect(build([])).toEqual({ measured: false, columns: [], rows: [] });
   });
 });
 
