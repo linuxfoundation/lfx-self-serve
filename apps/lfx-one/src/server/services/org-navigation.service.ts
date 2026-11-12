@@ -16,7 +16,7 @@ import { Request } from 'express';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { ClaOnlyOrg, claOnlyEntryApplies, claOnlyListApplies, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
+import { claOnlyEntryApplies, claOnlyListApplies, ClaOnlyOrg, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
@@ -80,8 +80,6 @@ export class OrgNavigationService {
       return { items: [], next_page_token: null, upstream_failed: access.upstreamFailed, total: 0 };
     }
 
-    // CLA-only companies follow the held organizations. Like them they are complete on page one, and
-    // nothing the caller already holds is looked up: a held organization must never open CLA-only.
     const claOnly =
       !pageToken && claOnlyListApplies(access.isStaff, rosterAnswered)
         ? await this.claOnlyOrgs.listOrgs(req, new Set([...access.resolved.keys(), ...items.map((item) => item.uid)]))
@@ -121,8 +119,7 @@ export class OrgNavigationService {
       next_page_token: nextPageToken,
       // A failed catalogue search is reported rather than folded into an empty result: for a staff
       // caller with nothing assigned the two are indistinguishable in the list, and "no organizations
-      // found" would blame the search term for an outage. A failed CLA-only lookup is a lower bound
-      // on the list in the same way.
+      // found" would blame the search term for an outage.
       upstream_failed: catalogueResult.failed || claOnly.failed,
       // No count is claimed for the catalogue — the caller sees what it has loaded so far.
       total: catalogueTerm ? null : assignedItems.length,
@@ -150,7 +147,6 @@ export class OrgNavigationService {
     return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
   }
 
-  /** Selector rows for CLA-only organizations: no logo, slug or membership is known for them. */
   private toClaOnlyItems(orgs: ClaOnlyOrg[]): OrgItem[] {
     return orgs.map(
       (org): OrgItem => ({

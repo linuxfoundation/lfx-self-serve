@@ -200,7 +200,6 @@ export class OrgSelectorComponent {
       this.orgRoleGrantsService.inheritedAuditorSet()
     );
   });
-  /** The selection is a listed CLA-only organization: no grant persona, so the card carries the CLA Manager role line instead. */
   private readonly selectedClaOnly: Signal<boolean> = computed(() => {
     const uid = this.selectedAccountUid();
     return !!uid && !this.selectedRolePersona() && this.items().some((item) => item.uid === uid && item.claOnly === true);

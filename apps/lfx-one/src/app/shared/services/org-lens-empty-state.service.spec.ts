@@ -48,7 +48,6 @@ interface Harness {
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
-  /** `OrgNavigationService.upstreamFailed` — the org-items list reported an upstream failure. */
   listUpstreamFailed: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
@@ -219,7 +218,6 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.listIncomplete()).toBe(true);
   });
 
-  // #5557 — a grant holder's CLA-only companies are part of their list, so a failed lookup is a lower bound too.
   it.each([
     ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
     ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],

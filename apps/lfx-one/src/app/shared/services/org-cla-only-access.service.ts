@@ -18,15 +18,9 @@ const NO_ORGS: ReadonlySet<string> = new Set();
 export class OrgClaOnlyAccessService {
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
 
-  /**
-   * Organizations an address resolved as CLA-only (`OrgResolveResponse.claOnly`). Kept apart from
-   * `claOnlyOrgUids`: the address can name a company the role grants' list does not, such as one
-   * whose scope arrived after the grants were read, so it shapes that organization's pages without
-   * adding it to the selector.
-   */
   private readonly addressedClaOnlyUids: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(NO_ORGS);
 
-  /** Selector entries: the caller's CLA-manager companies, minus every organization the grants hold. */
+  /** Selector entries. */
   public readonly claOnlyOrgUids: Signal<ReadonlySet<string>> = this.orgRoleGrants.claManagerOrgSet;
 
   /** The caller's CLA-manager companies could not be read, so `claOnlyOrgUids` being empty is unknown. */
@@ -34,9 +28,8 @@ export class OrgClaOnlyAccessService {
 
   public isClaOnly(uid: string | null | undefined): boolean {
     if (!uid) return false;
-    // A held organization is never narrowed to EasyCLA, whichever list names it. A grant that arrived
-    // after the address was resolved wins too: the selected organization skips the resolver on later
-    // navigations, so nothing else would clear the note.
+    // A grant that arrived after the address was resolved wins: the selected organization skips the
+    // resolver on later navigations, so nothing else would clear the note.
     if (this.holdsOrgLensAccess(uid)) return false;
     return this.claOnlyOrgUids().has(uid) || this.addressedClaOnlyUids().has(uid);
   }

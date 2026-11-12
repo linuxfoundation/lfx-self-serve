@@ -170,11 +170,7 @@ export class OrgLensEmptyStateService {
    */
   private readonly selectedClaOnly: Signal<boolean> = computed(() => this.claOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid));
 
-  /**
-   * FR-010 — the list is a lower bound but the page still renders: show the switcher notice, not a page state.
-   * A failed CLA-only lookup is the same lower bound for a caller who holds organizations: the scopes read
-   * (role grants) or a company lookup (org items, whose `upstreamFailed` a non-staff caller raises only then).
-   */
+  /** FR-010 — the list is a lower bound but the page still renders: show the switcher notice, not a page state. */
   public readonly listIncomplete: Signal<boolean> = computed(
     () =>
       this.settled() &&

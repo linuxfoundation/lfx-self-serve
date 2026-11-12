@@ -29,10 +29,6 @@ export interface ClaOnlyOrgList {
 }
 
 /**
- * Whether the caller is CLA-only throughout: Org Lens resolved no organization at all and the caller
- * is not staff, so the CLA-only companies are their whole selector. A caller who holds organizations
- * gets those first and the CLA-only companies after them (`claOnlyListApplies`).
- *
  * `rosterAnswered` is false when the roster never loaded or the staff check failed. Either leaves
  * "no grant, not staff" unproven, so the caller keeps the normal outage handling instead of being
  * classified CLA-only.
@@ -41,17 +37,11 @@ export function claOnlyEntryApplies(isStaff: boolean, grantedOrgCount: number, r
   return claOnlyListApplies(isStaff, rosterAnswered) && grantedOrgCount === 0;
 }
 
-/**
- * Whether CLA-only companies are looked up for this caller at all: a non-staff caller whose roster
- * answered in full. An incomplete roster cannot prove which companies the caller already holds, and
- * listing a held one as CLA-only would narrow it to its EasyCLA page.
- */
 export function claOnlyListApplies(isStaff: boolean, rosterAnswered: boolean): boolean {
   return rosterAnswered && !isStaff;
 }
 
-/** Organizations the role grants open the whole lens on, directly or by inheritance: never CLA-only. */
-export function heldOrgUids(grants: Pick<RoleGrantsResponse, 'writers' | 'auditors' | 'cascadingWriters' | 'cascadingAuditors'>): Set<string> {
+function heldOrgUids(grants: Pick<RoleGrantsResponse, 'writers' | 'auditors' | 'cascadingWriters' | 'cascadingAuditors'>): Set<string> {
   return new Set([
     ...grants.writers,
     ...grants.auditors,
@@ -81,13 +71,12 @@ export class OrgClaOnlyOrgsService {
 
   /**
    * The caller's CLA-only organizations, added outside the cached grant computation so the grant
-   * cache never holds an ACS answer. Every organization the grants already hold is left out. An
-   * unreadable scope list is logged and answered as none with `claManagerLookup: 'failed'`, leaving
-   * the grant arrays — the authoritative part — intact, so the client shows an outage rather than
-   * "no organizations".
+   * cache never holds an ACS answer. An unreadable scope list is logged and answered as none with
+   * `claManagerLookup: 'failed'`, leaving the grant arrays — the authoritative part — intact, so the
+   * client shows an outage rather than "no organizations".
    */
   public async getRoleGrantClaManagerOrgs(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'claManagerOrgs' | 'claManagerLookup'>> {
-    // A `partial` roster is a lower bound: it proves neither "holds none" nor which organizations are held.
+    // A `partial` roster is a lower bound: zero grants there does not prove the caller holds none.
     const rosterAnswered = (grants.lookupOutcome ?? 'ok') === 'ok' && grants.staffCheck !== 'failed';
     if (!claOnlyListApplies(grants.isStaff, rosterAnswered)) return { claManagerOrgs: [], claManagerLookup: 'ok' };
     const held = heldOrgUids(grants);
@@ -103,8 +92,8 @@ export class OrgClaOnlyOrgsService {
 
   /**
    * The CLA-only organizations to list, each confirmed by EasyCLA. Fails soft per row: a failed
-   * lookup drops that row and reports `failed`, so one outage does not hide the rest. Companies in
-   * `held` are never looked up. At most `ORG_CLA_ONLY_ORGS_MAX` lookups are made.
+   * lookup drops that row and reports `failed`, so one outage does not hide the rest. At most
+   * `ORG_CLA_ONLY_ORGS_MAX` lookups are made.
    */
   public async listOrgs(req: Request, held: ReadonlySet<string> = new Set()): Promise<ClaOnlyOrgList> {
     let uids: string[];
