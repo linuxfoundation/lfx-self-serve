@@ -15,7 +15,7 @@ The **Meetings** page is where you see the meetings you're invited to, organize,
 Select **Meetings** from the left navigation. What you see depends on your lens:
 
 - **Me lens** (your personal view): meetings across all of your projects. There's no way to create a meeting here. If no upcoming meetings are listed, you'll see "No upcoming meetings — Meetings from your committees and projects will appear here."
-- **Foundation or Project lens**: the foundation's or project's meetings, plus the meetings of every project beneath it, such as a foundation's sub-projects. You only see the sub-project meetings you have access to. This is where **Create Meeting** appears, if you have write access. If none are scheduled, you'll see "No meetings yet — Schedule a meeting to get started."
+- **Foundation or Project lens**: the foundation's or project's own meetings. To add the meetings of projects beneath it, such as a foundation's sub-projects, pick them in the project filter (see [Search and filter](#search-and-filter)). You only see the sub-project meetings you have access to. This is where **Create Meeting** appears, if you have write access. If none are scheduled, you'll see "No meetings yet — Schedule a meeting to get started."
 - **Org lens**: a meeting analytics view for the organization. It has no **Create Meeting** button.
 
 The Me, Foundation, and Project lenses share the same dashboard, scoped differently.
@@ -28,7 +28,7 @@ The tiles at the top of the page summarize the tab you're on:
 
 - **Me lens, Upcoming**: **Meetings in the Next 7 Days**, which counts each upcoming date, including dates you declined, and **Needs response**. Selecting **Needs response** opens the response queue and clears other filters, so they can't hide a meeting that needs your answer.
 - **Me lens, Past**: **Past This Month** and **Recordings Available** from the past 30 days.
-- **Foundation or Project lens**: **Upcoming Meetings**, **Recurring Series**, **Past Meetings**, and **Recordings Available** from the past 30 days. These include sub-project meetings.
+- **Foundation or Project lens**: **Upcoming Meetings**, **Recurring Series**, **Past Meetings**, and **Recordings Available** from the past 30 days. They count the projects you have picked.
 
 ## List and Calendar views
 
@@ -48,14 +48,17 @@ Use the controls above the list to narrow it:
 - **Search meetings...** finds meetings by name.
 - **All Types** limits the list to one meeting type.
 - In the Me lens, you can also filter by foundation or project.
-- In the Foundation or Project lens, you can also narrow the meetings rolled up from its projects:
-  - **All projects** picks one or more projects, such as the foundation itself and a few of its sub-projects. It appears when there are sub-projects.
+- In the Foundation or Project lens, you can also choose which of its projects' meetings to show:
+  - The project filter starts on the foundation or project alone, shown as, for example, **FINOS only**. Pick one or more projects to show theirs instead, such as the foundation and a few of its sub-projects, or select all of them. It appears when there are sub-projects.
+  - Your project choice is remembered for you, for each foundation or project, the next time you open its meetings. It doesn't change what other people see.
   - **All groups** limits the list to one group. A group from a sub-project shows that project's name in brackets.
   - **All group types** limits the list to groups of one type, such as Board or Working Group.
   - The lists offer only what fits your other choices: picking projects narrows the groups and group types, and picking a group type narrows the groups.
 - **Reset filters** clears every filter you've set, without changing the **Upcoming** or **Past** tab.
 
-The filters combine, and they apply to both the list and the calendar. In the Foundation or Project lens, the page address keeps your filters and your **List** or **Calendar** choice, so you can bookmark a filtered view or share its link. A link shows each person only the meetings they have access to.
+The filters combine, and they apply to both the list and the calendar. In the Foundation or Project lens, the page address keeps your filters and your **List** or **Calendar** choice, so you can bookmark a filtered view or share its link. A link's project choice applies when someone opens it, instead of their own remembered choice. A link shows each person only the meetings they have access to.
+
+**Reset filters** also returns the project filter to the foundation or project alone.
 
 Your search and meeting type stay selected when you switch between **Upcoming** and **Past**. Your foundation or project, response, and organizer choices reset when you switch.
 
