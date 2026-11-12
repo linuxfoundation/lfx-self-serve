@@ -999,7 +999,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       };
 
       beforeEach(async () => {
-        await mount('browser', '/?employment=current');
+        await mount('browser', '/?tab=employees');
         snowflake$.next(
           response(
             [
@@ -1034,9 +1034,51 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         expect(await search('gracehopper')).toEqual(['org-people-all-employees-row-p-username']);
       });
 
-      it('lists everyone for a query that is only spaces or invisible characters', async () => {
-        expect(await search(' \u200B ')).toHaveLength(5);
+      it('lists everyone and hides Clear filters for effective-empty queries', async () => {
+        const clear = (): Element | null => el().querySelector('[data-testid="org-people-all-employees-clear-filters"]');
+        expect(await search('JOSE')).toEqual(['org-people-all-employees-row-p-accent']);
+        expect(clear()).not.toBeNull();
+
+        for (const term of ['', '   ', '\u3000', '\u200B', ' \u200B ', '\u0085', '\u00AD', '\u0301']) {
+          expect(await search(term)).toHaveLength(5);
+          expect(clear()).toBeNull();
+        }
       });
+
+      it('retains the active-filter state when another filter accompanies an effective-empty query', async () => {
+        fixture.componentInstance['filterForm'].controls.activity.setValue('events');
+
+        expect(await search(' \u200B ')).toEqual([]);
+        expect(el().querySelector('[data-testid="org-people-all-employees-empty"]')?.textContent).toContain('No employees match the current filters.');
+        expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).not.toBeNull();
+      });
+    });
+
+    it('keeps the organization-empty wording for effective-empty queries', async () => {
+      await mount('browser', '/?tab=employees');
+      snowflake$.next(response([], 0));
+      snowflake$.complete();
+      live$.next(response([], 0));
+      live$.complete();
+      former$.next(response([], 0));
+      former$.complete();
+      await settle();
+
+      const search = async (term: string): Promise<void> => {
+        fixture.componentInstance['filterForm'].controls.search.setValue(term);
+        await settle();
+      };
+      const empty = (): string | null | undefined => el().querySelector('[data-testid="org-people-all-employees-empty"]')?.textContent;
+
+      await search('no matching person');
+      expect(empty()).toContain('No employees match the current filters.');
+
+      for (const term of ['', '\u200B', ' \u200B ', '\u0085', '\u00AD', '\u0301']) {
+        await search(term);
+        expect(rowKeys()).toEqual([]);
+        expect(empty()).toContain('No employees found for this organization.');
+        expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).toBeNull();
+      }
     });
 
     it('never joins a key contact on username: the key-contact row and the former row both stay, under "All"', async () => {

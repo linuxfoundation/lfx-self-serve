@@ -899,7 +899,7 @@ export class AllEmployeesComponent {
 
   private initIsFiltering(): boolean {
     return (
-      this.searchTerm().trim().length > 0 ||
+      foldForSearch(this.searchTerm()).length > 0 ||
       !!this.selectedFoundationId() ||
       this.selectedActivity() !== 'all' ||
       this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ||
