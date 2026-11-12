@@ -41,6 +41,7 @@ import { readOrgTeamMembers } from '@shared/utils/org-team-members-url.util';
 
 import {
   DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL,
+  DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT,
   DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
   DEFAULT_ORG_CODE_MEASURE,
   DEFAULT_ORG_COMMIT_FILTERS,
@@ -51,6 +52,7 @@ import {
   ORG_ALL_EMPLOYEE_CODE_NOTE,
   ORG_ALL_EMPLOYEE_CODE_STAT_LABEL,
   ORG_ALL_EMPLOYEE_COMPANY_EMAIL_OPTIONS,
+  ORG_ALL_EMPLOYEE_KEY_CONTACT_OPTIONS,
   ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS,
   ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE,
   ORG_ALL_EMPLOYEES_INITIAL_LIMIT,
@@ -73,13 +75,15 @@ import {
   ORG_TEAM_MEMBERS_TOOLTIP,
   ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
 } from '@lfx-one/shared/constants';
-import { orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
+import { matchesKeyContactFilter, orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
 import type {
   OrgAccessBadgeState,
   OrgAllEmployeeActivityFilter,
   OrgAllEmployeeActivityOption,
   OrgAllEmployeeCompanyEmailFilter,
   OrgAllEmployeeCompanyEmailOption,
+  OrgAllEmployeeKeyContactFilter,
+  OrgAllEmployeeKeyContactOption,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEmploymentFilter,
   OrgAllEmployeeEmploymentOption,
@@ -162,6 +166,7 @@ export class AllEmployeesComponent {
   // Spread to a mutable array so PrimeNG's mutable [options] input type accepts it without an unsafe cast.
   protected readonly employmentOptions: OrgAllEmployeeEmploymentOption[] = [...ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS];
   protected readonly companyEmailOptions: OrgAllEmployeeCompanyEmailOption[] = [...ORG_ALL_EMPLOYEE_COMPANY_EMAIL_OPTIONS];
+  protected readonly keyContactOptions: OrgAllEmployeeKeyContactOption[] = [...ORG_ALL_EMPLOYEE_KEY_CONTACT_OPTIONS];
   protected readonly rangeOptions: OrgLensTimeRangeOption[] = [...ORG_LENS_TIME_RANGE_OPTIONS];
   protected readonly projectScopeOptions: OrgProjectScopeOption[] = [...ORG_PROJECT_SCOPE_OPTIONS];
   protected readonly projectScopeLabel = ORG_PROJECT_SCOPE_LABEL;
@@ -193,6 +198,7 @@ export class AllEmployeesComponent {
   // signals below.
   private readonly initialEmployment = AllEmployeesComponent.parseEmployment(this.route.snapshot.queryParamMap.get('employment'));
   private readonly initialCompanyEmail = AllEmployeesComponent.parseCompanyEmail(this.route.snapshot.queryParamMap.get('companyEmail'));
+  private readonly initialKeyContact = AllEmployeesComponent.parseKeyContact(this.route.snapshot.queryParamMap.get('keyContact'));
   private readonly initialRange = parseOrgLensTimeRange(this.route.snapshot.queryParamMap.get('range'));
   private readonly initialFilters = readOrgCommitFilters((name) => this.route.snapshot.queryParamMap.get(name));
   private readonly initialCodeFilters = orgCodeFilterValues(this.initialFilters);
@@ -207,6 +213,7 @@ export class AllEmployeesComponent {
     activity: new FormControl<OrgAllEmployeeActivityFilter>('all', { nonNullable: true }),
     employment: new FormControl<OrgAllEmployeeEmploymentFilter>(this.initialEmployment, { nonNullable: true }),
     companyEmail: new FormControl<OrgAllEmployeeCompanyEmailFilter>(this.initialCompanyEmail, { nonNullable: true }),
+    keyContact: new FormControl<OrgAllEmployeeKeyContactFilter>(this.initialKeyContact, { nonNullable: true }),
     range: new FormControl<OrgLensTimeRange>(this.initialRange, { nonNullable: true }),
     projectScope: new FormControl<OrgProjectScope>(this.initialCodeFilters.projectScope, { nonNullable: true }),
     metric: new FormControl<OrgCodeMeasure>(this.initialCodeFilters.metric, { nonNullable: true }),
@@ -221,6 +228,8 @@ export class AllEmployeesComponent {
   protected readonly selectedEmployment = signal<OrgAllEmployeeEmploymentFilter>(this.initialEmployment);
   // Follows `?companyEmail=` the same way: the rows whose company-email status (stamped by the server) matches.
   protected readonly selectedCompanyEmail = signal<OrgAllEmployeeCompanyEmailFilter>(this.initialCompanyEmail);
+  // Follows `?keyContact=`: the rows holding any / no / one canonical key-contact role (lfx-self-serve#5628).
+  protected readonly selectedKeyContact = signal<OrgAllEmployeeKeyContactFilter>(this.initialKeyContact);
   // Follows `?range=` the same way; the roster, its tiles and the former employees are all read for this range.
   protected readonly selectedRange = signal<OrgLensTimeRange>(this.initialRange);
   // Follows `?projectScope=` / `?metric=`: the project scope picks who is listed, the code-count option (commits, merged
@@ -289,6 +298,7 @@ export class AllEmployeesComponent {
     activity: this.selectedActivity(),
     employment: this.selectedEmployment(),
     companyEmail: this.selectedCompanyEmail(),
+    keyContact: this.selectedKeyContact(),
     range: this.selectedRange(),
     projectScope: this.selectedCodeFilters().projectScope,
     metric: this.selectedCodeFilters().metric,
@@ -372,6 +382,7 @@ export class AllEmployeesComponent {
       [
         this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT,
         this.selectedCompanyEmail() !== DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL,
+        this.selectedKeyContact() !== DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT,
         this.selectedCodeFilters().metric !== DEFAULT_ORG_CODE_MEASURE,
         this.selectedTeamMembers() !== DEFAULT_ORG_TEAM_MEMBERS,
         this.selectedOrgScope() !== DEFAULT_ORG_SCOPE,
@@ -408,6 +419,7 @@ export class AllEmployeesComponent {
       toObservable(this.selectedActivity),
       toObservable(this.selectedEmployment),
       toObservable(this.selectedCompanyEmail),
+      toObservable(this.selectedKeyContact),
       this.rosterQuery$,
       toObservable(this.sortColumn),
       toObservable(this.sortDirection),
@@ -430,6 +442,14 @@ export class AllEmployeesComponent {
         takeUntilDestroyed()
       )
       .subscribe((companyEmail) => this.selectedCompanyEmail.set(companyEmail));
+
+    this.route.queryParamMap
+      .pipe(
+        map((params) => AllEmployeesComponent.parseKeyContact(params.get('keyContact'))),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((keyContact) => this.selectedKeyContact.set(keyContact));
 
     this.route.queryParamMap
       .pipe(
@@ -469,6 +489,7 @@ export class AllEmployeesComponent {
     controls.activity.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.selectedActivity.set(value));
     controls.employment.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onEmploymentChange(value));
     controls.companyEmail.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onCompanyEmailChange(value));
+    controls.keyContact.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onKeyContactChange(value));
     controls.range.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => this.onRangeChange(value));
     controls.projectScope.valueChanges.pipe(takeUntilDestroyed()).subscribe((projectScope) => this.onFiltersChange({ projectScope }));
     controls.metric.valueChanges.pipe(takeUntilDestroyed()).subscribe((metric) => this.onFiltersChange({ metric }));
@@ -586,6 +607,16 @@ export class AllEmployeesComponent {
     });
   }
 
+  protected onKeyContactChange(value: OrgAllEmployeeKeyContactFilter): void {
+    this.selectedKeyContact.set(value);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { keyContact: value === DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT ? null : value },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
   protected onRangeChange(value: OrgLensTimeRange): void {
     this.selectedRange.set(value);
     void this.router.navigate([], {
@@ -629,6 +660,7 @@ export class AllEmployeesComponent {
     this.selectedActivity.set('all');
     this.selectedEmployment.set(DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT);
     this.selectedCompanyEmail.set(DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL);
+    this.selectedKeyContact.set(DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT);
     this.selectedRange.set(ORG_LENS_DEFAULT_TIME_RANGE);
     this.selectedFilters.set(DEFAULT_ORG_COMMIT_FILTERS);
     this.selectedTeamMembers.set(DEFAULT_ORG_TEAM_MEMBERS);
@@ -638,6 +670,7 @@ export class AllEmployeesComponent {
       queryParams: {
         employment: null,
         companyEmail: null,
+        keyContact: null,
         range: orgLensTimeRangeUrlParam(ORG_LENS_DEFAULT_TIME_RANGE),
         ...orgCommitFiltersUrlParams(DEFAULT_ORG_COMMIT_FILTERS),
         [ORG_TEAM_MEMBERS_QUERY_PARAM]: null,
@@ -857,6 +890,7 @@ export class AllEmployeesComponent {
     const foundationId = this.selectedFoundationId();
     const activity = this.selectedActivity();
     const companyEmail = this.selectedCompanyEmail();
+    const keyContact = this.selectedKeyContact();
 
     return rows.filter((row) => {
       if (q && ![row.name, row.title, row.email, row.lfUsername].some((field) => foldForSearch(field).includes(q))) return false;
@@ -871,6 +905,7 @@ export class AllEmployeesComponent {
       }
       // A row without a status (the server could not read the company-email keys) is listed only under "All".
       if (companyEmail !== DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL && row.companyEmailStatus !== companyEmail) return false;
+      if (!matchesKeyContactFilter(row.keyContactRoles, keyContact)) return false;
       return true;
     });
   }
@@ -904,6 +939,7 @@ export class AllEmployeesComponent {
       this.selectedActivity() !== 'all' ||
       this.selectedEmployment() !== DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT ||
       this.selectedCompanyEmail() !== DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL ||
+      this.selectedKeyContact() !== DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT ||
       this.selectedRange() !== ORG_LENS_DEFAULT_TIME_RANGE ||
       this.selectedFilters().projectScope !== DEFAULT_ORG_COMMIT_FILTERS.projectScope ||
       this.selectedTeamMembers() !== DEFAULT_ORG_TEAM_MEMBERS ||
@@ -1212,6 +1248,11 @@ export class AllEmployeesComponent {
   /** `?employment=` value → filter; anything unknown (or absent) is the default view. */
   private static parseEmployment(value: string | null): OrgAllEmployeeEmploymentFilter {
     return ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS.find((option) => option.value === value)?.value ?? DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT;
+  }
+
+  /** `?keyContact=` value → filter; anything unknown (or absent) is every row. */
+  private static parseKeyContact(value: string | null): OrgAllEmployeeKeyContactFilter {
+    return ORG_ALL_EMPLOYEE_KEY_CONTACT_OPTIONS.find((option) => option.value === value)?.value ?? DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT;
   }
 
   /** `?companyEmail=` value → filter; anything unknown (or absent) is every status. */
