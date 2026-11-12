@@ -57,7 +57,8 @@ describe('NewsletterRendererService (browser)', () => {
     );
     expect(fields.get('url')).toBe('href');
     expect(fields.get('image')).toBe('src');
-    expect(fields.get('link')).toBe('href');
+    expect(fields.get('items.link')).toBe('href');
+    expect(fields.has('link')).toBe(false);
     // A binding that is only part of the URL isn't a whole link the author types.
     expect(fields.has('slug')).toBe(false);
   });

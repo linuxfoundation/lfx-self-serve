@@ -923,14 +923,14 @@ export interface NewsletterChartData {
 // Block-composer editor: structured layout + template manifest (spec 004 §8)
 // ---------------------------------------------------------------------------
 
+/** A template attribute that carries a URL from a block field: a link (`href`) or an image (`src`). */
+export type NewsletterUrlAttr = 'href' | 'src';
+
 /**
  * The editable field types the block-composer fields panel knows how to render.
  * Mirrors the `type` discriminator in each block's parsed SCHEMA comment.
  * `slot` is the container child-list marker and is not rendered as an input.
  */
-/** A template attribute that carries a URL from a block field: a link (`href`) or an image (`src`). */
-export type NewsletterUrlAttr = 'href' | 'src';
-
 export type NewsletterFieldType = 'text' | 'textarea' | 'richtext' | 'number' | 'boolean' | 'array' | 'image' | 'select' | 'slot';
 
 /** One option of a `select` field: the value stored and the label shown. */

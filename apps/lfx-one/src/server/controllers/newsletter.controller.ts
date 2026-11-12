@@ -757,11 +757,13 @@ export class NewsletterController {
       // own size cap.
       fieldErrors['body_html'] = `Body must be ${NEWSLETTER_BODY_MAX_LENGTH} characters or fewer`;
     }
-    if (layoutValid && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+    // Depth first: JSON.stringify recurses, so a layout nested thousands of levels deep would throw before the
+    // byte cap could refuse it. newsletterLayoutDepthError walks without recursion.
+    const depthError = layoutValid ? newsletterLayoutDepthError(payload.body_layout!.blocks) : null;
+    if (depthError) {
+      fieldErrors['body_layout'] = depthError;
+    } else if (layoutValid && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
       fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
-    } else if (layoutValid) {
-      const depthError = newsletterLayoutDepthError(payload.body_layout!.blocks);
-      if (depthError) fieldErrors['body_layout'] = depthError;
     }
 
     if (!payload?.ed_reply_email || typeof payload.ed_reply_email !== 'string' || !payload.ed_reply_email.includes('@')) {
@@ -797,13 +799,14 @@ export class NewsletterController {
     // absent/null layout uses body_html.
     const layout = payload?.body_layout;
     if (layout !== undefined && layout !== null) {
+      // Depth before the byte cap, which JSON.stringify can't reach on a very deep layout.
+      const depthError = Array.isArray(layout.blocks) ? newsletterLayoutDepthError(layout.blocks) : null;
       if (!Array.isArray(layout.blocks) || layout.blocks.length === 0) {
         fieldErrors['body_layout'] = 'Add at least one block before sending';
+      } else if (depthError) {
+        fieldErrors['body_layout'] = depthError;
       } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
         fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
-      } else {
-        const depthError = newsletterLayoutDepthError(layout.blocks);
-        if (depthError) fieldErrors['body_layout'] = depthError;
       }
     } else if (!payload?.body_html || typeof payload.body_html !== 'string' || payload.body_html.trim().length === 0) {
       fieldErrors['body_html'] = 'Body is required';
@@ -840,11 +843,14 @@ export class NewsletterController {
     const layout = payload?.body_layout;
     if (!layout || typeof layout !== 'object' || !Array.isArray(layout.blocks)) {
       fieldErrors['body_layout'] = 'A body_layout with a blocks array is required';
-    } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
-      fieldErrors['body_layout'] = `body_layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
     } else {
+      // Depth before the byte cap, which JSON.stringify can't reach on a very deep layout.
       const depthError = newsletterLayoutDepthError(layout.blocks);
-      if (depthError) fieldErrors['body_layout'] = depthError;
+      if (depthError) {
+        fieldErrors['body_layout'] = depthError;
+      } else if (Buffer.byteLength(JSON.stringify(layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
+        fieldErrors['body_layout'] = `body_layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
+      }
     }
 
     const wrapperContent: unknown = payload?.wrapper_content;

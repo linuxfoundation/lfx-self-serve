@@ -49,13 +49,15 @@ export function validateNewsletterEditionPayload(
   }
 
   const layoutPresent = payload.body_layout !== undefined && payload.body_layout !== null;
-  if (layoutPresent && (typeof payload.body_layout !== 'object' || !Array.isArray(payload.body_layout!.blocks))) {
+  const layoutHasBlocks = layoutPresent && typeof payload.body_layout === 'object' && Array.isArray(payload.body_layout!.blocks);
+  // Depth before the byte cap: JSON.stringify recurses and would throw on a very deep layout first.
+  const depthError = layoutHasBlocks ? newsletterLayoutDepthError(payload.body_layout!.blocks) : null;
+  if (layoutPresent && !layoutHasBlocks) {
     fieldErrors['body_layout'] = 'A block layout must have a blocks array';
+  } else if (depthError) {
+    fieldErrors['body_layout'] = depthError;
   } else if (layoutPresent && Buffer.byteLength(JSON.stringify(payload.body_layout), 'utf8') > NEWSLETTER_BODY_LAYOUT_MAX_BYTES) {
     fieldErrors['body_layout'] = `Layout must be ${NEWSLETTER_BODY_LAYOUT_MAX_BYTES} bytes or fewer when serialized`;
-  } else if (layoutPresent) {
-    const depthError = newsletterLayoutDepthError(payload.body_layout!.blocks);
-    if (depthError) fieldErrors['body_layout'] = depthError;
   }
   // body_html is capped only on the html path. With a layout the service re-renders it.
   if (payload.body_html !== undefined && typeof payload.body_html !== 'string') {

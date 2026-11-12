@@ -37,7 +37,7 @@ import {
   NEWSLETTER_SPACING_MARGIN_KEY,
   NEWSLETTER_SPACING_PADDING_KEY,
 } from '@lfx-one/shared/constants';
-import { humanizeFieldKey, isValidUrl, stripRichtextAttributes } from '@lfx-one/shared/utils';
+import { humanizeFieldKey, isValidUrl, newsletterLayoutDepth, stripRichtextAttributes } from '@lfx-one/shared/utils';
 import {
   NewsletterBlock,
   NewsletterBlockManifestEntry,
@@ -148,6 +148,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   // === Writable Signals ===
   protected readonly isBrowser = signal<boolean>(false);
+  // The saved layout nests deeper than the editor supports (only possible through the API). The editor doesn't
+  // load it or emit any layout, so the stored blocks can't be overwritten by a cut-down copy (#5296).
+  protected readonly layoutTooDeep = signal<boolean>(false);
   // The canvas: the ordered top-level blocks the user has composed.
   protected readonly blocks = signal<NewsletterComposerBlock[]>([]);
   // The currently selected block (top-level or container child), edited in the
@@ -387,7 +390,9 @@ export class NewsletterBlockComposerComponent implements OnInit {
     this.templateForm.controls.template.setValue(activeKey, { emitEvent: false });
     this.templateForm.controls.template.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((key) => this.onTemplatePicked(key));
 
-    if (seed?.blocks?.length) {
+    if (seed?.blocks?.length && newsletterLayoutDepth(seed.blocks, NEWSLETTER_LAYOUT_MAX_DEPTH) > NEWSLETTER_LAYOUT_MAX_DEPTH) {
+      this.layoutTooDeep.set(true);
+    } else if (seed?.blocks?.length) {
       this.blocks.set(seed.blocks.map((block) => this.hydrate(block)));
     }
 
@@ -1386,7 +1391,11 @@ export class NewsletterBlockComposerComponent implements OnInit {
     if (!block) return;
     // `field` may be a dotted/indexed path into an `each` item (e.g.
     // `jobs.0.company`); write into the nested array/object rather than a flat key.
-    if (getAtPath(block.content, field) === next) return;
+    const stored = getAtPath(block.content, field);
+    if (stored === next) return;
+    // The canvas shows rich text with class (and any target but _blank) stripped. If that's the only difference,
+    // the author hasn't edited anything, so keep the stored value as it is.
+    if (richtext && typeof stored === 'string' && stripRichtextAttributes(stored) === next) return;
 
     const content = setAtPath(block.content, field, next);
     this.blocks.update((current) => this.patchContent(current, blockId, content));
@@ -1532,6 +1541,8 @@ export class NewsletterBlockComposerComponent implements OnInit {
 
   /** Project the canvas into a NewsletterLayout and emit it. */
   private emit(): void {
+    // A layout too deep to load is never replaced from here. See layoutTooDeep.
+    if (this.layoutTooDeep()) return;
     this.layoutChange.emit(this.toLayout());
   }
 

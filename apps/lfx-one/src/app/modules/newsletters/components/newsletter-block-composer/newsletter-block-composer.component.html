@@ -235,6 +235,11 @@
 
     <!-- Canvas / live preview ----------------------------------------------- -->
     <section class="flex min-h-64 w-full min-w-0 flex-1 flex-col gap-3" data-testid="newsletter-composer-canvas-wrapper">
+      @if (layoutTooDeep()) {
+        <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" data-testid="newsletter-composer-layout-too-deep">
+          This draft has blocks nested more deeply than the editor supports, so it can't be edited here. Nothing in it has been changed.
+        </div>
+      }
       <!-- Preview controls: viewport (desktop / mobile) + backdrop (light / dark). -->
       <div class="flex items-center justify-between gap-2">
         <h3 class="text-sm font-semibold text-gray-700">Newsletter</h3>

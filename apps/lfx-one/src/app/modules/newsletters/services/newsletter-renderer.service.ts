@@ -197,25 +197,28 @@ export class NewsletterRendererService {
   /**
    * The field keys a block's template uses as a whole link (`href`) or image (`src`) URL, with the attribute.
    * The fields panel uses it to flag a value the canvas and the sent email would drop. Only an attribute that is
-   * exactly one `{{field}}` binding counts, and a binding inside an `each` maps to the item's own key. Returns an
-   * empty map on the server or without a template.
+   * exactly one `{{field}}` binding counts. A binding inside `each="items"` is keyed `items.<key>`, so it is never
+   * confused with a block field of the same name. Returns an empty map on the server or without a template.
    */
   public collectUrlFields(template: string | undefined): Map<string, NewsletterUrlAttr> {
     const fields = new Map<string, NewsletterUrlAttr>();
     if (!isPlatformBrowser(this.platformId) || !template) {
       return fields;
     }
-    const walk = (nodes: TemplateNode[]): void => {
+    const walk = (nodes: TemplateNode[], prefix: string): void => {
       for (const node of nodes) {
         if (node.kind !== 'element') continue;
+        // An each= element repeats per item, and the item replaces the binding context (see itemContext), so its
+        // own attributes and its children bind the item's keys.
+        const scope = node.attrs['each'] !== undefined ? [prefix, node.attrs['each']].filter(Boolean).join('.') : prefix;
         for (const attr of URL_ATTRS) {
           const key = WHOLE_BINDING_RE.exec(node.attrs[attr] ?? '')?.[1];
-          if (key) fields.set(key.split('.').pop() as string, attr);
+          if (key) fields.set([scope, key].filter(Boolean).join('.'), attr);
         }
-        walk(node.children);
+        walk(node.children, scope);
       }
     };
-    walk(parseTemplate(template));
+    walk(parseTemplate(template), '');
     return fields;
   }
 

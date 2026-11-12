@@ -144,14 +144,24 @@ describe('NewsletterBlockFieldsComponent', () => {
       new Map([
         ['url', 'href'],
         ['image', 'src'],
-        ['link', 'href'],
+        ['items.link', 'href'],
+        ['cta', 'href'],
       ])
     );
     setInputs(
-      { url: { type: 'text' }, image: { type: 'image' }, items: { type: 'array', fields: { link: { type: 'text' } } } },
+      {
+        url: { type: 'text' },
+        image: { type: 'image' },
+        cta: { type: 'text' },
+        link: { type: 'text' },
+        items: { type: 'array', fields: { link: { type: 'text' } } },
+      },
       block('b1', {
         url: 'javascript:alert(1)',
         image: 'https://example.com/a.png',
+        // An empty link field is fine, and a plain text field named like an item's link isn't a link.
+        cta: '',
+        link: 'see below',
         items: [{ link: 'mailto:team@example.com' }, { link: 'data:text/html,x' }],
       })
     );
@@ -161,6 +171,6 @@ describe('NewsletterBlockFieldsComponent', () => {
     priv().form()?.get('url')?.setValue('https://example.com');
     expect(priv().urlErrors()['url']).toBeUndefined();
     priv().form()?.get('image')?.setValue('mailto:team@example.com');
-    expect(priv().urlErrors()['image']).toContain('https://');
+    expect(priv().urlErrors()['image']).toContain('left out of the newsletter');
   });
 });

@@ -201,9 +201,13 @@ describe('newsletterLayoutDepth', () => {
 });
 
 describe('stripRichtextAttributes', () => {
-  it('removes class and target from tags and leaves everything else', () => {
-    expect(stripRichtextAttributes('<p class="fixed inset-0">Hi</p><a href="https://example.com" target="_blank" title="t">x</a>')).toBe(
+  it('removes class and any target but _blank, and leaves everything else', () => {
+    expect(stripRichtextAttributes('<p class="fixed inset-0">Hi</p><a href="https://example.com" target="_top" title="t">x</a>')).toBe(
       '<p>Hi</p><a href="https://example.com" title="t">x</a>'
+    );
+    // The rich text editor writes target="_blank" on every link, so stripping it would change saved content.
+    expect(stripRichtextAttributes('<a href="https://example.com" target="_blank" rel="noopener">x</a>')).toBe(
+      '<a href="https://example.com" target="_blank" rel="noopener">x</a>'
     );
   });
 

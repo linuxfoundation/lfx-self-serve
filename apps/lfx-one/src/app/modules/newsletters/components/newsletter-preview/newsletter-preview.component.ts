@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, Signal } from '@angular/core';
+import { Component, computed, inject, input, SecurityContext, Signal } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { withNewsletterPreviewDate } from '@lfx-one/shared/utils';
+import { stripRichtextAttributes, withNewsletterPreviewDate } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-newsletter-preview',
@@ -47,6 +47,10 @@ export class NewsletterPreviewComponent {
   // isolated frame and cannot script or reach the host page. A <base
   // target="_blank"> is added so every link opens in a new tab rather than inside
   // the frame, which most sites refuse to be loaded in.
+  // An authored fragment renders in the app page, not a frame. It is sanitized, and then class (and any target but
+  // _blank) is stripped, which Angular's sanitizer keeps. Otherwise a stored class could use the app's own styles
+  // to draw over the page, e.g. in the guest reader (#5295).
+  public readonly fragmentHtml: Signal<string> = computed(() => stripRichtextAttributes(this.sanitizer.sanitize(SecurityContext.HTML, this.bodyHtml()) ?? ''));
   public readonly trustedDocument: Signal<SafeHtml> = computed(() => {
     const sendDate = this.sendDate();
     const html = withNewsletterPreviewDate(this.bodyHtml(), sendDate ? new Date(sendDate) : undefined);

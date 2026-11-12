@@ -361,8 +361,8 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
         if (!isSafeUrlForAttr(attr, raw.trim())) {
           errors[path] =
             attr === 'href'
-              ? 'Use a link that starts with https:// or mailto:. Other links are left out of the newsletter.'
-              : 'Use an image link that starts with https://. Other links are left out of the newsletter.';
+              ? 'This link would be left out of the newsletter. Use a full web address, e.g. https://example.com, or a mailto: link.'
+              : 'This image would be left out of the newsletter. Use a full web address, e.g. https://example.com/image.png.';
         }
       };
       for (const entry of this.fieldEntries()) {
@@ -370,7 +370,7 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
         if (entry.type === 'array' && Array.isArray(raw)) {
           raw.forEach((item, index) => {
             for (const nested of Object.keys(entry.fields ?? {})) {
-              check(`${entry.key}.${index}.${nested}`, urlFields.get(nested), (item as Record<string, unknown> | null)?.[nested]);
+              check(`${entry.key}.${index}.${nested}`, urlFields.get(`${entry.key}.${nested}`), (item as Record<string, unknown> | null)?.[nested]);
             }
           });
         } else {

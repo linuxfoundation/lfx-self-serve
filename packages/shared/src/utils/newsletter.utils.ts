@@ -5,11 +5,11 @@ import {
   NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED,
   NEWSLETTER_BLOCKS_PROJECT_SLUGS,
   NEWSLETTER_DATE_TIME_ZONE,
+  NEWSLETTER_LAYOUT_MAX_DEPTH,
   NEWSLETTER_PUBLICATION_REPLY_TO_MAX_LENGTH,
   NEWSLETTER_REPLY_TO_LOCAL_PART_MAX_LENGTH,
   NEWSLETTER_SEND_DATE_PLACEHOLDER,
 } from '../constants/newsletter.constants';
-import { NEWSLETTER_LAYOUT_MAX_DEPTH } from '../constants/newsletter.constants';
 import { EMAIL_DOT_ATOM_REGEX } from '../constants/regex.constants';
 import { NewsletterShareTally } from '../interfaces/newsletter.interface';
 import { SocialShareChannel } from '../interfaces/social-share.interface';
@@ -165,10 +165,11 @@ export function newsletterLayoutDepthError(blocks: unknown): string | null {
 }
 
 /**
- * Removes `class` and `target` attributes from rich text that has already been through Angular's HTML sanitizer,
- * which keeps both (#5295). It relies on the sanitizer's output, where attribute values are always double-quoted
- * and `<`, `>` and `"` inside them are encoded, so every `<...>` is a tag. Don't use it on unsanitized HTML.
+ * Removes `class`, and any `target` other than `_blank`, from rich text that has already been through Angular's
+ * HTML sanitizer, which keeps both (#5295). `target="_blank"` stays because the rich text editor writes it on
+ * every link. It relies on the sanitizer's output, where attribute values are always double-quoted and `<`, `>`
+ * and `"` inside them are encoded, so every `<...>` is a tag. Don't use it on unsanitized HTML.
  */
 export function stripRichtextAttributes(html: string): string {
-  return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\s(?:class|target)="[^"]*"/gi, ''));
+  return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\s(?:class="[^"]*"|target="(?!_blank")[^"]*")/gi, ''));
 }

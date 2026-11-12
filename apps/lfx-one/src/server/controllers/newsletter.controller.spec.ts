@@ -498,6 +498,23 @@ describe('NewsletterController create/update — layout validation', () => {
     expect(createNewsletter).not.toHaveBeenCalled();
   });
 
+  it('rejects a layout thousands of levels deep with the depth error, not a stack overflow (#5296)', async () => {
+    const next = vi.fn();
+    let deep: Record<string, unknown> = { block_type: 'text' };
+    for (let i = 0; i < 20_000; i++) deep = { block_type: 'card', blocks: [deep] };
+    const payload = {
+      subject: 'Hello',
+      body_layout: { wrapper_key: 'default', blocks: [deep] },
+      ed_reply_email: 'ed@example.com',
+      committee_uids: ['committee-1'],
+    };
+
+    await new NewsletterController().createNewsletter({ params: { projectUid: 'p1' }, body: payload as any, path: '/x' } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(createNewsletter).not.toHaveBeenCalled();
+  });
+
   it('rejects a layout nested deeper than the editor supports (#5296)', async () => {
     const next = vi.fn();
     const blocks = [{ block_type: 'card', blocks: [{ block_type: 'card', blocks: [{ block_type: 'text' }] }] }];
