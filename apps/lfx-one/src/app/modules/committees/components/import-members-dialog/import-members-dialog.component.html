@@ -135,6 +135,17 @@
       } @else if (phase() === 'importing') {
         <p class="text-sm text-gray-600" data-testid="import-members-progress">Adding members: {{ batchSettled() }} of {{ batchTotal() }} done…</p>
       }
+      @if (phase() === 'importing') {
+        <!-- The fill includes an estimate for the in-flight batch; the value text announces only confirmed rows. -->
+        <div data-testid="import-members-progress-bar">
+          <lfx-ui-progress
+            [value]="progressValue()"
+            [max]="batchTotal()"
+            label="Estimated import progress"
+            [showLabel]="false"
+            [valueText]="batchSettled() + ' of ' + batchTotal() + ' done'" />
+        </div>
+      }
 
       @if (stopReason() && !stopping()) {
         <p role="alert" class="text-sm text-red-700" data-testid="import-members-stop-reason">

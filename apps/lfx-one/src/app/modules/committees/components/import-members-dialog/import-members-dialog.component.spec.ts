@@ -8,7 +8,7 @@ import { HttpErrorResponse, HttpHeaders, provideHttpClient } from '@angular/comm
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MEMBER_IMPORT_BULK_CHUNK_SIZE } from '@lfx-one/shared/constants';
+import { MEMBER_IMPORT_BULK_CHUNK_SIZE, MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeInvite,
@@ -761,6 +761,60 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.addedCount()).toBe(30);
       component.close();
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0 });
+    });
+
+    it('estimates in-flight rows one at a time on the bar while counts and statuses stay confirmed', async () => {
+      await upload(`email\n${emails(30)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      await render();
+
+      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 3);
+      expect(component.estimatedRows()).toBe(3);
+      expect(component.progressValue()).toBe(3);
+      expect(component.batchSettled()).toBe(0);
+      expect(component.addedCount()).toBe(0);
+      expect(component.statusMessage()).toBe('Adding members: 0 of 30 done.');
+      fixture.detectChanges();
+      const bar = query('import-members-progress-bar')?.querySelector('[role="progressbar"]') as HTMLElement;
+      expect(bar.getAttribute('aria-valuenow')).toBe('3');
+      expect(bar.getAttribute('aria-valuemax')).toBe('30');
+      expect(bar.getAttribute('aria-valuetext')).toBe('0 of 30 done');
+
+      // Never completes a chunk on its own: it waits one row short until the response arrives.
+      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 100);
+      expect(component.progressValue()).toBe(24);
+      expect(component.rows()[0].status).toBe('importing');
+
+      respond(0);
+      expect(component.batchSettled()).toBe(25);
+      expect(component.progressValue()).toBe(25);
+
+      // The next chunk's estimate survives the previous chunk's teardown and moves at the learned pace.
+      const learnedRowMs = (MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 103) / 25;
+      vi.advanceTimersByTime(learnedRowMs * 2);
+      expect(component.estimatedRows()).toBe(2);
+      expect(component.progressValue()).toBe(27);
+
+      respond(1);
+      expect(component.phase()).toBe('results');
+      expect(component.estimatedRows()).toBe(0);
+      expect(component.addedCount()).toBe(30);
+    });
+
+    it('drops the estimate back to confirmed rows when a chunk fails', async () => {
+      await upload(`email\n${emails(10)}`);
+      vi.useFakeTimers();
+      component.startImport();
+      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 5);
+      expect(component.progressValue()).toBe(5);
+
+      failBulk(0, 429, { 'Retry-After': '30' });
+      expect(component.paused()).toBe(true);
+      expect(component.estimatedRows()).toBe(0);
+      expect(component.progressValue()).toBe(0);
+      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 5);
+      expect(component.estimatedRows()).toBe(0);
     });
 
     it('sends notification emails when the user opts in', async () => {
