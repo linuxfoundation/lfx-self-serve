@@ -74,7 +74,8 @@ test.describe('Admin Mentors tab actions — structure', () => {
 
       const confirmation = page.locator('.p-confirmdialog');
       await expect(confirmation).toBeVisible();
-      await expect(confirmation.getByRole('button')).toHaveCount(2);
+      // The dialog also renders its own close button, so count the footer's buttons only.
+      await expect(confirmation.locator('.p-dialog-footer').getByRole('button')).toHaveCount(2);
 
       await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
       await expect(confirmation).toHaveCount(0);
