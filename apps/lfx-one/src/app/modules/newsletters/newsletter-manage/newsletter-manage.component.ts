@@ -426,6 +426,11 @@ export class NewsletterManageComponent {
   // The requested_at of each running read this page has seen. The service hands back a running read instead of
   // starting a new one, so a rebuild that gets one of these back may not include the latest add.
   private readonly seenAudienceReads = new Set<string>();
+  // Set when a rebuild request is cancelled before it answers. The service may still have started a read for
+  // it, and the next rebuild could get that read back without knowing it predates its add.
+  private rebuildRequestAbandoned = false;
+  // The resolve pipeline stops when the author leaves, but an email add can still finish afterwards.
+  private pageDestroyed = false;
 
   // === Audience email adds ===
   // Owned here (not by the audience step) because the stepper destroys the step
@@ -539,6 +544,11 @@ export class NewsletterManageComponent {
   });
   // The Recipients list reads the snapshot once it is ready, so it shows exactly who the send will reach and
   // doesn't depend on the live committee read. Until then it reads the committees live, as before.
+  // A saved draft whose snapshot isn't ready yet, so the Send step explains why Send and Schedule are waiting.
+  // A failed snapshot shows its own error instead.
+  protected readonly audiencePreparing = computed(
+    () => !!this.newsletterId() && this.newsletterStatus() === 'draft' && this.audienceFilled() && !this.audienceReady() && this.audience()?.status !== 'failed'
+  );
   protected readonly recipientsNewsletterUid = computed(() => (this.audience()?.status === 'ready' && this.audienceReady() ? this.newsletterId() : null));
   public readonly canSend = computed(
     () =>
@@ -637,6 +647,7 @@ export class NewsletterManageComponent {
     this.initAutosave();
     this.initRecipientCount();
     this.initAudienceOnReturnToDraft();
+    this.destroyRef.onDestroy(() => (this.pageDestroyed = true));
     this.initAudienceNormalization();
     this.initScheduleClock();
     this.initSchedulePastGuard();
@@ -939,7 +950,9 @@ export class NewsletterManageComponent {
         // add finishes after a group switch. Only a selected group is resolved now, so an add resolving after
         // a switch doesn't replace the new group's count.
         this.audienceRebuildNeeded.add(committeeUid);
-        if (this.committeeUidsValue().includes(committeeUid)) {
+        if (this.pageDestroyed) {
+          this.rebuildAudienceAfterLeaving(committeeUid);
+        } else if (this.committeeUidsValue().includes(committeeUid)) {
           this.fetchRecipientCountFor(this.committeeUidsValue(), true);
         }
       },
@@ -1129,6 +1142,19 @@ export class NewsletterManageComponent {
     this.recipientCountTrigger$.next({ uids, refresh });
   }
 
+  /**
+   * An add that finishes after the author left the page starts the rebuild itself. The page's resolve pipeline
+   * has stopped, and the next visit would otherwise reuse a snapshot without this email.
+   */
+  private rebuildAudienceAfterLeaving(committeeUid: string): void {
+    const id = this.newsletterId();
+    const saved = this.lastSavedSnapshot()?.committeeUids ?? [];
+    if (!id || this.newsletterStatus() !== 'draft' || !saved.includes(committeeUid)) return;
+    // Intentionally not takeUntilDestroyed: the page is already gone. The service runs the read in the
+    // background, so only the request itself has to complete.
+    this.newsletterService.resolveAudience(this.projectUid(), id, { committee_uids: saved, refresh: true }).subscribe({ error: () => undefined });
+  }
+
   private updateAudienceEmailAdd(committeeUid: string, email: string, patch: Partial<NewsletterAudienceEmailAdd>): void {
     this.audienceEmailAdds.update((entries) => entries.map((e) => (e.committeeUid === committeeUid && e.email === email ? { ...e, ...patch } : e)));
   }
@@ -1189,11 +1215,18 @@ export class NewsletterManageComponent {
     this.recipientCountLoading.set(true);
     let lastStatus: NewsletterAudience['status'] | null = null;
     let reusedRead = false;
+    let answered = false;
     return this.newsletterService.resolveAudience(projectUid, id, { committee_uids: uids, refresh: rebuild }).pipe(
+      tap(() => (answered = true)),
+      finalize(() => {
+        if (rebuild && !answered) this.rebuildRequestAbandoned = true;
+      }),
       switchMap((audience) => {
         if (audience.status !== 'processing') return of(audience);
-        // A read this page saw running before asking for a rebuild started before the latest add.
-        reusedRead = rebuild && this.seenAudienceReads.has(audience.requested_at);
+        // A read this page saw running before asking for a rebuild, or one an abandoned rebuild request may have
+        // started, began before the latest add.
+        reusedRead = rebuild && (this.seenAudienceReads.has(audience.requested_at) || this.rebuildRequestAbandoned);
+        if (rebuild) this.rebuildRequestAbandoned = false;
         this.seenAudienceReads.add(audience.requested_at);
         // One status check at a time: the next starts NEWSLETTER_AUDIENCE_POLL_MS after the last answer,
         // so a slow response is never cancelled, and the cap counts checks rather than answers.

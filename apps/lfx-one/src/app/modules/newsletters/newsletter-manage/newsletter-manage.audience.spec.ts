@@ -51,6 +51,7 @@ interface AudienceApi {
   handleSendError: (err: HttpErrorResponse, id: string) => void;
   onAddAudienceEmail: (raw: string) => void;
   canSend: () => boolean;
+  audiencePreparing: () => boolean;
 }
 
 describe('NewsletterManageComponent audience snapshot (#4352)', () => {
@@ -64,6 +65,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
   };
   let messageAdd: ReturnType<typeof vi.fn>;
   let createCommitteeMember: ReturnType<typeof vi.fn>;
+  let destroyPage: () => void;
 
   const openDraft = (params: Record<string, string> = { id: 'n-1', projectUid: 'p-1' }): AudienceApi => {
     const paramMap = convertToParamMap(params);
@@ -72,6 +74,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     });
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const fixture = TestBed.createComponent(NewsletterManageComponent);
+    destroyPage = () => fixture.destroy();
     TestBed.tick();
     return fixture.componentInstance as unknown as AudienceApi;
   };
@@ -138,6 +141,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     expect(api.audienceReady()).toBe(false);
     expect(api.recipientCountLoading()).toBe(true);
     expect(api.recipientsNewsletterUid()).toBeNull();
+    expect(api.audiencePreparing()).toBe(true);
 
     vi.advanceTimersByTime(2000);
     TestBed.tick();
@@ -145,6 +149,7 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     expect(api.recipientsNewsletterUid()).toBe('n-1');
     expect(api.recipientCount()).toBe(17064);
     expect(api.recipientCountLoading()).toBe(false);
+    expect(api.audiencePreparing()).toBe(false);
     expect(newsletterService.getAudience).toHaveBeenCalledTimes(2);
   });
 
@@ -285,5 +290,40 @@ describe('NewsletterManageComponent audience snapshot (#4352)', () => {
     expect(newsletterService.resolveAudience).toHaveBeenCalledTimes(2);
     expect(api.recipientCount()).toBe(1580);
     expect(api.audienceReady()).toBe(true);
+  });
+
+  it('rebuilds once more when a second add cancels a rebuild request that had not answered', () => {
+    newsletterService.resolveAudience
+      .mockReturnValueOnce(of(audience({ recipient_count: 1580 })))
+      .mockReturnValueOnce(new Subject<NewsletterAudience>())
+      .mockReturnValueOnce(of(audience({ status: 'processing', requested_at: 'read-1' })))
+      .mockReturnValueOnce(of(audience({ status: 'processing', requested_at: 'read-2' })));
+    newsletterService.getAudience.mockReturnValueOnce(of(audience({ recipient_count: 1581 }))).mockReturnValueOnce(of(audience({ recipient_count: 1582 })));
+    const api = openDraft();
+
+    api.onAddAudienceEmail('first@example.com');
+    TestBed.tick();
+    api.onAddAudienceEmail('second@example.com');
+    TestBed.tick();
+
+    // read-1 may be the read the cancelled request started, before the second add, so the page asked again.
+    expect(newsletterService.resolveAudience).toHaveBeenCalledTimes(4);
+    expect(api.recipientCount()).toBe(1582);
+    expect(api.audienceReady()).toBe(true);
+  });
+
+  it('starts the rebuild itself when an add finishes after the author left the page', () => {
+    const api = openDraft();
+    const add = new Subject<unknown>();
+    createCommitteeMember.mockReturnValue(add);
+    api.onAddAudienceEmail('late@example.com');
+    newsletterService.resolveAudience.mockClear();
+    newsletterService.resolveAudience.mockReturnValue(of(audience({ status: 'processing' })));
+
+    destroyPage();
+    add.next({});
+    add.complete();
+
+    expect(newsletterService.resolveAudience).toHaveBeenCalledWith('p-1', 'n-1', { committee_uids: ['c-1'], refresh: true });
   });
 });
