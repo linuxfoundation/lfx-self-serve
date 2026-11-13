@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MeetingService } from '@services/meeting.service';
 import { concatMap, debounceTime, groupBy, map, mergeMap, Subject } from 'rxjs';
 
@@ -27,7 +28,9 @@ export class MeetingRollupPreferenceService {
         mergeMap((changesForRoot) => changesForRoot.pipe(debounceTime(600))),
         concatMap(({ rootUid, projectUids }) =>
           this.meetingService.saveRollupProjectsPreference(rootUid, projectUids).pipe(map((saved) => ({ rootUid, projectUids, saved })))
-        )
+        ),
+        // Ends with the app's (or, during server rendering, the request's) root injector.
+        takeUntilDestroyed()
       )
       .subscribe(({ rootUid, projectUids, saved }) => {
         if (!saved && this.latest.get(rootUid) === projectUids) {
