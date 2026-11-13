@@ -59,6 +59,7 @@ describe('SidebarNavService', () => {
   const claManagerOrgSet = signal(new Set<string>());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
+  const activeProject = signal<{ uid: string; parent_uid?: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
   const personaLoaded = signal(true);
   const personaLookupFailed = signal(false);
@@ -90,6 +91,7 @@ describe('SidebarNavService', () => {
     activeLens.set('foundation');
     menuLensPreview.set(null);
     selectedProject.set(null);
+    activeProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
     cfOrgDonationsEnabled.set(false);
@@ -165,6 +167,7 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
+            activeProject,
             menuCanWrite: canWrite,
             menuProjectStage: activeProjectStage,
             menuProjectStageResolved: activeProjectStageResolved,
@@ -372,9 +375,18 @@ describe('SidebarNavService', () => {
     expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
   });
 
-  it("shows Participating companies when the ED directs the active project's parent foundation", () => {
+  it('shows Participating companies when the stored selection carries the parent foundation uid', () => {
     activeLens.set('project');
     selectedProject.set({ uid: 'child', slug: 'child', parent_uid: 'f-uid' } as never);
+    personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
+  });
+
+  it('shows Participating companies when only the fetched project record carries the parent foundation uid', () => {
+    activeLens.set('project');
+    selectedProject.set({ uid: 'child', slug: 'child' } as never);
+    activeProject.set({ uid: 'child', parent_uid: 'f-uid' });
     personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
 
     expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
