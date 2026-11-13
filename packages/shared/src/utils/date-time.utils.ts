@@ -1123,9 +1123,3 @@ export function timeAgo(timestamp: string): string {
   if (diffDays < 365) return pluralize(diffMonths, 'month');
   return pluralize(diffYears, 'year');
 }
-
-/** `2026-11-11` → `Nov 11, 2026`, pinned to en-US and UTC so SSR and the browser render the same text; an unparseable value is returned as is. */
-export const formatIsoDateShort = (iso: string): string => {
-  const date = new Date(`${iso}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-};

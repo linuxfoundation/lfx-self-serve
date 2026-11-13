@@ -32,7 +32,7 @@ import {
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
-import { formatIsoDateShort } from '@lfx-one/shared/utils';
+import { formatIsoDateLabel } from '@lfx-one/shared/utils';
 import type {
   FilterPillOption,
   FoundationParticipatingOrgBreakdownState,
@@ -480,7 +480,7 @@ export class FoundationParticipatingOrgsComponent {
     const summary = this.summary();
     // Nothing is claimed about the source until a summary says what the figures are.
     if (!summary) return '';
-    const date = formatIsoDateShort(summary.asOfDate);
+    const date = formatIsoDateLabel(summary.asOfDate);
     return summary.dataSource === 'demo' ? `Fictional demo data, generated ${date} · not from LFX Insights` : `Data through ${date} · Source: LFX Insights`;
   }
 
@@ -548,8 +548,18 @@ export class FoundationParticipatingOrgsComponent {
 
   private initExportMenu(): MenuItem[] {
     return [
-      { id: 'foundation-participating-orgs-export-summary', label: 'Company summary', title: 'One row per company · foundation totals', command: () => this.export('summary') },
-      { id: 'foundation-participating-orgs-export-by-project', label: 'Companies by project', title: 'One row per company and project', command: () => this.export('by-project') },
+      {
+        id: 'foundation-participating-orgs-export-summary',
+        label: 'Company summary',
+        title: 'One row per company · foundation totals',
+        command: () => this.export('summary'),
+      },
+      {
+        id: 'foundation-participating-orgs-export-by-project',
+        label: 'Companies by project',
+        title: 'One row per company and project',
+        command: () => this.export('by-project'),
+      },
     ];
   }
 
