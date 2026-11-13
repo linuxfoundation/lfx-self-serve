@@ -299,6 +299,8 @@ export class MeetingsDashboardComponent {
   private pastPageToken = signal<string | undefined>(undefined);
   private loadMoreUpcoming$ = new Subject<string>();
   private loadMorePast$ = new Subject<string>();
+  // The root the loaded roll-up filter options belong to; null while a root's options are loading.
+  private rollupOptionsRootUid: string | null = null;
   // Set once the user changes the selection for the current root, so a late saved choice does not overwrite it.
   private rollupProjectsTouched = false;
   // Bumped whenever a list's first page is requested again, so a Load More page of the previous query is discarded.
@@ -1273,7 +1275,16 @@ export class MeetingsDashboardComponent {
       combineLatest([toObservable(this.project), toObservable(this.activeLens)]).pipe(
         map(([project, lens]) => (lens === 'me' || !isPlatformBrowser(this.platformId) ? null : (project?.uid ?? null))),
         distinctUntilChanged(),
-        switchMap((uid) => (uid ? this.meetingService.getRollupFilterOptions(uid).pipe(startWith(empty)) : of(empty)))
+        switchMap((uid) => {
+          this.rollupOptionsRootUid = null;
+          if (!uid) {
+            return of(empty);
+          }
+          return this.meetingService.getRollupFilterOptions(uid).pipe(
+            tap(() => (this.rollupOptionsRootUid = uid)),
+            startWith(empty)
+          );
+        })
       ),
       { initialValue: empty }
     );
@@ -1433,7 +1444,9 @@ export class MeetingsDashboardComponent {
           const choice$ =
             fromLink || sessionChoice ? of<string[] | null>(fromLink ?? sessionChoice ?? null) : this.meetingService.getRollupProjectsPreference(rootUid);
           const rootOptions$ = options$.pipe(
-            filter((options) => options.projects.some((p) => p.uid === rootUid)),
+            // Only options loaded for this root: a previous root's (which may contain this one) would let a
+            // saved choice keep projects outside this tree.
+            filter((options) => this.rollupOptionsRootUid === rootUid && options.projects.some((p) => p.uid === rootUid)),
             take(1)
           );
           return choice$.pipe(

@@ -16,6 +16,7 @@ import type {
   Meeting,
   MeetingDashboardView,
   MeetingResponseFilter,
+  MeetingRollupFilterOptions,
   PaginatedResponse,
   PastMeeting,
   ProjectContext,
@@ -1048,6 +1049,39 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
 
         expect(component.rollupProjectsFilter()).toEqual(['child']);
         expect(meetings.getRollupProjectsPreference).not.toHaveBeenLastCalledWith('scope');
+      });
+
+      it("seeds a child root only from its own options, not the parent's that contain it", () => {
+        const childOptions = new Subject<MeetingRollupFilterOptions>();
+        vi.mocked(meetings.getRollupFilterOptions).mockImplementation((root) =>
+          root === 'child'
+            ? childOptions
+            : of({
+                projects: [
+                  { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+                  { uid: 'child', name: 'Child project', slug: 'child' },
+                  { uid: 'sibling', name: 'Sibling', slug: 'sibling' },
+                ],
+                groups: [],
+              })
+        );
+        vi.mocked(meetings.getRollupProjectsPreference).mockImplementation((root) => of(root === 'child' ? ['child', 'sibling'] : null));
+        const component = mount();
+        openScope(component);
+
+        context.set({ uid: 'child', name: 'Child project' } as ProjectContext);
+        flush();
+        expect(component.rollupProjectsFilter()).toEqual([]);
+
+        childOptions.next({
+          projects: [
+            { uid: 'child', name: 'Child project', slug: 'child' },
+            { uid: 'grandchild', name: 'Grandchild', slug: 'grandchild' },
+          ],
+          groups: [],
+        });
+        flush();
+        expect(component.rollupProjectsFilter()).toEqual([]);
       });
 
       it('lets a link with projects win over the saved choice', () => {
