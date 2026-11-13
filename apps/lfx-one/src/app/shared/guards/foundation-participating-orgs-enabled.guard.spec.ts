@@ -15,7 +15,7 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
   let providerReady: ReturnType<typeof signal<boolean>>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
   let waitForReady: ReturnType<typeof vi.fn>;
-  let router: { createUrlTree: ReturnType<typeof vi.fn> };
+  let router: { createUrlTree: ReturnType<typeof vi.fn>; getCurrentNavigation: ReturnType<typeof vi.fn> };
 
   const route: Route = { path: 'foundation/participating-orgs' };
   const segments: UrlSegment[] = [];
@@ -28,7 +28,15 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
     providerReady = signal(true);
     getBooleanFlag = vi.fn().mockReturnValue(signal(false));
     waitForReady = vi.fn().mockResolvedValue(true);
-    router = { createUrlTree: vi.fn().mockImplementation((commands: string[]) => ({ redirected: commands.join('/') })) };
+    router = {
+      createUrlTree: vi
+        .fn()
+        .mockImplementation((commands: string[], extras?: { queryParams: { project: string } }) => ({
+          redirected: commands.join('/'),
+          project: extras?.queryParams.project,
+        })),
+      getCurrentNavigation: vi.fn().mockReturnValue(null),
+    };
 
     TestBed.configureTestingModule({
       providers: [
@@ -58,7 +66,7 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
   it('redirects to the foundation overview when the override turns the flag off', async () => {
     getFlagOverride.mockReturnValue(false);
 
-    expect(await runGuard()).toEqual({ redirected: '/foundation/overview' });
+    expect(await runGuard()).toEqual({ redirected: '/foundation/overview', project: undefined });
     expect(waitForReady).not.toHaveBeenCalled();
   });
 
@@ -70,7 +78,7 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
   });
 
   it('redirects when the provider is ready and the flag is off', async () => {
-    expect(await runGuard()).toEqual({ redirected: '/foundation/overview' });
+    expect(await runGuard()).toEqual({ redirected: '/foundation/overview', project: undefined });
   });
 
   it('waits for the provider, then evaluates the flag', async () => {
@@ -85,7 +93,14 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
     providerReady.set(false);
     waitForReady.mockResolvedValue(false);
 
-    expect(await runGuard()).toEqual({ redirected: '/foundation/overview' });
+    expect(await runGuard()).toEqual({ redirected: '/foundation/overview', project: undefined });
     expect(getBooleanFlag).not.toHaveBeenCalled();
+  });
+
+  it('keeps the requested foundation in the redirect', async () => {
+    getFlagOverride.mockReturnValue(false);
+    router.getCurrentNavigation.mockReturnValue({ extractedUrl: { queryParams: { project: 'sample-foundation' } } });
+
+    expect(await runGuard()).toEqual({ redirected: '/foundation/overview', project: 'sample-foundation' });
   });
 });

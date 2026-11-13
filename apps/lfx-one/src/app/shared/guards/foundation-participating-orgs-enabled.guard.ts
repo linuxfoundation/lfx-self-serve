@@ -23,7 +23,9 @@ export const foundationParticipatingOrgsEnabledGuard: CanMatchFn = async () => {
 
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
-  const fallback = router.createUrlTree(['/foundation/overview']);
+  // Keep the foundation the user was on: the overview resolves its foundation from `?project=`, so dropping it would open the default one.
+  const project = router.getCurrentNavigation()?.extractedUrl.queryParams['project'] as string | undefined;
+  const fallback = router.createUrlTree(['/foundation/overview'], project ? { queryParams: { project } } : undefined);
 
   const override = featureFlagService.getFlagOverride(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG);
   if (override !== undefined) {
