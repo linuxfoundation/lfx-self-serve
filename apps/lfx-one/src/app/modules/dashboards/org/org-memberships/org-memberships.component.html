@@ -416,7 +416,9 @@
                       </div>
                     </td>
                     @if (isRollUp()) {
-                      <td class="text-sm text-gray-700" [attr.data-testid]="'memberships-expired-company-' + membership.foundationId">
+                      <td
+                        class="text-sm text-gray-700"
+                        [attr.data-testid]="'memberships-expired-company-' + membership.foundationId + '-' + membership.organization?.accountId">
                         {{ membership.organization?.name }}
                       </td>
                     }

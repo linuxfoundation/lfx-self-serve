@@ -110,16 +110,12 @@ export class OrgLensMembershipsService {
     };
   }
 
-  /**
-   * The warehouse keeps one row per foundation for the family (the latest expiry, none where any family organization still
-   * holds the foundation; pending product confirmation). A row naming an organization the caller cannot read is left out.
-   */
   public async getFamilyExpiredMemberships(scope: OrgLensRollUpScope, search?: string, company?: string): Promise<OrgExpiredMembershipsResponse> {
     const organizations = OrgLensMembershipsService.rowOrganizations(scope);
     const nameOf = new Map(organizations.map((organization) => [organization.accountId, organization]));
     const rows = await withOrgCache(
       scope.rollUpKey,
-      'memberships-expired-family:v2',
+      'memberships-expired-family:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchFamilyExpiredMembershipRows(scope.rootUid),
       OrgLensMembershipsService.isRawRowArray
@@ -432,8 +428,7 @@ export class OrgLensMembershipsService {
         ACTION_TYPE
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_EXPIRED_MEMBERSHIPS
       WHERE FAMILY_ACCOUNT_ID = ?
-        AND IS_FAMILY_ROLLUP_ROW
-      ORDER BY FOUNDATION_NAME ASC
+      ORDER BY FOUNDATION_NAME ASC, ACCOUNT_ID ASC
     `;
 
     const result = await this.snowflakeService.execute<OrgLensExpiredMembershipRow>(query, [familyAccountId]);

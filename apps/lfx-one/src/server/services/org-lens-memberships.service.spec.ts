@@ -168,10 +168,9 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     IS_RENEWING_WITHIN_90_DAYS: false,
     ...overrides,
   });
-  const expired = (account: string, foundation: string, expiration: string, isFamilyRollUpRow = true) => ({
+  const expired = (account: string, foundation: string, expiration: string) => ({
     ACCOUNT_ID: account,
     FAMILY_ACCOUNT_ID: PARENT,
-    IS_FAMILY_ROLLUP_ROW: isFamilyRollUpRow,
     FOUNDATION_ID: foundation,
     FOUNDATION_NAME: foundation.toUpperCase(),
     FOUNDATION_SLUG: foundation,
@@ -184,13 +183,8 @@ describe('OrgLensMembershipsService — family roll-up', () => {
   });
 
   let tables: { active: Record<string, unknown>[]; expired: Record<string, unknown>[] };
-  // Stands in for the warehouse: a family read binds the family key and, where the SQL asks, keeps only its roll-up rows.
   const read = (sql: string, binds: string[], rows: Record<string, unknown>[]) =>
-    rows.filter(
-      (row) =>
-        (sql.includes('WHERE FAMILY_ACCOUNT_ID = ?') ? row['FAMILY_ACCOUNT_ID'] === binds[0] : row['ACCOUNT_ID'] === binds[0]) &&
-        (!sql.includes('IS_FAMILY_ROLLUP_ROW') || row['IS_FAMILY_ROLLUP_ROW'] === true)
-    );
+    rows.filter((row) => (sql.includes('WHERE FAMILY_ACCOUNT_ID = ?') ? row['FAMILY_ACCOUNT_ID'] === binds[0] : row['ACCOUNT_ID'] === binds[0]));
   beforeEach(() => {
     execute.mockReset();
     withOrgCacheMock.mockClear();
@@ -312,17 +306,19 @@ describe('OrgLensMembershipsService — family roll-up', () => {
   });
 
   describe('expired memberships', () => {
-    it('reads only the family’s roll-up rows by its warehouse key, each naming whose membership it was', async () => {
-      tables.expired = [expired(SUBSIDIARY, 'lfn', '2029-03-31'), expired(PARENT, 'lfn', '2028-12-31', false), expired(PARENT, 'oif', '2027-01-31')];
+    it('reads every expired membership of the family by its warehouse key, one row per organization, each naming its organization', async () => {
+      tables.expired = [expired(PARENT, 'lfn', '2028-12-31'), expired(SUBSIDIARY, 'lfn', '2029-03-31'), expired(PARENT, 'oif', '2027-01-31')];
 
       const response = await new OrgLensMembershipsService().getFamilyExpiredMemberships(scope());
 
       const [sql, binds] = execute.mock.calls[0];
       expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
-      expect(sql).toContain('AND IS_FAMILY_ROLLUP_ROW');
+      expect(sql).not.toContain('IS_FAMILY_ROLLUP_ROW');
+      expect(sql).toContain('ORDER BY FOUNDATION_NAME ASC, ACCOUNT_ID ASC');
       expect(binds).toEqual([PARENT]);
-      expect(cacheKeys).toEqual(['memberships-expired-family:v2']);
+      expect(cacheKeys).toEqual(['memberships-expired-family:v3']);
       expect(response.memberships.map((m) => [m.foundationId, m.expirationDate, m.organization, m.actionType])).toEqual([
+        ['lfn', '2028-12-31', PARENT_ORG, 'renew'],
         ['lfn', '2029-03-31', SUBSIDIARY_ORG, 'renew'],
         ['oif', '2027-01-31', PARENT_ORG, 'renew'],
       ]);
