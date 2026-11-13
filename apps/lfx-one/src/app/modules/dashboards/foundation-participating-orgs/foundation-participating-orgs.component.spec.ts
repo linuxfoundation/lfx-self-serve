@@ -245,6 +245,20 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(fixture.componentInstance['hasActiveFilters']()).toBe(false);
   });
 
+  it('tells a failed refresh of a list already shown from a list that never loaded', async () => {
+    getProjects.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await render();
+    expect(text('foundation-participating-orgs-projects-error')).toContain("can't scope to a project yet");
+
+    getProjects.mockReturnValue(of({ projects: [{ slug: 'project-1', name: 'Synthetic Project 1', maturity: 'Graduated' }] }));
+    fixture.componentInstance['retryProjects']();
+    await settle();
+    getProjects.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    fixture.componentInstance['filterForm'].controls.range.setValue('90d');
+    await settle();
+    expect(text('foundation-participating-orgs-projects-error')).toContain('may be out of date');
+  });
+
   it('names the scoped project by its slug, not as a foundation total, when the project list fails', async () => {
     await render();
     fixture.componentInstance['filterForm'].controls.project.setValue('project-9');

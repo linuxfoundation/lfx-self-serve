@@ -258,3 +258,16 @@ export interface FoundationCompanyActivity {
   /** Every project the company is active in for the range, sorted by commits. */
   lines: FoundationParticipatingOrgProjectLine[];
 }
+
+/**
+ * Seam between the BFF and the warehouse. Today it is backed by the fictional demo foundation (#5707); the
+ * warehouse-backed source must return the same shapes with foundation totals summed from project activity and
+ * contributors de-duplicated across projects.
+ */
+export interface FoundationParticipatingOrgsDataSource {
+  /** What the figures are, so the page can say so: `demo` for the fictional set, `warehouse` for real data. */
+  readonly kind: FoundationParticipatingOrgsDataSourceKind;
+  /** Multiplier from the source's 12 month commit figures to each range (a warehouse source reports every range itself, so it uses 1). */
+  readonly rangeScale: Record<FoundationParticipatingOrgsRange, number>;
+  getFoundation(slug: string): FoundationParticipatingOrgsSourceFoundation;
+}

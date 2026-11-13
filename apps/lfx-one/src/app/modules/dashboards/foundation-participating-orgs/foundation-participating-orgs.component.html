@@ -73,13 +73,11 @@
           }
           <lfx-menu #exportMenuRef [model]="exportMenu()" [popup]="true" appendTo="body" data-testid="foundation-participating-orgs-export-menu">
             <ng-template #item let-item>
-              <button
-                type="button"
-                class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left"
-                (click)="item.command?.({ originalEvent: $event, item })">
+              <!-- The menu item owns the click and keyboard handling, so the template holds text only, not a second button. -->
+              <span class="flex flex-col gap-0.5 px-3 py-2">
                 <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
                 <span class="text-xs text-gray-500">{{ item.title }}</span>
-              </button>
+              </span>
             </ng-template>
           </lfx-menu>
         </lfx-card-tabs-bar>
@@ -145,7 +143,11 @@
             class="mx-5 mb-3 flex flex-wrap items-center gap-2 text-sm text-gray-700"
             role="alert"
             data-testid="foundation-participating-orgs-projects-error">
-            <span>We couldn't load the project list, so you can't scope to a project yet.</span>
+            @if (projects().length > 0) {
+              <span>We couldn't refresh the project list; the one shown may be out of date.</span>
+            } @else {
+              <span>We couldn't load the project list, so you can't scope to a project yet.</span>
+            }
             <lfx-button
               label="Try again"
               severity="secondary"
