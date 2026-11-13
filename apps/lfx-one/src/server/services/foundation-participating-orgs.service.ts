@@ -141,7 +141,8 @@ export class FoundationParticipatingOrgsService {
     let budget = 0;
     for (const row of rows) {
       companyKeys.push(row.participantKey);
-      budget += Math.max(1, row.projectsInvolved);
+      // A project scope has one line per company; the foundation scope has one per project the company is in.
+      budget += filters.projectSlug ? 1 : Math.max(1, row.projectsInvolved);
       if (budget > maxRows) break;
     }
     const read = await this.dataSource().getProjectLines(filters.foundationSlug, filters.range, {

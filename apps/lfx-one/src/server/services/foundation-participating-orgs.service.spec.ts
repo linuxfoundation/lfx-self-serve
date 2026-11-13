@@ -231,6 +231,12 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(getProjectLines.mock.calls[0][2].limit).toBeGreaterThan(0);
     });
 
+    it('budgets one line per company under a project scope, so a wide company does not cut the key list short', async () => {
+      await service.getExportRows(req, { ...base, projectSlug: 'busy' }, 'by-project', 2);
+      // Alpha is in 2 projects, but only its busy line counts here: the second company still gets read.
+      expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['alpha', 'beta', 'gamma']);
+    });
+
     it('reads only the matching companies lines, so filtered-out companies never use the row budget', async () => {
       await service.getExportRows(req, { ...base, search: 'gamma' }, 'by-project');
       expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['gamma']);
