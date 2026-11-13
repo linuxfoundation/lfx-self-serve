@@ -13,9 +13,6 @@ export interface OrgLensMembershipSummaryRow {
   FIRST_MEMBERSHIP_STARTED_AT: string | null;
   BOARD_MEMBER_SEAT_COUNT: number;
   COMMITTEE_MEMBER_SEAT_COUNT: number;
-  /** The seat holders' person keys, read only for a family roll-up's Governance Roles card; never returned to the client. */
-  BOARD_MEMBER_SEAT_KEYS?: string[];
-  COMMITTEE_MEMBER_SEAT_KEYS?: string[];
   ORG_PROJECTS_COUNT: number;
   PROJECT_COUNT: number;
   MEMBER_COUNT: number;

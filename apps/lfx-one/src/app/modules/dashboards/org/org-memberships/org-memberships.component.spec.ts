@@ -289,13 +289,16 @@ describe('OrgMembershipsComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="memberships-page-title"]')?.textContent).toContain('Membership — All Parent Co Organizations');
     });
 
-    it('shows the server’s cards for the filtered rows', async () => {
+    it('shows the server’s cards for the filtered rows, labelled as foundations and memberships', async () => {
       const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
       await settleActiveFetch(fixture);
 
       const stat = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"] p`)?.textContent?.trim();
+      const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
       expect(stat('memberships-stat-active')).toBe('2');
+      expect(text('memberships-stat-active-label')).toBe('Foundations with Membership');
       expect(stat('memberships-stat-renewing')).toBe('1');
+      expect(text('memberships-stat-renewing-label')).toBe('Memberships Renewing Within 90 Days');
       expect(stat('memberships-stat-governance')).toBe('5');
     });
 
@@ -341,12 +344,15 @@ describe('OrgMembershipsComponent', () => {
       expect(getFoundationProjects).toHaveBeenCalledWith(SUBSIDIARY_ORG.accountId, 'cncf');
     });
 
-    it('shows no Company column or filter for a single organization', async () => {
+    it('shows no Company column or filter, and the single-organization card labels, for a single organization', async () => {
       const { fixture } = await render([membershipRow(3)]);
       await settleActiveFetch(fixture);
 
       expect(has(fixture, 'memberships-active-company-header')).toBe(false);
       expect(has(fixture, 'memberships-company-filter')).toBe(false);
+      const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
+      expect(text('memberships-stat-active-label')).toBe('Active Memberships');
+      expect(text('memberships-stat-renewing-label')).toBe('Renewing Within 90 Days');
     });
   });
 });

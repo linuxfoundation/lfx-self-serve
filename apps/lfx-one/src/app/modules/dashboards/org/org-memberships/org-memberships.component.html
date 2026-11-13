@@ -86,7 +86,9 @@
                 } @else {
                   <p class="text-xl font-medium text-gray-900">{{ summary()?.activeMemberships ?? 0 }}</p>
                 }
-                <p class="text-sm font-normal text-gray-900">Active Memberships</p>
+                <p class="text-sm font-normal text-gray-900" data-testid="memberships-stat-active-label">
+                  {{ isRollUp() ? 'Foundations with Membership' : 'Active Memberships' }}
+                </p>
               </div>
             </div>
             <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-renewing">
@@ -99,7 +101,9 @@
                 } @else {
                   <p class="text-xl font-medium text-gray-900">{{ summary()?.renewingWithin90Days ?? 0 }}</p>
                 }
-                <p class="text-sm font-normal text-gray-900">Renewing Within 90 Days</p>
+                <p class="text-sm font-normal text-gray-900" data-testid="memberships-stat-renewing-label">
+                  {{ isRollUp() ? 'Memberships Renewing Within 90 Days' : 'Renewing Within 90 Days' }}
+                </p>
               </div>
             </div>
             <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-governance">

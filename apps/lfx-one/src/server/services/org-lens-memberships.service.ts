@@ -301,24 +301,14 @@ export class OrgLensMembershipsService {
   }
 
   /**
-   * Cards over the rows shown: one membership per (organization, foundation) row, and Governance Roles as the distinct
-   * (foundation, seat type, person key) seats, so a seat credited to two organizations counts once (pending product
-   * confirmation). The person keys are the warehouse's; they never leave the server.
+   * Cards over the rows shown. Active counts each foundation once, however many organizations of the family hold it;
+   * Renewing counts each organization's membership; Governance Roles adds up every row's board and committee seats.
    */
   private static familyMembershipsSummary(rows: readonly OrgLensMembershipSummaryRow[]): OrgMembershipsSummary {
-    const seats = new Set<string>();
-    for (const row of rows) {
-      for (const key of Array.isArray(row.BOARD_MEMBER_SEAT_KEYS) ? row.BOARD_MEMBER_SEAT_KEYS : []) {
-        seats.add(JSON.stringify([row.FOUNDATION_ID, 'board', key]));
-      }
-      for (const key of Array.isArray(row.COMMITTEE_MEMBER_SEAT_KEYS) ? row.COMMITTEE_MEMBER_SEAT_KEYS : []) {
-        seats.add(JSON.stringify([row.FOUNDATION_ID, 'committee', key]));
-      }
-    }
     return {
-      activeMemberships: rows.length,
+      activeMemberships: new Set(rows.map((row) => row.FOUNDATION_ID)).size,
       renewingWithin90Days: rows.filter((row) => row.IS_RENEWING_WITHIN_90_DAYS).length,
-      governanceRoles: seats.size,
+      governanceRoles: rows.reduce((sum, row) => sum + row.BOARD_MEMBER_SEAT_COUNT + row.COMMITTEE_MEMBER_SEAT_COUNT, 0),
     };
   }
 
@@ -398,7 +388,7 @@ export class OrgLensMembershipsService {
     return result.rows;
   }
 
-  /** Every (organization, foundation) row of the family, with the seat holders' person keys for the Governance Roles card. */
+  /** Every (organization, foundation) row of the family. */
   private async fetchFamilyActiveMembershipRows(familyAccountId: string): Promise<OrgLensMembershipSummaryRow[]> {
     const query = `
       SELECT
@@ -413,8 +403,6 @@ export class OrgLensMembershipsService {
         FIRST_MEMBERSHIP_STARTED_AT,
         BOARD_MEMBER_SEAT_COUNT,
         COMMITTEE_MEMBER_SEAT_COUNT,
-        BOARD_MEMBER_SEAT_KEYS,
-        COMMITTEE_MEMBER_SEAT_KEYS,
         ORG_PROJECTS_COUNT,
         PROJECT_COUNT,
         MEMBER_COUNT,

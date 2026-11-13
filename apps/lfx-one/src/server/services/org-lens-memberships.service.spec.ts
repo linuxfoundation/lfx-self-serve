@@ -162,8 +162,6 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     FIRST_MEMBERSHIP_STARTED_AT: '2020-01-01',
     BOARD_MEMBER_SEAT_COUNT: 1,
     COMMITTEE_MEMBER_SEAT_COUNT: 2,
-    BOARD_MEMBER_SEAT_KEYS: [`${account}-board`],
-    COMMITTEE_MEMBER_SEAT_KEYS: [`${account}-committee-1`, `${account}-committee-2`],
     ORG_PROJECTS_COUNT: 3,
     PROJECT_COUNT: 10,
     MEMBER_COUNT: 50,
@@ -220,23 +218,22 @@ describe('OrgLensMembershipsService — family roll-up', () => {
   });
 
   describe('active memberships', () => {
-    it('reads the family by its warehouse key in one query, with the seat keys, cached once per family', async () => {
+    it('reads the family by its warehouse key in one query, cached once per family', async () => {
       await new OrgLensMembershipsService().getFamilyActiveMemberships(scope([SUBSIDIARY, PARENT, SUBSIDIARY]));
 
       expect(execute).toHaveBeenCalledTimes(1);
       const [sql, binds] = execute.mock.calls[0];
       expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
-      expect(sql).toContain('BOARD_MEMBER_SEAT_KEYS');
-      expect(sql).toContain('COMMITTEE_MEMBER_SEAT_KEYS');
+      expect(sql).not.toContain('SEAT_KEYS');
       expect(binds).toEqual([PARENT]);
       expect(withOrgCacheMock.mock.calls[0][0]).toBe(ROLL_UP);
       expect(cacheKeys).toEqual(['memberships-active-family:v2']);
     });
 
-    it('lists one row per organization and foundation, each naming its organization, and counts every row on the cards', async () => {
+    it('lists one row per organization and foundation, each naming its organization, and counts each foundation once on the Active card', async () => {
       tables.active = [
         active(PARENT, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true }),
-        active(SUBSIDIARY, 'cncf', { BOARD_MEMBER_SEAT_COUNT: 0, BOARD_MEMBER_SEAT_KEYS: [] }),
+        active(SUBSIDIARY, 'cncf', { BOARD_MEMBER_SEAT_COUNT: 0 }),
         active(SUBSIDIARY, 'lfn'),
       ];
 
@@ -248,22 +245,30 @@ describe('OrgLensMembershipsService — family roll-up', () => {
         ['cncf', SUBSIDIARY_ORG],
         ['lfn', SUBSIDIARY_ORG],
       ]);
-      expect(response.summary).toEqual({ activeMemberships: 3, renewingWithin90Days: 1, governanceRoles: 3 + 2 + 3 });
+      expect(response.summary).toEqual({ activeMemberships: 2, renewingWithin90Days: 1, governanceRoles: 3 + 2 + 3 });
       expect(response.organizations).toEqual([SUBSIDIARY_ORG, PARENT_ORG]);
     });
 
-    it('counts a seat credited to two organizations at the same foundation once, but keeps each row’s own count', async () => {
+    it('counts each organization’s renewing membership, so two organizations renewing at one foundation count twice', async () => {
+      tables.active = [active(PARENT, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true }), active(SUBSIDIARY, 'cncf', { IS_RENEWING_WITHIN_90_DAYS: true })];
+
+      const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
+
+      expect(response.summary.activeMemberships).toBe(1);
+      expect(response.summary.renewingWithin90Days).toBe(2);
+    });
+
+    it('adds up each organization’s board and committee seats on the Governance Roles card', async () => {
       tables.active = [
-        active(PARENT, 'cncf', { BOARD_MEMBER_SEAT_KEYS: ['person-1'], COMMITTEE_MEMBER_SEAT_COUNT: 0, COMMITTEE_MEMBER_SEAT_KEYS: [] }),
-        active(SUBSIDIARY, 'cncf', { BOARD_MEMBER_SEAT_KEYS: ['person-1'], COMMITTEE_MEMBER_SEAT_COUNT: 0, COMMITTEE_MEMBER_SEAT_KEYS: [] }),
-        active(SUBSIDIARY, 'lfn', { BOARD_MEMBER_SEAT_KEYS: ['person-1'], COMMITTEE_MEMBER_SEAT_COUNT: 1, COMMITTEE_MEMBER_SEAT_KEYS: ['person-1'] }),
+        active(PARENT, 'cncf', { COMMITTEE_MEMBER_SEAT_COUNT: 0 }),
+        active(SUBSIDIARY, 'cncf', { COMMITTEE_MEMBER_SEAT_COUNT: 0 }),
+        active(SUBSIDIARY, 'lfn', { COMMITTEE_MEMBER_SEAT_COUNT: 1 }),
       ];
 
       const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
 
       expect(response.memberships.map((m) => m.boardMembers)).toEqual([1, 1, 1]);
-      // cncf board once; lfn board and lfn committee are separate seats.
-      expect(response.summary.governanceRoles).toBe(3);
+      expect(response.summary.governanceRoles).toBe(1 + 1 + 2);
     });
 
     it('leaves out an organization of the family the caller cannot read, from the rows and the cards', async () => {
@@ -290,7 +295,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       const gold = await service.getFamilyActiveMemberships(scope(), { tier: 'Gold Membership', search: 'cn' });
       expect(gold.memberships.map((m) => m.organization?.accountId)).toEqual([PARENT, SUBSIDIARY]);
-      expect(gold.summary).toEqual({ activeMemberships: 2, renewingWithin90Days: 1, governanceRoles: 6 });
+      expect(gold.summary).toEqual({ activeMemberships: 1, renewingWithin90Days: 1, governanceRoles: 6 });
       expect(gold.organizations).toHaveLength(2);
     });
 
@@ -303,14 +308,6 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       expect(family.summary).toEqual(single.summary);
       expect(family.memberships.map(({ organization: _organization, ...row }) => row)).toEqual(single.memberships);
-    });
-
-    it('never returns the seat holders’ keys', async () => {
-      tables.active = [active(PARENT, 'cncf')];
-
-      const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
-
-      expect(JSON.stringify(response)).not.toContain(`${PARENT}-board`);
     });
 
     it('leaves the single-organization read unchanged: one account bound, no seat keys, no organization on the rows', async () => {
