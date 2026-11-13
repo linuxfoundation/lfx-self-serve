@@ -33,6 +33,7 @@ import {
   MeetingAttachmentChangeInput,
   MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
+  MeetingProjectQueryOptions,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
@@ -183,13 +184,13 @@ export class MeetingService {
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
-  /** Fetches count of meetings scoped to a project that haven't started yet. */
-  public getMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/meetings/count', `project_uid:${uid}`, this.upcomingDateFilterParams());
+  /** Fetches count of meetings scoped to a project (and, with `includeSubProjects`, its sub-projects) that haven't started yet. */
+  public getMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
+    return this.getCount('/api/meetings/count', this.projectScopeParams(uid, options), this.upcomingDateFilterParams());
   }
 
-  public getPastMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/past-meetings/count', `project_uid:${uid}`);
+  public getPastMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
+    return this.getCount('/api/past-meetings/count', this.projectScopeParams(uid, options));
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -229,9 +230,10 @@ export class MeetingService {
     orderBy?: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<Meeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    let params = this.projectScopeParams(uid, options);
     if (orderBy) {
       params = params.set('order', orderBy);
     }
@@ -254,9 +256,10 @@ export class MeetingService {
     pageToken?: string,
     searchName?: string,
     filters?: string[],
-    includeViewerAttendance = false
+    includeViewerAttendance = false,
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<PastMeeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    let params = this.projectScopeParams(uid, options).set('sort', PAST_MEETING_SORT.NAME_DESC);
     // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
     if (includeViewerAttendance) {
       params = params.set('include_viewer_attendance', 'true');
@@ -1019,11 +1022,14 @@ export class MeetingService {
   }
 
   private getCountByTag(endpoint: string, tag: string, extraParams?: Record<string, string>): Observable<number> {
-    let params = new HttpParams().set('tags', tag);
+    return this.getCount(endpoint, new HttpParams().set('tags', tag), extraParams);
+  }
+
+  private getCount(endpoint: string, scopeParams: HttpParams, extraParams?: Record<string, string>): Observable<number> {
+    let params = scopeParams;
     for (const [key, value] of Object.entries(extraParams ?? {})) {
       params = params.set(key, value);
     }
-
     return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load count from ${endpoint}:`, error);
@@ -1031,6 +1037,16 @@ export class MeetingService {
       }),
       map((response) => response.count)
     );
+  }
+
+  /**
+   * Scopes a project meetings query: the project alone (`tags=project_uid:`), or, with
+   * `includeSubProjects`, the project and every project beneath it (`root_project_uid`, resolved
+   * server-side under the caller's own access). `pageSize` is passed through as `page_size`.
+   */
+  private projectScopeParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
+    const params = options.includeSubProjects ? new HttpParams().set('root_project_uid', uid) : new HttpParams().set('tags', `project_uid:${uid}`);
+    return options.pageSize ? params.set('page_size', String(options.pageSize)) : params;
   }
 
   /**
