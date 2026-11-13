@@ -62,6 +62,7 @@ import {
   buildOrgCacheKey,
   buildPerUserOrgKey,
   ValkeyService,
+  withFoundationParticipatingOrgsCache,
 } from './valkey.service';
 
 import { logger } from './logger.service';
@@ -369,6 +370,22 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     const payload = warningPayload();
     expect(payload['cache_subresource']).toBeNull();
     expect(JSON.stringify(payload)).not.toContain(ORG_UID);
+  });
+
+  it('stores the foundation participating-companies roster past the 1 MiB default, under its own namespace cap', async () => {
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(null);
+    const roster = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES + 1024) };
+
+    await withFoundationParticipatingOrgsCache(
+      'synthetic-foundation',
+      ['12mo'],
+      async () => roster,
+      () => true
+    );
+
+    expect(setMock).toHaveBeenCalledTimes(1);
+    expect(setMock.mock.calls[0][0]).toContain(`${VALKEY_CACHE.FOUNDATION_PARTICIPATING_ORGS_NAMESPACE}:synthetic-foundation:roster:`);
   });
 
   const cappedNamespaces = Object.keys(VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE);
