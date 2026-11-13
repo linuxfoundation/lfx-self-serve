@@ -8890,10 +8890,7 @@ export class CampaignController {
    * Those are campaign-service's calls and it makes every one of them in `validateBiddingPlan`
    * (`internal/platform/googleads/bidding.go`) as PURE PREFLIGHT: no network, no clock, and
    * nothing created — the refusal lands before the budget mutate, so an invalid plan costs a 400
-   * and strands nothing. One known exception, which no preflight catches because Google rather than
-   * campaign-service refuses it: a target CPA on Display fails after the budget is created
-   * (lfx-v2-campaign-service#578). The form withholds it there (`GOOGLE_CHANNELS_WITHOUT_TARGET_CPA`)
-   * until that ships. A second copy of those rules here could only diverge in one direction
+   * and strands nothing. A second copy of those rules here could only diverge in one direction
    * that matters, refusing a create upstream would have accepted, and a duplicated rule drifts
    * the moment Google's own per-channel support moves. The form offers only the valid set per
    * channel, which is where that hazard belongs.
