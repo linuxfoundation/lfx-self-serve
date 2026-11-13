@@ -162,7 +162,7 @@ export class FormationService {
   }
 
   /**
-   * #5475 — the formation team's project pipeline. `stage` is deliberately not sent: the response carries every
+   * #5475 — the project pipeline: the formation team's full view, or LF staff's read-only view without Draft and Confidential. `stage` is deliberately not sent: the response carries every
    * non-Active stage so the page filters by stage client-side and the stat strip and pills keep their counts.
    */
   public getFormationPipeline(foundationUid?: string | null, search?: string): Observable<FormationPipelineResponse> {

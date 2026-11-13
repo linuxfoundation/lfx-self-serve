@@ -641,6 +641,29 @@ describe('FormationPipelineService.getPipeline — LF staff view (#5544)', () =>
     expect(asked.counts.total).toBe(3);
   });
 
+  it('keeps a visible project whose parent is hidden from staff: no foundation, in All foundations, out of a foundation filter, debug log only', async () => {
+    asMemberOf('lf-staff');
+    // The parent is a Draft project staff cannot read: query-service returns no document for it.
+    const projects = [project({ uid: 'child', name: 'Child One', stage: 'Formation - Engaged', parent_uid: 'hidden-parent' })];
+    mockUpstream({ projects });
+    vi.mocked(logger.debug).mockClear();
+    vi.mocked(logger.warning).mockClear();
+
+    const all = await service.getPipeline(req, allStages);
+
+    expect(all.rows.map((row) => row.uid)).toEqual(['child']);
+    expect(all.rows[0].parent).toBeNull();
+    expect(all.counts.total).toBe(1);
+    expect(JSON.stringify(all)).not.toContain('hidden-parent');
+    expect(logger.warning).not.toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.anything());
+    expect(logger.debug).toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.objectContaining({ count: 1 }));
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain('hidden-parent');
+
+    const scoped = await service.getPipeline(req, { ...allStages, foundationUid: 'some-foundation' });
+    expect(scoped.rows).toEqual([]);
+    expect(logger.warning).not.toHaveBeenCalledWith(req, 'get_formation_pipeline', expect.any(String), expect.anything());
+  });
+
   it.each([
     ['a contractor (a different team)', ['lf-contractor']],
     ['a caller on no team', []],

@@ -72,7 +72,7 @@ export class FormationPipelineService {
     // caller can read (a direct grant on a Draft project would otherwise let query-service return it), before anything
     // is counted, so rows, counts, stat cards and the CSV cannot disagree.
     const projects = (await this.fetchPipelineProjects(req, viewer)).filter((project) => this.isVisibleToViewer(project, viewer));
-    const parents = await this.resolveParents(req, projects, rootUid, query.foundationUid);
+    const parents = await this.resolveParents(req, projects, rootUid, viewer, query.foundationUid);
 
     // Test projects and everything under them never reach rows, counts or the CSV (#5619).
     const scoped = projects.filter(
@@ -126,7 +126,7 @@ export class FormationPipelineService {
     });
   }
 
-  /** Whether the viewer may see this project's stage at all; an unrecognized stage is not a pipeline stage and is dropped by `toRow` anyway. */
+  /** Whether the viewer may see this project's stage at all; an unrecognized stage is not a pipeline stage and is dropped by `inScope` anyway. */
   private isVisibleToViewer(project: UpstreamPipelineProject, viewer: FormationPipelineViewer): boolean {
     const stage = getPipelineStageKey(project.stage);
     return !stage || isPipelineStageVisible(stage, viewer);
@@ -166,14 +166,18 @@ export class FormationPipelineService {
    * the subtree filter can see through intermediate projects. The `project` document carries only its direct parent, so
    * there is no ancestor array to read instead. The depth cap bounds it.
    *
-   * A failed read fails the request. An ancestor query-service returns no document for is logged (a formation-team
-   * member holds `global_owner` on every project, so a missing one is a data problem); its rows stay in "All
-   * foundations" with no foundation and drop out only when a foundation filter is on. Reaching the depth cap is logged.
+   * A failed read fails the request. An ancestor query-service returns no document for is logged; its rows stay in "All
+   * foundations" with no foundation and drop out only when a foundation filter is on. For the formation team (who hold
+   * `global_owner` on every project) a missing ancestor is a data problem and logs a warning. For LF staff it is expected:
+   * the parent may be a Draft or Confidential project they cannot read, so it logs at debug, by count only. Nothing is read
+   * as anyone but the caller, so the hidden parent's name and uid never reach the row. The project index carries only
+   * `parent_uid`, no ancestor chain, so there is nothing else to resolve a foundation from. Reaching the depth cap is logged.
    */
   private async resolveParents(
     req: Request,
     projects: readonly UpstreamPipelineProject[],
     rootUid: string | null,
+    viewer: FormationPipelineViewer,
     foundationUid?: string
   ): Promise<Map<string, UpstreamPipelineProject>> {
     // Pipeline rows that are themselves ancestors are already in hand.
@@ -200,8 +204,17 @@ export class FormationPipelineService {
         max_depth: FORMATION_PIPELINE_MAX_ANCESTRY_DEPTH,
       });
     }
-    for (const uid of missing) {
-      logger.warning(req, 'get_formation_pipeline', 'Parent project not returned by query-service', { parent_uid: uid, foundation_scoped: !!foundationUid });
+    if (viewer === 'staff') {
+      if (missing.size > 0) {
+        logger.debug(req, 'get_formation_pipeline', 'Parent projects not readable by the staff caller', {
+          count: missing.size,
+          foundation_scoped: !!foundationUid,
+        });
+      }
+    } else {
+      for (const uid of missing) {
+        logger.warning(req, 'get_formation_pipeline', 'Parent project not returned by query-service', { parent_uid: uid, foundation_scoped: !!foundationUid });
+      }
     }
     return known;
   }

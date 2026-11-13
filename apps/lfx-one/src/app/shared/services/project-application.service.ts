@@ -138,11 +138,6 @@ export class ProjectApplicationService {
     );
   }
 
-  /** Whether the caller is on the formation team. Fails closed to `false` on any error. */
-  public getAccess(): Observable<boolean> {
-    return this.getAccessState().pipe(map((state) => state.isFormationTeam));
-  }
-
   /**
    * Both access answers from one read (#5544): formation-team membership and LF-staff membership (the read-only Pipeline
    * view). Each fails closed to `false`, and an error answers `false` for both.

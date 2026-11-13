@@ -88,7 +88,7 @@ import {
 } from 'rxjs';
 
 /**
- * The Pipeline tab of the LF-root Formations page (#5475): every non-Active project by stage for the formation team,
+ * The Pipeline tab of the LF-root Formations page (#5475): every non-Active project by stage for the formation team (LF staff get a read-only view without Draft and Confidential),
  * with stage stat cards and pills, a foundation filter, name search, sortable columns and a CSV export. The stage
  * selection, name search, sort and pagination are client-side over the one response; only the foundation goes to the
  * BFF (a change switches to the new read, cancelling any one in flight).
@@ -141,7 +141,7 @@ export class FormationsPipelineComponent {
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   protected readonly loading = signal(true);
-  /** `forbidden` is the BFF's 403 (not on the formation team); `failed` is anything else. */
+  /** `forbidden` is the BFF's 403 (neither on the formation team nor LF staff); `failed` is anything else. */
   protected readonly loadError = signal<'forbidden' | 'failed' | null>(null);
   /** The stage the user picked (or the URL carried); see `selectedStage` for the one the view uses. */
   protected readonly stage = signal<FormationPipelineStageFilter>(this.initialState.stage);
@@ -154,6 +154,8 @@ export class FormationsPipelineComponent {
   /** The viewer the last successful response named. A failed read keeps it, so a formation-team member's Draft stage survives a failed foundation-filtered load; `staff` stands in only before the first success. Declared before `response`. */
   private lastViewer: FormationPipelineViewer = 'staff';
 
+  /** True once a response has said who the viewer is. Until then the narrower default only shapes what renders; it never rewrites the URL (a formation-team deep link to a Draft stage keeps its `stage` through loading, and through a failed load). */
+  private readonly viewerKnown = signal(false);
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly foundationUid: Signal<string | null> = this.initFoundationUid();
   private readonly foundationKind: Signal<FormationPipelineFoundationKindFilter> = this.initFoundationKind();
@@ -163,8 +165,6 @@ export class FormationsPipelineComponent {
   /** Who the server built this for (#5544). Until a response arrives it is the narrower `staff` view, so nothing a staff viewer must not see ever flashes. */
   protected readonly viewer: Signal<FormationPipelineViewer> = computed(() => this.response().viewer);
   protected readonly isStaffView = computed(() => this.viewer() === 'staff');
-  /** True once a response has said who the viewer is. Until then the narrower default only shapes what renders; it never rewrites the URL (a formation-team deep link to a Draft stage keeps its `stage` through loading, and through a failed load). */
-  private readonly viewerKnown = signal(false);
   /** A stage the viewer cannot see (a `?stage=prospect` link opened by staff) is the default view, never an empty one. */
   protected readonly selectedStage = computed<FormationPipelineStageFilter>(() => {
     const stage = this.stage();

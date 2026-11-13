@@ -62,15 +62,6 @@ describe('ProjectApplicationService (#3037)', () => {
     expect(console.error).toHaveBeenCalled();
   });
 
-  it('reports formation-team access, failing closed on error', () => {
-    const results: boolean[] = [];
-    service.getAccess().subscribe((value) => results.push(value));
-    http.expectOne('/api/project-applications/access').flush({ is_formation_team: true });
-    service.getAccess().subscribe((value) => results.push(value));
-    http.expectOne('/api/project-applications/access').flush({ error: 'boom' }, { status: 503, statusText: 'Unavailable' });
-    expect(results).toEqual([true, false]);
-  });
-
   it('reads both access answers from one request, each failing closed (#5544)', () => {
     const results: unknown[] = [];
     service.getAccessState().subscribe((value) => results.push(value));
