@@ -53,9 +53,9 @@
       @if (hasCurve()) {
         <div class="flex min-h-0 min-w-0 flex-auto flex-col gap-[16px]">
           <!-- The chart's height follows the window, so the dialog never scrolls; on a phone it fills what the metrics leave,
-               and the y numbers' column closes. -->
+               down to its tracks' minimum, and the y numbers' column closes. -->
           <div
-            class="mt-[20px] grid grid-cols-[44px_1fr] grid-rows-[clamp(120px,calc(100vh-560px),320px)_auto_auto] gap-x-[6px] max-[640px]:mt-[12px] max-[640px]:min-h-0 max-[640px]:flex-auto max-[640px]:grid-cols-[0_1fr] max-[640px]:grid-rows-[minmax(100px,1fr)_auto_auto] max-[640px]:gap-x-0"
+            class="mt-[20px] grid grid-cols-[44px_1fr] grid-rows-[clamp(120px,calc(100vh-560px),320px)_auto_auto] gap-x-[6px] max-[640px]:mt-[12px] max-[640px]:min-h-min max-[640px]:flex-auto max-[640px]:grid-cols-[0_1fr] max-[640px]:grid-rows-[minmax(100px,1fr)_auto_auto] max-[640px]:gap-x-0"
             data-testid="overview-trend-grid">
             <div class="relative max-[640px]:invisible" aria-hidden="true" data-testid="overview-trend-y-ticks">
               @for (tick of view().yTicks; track tick.pct) {
@@ -267,11 +267,11 @@
             </div>
           </div>
 
-          <!-- On a phone the legend keeps to one line from the left, with Reset in the row rather than over it. -->
+          <!-- On a phone the legend runs from the left with Reset in its row, wrapping only when the line runs out. -->
           <div
             class="relative mt-[4px] flex flex-none flex-wrap items-center justify-center gap-x-[16px] gap-y-[10px] px-[96px] max-[640px]:flex-nowrap max-[640px]:justify-between max-[640px]:gap-[8px] max-[640px]:px-0">
             <div
-              class="flex min-w-0 flex-wrap items-center justify-center gap-x-[16px] gap-y-[6px] max-[640px]:flex-nowrap max-[640px]:justify-start max-[640px]:gap-x-[8px] max-[640px]:gap-y-[4px]"
+              class="flex min-w-0 flex-wrap items-center justify-center gap-x-[16px] gap-y-[6px] max-[640px]:justify-start max-[640px]:gap-x-[8px] max-[640px]:gap-y-[4px]"
               aria-hidden="true"
               data-testid="overview-trend-legend">
               <span

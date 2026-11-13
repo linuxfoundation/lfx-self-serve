@@ -161,6 +161,8 @@ describe('OverviewEventDialogComponent', () => {
 
     expect(downloadCardAsImage).toHaveBeenCalledWith(query('overview-event-dialog-panel-trend'), 'acme-summit-registration-trend', expect.anything());
     expect(widened).toBe(true);
+    // The trend grows to its full height for the capture, so a short screen's scrolled-off part is in the image.
+    expect(query('overview-event-dialog-panel-trend')?.className).toContain('data-[exporting]:min-h-max');
     expect(query('overview-event-dialog-panel-trend')?.hasAttribute('data-exporting')).toBe(false);
     expect(toast.show).toHaveBeenCalledWith({ variant: 'dark', message: 'Registration trend downloaded as PNG' });
   });

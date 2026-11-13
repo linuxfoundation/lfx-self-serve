@@ -69,7 +69,8 @@ export class OverviewEventSnapshotComponent {
     headerDate: 'items-center py-[6px]',
     headerToday: 'px-[8px]',
     row: 'text-[13px] leading-[18px]',
-    label: 'block self-stretch py-[7px] text-[12px] leading-[18px]',
+    // A word too long for the narrowest phones breaks rather than running into the next column.
+    label: 'block self-stretch break-words py-[7px] text-[12px] leading-[18px]',
     tip: 'ml-[4px] inline-flex align-[-1px]',
     cell: 'items-start py-[7px]',
     today: 'flex-col items-end justify-start px-[8px] py-[7px]',

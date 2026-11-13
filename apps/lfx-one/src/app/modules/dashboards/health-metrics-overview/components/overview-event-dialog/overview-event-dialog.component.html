@@ -88,10 +88,11 @@
     data-testid="overview-event-dialog-body">
     <!-- One wrapper for both panels, so a resize observer sees the Snapshot load; only the trend shrinks to fit. -->
     <div #bodyContent class="flex flex-col" [class]="tab() === 'trend' ? 'min-h-0 flex-auto' : ''">
-      <!-- Display classes go on a panel only while it shows, so `hidden` is never overridden; each keeps its state. -->
+      <!-- Display classes go on a panel only while it shows, so `hidden` is never overridden; each keeps its state. A
+         capture grows the trend to its full height, so a short screen's scrolled-off part is in the image. -->
       <div
         #trendPanel
-        class="mt-[12px]"
+        class="mt-[12px] data-[exporting]:min-h-max"
         [class]="tab() === 'trend' ? 'flex min-h-0 flex-auto flex-col' : ''"
         role="tabpanel"
         id="overview-event-dialog-panel-trend"

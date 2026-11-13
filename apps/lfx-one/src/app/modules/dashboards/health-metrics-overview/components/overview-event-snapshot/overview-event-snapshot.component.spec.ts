@@ -94,6 +94,7 @@ describe('OverviewEventSnapshotComponent', () => {
     expect(change?.querySelector('i')).toBeNull();
     expect(query('overview-snapshot-title', registration)?.className).toContain('text-[14px]');
     expect(query('overview-snapshot-label', registration)?.className).toContain('block');
+    expect(query('overview-snapshot-label', registration)?.className).toContain('break-words');
   });
 
   it('switches every table to the chosen period', async () => {

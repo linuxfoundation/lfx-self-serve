@@ -164,6 +164,10 @@ describe('OverviewEventTrendComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Registration count');
     expect(query('overview-trend-grid')?.className).toContain('grid-cols-[44px_1fr]');
     expect(query('overview-trend-grid')?.className).toContain('max-[640px]:grid-cols-[0_1fr]');
+    // A short phone scrolls rather than squeezing the chart under its tracks' minimum into the navigator.
+    expect(query('overview-trend-grid')?.className).toContain('max-[640px]:min-h-min');
+    // The phone legend wraps only when Reset leaves it no room, so the two never overlap.
+    expect(query('overview-trend-legend')?.className).not.toContain('flex-nowrap');
     expect(query('overview-trend-kpi-current')?.className).toContain('max-[640px]:row-span-2');
     expect(query('overview-trend-kpi-predicted')?.className).toContain('max-[640px]:row-start-1');
     expect(query('overview-trend-kpi-last-year')?.className).toContain('max-[640px]:row-start-2');
