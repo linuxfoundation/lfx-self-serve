@@ -186,17 +186,19 @@ describe('OverviewEventDialogComponent', () => {
     expect(downloadCardAsImage).not.toHaveBeenCalled();
   });
 
-  it('keeps the header and tabs fixed over a body that alone scrolls, and the trend never scrolls', async () => {
+  it('keeps the header and tabs fixed over a body that alone scrolls, opening each tab at its top', async () => {
     await render();
     const body = query('overview-event-dialog-body') as HTMLElement;
 
-    expect(body.className).toContain('overflow-hidden');
+    // A screen too short for the trend scrolls it rather than clipping it, still without a fade.
+    expect(body.className).toContain('overflow-y-auto');
     expect(fixture.componentInstance['bodyMask']()).toBeNull();
     expect(query('overview-event-dialog-close')?.className).toContain('absolute');
 
+    body.scrollTop = 120;
     query('overview-event-dialog-tabs')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]?.click();
     fixture.detectChanges();
-    expect(body.className).toContain('overflow-y-auto');
+    expect(body.scrollTop).toBe(0);
   });
 
   it('fades the Snapshot body at an edge only while there is more to scroll past it', async () => {

@@ -720,7 +720,7 @@ export interface HealthMetricsOverviewSnapshotChangeView {
   tone: UiBadgeTone;
   /** A solid circle arrow; `null` for no change. */
   icon: string | null;
-  /** The change as phone text under today's value: success-600, danger-600 or neutral-500. */
+  /** The change's colour as phone text under today's value: `text-emerald-600`, `text-red-600` or `text-gray-500`. */
   inkClass: string;
 }
 

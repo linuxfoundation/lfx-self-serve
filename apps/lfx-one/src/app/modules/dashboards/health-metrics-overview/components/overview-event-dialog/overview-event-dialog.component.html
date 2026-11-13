@@ -77,11 +77,11 @@
     </div>
   </div>
 
-  <!-- The trend never scrolls, as its chart fits the height; the Snapshot fades at an edge with more to scroll. -->
+  <!-- The trend's chart fits the height, so it scrolls only on a screen too short for it; the Snapshot fades at an edge
+       with more to scroll. -->
   <div
     #body
-    class="flex min-h-0 flex-auto flex-col px-[22px] pb-[22px] max-[640px]:px-[16px] max-[640px]:pb-[16px]"
-    [class]="tab() === 'trend' ? 'overflow-hidden' : 'overflow-y-auto'"
+    class="flex min-h-0 flex-auto flex-col overflow-y-auto px-[22px] pb-[22px] max-[640px]:px-[16px] max-[640px]:pb-[16px]"
     [style.mask-image]="bodyMask()"
     [style.-webkit-mask-image]="bodyMask()"
     (scroll)="measureFade()"

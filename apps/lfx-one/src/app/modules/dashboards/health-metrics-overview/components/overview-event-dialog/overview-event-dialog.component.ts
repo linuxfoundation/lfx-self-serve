@@ -117,6 +117,8 @@ export class OverviewEventDialogComponent {
     const tab = value === 'snapshot' ? 'snapshot' : 'trend';
     this.tab.set(tab);
     if (tab === 'snapshot') this.snapshotShown.set(true);
+    // Both tabs share the body, so each opens at its top.
+    this.body().nativeElement.scrollTop = 0;
   }
 
   /** Fades an edge of the body only while there is more to scroll past it. */
@@ -154,15 +156,6 @@ export class OverviewEventDialogComponent {
     );
   }
 
-  /** Re-measures the fades when the body or a panel changes size, as when the Snapshot loads or a tab switches. */
-  private observeBody(): void {
-    if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => this.measureFade());
-    observer.observe(this.body().nativeElement);
-    observer.observe(this.bodyContent().nativeElement);
-    this.destroyRef.onDestroy(() => observer.disconnect());
-  }
-
   /** Headline and curve for an upcoming event, the history alone for a past one; a failed read says so instead of drawing nothing. */
   private initReads() {
     const query = { foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '', eventId: this.event.eventId };
@@ -183,5 +176,14 @@ export class OverviewEventDialogComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /** Re-measures the fades when the body or a panel changes size, as when the Snapshot loads or a tab switches. */
+  private observeBody(): void {
+    if (!isPlatformBrowser(this.platformId) || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => this.measureFade());
+    observer.observe(this.body().nativeElement);
+    observer.observe(this.bodyContent().nativeElement);
+    this.destroyRef.onDestroy(() => observer.disconnect());
   }
 }
