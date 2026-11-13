@@ -21,7 +21,7 @@ import type {
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { type Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { SYNTHETIC_ORG_NAME } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 import { FoundationParticipatingOrgsComponent } from './foundation-participating-orgs.component';
@@ -130,6 +130,12 @@ describe('FoundationParticipatingOrgsComponent', () => {
     getProjects = vi.fn(() => of({ projects: [{ slug: 'project-1', name: 'Synthetic Project 1', maturity: 'Graduated' }] }));
     getBreakdown = vi.fn(() => of(breakdown()));
     selectedFoundation = signal<ProjectContext | null>({ uid: 'foundation-uid', name: 'Synthetic Foundation', slug: FOUNDATION_SLUG });
+  });
+
+  afterEach(() => {
+    // Destroy the page before the module resets, so pending reads and timers end with it rather than during teardown.
+    fixture?.destroy();
+    TestBed.resetTestingModule();
   });
 
   it('loads and renders the company table', async () => {
