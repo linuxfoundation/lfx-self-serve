@@ -21,6 +21,7 @@ import {
   MEETING_ROLLUP_ALL_PROJECTS,
   MEETING_TYPE_CONFIGS,
   MY_MEETINGS_STATS_WINDOW_DAYS,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
 import {
@@ -228,10 +229,13 @@ export class MeetingsDashboardComponent {
       const projectUids = this.rollupProjectsFilter();
       const committeeUid = this.groupFilter();
       const groupType = this.groupTypeFilter();
+      // One query takes at most one OR batch of projects, so a larger hand-picked selection shows the root's
+      // own meetings, as the server does for an oversized "all projects" scope.
+      const oversized = mode === 'subset' && projectUids.length > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE;
       return {
         includeSubProjects: true,
-        ...(mode === 'default' && { rootOnly: true }),
-        ...(mode === 'subset' && { projectUids }),
+        ...((mode === 'default' || oversized) && { rootOnly: true }),
+        ...(mode === 'subset' && !oversized && { projectUids }),
         ...(committeeUid && { committeeUid }),
         ...(groupType && { groupType }),
       };
