@@ -13,7 +13,7 @@ const controller = new FoundationParticipatingOrgsController();
 
 // Foundation Lens → Participating Companies (#5697). Executive director of the foundation, or LF staff — the same
 // policy as the Health Metrics endpoints (`dashboardAccessGuard` in the browser). The foundation travels as `?foundationSlug=`.
-// Dark launch (#5707): the data is a fictional demo set until the warehouse model exists, so with the flag off every
+// Dark launch (#5707): with the flag off every
 // request gets the same neutral 404, before any access check can tell a caller anything.
 function requireFoundationParticipatingOrgsEnabled(_req: Request, _res: Response, next: NextFunction): void {
   if (!isServerFeatureEnabled(ServerFeatureFlag.FoundationParticipatingOrgs)) {

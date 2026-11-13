@@ -2,12 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { MEMBERSHIP_TIER_ORDER } from '@lfx-one/shared/constants';
+import type {
+  FoundationParticipatingOrgsDataSource,
+  FoundationParticipatingOrgsSourceCompany,
+  FoundationParticipatingOrgsSourceFoundation,
+  FoundationParticipatingOrgsSourceProjectLine,
+} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
+// The service builds the warehouse source lazily; none of these tests reach it, and it must not open a connection.
+vi.mock('./foundation-participating-orgs.snowflake-source', () => ({ FoundationParticipatingOrgsSnowflakeSource: class {} }));
 
 import { FoundationParticipatingOrgsService } from './foundation-participating-orgs.service';
 
@@ -15,162 +23,230 @@ const req = {} as Request;
 const SLUG = 'sample-foundation';
 const base = { foundationSlug: SLUG, range: '12mo', segment: 'all', sort: 'commits', dir: 'desc', pageSize: 100, offset: 0 } as const;
 
-describe('FoundationParticipatingOrgsService (demo data)', () => {
-  const service = new FoundationParticipatingOrgsService();
+function company(key: string, overrides: Partial<FoundationParticipatingOrgsSourceCompany> = {}): FoundationParticipatingOrgsSourceCompany {
+  return {
+    key,
+    accountId: null,
+    name: key,
+    logoUrl: null,
+    isMember: false,
+    tier: null,
+    otherMemberships: [],
+    projectsInvolved: 1,
+    commits: 0,
+    commitsChange: null,
+    contributors: 0,
+    contributorsChange: null,
+    ...overrides,
+  };
+}
 
-  it('ranks companies by commits, descending, by default', () => {
-    const { rows, totalRecords } = service.getPage(req, base);
-    expect(totalRecords).toBe(rows.length);
-    expect(rows.map((row) => row.commits)).toEqual([...rows.map((row) => row.commits)].sort((a, b) => b - a));
+function line(
+  companyKey: string,
+  projectSlug: string,
+  commits: number,
+  contributors: number,
+  change: number | null = null
+): FoundationParticipatingOrgsSourceProjectLine {
+  return { companyKey, projectSlug, commits, commitsChange: change, contributors, contributorsChange: change };
+}
+
+// Alpha's 9 foundation contributors are fewer than its 6 + 5 per-project ones: two people work on both projects.
+const FOUNDATION: FoundationParticipatingOrgsSourceFoundation = {
+  slug: SLUG,
+  name: 'Sample Foundation',
+  asOfDate: '2026-11-01',
+  projects: [
+    { slug: 'quiet', name: 'Quiet', maturity: null, commits: 10 },
+    { slug: 'busy', name: 'Busy', maturity: null, commits: 400 },
+  ],
+  companies: [
+    company('alpha', {
+      name: 'Alpha Inc',
+      isMember: true,
+      tier: 'Platinum',
+      projectsInvolved: 2,
+      commits: 300,
+      commitsChange: 0.5,
+      contributors: 9,
+      contributorsChange: 0.1,
+    }),
+    company('beta', { name: 'Beta LLC', isMember: true, tier: 'Gold', commits: 110, commitsChange: -0.2, contributors: 4, contributorsChange: null }),
+    company('gamma', { name: 'Gamma', projectsInvolved: 1, commits: 5, commitsChange: null, contributors: 2, contributorsChange: null }),
+    company('idle', { name: 'Idle Member', isMember: true, tier: 'Silver', projectsInvolved: 0 }),
+  ],
+};
+
+const LINES = [line('alpha', 'busy', 250, 6, 0.4), line('alpha', 'quiet', 5, 5, null), line('beta', 'busy', 110, 4, -0.2), line('gamma', 'quiet', 5, 2, null)];
+
+describe('FoundationParticipatingOrgsService', () => {
+  const getFoundation = vi.fn();
+  const getProjectLines = vi.fn();
+  let service: FoundationParticipatingOrgsService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getFoundation.mockResolvedValue(FOUNDATION);
+    getProjectLines.mockImplementation(async (_slug, _range, filter) =>
+      LINES.filter((item) => (!filter.projectSlug || item.projectSlug === filter.projectSlug) && (!filter.companyKey || item.companyKey === filter.companyKey))
+    );
+    service = new FoundationParticipatingOrgsService({ getFoundation, getProjectLines } as FoundationParticipatingOrgsDataSource);
   });
 
-  it('splits members and non-members, and the tab counts add up to the companies', () => {
-    const summary = service.getSummary(req, { foundationSlug: SLUG, range: '12mo' });
-    const members = service.getPage(req, { ...base, segment: 'members' });
-    const nonMembers = service.getPage(req, { ...base, segment: 'non_members' });
-    expect(members.rows.every((row) => row.isMember)).toBe(true);
-    expect(nonMembers.rows.every((row) => !row.isMember)).toBe(true);
-    expect(members.totalRecords + nonMembers.totalRecords).toBe(summary?.companiesCount);
+  it('passes the requested range to the source, for every read', async () => {
+    await service.getSummary(req, { foundationSlug: SLUG, range: '30d' });
+    await service.getPage(req, { ...base, range: '90d' });
+    await service.getProjects(req, SLUG, 'all');
+    expect(getFoundation.mock.calls.map((call) => call[1])).toEqual(['30d', '90d', 'all']);
   });
 
-  it('filters by tier and by search', () => {
-    const platinum = service.getPage(req, { ...base, tier: 'Platinum' });
-    expect(platinum.rows.length).toBeGreaterThan(0);
-    expect(platinum.rows.every((row) => row.membershipTierClass === 'Platinum')).toBe(true);
-    const found = service.getPage(req, { ...base, search: 'northwind' });
-    expect(found.rows.map((row) => row.name)).toEqual(['Northwind Labs']);
+  it('lists companies with activity by commits and leaves the idle member out of the table', async () => {
+    const { rows, totalRecords } = await service.getPage(req, base);
+    expect(rows.map((row) => row.name)).toEqual(['Alpha Inc', 'Beta LLC', 'Gamma']);
+    expect(totalRecords).toBe(3);
   });
 
-  it('scopes cards and rows to one project, whose figures are part of the foundation total', () => {
-    const [project] = service.getProjects(req, SLUG, '12mo');
-    const scoped = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', projectSlug: project.slug });
-    const all = service.getSummary(req, { foundationSlug: SLUG, range: '12mo' });
-    expect(scoped?.projectSlug).toBe(project.slug);
-    expect(scoped!.companiesCount).toBeLessThanOrEqual(all!.companiesCount);
-    const page = service.getPage(req, { ...base, projectSlug: project.slug });
-    expect(page.totalRecords).toBe(scoped?.companiesCount);
+  it('reports the foundation contributor total as the source gives it, never as the sum of its projects', async () => {
+    const alpha = (await service.getPage(req, base)).rows.find((row) => row.participantKey === 'alpha');
+    expect(alpha?.contributors).toBe(9);
+    expect(alpha?.contributors).toBeLessThan(6 + 5);
+    expect(alpha?.contributorsChange).toBe(0.1);
+    const breakdown = await service.getBreakdown(req, SLUG, '12mo', 'alpha');
+    expect(breakdown.total.contributors).toBe(9);
+    expect(breakdown.total.commits).toBe(300);
   });
 
-  it('rejects an unknown project', () => {
-    expect(() => service.getPage(req, { ...base, projectSlug: 'no-such-project' })).toThrow();
+  it('counts the roster in the tab counts: members include the idle one, contributors do not', async () => {
+    const summary = await service.getSummary(req, { foundationSlug: SLUG, range: '12mo' });
+    expect(summary).toMatchObject({
+      foundationName: 'Sample Foundation',
+      projectCount: 2,
+      asOfDate: '2026-11-01',
+      companiesCount: 3,
+      membersCount: 3,
+      contributingMembersCount: 2,
+      nonMembersCount: 1,
+    });
+    expect(summary?.memberCommitShare).toBeCloseTo(410 / 415, 6);
+    expect(summary?.availableTiers).toEqual(MEMBERSHIP_TIER_ORDER.filter((tier) => ['Platinum', 'Gold', 'Silver'].includes(tier)));
+    expect(summary).not.toHaveProperty('dataSource');
   });
 
-  it('builds a breakdown whose project shares are fractions of the company total, largest project first', () => {
-    const [{ participantKey }] = service.getPage(req, base).rows;
-    const breakdown = service.getBreakdown(req, SLUG, '12mo', participantKey);
+  it('answers the empty state when no company has activity, and for a foundation the warehouse does not know', async () => {
+    getFoundation.mockResolvedValueOnce({ ...FOUNDATION, companies: [company('idle', { isMember: true, tier: 'Silver' })] });
+    expect(await service.getSummary(req, { foundationSlug: SLUG, range: '12mo' })).toBeNull();
+    getFoundation.mockResolvedValueOnce(null);
+    expect(await service.getSummary(req, { foundationSlug: 'unknown', range: '12mo' })).toBeNull();
+    getFoundation.mockResolvedValueOnce(null);
+    expect(await service.getProjects(req, 'unknown', '12mo')).toEqual([]);
+    getFoundation.mockResolvedValueOnce(null);
+    expect((await service.getPage(req, { ...base, foundationSlug: 'unknown' })).rows).toEqual([]);
+  });
+
+  it('splits members and non-members', async () => {
+    const members = await service.getPage(req, { ...base, segment: 'members' });
+    const nonMembers = await service.getPage(req, { ...base, segment: 'non_members' });
+    expect(members.rows.map((row) => row.name)).toEqual(['Alpha Inc', 'Beta LLC']);
+    expect(nonMembers.rows.map((row) => row.name)).toEqual(['Gamma']);
+  });
+
+  it('filters by tier and by search, narrowing the cards the same way', async () => {
+    expect((await service.getPage(req, { ...base, tier: 'Gold' })).rows.map((row) => row.name)).toEqual(['Beta LLC']);
+    expect((await service.getPage(req, { ...base, search: 'ALPHA' })).rows.map((row) => row.name)).toEqual(['Alpha Inc']);
+    const summary = await service.getSummary(req, { foundationSlug: SLUG, range: '12mo', tier: 'Gold' });
+    expect(summary).toMatchObject({ companiesCount: 1, membersCount: 1, nonMembersCount: 0 });
+    expect((await service.getSummary(req, { foundationSlug: SLUG, range: '12mo', search: 'nobody' }))?.companiesCount).toBe(0);
+  });
+
+  it('orders the project picker busiest first', async () => {
+    expect((await service.getProjects(req, SLUG, '12mo')).map((project) => project.slug)).toEqual(['busy', 'quiet']);
+  });
+
+  it("scopes cards and rows to one project from that project's own lines, and reads only that project", async () => {
+    const page = await service.getPage(req, { ...base, projectSlug: 'quiet' });
+    expect(page.rows.map((row) => [row.name, row.commits, row.contributors])).toEqual([
+      ['Alpha Inc', 5, 5],
+      ['Gamma', 5, 2],
+    ]);
+    expect(getProjectLines).toHaveBeenCalledWith(SLUG, '12mo', { projectSlug: 'quiet' });
+    const summary = await service.getSummary(req, { foundationSlug: SLUG, range: '12mo', projectSlug: 'quiet' });
+    expect(summary).toMatchObject({ projectSlug: 'quiet', projectName: 'Quiet', companiesCount: 2 });
+  });
+
+  it('rejects an unknown project', async () => {
+    await expect(service.getPage(req, { ...base, projectSlug: 'no-such-project' })).rejects.toThrow();
+    getFoundation.mockResolvedValueOnce(null);
+    await expect(service.getSummary(req, { foundationSlug: 'unknown', range: '12mo', projectSlug: 'x' })).rejects.toThrow();
+  });
+
+  it('builds a breakdown whose shares are fractions of the company foundation commits, largest project first', async () => {
+    const breakdown = await service.getBreakdown(req, SLUG, '12mo', 'alpha');
     expect(breakdown.total.shareOfCompanyCommits).toBe(1);
-    expect(breakdown.projects.map((line) => line.commits)).toEqual([...breakdown.projects.map((line) => line.commits)].sort((a, b) => b - a));
-    expect(breakdown.projects.every((line) => line.shareOfCompanyCommits > 0 && line.shareOfCompanyCommits <= 1)).toBe(true);
+    expect(breakdown.projects.map((item) => [item.projectSlug, item.commits])).toEqual([
+      ['busy', 250],
+      ['quiet', 5],
+    ]);
+    expect(breakdown.projects[0].shareOfCompanyCommits).toBeCloseTo(250 / 300, 6);
+    expect(getProjectLines).toHaveBeenCalledWith(SLUG, '12mo', { companyKey: 'alpha' });
   });
 
-  it('exports every project for each company, not only the top 10', () => {
-    const { items } = service.getExportRows(req, base, 'by-project');
-    expect(items.some((item) => item.lines.length > 10)).toBe(true);
-    for (const item of items) expect(item.lines.length).toBe(item.row.projectsInvolved);
+  it('answers not found for the breakdown of a company without activity or an unknown one', async () => {
+    await expect(service.getBreakdown(req, SLUG, '12mo', 'idle')).rejects.toThrow();
+    await expect(service.getBreakdown(req, SLUG, '12mo', 'nobody')).rejects.toThrow();
   });
 
-  it('narrows the cards and tab counts by search and tier, like the table', () => {
-    const search = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', search: 'northwind' });
-    expect(search?.companiesCount).toBe(1);
-    const platinum = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', tier: 'Platinum' });
-    expect(platinum?.companiesCount).toBe(service.getPage(req, { ...base, tier: 'Platinum' }).totalRecords);
-    expect(platinum?.nonMembersCount).toBe(0);
-    const none = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', search: 'no such company' });
-    expect(none?.companiesCount).toBe(0);
-  });
-
-  it('lists only the tiers the roster holds, in display order', () => {
-    const tiers = service.getSummary(req, { foundationSlug: SLUG, range: '12mo' })?.availableTiers;
-    expect(tiers).toEqual(['Platinum', 'Gold', 'Silver']);
-  });
-
-  it('marks the figures as demo data', () => {
-    expect(service.getSummary(req, { foundationSlug: SLUG, range: '12mo' })?.dataSource).toBe('demo');
-  });
-
-  it('limits the by-project export to the selected project under a project scope', () => {
-    const [project] = service.getProjects(req, SLUG, '12mo');
-    const { items } = service.getExportRows(req, { ...base, projectSlug: project.slug }, 'by-project');
-    expect(items.length).toBeGreaterThan(0);
-    for (const item of items) expect(item.lines.map((line) => line.projectSlug)).toEqual([project.slug]);
-  });
-
-  it('keeps the project shares of a company at 100% in every range, using the displayed rounded figures', () => {
-    for (const range of ['12mo', '6mo', '90d', 'all'] as const) {
-      const { rows } = service.getPage(req, { ...base, range });
-      for (const { participantKey, commits } of rows) {
-        const breakdown = service.getBreakdown(req, SLUG, range, participantKey);
-        const summed = breakdown.projects.reduce((sum, line) => sum + line.commits, 0);
-        const share = breakdown.projects.reduce((sum, line) => sum + line.shareOfCompanyCommits, 0);
-        expect(summed).toBe(commits);
-        expect(share).toBeCloseTo(1, 6);
-      }
-    }
-  });
-
-  it('computes the change of a company from summed current and previous commits, and has none when any project lacks a comparison', () => {
-    const { rows } = service.getPage(req, base);
-    const withChange = rows.find((row) => row.commitsChange !== null);
-    expect(withChange).toBeDefined();
-    const breakdown = service.getBreakdown(req, SLUG, '12mo', withChange!.participantKey);
-    const previous = breakdown.projects.reduce((sum, line) => sum + (line.commitsChange === null ? NaN : line.commits / (1 + line.commitsChange)), 0);
-    if (!Number.isNaN(previous)) expect(withChange!.commitsChange).toBeCloseTo(withChange!.commits / previous - 1, 1);
-    for (const row of rows) {
-      const lines = service.getBreakdown(req, SLUG, '12mo', row.participantKey).projects;
-      if (lines.some((line) => line.commitsChange === null)) expect(row.commitsChange).toBeNull();
-    }
-  });
-
-  it('keeps companies with no tier or no comparison last, and orders the rest by the direction', () => {
-    const tierRank = (tier: string | null): number => (MEMBERSHIP_TIER_ORDER as readonly string[]).indexOf(tier ?? '');
+  it('keeps companies with no tier or no comparison last, and orders the rest by the direction', async () => {
     for (const dir of ['asc', 'desc'] as const) {
-      const sign = dir === 'asc' ? 1 : -1;
+      const byTier = (await service.getPage(req, { ...base, sort: 'tier', dir })).rows;
+      expect(byTier.at(-1)?.name).toBe('Gamma');
+      expect(byTier.slice(0, 2).map((row) => row.name)).toEqual(dir === 'asc' ? ['Alpha Inc', 'Beta LLC'] : ['Beta LLC', 'Alpha Inc']);
 
-      const byTier = service.getPage(req, { ...base, sort: 'tier', dir }).rows;
-      const members = byTier.filter((row) => row.isMember);
-      expect(byTier.slice(0, members.length).every((row) => row.isMember)).toBe(true);
-      expect(members.map((row) => tierRank(row.membershipTierClass))).toEqual(
-        [...members.map((row) => tierRank(row.membershipTierClass))].sort((a, b) => (a - b) * sign)
-      );
-
-      const byChange = service.getPage(req, { ...base, sort: 'commits_change', dir }).rows;
-      const present = byChange.filter((row) => row.commitsChange !== null);
-      expect(byChange.slice(0, present.length).every((row) => row.commitsChange !== null)).toBe(true);
-      expect(present.map((row) => row.commitsChange as number)).toEqual([...present.map((row) => row.commitsChange as number)].sort((a, b) => (a - b) * sign));
-      const trailing = byChange.slice(present.length).map((row) => row.name);
-      expect(trailing).toEqual([...trailing].sort((a, b) => a.localeCompare(b)));
-      expect(byChange).toHaveLength(service.getPage(req, { ...base, dir }).rows.length);
-
-      // All Time has no comparison for anyone, so nothing is dropped and the order falls back to name.
-      const allTime = service.getPage(req, { ...base, range: 'all', sort: 'commits_change', dir }).rows;
-      expect(allTime.every((row) => row.commitsChange === null)).toBe(true);
-      expect(allTime.map((row) => row.name)).toEqual([...allTime.map((row) => row.name)].sort((a, b) => a.localeCompare(b)));
+      const byChange = (await service.getPage(req, { ...base, sort: 'contributors_change', dir })).rows;
+      expect(byChange.map((row) => row.name)).toEqual(['Alpha Inc', 'Beta LLC', 'Gamma']);
+      expect(byChange.at(-1)?.contributorsChange).toBeNull();
     }
   });
 
-  it('caps the export at the maximum number of CSV rows for either file, and says it was cut', () => {
-    const summary = service.getExportRows(req, base, 'summary', 5);
-    expect(summary.items).toHaveLength(5);
-    expect(summary.truncated).toBe(true);
-
-    const byProject = service.getExportRows(req, base, 'by-project', 25);
-    expect(byProject.items.reduce((sum, item) => sum + item.lines.length, 0)).toBe(25);
-    expect(byProject.truncated).toBe(true);
-
-    const whole = service.getExportRows(req, base, 'by-project');
-    expect(whole.truncated).toBe(false);
-    expect(whole.items.reduce((sum, item) => sum + item.lines.length, 0)).toBeGreaterThan(25);
+  it('pages the sorted rows', async () => {
+    const page = await service.getPage(req, { ...base, pageSize: 1, offset: 1 });
+    expect(page.rows.map((row) => row.name)).toEqual(['Beta LLC']);
+    expect(page.totalRecords).toBe(3);
   });
 
-  it('keeps the contributor total of a company between its busiest project and the sum of its projects', () => {
-    for (const { participantKey, contributors } of service.getPage(req, base).rows) {
-      const lines = service.getBreakdown(req, SLUG, '12mo', participantKey).projects;
-      expect(contributors).toBeGreaterThanOrEqual(Math.max(...lines.map((line) => line.contributors)));
-      expect(contributors).toBeLessThanOrEqual(lines.reduce((sum, line) => sum + line.contributors, 0));
-    }
-  });
+  describe('export', () => {
+    it('writes one row per company for the summary file, capped and flagged', async () => {
+      const whole = await service.getExportRows(req, base, 'summary');
+      expect(whole.items.map((item) => item.row.name)).toEqual(['Alpha Inc', 'Beta LLC', 'Gamma']);
+      expect(whole.truncated).toBe(false);
+      const capped = await service.getExportRows(req, base, 'summary', 2);
+      expect(capped.items).toHaveLength(2);
+      expect(capped.truncated).toBe(true);
+    });
 
-  it('is deterministic for a foundation', () => {
-    expect(service.getPage(req, base)).toEqual(service.getPage(req, base));
+    it('writes every project line of each company, from one bounded read', async () => {
+      const { items, truncated } = await service.getExportRows(req, base, 'by-project');
+      expect(items.map((item) => item.lines.map((entry) => entry.projectSlug))).toEqual([['busy', 'quiet'], ['busy'], ['quiet']]);
+      expect(truncated).toBe(false);
+      expect(getProjectLines).toHaveBeenCalledTimes(1);
+      expect(getProjectLines.mock.calls[0][2].limit).toBeGreaterThan(0);
+    });
+
+    it('limits the by-project file to the selected project under a project scope', async () => {
+      const { items } = await service.getExportRows(req, { ...base, projectSlug: 'quiet' }, 'by-project');
+      expect(items.map((item) => item.row.name)).toEqual(['Alpha Inc', 'Gamma']);
+      for (const item of items) expect(item.lines.map((entry) => entry.projectSlug)).toEqual(['quiet']);
+    });
+
+    it('stops at the row cap and says it was cut', async () => {
+      const { items, truncated } = await service.getExportRows(req, base, 'by-project', 2);
+      expect(items.reduce((sum, item) => sum + item.lines.length, 0)).toBe(2);
+      expect(truncated).toBe(true);
+    });
+
+    it('says the file is cut when the warehouse read hit the bound', async () => {
+      getProjectLines.mockResolvedValueOnce([LINES[0], LINES[1], LINES[2]]);
+      const { truncated } = await service.getExportRows(req, base, 'by-project', 2);
+      expect(truncated).toBe(true);
+    });
   });
 });

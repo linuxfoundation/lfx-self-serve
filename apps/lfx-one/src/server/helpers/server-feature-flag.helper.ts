@@ -700,9 +700,8 @@ export enum ServerFeatureFlag {
   /**
    * Dark-launch gate for the Foundation Lens Participating Companies endpoints
    * (`/api/foundation-participating-orgs`, #5697). OFF answers every request with a neutral 404,
-   * whether or not the caller may use the page. The endpoints are currently backed by a fictional
-   * demo data set (`foundation-participating-orgs.demo-data.ts`, #5707) until the foundation-level
-   * warehouse model exists, so this stays OFF everywhere real users can reach it.
+   * whether or not the caller may use the page. The endpoints read the lf-dbt participating-orgs
+   * table through `foundation-participating-orgs.snowflake-source.ts` (#5707); this stays OFF until the rollout.
    *
    * Paired with, and independent of, the client-side `foundation-participating-orgs-enabled`
    * flag: the client flag hides the route and the nav item, this one is the real kill switch for a

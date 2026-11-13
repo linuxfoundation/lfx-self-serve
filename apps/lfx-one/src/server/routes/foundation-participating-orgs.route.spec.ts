@@ -20,6 +20,38 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 const getPersonas = vi.fn();
 const checkProjectWriter = vi.fn();
 
+// The warehouse source is replaced by one fixed foundation; the gates under test sit in front of it.
+vi.mock('../services/foundation-participating-orgs.snowflake-source', () => ({
+  FoundationParticipatingOrgsSnowflakeSource: class {
+    public async getFoundation(slug: string) {
+      return {
+        slug,
+        name: 'Synthetic Foundation',
+        asOfDate: '2026-11-01',
+        projects: [],
+        companies: [
+          {
+            key: 'synthetic-company',
+            accountId: null,
+            name: 'Synthetic Company',
+            logoUrl: null,
+            isMember: false,
+            tier: null,
+            otherMemberships: [],
+            projectsInvolved: 1,
+            commits: 3,
+            commitsChange: null,
+            contributors: 1,
+            contributorsChange: null,
+          },
+        ],
+      };
+    }
+    public async getProjectLines() {
+      return [];
+    }
+  },
+}));
 vi.mock('../utils/persona-helper', () => ({
   personaDetectionService: { getPersonas, checkProjectWriter },
 }));
@@ -105,7 +137,7 @@ describe('access', () => {
     asExecutiveDirectorOf('synthetic-foundation');
     const response = await get('/summary?foundationSlug=synthetic-foundation');
     expect(response.status).toBe(200);
-    expect((await response.json()).summary.dataSource).toBe('demo');
+    expect((await response.json()).summary).toMatchObject({ foundationSlug: 'synthetic-foundation', companiesCount: 1, asOfDate: '2026-11-01' });
   });
 
   it('admits LF staff for any foundation', async () => {

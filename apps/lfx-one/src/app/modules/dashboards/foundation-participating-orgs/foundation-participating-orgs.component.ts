@@ -476,13 +476,12 @@ export class FoundationParticipatingOrgsComponent {
     );
   }
 
-  /** Demo figures are named as such and dated by generation; only warehouse figures claim LFX Insights as their source. */
+  /** The figures are the lf-dbt participating-orgs build, dated by its build day. */
   private initDataLine(): string {
     const summary = this.summary();
-    // Nothing is claimed about the source until a summary says what the figures are.
+    // Nothing is claimed about the build date until a summary reports it.
     if (!summary) return '';
-    const date = formatIsoDateLabel(summary.asOfDate);
-    return summary.dataSource === 'demo' ? `Fictional demo data, generated ${date} · not from LFX Insights` : `Data through ${date} · Source: LFX Insights`;
+    return `Data through ${formatIsoDateLabel(summary.asOfDate)} · Source: LFX Insights`;
   }
 
   /** A 403 on either read is the viewer lacking access to the foundation; any other failure (503 included) is retryable. */

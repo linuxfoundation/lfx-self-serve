@@ -45,7 +45,6 @@ function fulfillJson(route: Route, body: unknown): Promise<void> {
 function summaryWithActivity(): FoundationParticipatingOrgsSummary {
   return {
     foundationSlug: FOUNDATION_SLUG,
-    dataSource: 'demo',
     foundationName: 'Test Foundation',
     projectCount: 12,
     projectSlug: null,

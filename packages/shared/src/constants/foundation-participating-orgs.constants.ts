@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 // Foundation Lens → Participating Companies (#5697). Sorting, segments and tier badges reuse the project page's constants;
-// the ranges (this page adds 6 months and has no 30 days), the paging limits and the change colours (darker, for contrast
-// at 14px) are this page's own.
+// the ranges are the warehouse's `time_range` values (the same four as the project page), the paging limits and the change
+// colours (darker, for contrast at 14px) are this page's own.
 
 import type {
   FoundationParticipatingOrgChangeTone,
@@ -11,30 +11,22 @@ import type {
   FoundationParticipatingOrgsRange,
 } from '../interfaces/foundation-participating-orgs.interface';
 
-export const FOUNDATION_PARTICIPATING_ORGS_RANGES = ['12mo', '6mo', '90d', 'all'] as const;
-
-/** Scale from the 12 month demo figures to each range; the demo source stands in until the warehouse model exists. */
-export const FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE: Record<FoundationParticipatingOrgsRange, number> = {
-  '12mo': 1,
-  '6mo': 0.55,
-  '90d': 0.28,
-  all: 2.4,
-};
+export const FOUNDATION_PARTICIPATING_ORGS_RANGES = ['12mo', '90d', '30d', 'all'] as const;
 
 export const FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE: FoundationParticipatingOrgsRange = '12mo';
 
 export const FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS: readonly { label: string; value: FoundationParticipatingOrgsRange }[] = [
   { label: 'Past 12 Months', value: '12mo' },
-  { label: 'Past 6 Months', value: '6mo' },
   { label: 'Past 90 Days', value: '90d' },
+  { label: 'Past 30 Days', value: '30d' },
   { label: 'All Time', value: 'all' },
 ];
 
 /** Label used in card sublines and chips, per range. */
 export const FOUNDATION_PARTICIPATING_ORGS_RANGE_LABELS: Record<FoundationParticipatingOrgsRange, string> = {
   '12mo': 'Past 12 Months',
-  '6mo': 'Past 6 Months',
   '90d': 'Past 90 Days',
+  '30d': 'Past 30 Days',
   all: 'All Time',
 };
 

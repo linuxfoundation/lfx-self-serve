@@ -14,7 +14,7 @@ import type {
   ProjectParticipatingOrgsSortField,
 } from './project-participating-orgs.interface';
 
-/** Activity window: the past 12 months (default), 6 months, 90 days, or all time. */
+/** Activity window, in the warehouse's `time_range` vocabulary: the past 12 months (default), 90 days, 30 days, or all time. */
 export type FoundationParticipatingOrgsRange = (typeof FOUNDATION_PARTICIPATING_ORGS_RANGES)[number];
 export type FoundationParticipatingOrgsSegment = ProjectParticipatingOrgsSegment;
 export type FoundationParticipatingOrgsSortField = ProjectParticipatingOrgsSortField;
@@ -35,17 +35,12 @@ export interface FoundationParticipatingOrgsProjectsResponse {
   projects: FoundationParticipatingOrgsProject[];
 }
 
-/** Where the figures come from. `demo` is the fictional data set used until the warehouse model exists (#5707). */
-export type FoundationParticipatingOrgsDataSourceKind = 'demo' | 'warehouse';
-
 /** Summary request: the list filters without the tab, sorting and paging (the tab counts cover every tab). */
 export type FoundationParticipatingOrgsSummaryQuery = Pick<FoundationParticipatingOrgsQuery, 'foundationSlug' | 'range' | 'projectSlug' | 'search' | 'tier'>;
 
 /** Cards and tab counts for one foundation, range and scope (the whole foundation, or one project), narrowed by the search and tier filters. */
 export interface FoundationParticipatingOrgsSummary {
   foundationSlug: string;
-  /** Marks fictional demo figures so the page never presents them as warehouse data. */
-  dataSource: FoundationParticipatingOrgsDataSourceKind;
   foundationName: string;
   /** Number of projects in the foundation. */
   projectCount: number;
@@ -53,7 +48,7 @@ export interface FoundationParticipatingOrgsSummary {
   projectSlug: string | null;
   projectName: string | null;
   range: FoundationParticipatingOrgsRange;
-  /** Build date (ISO `YYYY-MM-DD`). For demo data it is the day the figures were generated. */
+  /** Build date of the warehouse tables the figures come from (ISO `YYYY-MM-DD`). */
   asOfDate: string;
   /** Companies with activity in the range that match the search and tier filters (the All tab). */
   companiesCount: number;
@@ -217,39 +212,62 @@ export interface FoundationParticipatingOrgsFilterChip {
   label: string;
 }
 
-// What a data source reports for a foundation: the demo set today, a warehouse source later (#5707). Foundation totals
-// are built from these project figures; `foundationContributors` counts a person once across projects.
+// What a data source reports. The warehouse already rolls every project's activity up to its ancestors, so a foundation's
+// own project row holds the foundation total with people counted once across all of its projects; the source returns
+// those totals and the per-project lines separately, and the service never sums contributors.
 export interface FoundationParticipatingOrgsSourceProject {
   slug: string;
   name: string;
-  maturity: string;
-}
-
-export interface FoundationParticipatingOrgsSourceProjectActivity {
-  projectSlug: string;
-  /** Commits in the 12 month window; the service scales them to the other ranges. */
+  /** The warehouse model carries no maturity stage, so the picker lists these under one group. */
+  maturity: string | null;
+  /** Commits in the range, for ordering the picker busiest first. */
   commits: number;
-  commitsChange: number | null;
-  /** Contributors in the 12 month window (the same figure for every range). */
-  contributors: number;
-  contributorsChange: number | null;
 }
 
+/** A company's foundation-level figures for one range (the foundation project's row of the warehouse list). */
 export interface FoundationParticipatingOrgsSourceCompany {
   key: string;
+  accountId: string | null;
   name: string;
+  logoUrl: string | null;
+  isMember: boolean;
   tier: MembershipTierClass | null;
   otherMemberships: string[];
-  foundationContributors: number;
-  foundationContributorsChange: number | null;
-  projects: FoundationParticipatingOrgsSourceProjectActivity[];
+  /** Foundation projects where the company has commits in the range. */
+  projectsInvolved: number;
+  commits: number;
+  commitsChange: number | null;
+  /** Unique people across the whole foundation; a person active in several projects counts once. */
+  contributors: number;
+  contributorsChange: number | null;
 }
 
 export interface FoundationParticipatingOrgsSourceFoundation {
   slug: string;
   name: string;
+  /** Build date of the figures (ISO `YYYY-MM-DD`); null when the source does not report one. */
+  asOfDate: string | null;
   projects: FoundationParticipatingOrgsSourceProject[];
+  /** Every company with activity in the range, plus members without any (zero figures). */
   companies: FoundationParticipatingOrgsSourceCompany[];
+}
+
+/** One company's figures in one project of the foundation. */
+export interface FoundationParticipatingOrgsSourceProjectLine {
+  companyKey: string;
+  projectSlug: string;
+  commits: number;
+  commitsChange: number | null;
+  contributors: number;
+  contributorsChange: number | null;
+}
+
+/** Which project lines to read: one project's (the project scope), one company's (its breakdown), or all (the by-project export). */
+export interface FoundationParticipatingOrgsSourceLineFilter {
+  projectSlug?: string;
+  companyKey?: string;
+  /** Reads at most this many lines, so the by-project export is bounded. */
+  limit?: number;
 }
 
 /** One company as the service reports it for a foundation, range and optional project scope. */
@@ -260,18 +278,16 @@ export interface FoundationCompanyActivity {
 }
 
 /**
- * Seam between the BFF and the warehouse. Today it is backed by the fictional demo foundation (#5707); the
- * warehouse-backed source must return the same shapes with foundation totals summed from project activity and
- * contributors de-duplicated across projects.
+ * Seam between the BFF and the warehouse, backed by the lf-dbt `project_lens` participating-orgs table. Every read takes the
+ * range, and the change against the previous period comes from the same rows as the figure.
  */
 export interface FoundationParticipatingOrgsDataSource {
-  /** What the figures are, so the page can say so: `demo` for the fictional set, `warehouse` for real data. */
-  readonly kind: FoundationParticipatingOrgsDataSourceKind;
-  /**
-   * Multiplier from the source's 12 month commit figures to each range. `getFoundation` takes no range, so a source can only
-   * report the 12 month window; the warehouse source (#5707) must add a range parameter to `getFoundation` and drop this scale,
-   * since setting every entry to 1 would show the 12 month figures under every range.
-   */
-  readonly rangeScale: Record<FoundationParticipatingOrgsRange, number>;
-  getFoundation(slug: string): FoundationParticipatingOrgsSourceFoundation;
+  /** Foundation-level totals per company, and the foundation's projects. Null when the warehouse has nothing for the slug. */
+  getFoundation(slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null>;
+  /** Project lines for the filter; the foundation's own project is never one of them. */
+  getProjectLines(
+    slug: string,
+    range: FoundationParticipatingOrgsRange,
+    filter: FoundationParticipatingOrgsSourceLineFilter
+  ): Promise<FoundationParticipatingOrgsSourceProjectLine[]>;
 }

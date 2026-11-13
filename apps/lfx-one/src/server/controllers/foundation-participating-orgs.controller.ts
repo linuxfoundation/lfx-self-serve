@@ -50,7 +50,7 @@ export class FoundationParticipatingOrgsController {
     const startTime = logger.startOperation(req, operation);
     try {
       const slug = parseSlug(req, operation);
-      const projects = this.service.getProjects(req, slug, parseRange(req, operation));
+      const projects = await this.service.getProjects(req, slug, parseRange(req, operation));
       logger.success(req, operation, startTime, { slug, count: projects.length });
       res.json({ projects });
     } catch (error) {
@@ -64,7 +64,7 @@ export class FoundationParticipatingOrgsController {
     const startTime = logger.startOperation(req, operation);
     try {
       const query = parseSummaryQuery(req, operation);
-      const summary = this.service.getSummary(req, query);
+      const summary = await this.service.getSummary(req, query);
       logger.success(req, operation, startTime, { slug: query.foundationSlug, range: query.range, has_summary: summary !== null });
       res.json({ summary });
     } catch (error) {
@@ -82,7 +82,7 @@ export class FoundationParticipatingOrgsController {
         defaultPageSize: FOUNDATION_PARTICIPATING_ORGS_PAGE_SIZE,
         maxPageSize: FOUNDATION_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
       });
-      const page = this.service.getPage(req, { ...filters, pageSize, offset });
+      const page = await this.service.getPage(req, { ...filters, pageSize, offset });
       logger.success(req, operation, startTime, {
         slug: filters.foundationSlug,
         segment: filters.segment,
@@ -105,7 +105,7 @@ export class FoundationParticipatingOrgsController {
       if (!companyKey || companyKey.length > 200) {
         throw ServiceValidationError.forField('companyKey', 'companyKey is required', { operation });
       }
-      const breakdown = this.service.getBreakdown(req, slug, parseRange(req, operation), companyKey);
+      const breakdown = await this.service.getBreakdown(req, slug, parseRange(req, operation), companyKey);
       logger.success(req, operation, startTime, { slug, project_count: breakdown.projects.length });
       res.json(breakdown);
     } catch (error) {
@@ -120,7 +120,7 @@ export class FoundationParticipatingOrgsController {
     try {
       const filters = parseFilters(req, operation);
       const kind = getEnumQueryParam(req, 'kind', FOUNDATION_PARTICIPATING_ORGS_EXPORT_KINDS, 'summary', operation);
-      const { items, truncated } = this.service.getExportRows(req, filters, kind);
+      const { items, truncated } = await this.service.getExportRows(req, filters, kind);
       if (items.length === 0) {
         logger.success(req, operation, startTime, { slug: filters.foundationSlug, kind, result_count: 0, truncated: false });
         res.setHeader('Cache-Control', 'private, no-store');
