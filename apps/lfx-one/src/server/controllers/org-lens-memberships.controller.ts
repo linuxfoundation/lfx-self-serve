@@ -2,12 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
-import type {
-  OrgActiveMembershipsResponse,
-  OrgDiscoverOpportunitiesResponse,
-  OrgExpiredMembershipsResponse,
-  OrgLensRollUpScope,
-} from '@lfx-one/shared/interfaces';
+import type { OrgActiveMembershipsResponse, OrgExpiredMembershipsResponse, OrgLensRollUpScope } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -130,14 +125,10 @@ export class OrgLensMembershipsController {
     });
 
     try {
-      let response: OrgDiscoverOpportunitiesResponse;
-      if (isOrgRollUpSegment(orgUid)) {
-        const scope = await resolveOrgLensRollUp(req, orgUid, 'get_org_lens_memberships_discover');
-        response = await this.service.getFamilyDiscoverOpportunities(scope);
-      } else {
-        assertOrgUid(orgUid, 'get_org_lens_memberships_discover');
-        response = await this.service.getDiscoverOpportunities(orgUid);
-      }
+      // A family roll-up has no Discover list, so a roll-up key is refused here like any non-SFID.
+      assertOrgUid(orgUid, 'get_org_lens_memberships_discover');
+
+      const response = await this.service.getDiscoverOpportunities(orgUid);
 
       logger.success(req, 'get_org_lens_memberships_discover', startTime, {
         org_uid: orgUid,

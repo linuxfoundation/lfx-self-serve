@@ -16,7 +16,6 @@ const service = vi.hoisted(() => ({
   getDiscoverOpportunities: vi.fn(),
   getFamilyActiveMemberships: vi.fn(),
   getFamilyExpiredMemberships: vi.fn(),
-  getFamilyDiscoverOpportunities: vi.fn(),
 }));
 const { getFoundationProjects } = service;
 const { resolveOrgLensRollUp } = vi.hoisted(() => ({ resolveOrgLensRollUp: vi.fn() }));
@@ -29,7 +28,6 @@ vi.mock('../services/org-lens-memberships.service', () => ({
     public getDiscoverOpportunities = service.getDiscoverOpportunities;
     public getFamilyActiveMemberships = service.getFamilyActiveMemberships;
     public getFamilyExpiredMemberships = service.getFamilyExpiredMemberships;
-    public getFamilyDiscoverOpportunities = service.getFamilyDiscoverOpportunities;
   },
 }));
 vi.mock('../helpers/org-lens-roll-up.helper', () => ({ resolveOrgLensRollUp }));
@@ -125,7 +123,6 @@ describe('OrgLensMembershipsController — family roll-up lists', () => {
     resolveOrgLensRollUp.mockResolvedValue(scope);
     service.getFamilyActiveMemberships.mockResolvedValue({ accountId: ROLL_UP, summary: {}, memberships: [] });
     service.getFamilyExpiredMemberships.mockResolvedValue({ accountId: ROLL_UP, memberships: [] });
-    service.getFamilyDiscoverOpportunities.mockResolvedValue({ accountId: ROLL_UP, opportunities: [] });
   });
 
   it('reads the active list for the server-resolved scope, with every filter and the Company filter', async () => {
@@ -161,13 +158,14 @@ describe('OrgLensMembershipsController — family roll-up lists', () => {
     expect(service.getExpiredMemberships).not.toHaveBeenCalled();
   });
 
-  it('reads the discover list for the scope', async () => {
+  it('refuses the discover list for a roll-up, which has no Discover tab', async () => {
     const next = vi.fn() as unknown as NextFunction;
 
     await new OrgLensMembershipsController().getDiscoverOpportunities(rollUpReq(), makeRes(), next);
 
-    expect(service.getFamilyDiscoverOpportunities).toHaveBeenCalledWith(scope);
+    expect(resolveOrgLensRollUp).not.toHaveBeenCalled();
     expect(service.getDiscoverOpportunities).not.toHaveBeenCalled();
+    expect(vi.mocked(next).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
   });
 
   it('passes a refused roll-up to the error handler without reading', async () => {

@@ -14,7 +14,7 @@
     <div class="flex flex-col gap-6" data-testid="memberships-skeleton">
       <p-skeleton width="16rem" height="2rem" />
       <div class="flex items-center gap-4 border-b border-gray-200 pb-2">
-        @for (tab of tabs; track tab.id) {
+        @for (tab of tabs(); track tab.id) {
           <p-skeleton width="8rem" height="1.25rem" />
         }
       </div>
@@ -50,7 +50,7 @@
       class="flex items-center gap-1 border-b border-gray-200"
       data-testid="memberships-tab-bar"
       (keydown)="onTabKeydown($event)">
-      @for (tab of tabs; track tab.id) {
+      @for (tab of tabs(); track tab.id) {
         <button
           type="button"
           role="tab"
@@ -455,7 +455,7 @@
       </div>
     }
 
-    @if (activeTab() === 'discover') {
+    @if (activeTab() === 'discover' && !isRollUp()) {
       <div role="tabpanel" id="memberships-tab-panel-discover" [attr.aria-labelledby]="'memberships-tab-trigger-discover'">
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
           <div class="px-5 pt-4 pb-3" data-testid="discover-opportunities-title">

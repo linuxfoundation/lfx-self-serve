@@ -182,21 +182,8 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     EXPIRATION_DATE: expiration,
     ACTION_TYPE: 'renew',
   });
-  const discover = (foundation: string, contributors: number, contributions: number, relevant: number, isFamilyRollUpRow = true) => ({
-    FAMILY_ACCOUNT_ID: PARENT,
-    IS_FAMILY_ROLLUP_ROW: isFamilyRollUpRow,
-    FOUNDATION_ID: foundation,
-    FOUNDATION_NAME: foundation.toUpperCase(),
-    FOUNDATION_SLUG: foundation,
-    FOUNDATION_LOGO_URL: null,
-    PROJECT_TYPE: 'Foundation',
-    SUGGESTED_TIER: 'Gold Membership',
-    CONTRIBUTORS_COUNT: contributors,
-    CONTRIBUTION_COUNT: contributions,
-    RELEVANT_PROJECTS: relevant,
-  });
 
-  let tables: { active: Record<string, unknown>[]; expired: Record<string, unknown>[]; discover: Record<string, unknown>[] };
+  let tables: { active: Record<string, unknown>[]; expired: Record<string, unknown>[] };
   // Stands in for the warehouse: a family read binds the family key and, where the SQL asks, keeps only its roll-up rows.
   const read = (sql: string, binds: string[], rows: Record<string, unknown>[]) =>
     rows.filter(
@@ -208,11 +195,10 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     execute.mockReset();
     withOrgCacheMock.mockClear();
     cacheKeys.length = 0;
-    tables = { active: [], expired: [], discover: [] };
+    tables = { active: [], expired: [] };
     execute.mockImplementation(async (sql: string, binds: string[]) => {
       if (sql.includes('ORG_LENS_MEMBERSHIPS_SUMMARY')) return { rows: read(sql, binds, tables.active) };
       if (sql.includes('ORG_LENS_EXPIRED_MEMBERSHIPS')) return { rows: read(sql, binds, tables.expired) };
-      if (sql.includes('ORG_LENS_DISCOVER_MEMBERSHIPS')) return { rows: read(sql, binds, tables.discover) };
       return { rows: [] };
     });
   });
@@ -360,28 +346,6 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       const searched = await service.getFamilyExpiredMemberships(scope(), 'oi', PARENT);
       expect(searched.memberships.map((m) => m.foundationId)).toEqual(['oif']);
-    });
-  });
-
-  describe('discover opportunities', () => {
-    it('reads only the family’s roll-up rows by its warehouse key, with the family’s contributors, contributions and projects', async () => {
-      tables.discover = [discover('oif', 1, 100, 1), discover('lfn', 6, 70, 2), discover('lfn', 3, 30, 2, false)];
-
-      const response = await new OrgLensMembershipsService().getFamilyDiscoverOpportunities(scope());
-
-      const [sql, binds] = execute.mock.calls[0];
-      expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
-      expect(sql).toContain('AND IS_FAMILY_ROLLUP_ROW');
-      expect(sql).toContain('FAMILY_CONTRIBUTORS_COUNT AS CONTRIBUTORS_COUNT');
-      expect(sql).toContain('FAMILY_CONTRIBUTION_COUNT AS CONTRIBUTION_COUNT');
-      expect(sql).toContain('FAMILY_RELEVANT_PROJECTS AS RELEVANT_PROJECTS');
-      expect(binds).toEqual([PARENT]);
-      expect(cacheKeys).toEqual(['memberships-discover-family:v2']);
-      expect(response.accountId).toBe(ROLL_UP);
-      expect(response.opportunities.map((o) => [o.foundationId, o.contributions, o.relevantProjects, o.contributors])).toEqual([
-        ['oif', 100, 1, 1],
-        ['lfn', 70, 2, 6],
-      ]);
     });
   });
 });

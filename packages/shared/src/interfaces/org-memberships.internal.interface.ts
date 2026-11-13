@@ -33,7 +33,6 @@ export interface OrgLensExpiredMembershipRow {
 }
 
 export interface OrgLensDiscoverMembershipRow {
-  ACCOUNT_ID?: string;
   FOUNDATION_ID: string;
   FOUNDATION_NAME: string;
   FOUNDATION_SLUG: string | null;

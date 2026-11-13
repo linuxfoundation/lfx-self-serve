@@ -305,6 +305,14 @@ describe('OrgMembershipsComponent', () => {
       );
     });
 
+    it('offers no Discover tab', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+
+      expect(has(fixture, 'memberships-tab-active')).toBe(true);
+      expect(has(fixture, 'memberships-tab-expired')).toBe(true);
+      expect(has(fixture, 'memberships-tab-discover')).toBe(false);
+    });
+
     it('titles the page with the roll-up’s name', async () => {
       const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
 
@@ -373,6 +381,7 @@ describe('OrgMembershipsComponent', () => {
       expect(has(fixture, 'memberships-active-company-header')).toBe(false);
       expect(has(fixture, 'memberships-company-filter')).toBe(false);
       expect(has(fixture, 'memberships-active-group-cncf')).toBe(false);
+      expect(has(fixture, 'memberships-tab-discover')).toBe(true);
       const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
       expect(text('memberships-stat-active-label')).toBe('Active Memberships');
       expect(text('memberships-stat-renewing-label')).toBe('Renewing Within 90 Days');

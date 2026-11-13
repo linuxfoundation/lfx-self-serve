@@ -85,11 +85,14 @@ export class OrgMembershipsComponent {
   protected readonly activeTab = signal<OrgMembershipTab>('active');
   protected readonly retryTrigger = signal(0);
 
-  protected readonly tabs = [
+  private readonly allTabs = [
     { id: 'active' as const, label: 'Active', icon: 'fa-light fa-circle-check' },
     { id: 'expired' as const, label: 'Expired', icon: 'fa-light fa-clock-rotate-left' },
     { id: 'discover' as const, label: 'Discover', icon: 'fa-light fa-magnifying-glass' },
   ];
+
+  /** A family roll-up has no Discover tab. */
+  protected readonly tabs = computed(() => (this.isRollUp() ? this.allTabs.filter((tab) => tab.id !== 'discover') : this.allTabs));
 
   private readonly allTiers = signal<string[]>([]);
 
@@ -213,6 +216,10 @@ export class OrgMembershipsComponent {
           this.activeProjectsRow.set(null);
         }
         this.lastOrgUid = orgUid;
+        if (tab === 'discover' && this.isRollUp()) {
+          this.activeTab.set('active');
+          return;
+        }
         if (tab === 'expired' && !this.expiredData()) this.fetchExpired(orgUid);
         if (tab === 'discover' && !this.discoverData()) this.fetchDiscover(orgUid);
       });
@@ -228,7 +235,7 @@ export class OrgMembershipsComponent {
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
-    const ids = this.tabs.map((t) => t.id);
+    const ids = this.tabs().map((t) => t.id);
     const idx = ids.indexOf(this.activeTab());
     let next: number | null = null;
     if (event.key === 'ArrowRight') next = (idx + 1) % ids.length;

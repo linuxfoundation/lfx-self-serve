@@ -136,21 +136,6 @@ export class OrgLensMembershipsService {
     return { accountId: scope.rollUpKey, memberships, organizations };
   }
 
-  /**
-   * One row per foundation the family holds no active membership at, with the family's contributors, contributions and
-   * relevant projects, all decided in the warehouse (pending product confirmation). The rows name no organization.
-   */
-  public async getFamilyDiscoverOpportunities(scope: OrgLensRollUpScope): Promise<OrgDiscoverOpportunitiesResponse> {
-    const rows = await withOrgCache(
-      scope.rollUpKey,
-      'memberships-discover-family:v2',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFamilyDiscoverOpportunityRows(scope.rootUid),
-      OrgLensMembershipsService.isRawRowArray
-    );
-    return { accountId: scope.rollUpKey, opportunities: rows.map((raw) => this.shapeDiscoverRow(raw)) };
-  }
-
   public async getExpiredMemberships(accountId: string, search?: string): Promise<OrgExpiredMembershipsResponse> {
     const rows = await withOrgCache(
       accountId,
@@ -478,28 +463,6 @@ export class OrgLensMembershipsService {
     `;
 
     const result = await this.snowflakeService.execute<OrgLensDiscoverMembershipRow>(query, [accountId]);
-    return result.rows;
-  }
-
-  private async fetchFamilyDiscoverOpportunityRows(familyAccountId: string): Promise<OrgLensDiscoverMembershipRow[]> {
-    const query = `
-      SELECT
-        FOUNDATION_ID,
-        FOUNDATION_NAME,
-        FOUNDATION_SLUG,
-        FOUNDATION_LOGO_URL,
-        PROJECT_TYPE,
-        SUGGESTED_TIER,
-        FAMILY_CONTRIBUTORS_COUNT AS CONTRIBUTORS_COUNT,
-        FAMILY_CONTRIBUTION_COUNT AS CONTRIBUTION_COUNT,
-        FAMILY_RELEVANT_PROJECTS AS RELEVANT_PROJECTS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_DISCOVER_MEMBERSHIPS
-      WHERE FAMILY_ACCOUNT_ID = ?
-        AND IS_FAMILY_ROLLUP_ROW
-      ORDER BY CONTRIBUTION_COUNT DESC, FOUNDATION_NAME ASC
-    `;
-
-    const result = await this.snowflakeService.execute<OrgLensDiscoverMembershipRow>(query, [familyAccountId]);
     return result.rows;
   }
 
