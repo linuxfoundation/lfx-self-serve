@@ -6,6 +6,7 @@ import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
+import { FOUNDATION_PARTICIPATING_ORGS_STAT_SUBLINE_CLASS } from '@lfx-one/shared/constants';
 import type {
   FoundationParticipatingOrg,
   FoundationParticipatingOrgBreakdown,
@@ -301,6 +302,13 @@ describe('FoundationParticipatingOrgsComponent', () => {
     await settle();
     expect(exportCsv).toHaveBeenCalledTimes(1);
     expect(exportCsv.mock.calls[0][1]).toBe('by-project');
+  });
+
+  it('gives every stat card sub-line the accessible colour, including the Members card once its summary has loaded', async () => {
+    await render();
+    const tiles = fixture.componentInstance['tiles']();
+    expect(tiles).toHaveLength(4);
+    expect(tiles.map((tile) => tile.subLineClass)).toEqual(Array(4).fill(FOUNDATION_PARTICIPATING_ORGS_STAT_SUBLINE_CLASS));
   });
 
   it('says nothing about the data source until a summary arrives', async () => {

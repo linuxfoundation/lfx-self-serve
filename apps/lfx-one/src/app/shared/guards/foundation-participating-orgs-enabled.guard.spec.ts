@@ -103,4 +103,11 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
 
     expect(await runGuard()).toEqual({ redirected: '/foundation/overview', project: 'sample-foundation' });
   });
+
+  it('drops a repeated project parameter instead of passing the array through', async () => {
+    getFlagOverride.mockReturnValue(false);
+    router.getCurrentNavigation.mockReturnValue({ extractedUrl: { queryParams: { project: ['a', 'b'] } } });
+
+    expect(await runGuard()).toEqual({ redirected: '/foundation/overview', project: undefined });
+  });
 });

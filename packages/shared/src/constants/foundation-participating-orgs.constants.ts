@@ -52,10 +52,10 @@ export const FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH = 100;
 
 export const FOUNDATION_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS = 300;
 
-/** Slug shape accepted by the BFF (lowercase kebab-case, at most 64 characters). */
-/** Stat card sub-line colour: the shared card's default gray-400 is under 4.5:1 on white at 12px. */
+/** Stat card sub-line colour: the shared card's default gray-400 is under 4.5:1 on white at the 10.5px a `text-xs` line renders at (14px root). */
 export const FOUNDATION_PARTICIPATING_ORGS_STAT_SUBLINE_CLASS = 'text-gray-600';
 
+/** Slug shape accepted by the BFF (lowercase kebab-case, at most 64 characters). */
 export const FOUNDATION_PARTICIPATING_ORGS_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_KINDS = ['summary', 'by-project'] as const;
