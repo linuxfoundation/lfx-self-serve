@@ -49,6 +49,23 @@
               size="small"
               data-testid="formations-pipeline-foundation-kind" />
           </div>
+          @for (key of classificationKeys; track key) {
+            <div class="w-full min-[600px]:w-52 max-[599px]:[&_.p-multiselect]:min-h-11">
+              <lfx-multi-select
+                [form]="filterForm"
+                [control]="key"
+                [options]="classificationOptions()[key]"
+                [placeholder]="classificationLabels[key]"
+                [ariaLabel]="classificationLabels[key]"
+                [showToggleAll]="false"
+                [filter]="true"
+                [filterPlaceHolder]="'Search ' + classificationLabels[key].toLowerCase()"
+                [matchTriggerWidth]="true"
+                styleClass="w-full"
+                size="small"
+                [attr.data-testid]="'formations-pipeline-classification-' + key" />
+            </div>
+          }
           <div class="w-full min-[600px]:w-64">
             <lfx-input-text
               [form]="filterForm"

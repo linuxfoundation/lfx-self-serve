@@ -28,6 +28,9 @@ function row(overrides: Partial<FormationPipelineRow>): FormationPipelineRow {
     program_manager: null,
     opportunity_owner: null,
     formation_lead: null,
+    technical_activity_type: [],
+    technology: [],
+    industry: [],
     foundation_kind: 'under_foundation',
     created_at: null,
     updated_at: null,
@@ -259,7 +262,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
       fixture.detectChanges();
       await new Promise((resolve) => setTimeout(resolve, 350));
       fixture.detectChanges();
-      expect(lastParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null });
+      expect(lastParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null, tat: null, tech: null, ind: null });
     });
 
     it('round-trips: what one view writes, a fresh page reads back as the same view', async () => {
@@ -634,5 +637,149 @@ describe('FormationsPipelineComponent (#5475)', () => {
     expect(q('formations-pipeline-error')?.textContent).toContain("Couldn't load the pipeline. Try again.");
     await click(q('formations-pipeline-retry'));
     expect(getFormationPipeline).toHaveBeenCalledTimes(2);
+  });
+
+  // #5619 Part C: three multi-select classification filters, client-side, joined with the other filters.
+  describe('classification filters', () => {
+    const SPEC = 'Open Standard / Specification';
+    const OSS = 'Open Source Software';
+    const CROWD = [
+      row({ uid: 'a', name: 'Alpha', stage: 'engaged', technical_activity_type: [OSS, SPEC], technology: ['Quantum'], industry: ['Finance'] }),
+      row({ uid: 'b', name: 'Bravo', stage: 'engaged', technical_activity_type: [SPEC], technology: ['AI & ML'], industry: [] }),
+      row({
+        uid: 'c',
+        name: 'Charlie',
+        stage: 'exploratory',
+        technical_activity_type: [OSS],
+        technology: ['Quantum', 'AI & ML'],
+        industry: ['Finance', 'Health'],
+      }),
+      row({ uid: 'd', name: 'Delta', stage: 'exploratory' }),
+      row({ uid: 'e', name: 'Echo', stage: 'archived', technical_activity_type: [SPEC] }),
+    ];
+    const set = async (key: 'technical_activity_type' | 'technology' | 'industry', values: string[]): Promise<void> => {
+      fixture.componentInstance['filterForm'].controls[key].setValue(values);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    const optionsOf = (key: 'technical_activity_type' | 'technology' | 'industry'): string[] =>
+      fixture.componentInstance['classificationOptions']()[key].map((option) => option.label);
+    const lastParams = (): Record<string, string | string[] | null> => {
+      const calls = vi.mocked(TestBed.inject(Router).navigate).mock.calls;
+      return (calls[calls.length - 1][1] as { queryParams: Record<string, string | string[] | null> }).queryParams;
+    };
+
+    it('renders the three selects with their labels, and shows every live row while none is set', async () => {
+      await render(of(response(CROWD)));
+
+      for (const label of ['Technical activity type', 'Technology', 'Industry']) {
+        expect(q('formations-pipeline')?.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
+      }
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('lists the values present, sorted, with counts that follow the stage and the other filters', async () => {
+      await render(of(response(CROWD)));
+      // Live stages only: the archived row's Specification does not count.
+      expect(optionsOf('technical_activity_type')).toEqual([`${OSS} (2)`, `${SPEC} (2)`]);
+      expect(optionsOf('technology')).toEqual(['AI & ML (2)', 'Quantum (2)']);
+
+      await set('industry', ['Health']);
+      expect(optionsOf('technology')).toEqual(['AI & ML (1)', 'Quantum (1)']);
+      // The field's own filter is left out of its options, so a second industry stays pickable.
+      expect(optionsOf('industry')).toEqual(['Finance (2)', 'Health (1)']);
+
+      fixture.componentInstance['onStageChange']('archived');
+      fixture.detectChanges();
+      expect(optionsOf('technical_activity_type')).toEqual([]);
+    });
+
+    it('keeps a selected value listed with a zero count when the other filters have emptied it', async () => {
+      await render(of(response(CROWD)));
+      await set('technology', ['Quantum']);
+      await set('industry', ['Health']);
+      await set('technical_activity_type', [SPEC]);
+
+      expect(optionsOf('technical_activity_type')).toContain(`${SPEC} (0)`);
+    });
+
+    it('filters by each field alone, OR within a filter and AND across filters', async () => {
+      await render(of(response(CROWD)));
+
+      await set('technical_activity_type', [SPEC]);
+      expect(rowIds().sort()).toEqual(['a', 'b']);
+      await set('technical_activity_type', [SPEC, OSS]);
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c']);
+      await set('technology', ['Quantum']);
+      expect(rowIds().sort()).toEqual(['a', 'c']);
+      await set('industry', ['Health']);
+      expect(rowIds()).toEqual(['c']);
+    });
+
+    it('hides a row with an empty array while any classification filter is set, and shows it again when cleared', async () => {
+      await render(of(response(CROWD)));
+      await set('industry', ['Finance']);
+      expect(rowIds()).not.toContain('d');
+      expect(rowIds()).not.toContain('b');
+
+      await set('industry', []);
+      expect(rowIds()).toContain('d');
+    });
+
+    it('makes the counts, pills and stat cards follow the filters', async () => {
+      await render(of(response(CROWD)));
+      await set('technical_activity_type', [SPEC]);
+
+      expect(fixture.componentInstance['counts']()).toMatchObject({ engaged: 2, exploratory: 0, archived: 1, total: 3 });
+      const pills = [...fixture.nativeElement.querySelectorAll('[data-testid="formations-pipeline-pills"] button')].map((el: Element) =>
+        el.textContent?.trim()
+      );
+      expect(pills[0]).toBe('In pipeline (2)');
+    });
+
+    it('writes each selection to the URL as repeated params, values with spaces, "/" and "&" intact, and reset clears them', async () => {
+      await render(of(response(CROWD)), {});
+      await set('technical_activity_type', [SPEC, OSS]);
+      await set('technology', ['AI & ML']);
+
+      expect(lastParams()).toMatchObject({ tat: [SPEC, OSS], tech: ['AI & ML'], ind: null });
+
+      fixture.componentInstance['resetFilters']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(lastParams()).toMatchObject({ tat: null, tech: null, ind: null });
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('opens on the classification in the URL, and drops a value no row holds', async () => {
+      await render(of(response(CROWD)), { tat: SPEC, tech: 'AI & ML', ind: 'Not A Real Sector' } as unknown as Record<string, string>);
+
+      const form = fixture.componentInstance['filterForm'];
+      expect(form.controls.technical_activity_type.value).toEqual([SPEC]);
+      expect(form.controls.technology.value).toEqual(['AI & ML']);
+      expect(form.controls.industry.value).toEqual([]);
+      expect(rowIds()).toEqual(['b']);
+    });
+
+    it('exports the filtered rows with the three classification columns', async () => {
+      await render(of(response(CROWD)));
+      await set('technology', ['Quantum']);
+      let captured: Blob | null = null;
+      URL.createObjectURL = vi.fn((blob: Blob) => {
+        captured = blob;
+        return 'blob:x';
+      });
+      URL.revokeObjectURL = vi.fn();
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+      fixture.componentInstance['exportCsv']();
+
+      const lines = (await (captured as unknown as Blob).text()).split('\r\n');
+      expect(lines[0]).toContain('Technical activity type,Technology,Industry');
+      expect(lines[1]).toContain(`${OSS}; ${SPEC}`);
+      expect(lines[1]).toContain('Quantum');
+      expect(lines.filter((line) => line.startsWith('Bravo'))).toEqual([]);
+    });
   });
 });

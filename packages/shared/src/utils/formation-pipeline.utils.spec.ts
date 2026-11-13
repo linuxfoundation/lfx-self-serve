@@ -5,10 +5,21 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { rowsToCsv } from './file.utils';
 import type { FormationPipelineRow } from '../interfaces/formation-pipeline.interface';
-import { FORMATION_PIPELINE_SEARCH_MAX_LENGTH } from '../constants/formation-pipeline.constants';
+import {
+  FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUE_LENGTH,
+  FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES,
+  FORMATION_PIPELINE_SEARCH_MAX_LENGTH,
+} from '../constants/formation-pipeline.constants';
 import {
   buildPipelineCsvRows,
   buildPipelineUrlParams,
+  emptyPipelineClassification,
+  filterPipelineRowsByClassification,
+  getPipelineClassificationOptions,
+  hasPipelineClassificationFilter,
+  normalizePipelineClassification,
+  pruneUnknownPipelineClassification,
+  sanitizePipelineClassificationValues,
   clearedPipelineUrlParams,
   getDefaultPipelineUrlState,
   parsePipelineUrlState,
@@ -49,6 +60,9 @@ function row(overrides: Partial<FormationPipelineRow> = {}): FormationPipelineRo
     program_manager: null,
     opportunity_owner: null,
     formation_lead: null,
+    technical_activity_type: [],
+    technology: [],
+    industry: [],
     foundation_kind: 'under_foundation',
     created_at: null,
     updated_at: null,
@@ -243,8 +257,11 @@ describe('buildPipelineCsvRows', () => {
       'PM',
       'Opportunity owner',
       'Updated',
+      'Technical activity type',
+      'Technology',
+      'Industry',
     ]);
-    expect(rowsToCsv(matrix).split('\r\n')[1]).toBe('"\'=HYPERLINK(""x"")",Foundation,Draft,2026-11-18,Lee Lead,,,"Ed, Jr",,,');
+    expect(rowsToCsv(matrix).split('\r\n')[1]).toBe('"\'=HYPERLINK(""x"")",Foundation,Draft,2026-11-18,Lee Lead,,,"Ed, Jr",,,,,,');
   });
 
   it('names the file by day', () => {
@@ -364,7 +381,8 @@ describe('Pipeline URL state (#5619)', () => {
   const toQuery = (state: ReturnType<typeof getDefaultPipelineUrlState>): string => {
     const params = new URLSearchParams();
     for (const [name, value] of Object.entries(buildPipelineUrlParams(state))) {
-      if (value !== null) params.set(name, value);
+      if (value === null) continue;
+      for (const entry of [value].flat()) params.append(name, entry);
     }
     return params.toString();
   };
@@ -409,6 +427,7 @@ describe('Pipeline URL state (#5619)', () => {
       foundationUid: 'f-uid_1',
       foundationKind: 'under_foundation' as const,
       search: 'quantum & more',
+      classification: emptyPipelineClassification(),
       sort: { key: 'formation_lead' as const, direction: 'desc' as const },
     };
     const query = toQuery(state);
@@ -456,6 +475,113 @@ describe('Pipeline URL state (#5619)', () => {
   });
 
   it('clears every Pipeline param when leaving the tab', () => {
-    expect(clearedPipelineUrlParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null });
+    expect(clearedPipelineUrlParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null, tat: null, tech: null, ind: null });
+  });
+});
+
+describe('Pipeline classification filters (#5619 Part C)', () => {
+  const OSS = 'Open Source Software';
+  const SPEC = 'Open Standard / Specification';
+  const rows = [
+    row({ uid: 'a', stage: 'engaged', technical_activity_type: [OSS, SPEC], technology: ['Quantum'], industry: ['Finance'] }),
+    row({ uid: 'b', stage: 'engaged', technical_activity_type: [SPEC], technology: ['AI / ML'], industry: [] }),
+    row({ uid: 'c', stage: 'exploratory', technical_activity_type: [OSS], technology: ['Quantum', 'AI / ML'], industry: ['Finance', 'Health'] }),
+    row({ uid: 'd', stage: 'exploratory', technical_activity_type: [], technology: [], industry: [] }),
+  ];
+  const select = (selection: Partial<ReturnType<typeof emptyPipelineClassification>>) => ({ ...emptyPipelineClassification(), ...selection });
+  const uids = (list: FormationPipelineRow[]) => list.map((r) => r.uid);
+
+  it('maps present, empty and missing arrays', () => {
+    expect(normalizePipelineClassification([OSS, SPEC])).toEqual([OSS, SPEC]);
+    expect(normalizePipelineClassification([])).toEqual([]);
+    expect(normalizePipelineClassification(undefined)).toEqual([]);
+    expect(normalizePipelineClassification(null)).toEqual([]);
+    expect(normalizePipelineClassification('Open Source Software')).toEqual([]);
+    expect(normalizePipelineClassification([' A ', 'A', '', 3, null, 'B'])).toEqual(['A', 'B']);
+  });
+
+  it('shows every row, including empty-array rows, when no classification filter is set', () => {
+    expect(hasPipelineClassificationFilter(emptyPipelineClassification())).toBe(false);
+    expect(uids(filterPipelineRowsByClassification(rows, emptyPipelineClassification()))).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('filters by each field alone; a row matches when any of its values is selected', () => {
+    expect(uids(filterPipelineRowsByClassification(rows, select({ technical_activity_type: [SPEC] })))).toEqual(['a', 'b']);
+    expect(uids(filterPipelineRowsByClassification(rows, select({ technology: ['Quantum'] })))).toEqual(['a', 'c']);
+    expect(uids(filterPipelineRowsByClassification(rows, select({ industry: ['Health'] })))).toEqual(['c']);
+  });
+
+  it('is OR within a filter and AND across filters', () => {
+    expect(uids(filterPipelineRowsByClassification(rows, select({ technical_activity_type: [OSS, SPEC] })))).toEqual(['a', 'b', 'c']);
+    expect(uids(filterPipelineRowsByClassification(rows, select({ technical_activity_type: [SPEC], technology: ['Quantum'] })))).toEqual(['a']);
+    expect(uids(filterPipelineRowsByClassification(rows, select({ technical_activity_type: [SPEC], industry: ['Health'] })))).toEqual([]);
+  });
+
+  it('hides an empty-array row under any active filter, whichever field the filter is on', () => {
+    expect(uids(filterPipelineRowsByClassification(rows, select({ industry: ['Finance'] })))).toEqual(['a', 'c']);
+    expect(uids(filterPipelineRowsByClassification(rows, select({ technology: ['Quantum', 'AI / ML'] })))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('lists the values present, sorted, with counts that follow the other filters', () => {
+    expect(getPipelineClassificationOptions(rows, 'technical_activity_type')).toEqual([
+      { value: OSS, count: 2 },
+      { value: SPEC, count: 2 },
+    ]);
+    // Technology options, seen after the Industry filter (the field's own filter is left out).
+    const afterIndustry = filterPipelineRowsByClassification(rows, select({ industry: ['Health'], technology: ['Quantum'] }), 'technology');
+    expect(getPipelineClassificationOptions(afterIndustry, 'technology')).toEqual([
+      { value: 'AI / ML', count: 1 },
+      { value: 'Quantum', count: 1 },
+    ]);
+    expect(getPipelineClassificationOptions([], 'industry')).toEqual([]);
+  });
+
+  it('adds three CSV columns after the existing ones, joined with "; "', () => {
+    const [header, first, empty] = buildPipelineCsvRows([rows[0], rows[3]]);
+    expect(header.slice(-3)).toEqual(['Technical activity type', 'Technology', 'Industry']);
+    expect(first.slice(-3)).toEqual([`${OSS}; ${SPEC}`, 'Quantum', 'Finance']);
+    expect(empty.slice(-3)).toEqual(['', '', '']);
+    expect(header).toHaveLength(first.length);
+  });
+
+  describe('URL state', () => {
+    const fromQuery = (query: string) => parsePipelineUrlState(new URLSearchParams(query));
+    const toQuery = (state: ReturnType<typeof getDefaultPipelineUrlState>): string => {
+      const params = new URLSearchParams();
+      for (const [name, value] of Object.entries(buildPipelineUrlParams(state))) {
+        if (value === null) continue;
+        for (const entry of [value].flat()) params.append(name, entry);
+      }
+      return params.toString();
+    };
+
+    it('writes nothing for the defaults and repeats a param per value', () => {
+      expect(toQuery(getDefaultPipelineUrlState())).toBe('');
+      const state = { ...getDefaultPipelineUrlState(), classification: select({ technical_activity_type: [OSS, SPEC], industry: ['Finance'] }) };
+      expect(toQuery(state)).toBe('tat=Open+Source+Software&tat=Open+Standard+%2F+Specification&ind=Finance');
+    });
+
+    it('round-trips values with spaces, "/" and "&"', () => {
+      const classification = select({ technical_activity_type: [SPEC], technology: ['R&D / Labs', 'AI, ML'], industry: ['A=B'] });
+      const state = { ...getDefaultPipelineUrlState(), classification };
+      expect(fromQuery(toQuery(state)).classification).toEqual(classification);
+    });
+
+    it('drops empty, over-long and repeated values, and caps how many a link may carry', () => {
+      const long = 'x'.repeat(FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUE_LENGTH + 1);
+      expect(sanitizePipelineClassificationValues(['', '  ', long, 'ok', ' ok '])).toEqual(['ok']);
+      const many = Array.from({ length: FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES + 10 }, (_, index) => `v${index}`);
+      expect(sanitizePipelineClassificationValues(many)).toHaveLength(FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES);
+      expect(fromQuery(`tat=&tat=${long}&tech=Quantum`).classification).toEqual(select({ technology: ['Quantum'] }));
+    });
+
+    it('drops a value no row holds once the rows are known', () => {
+      const pruned = pruneUnknownPipelineClassification(select({ technical_activity_type: [SPEC, 'Not A Real Type'], industry: ['Nope'] }), rows);
+      expect(pruned).toEqual(select({ technical_activity_type: [SPEC] }));
+    });
+
+    it('clears the three params when leaving the tab', () => {
+      expect(clearedPipelineUrlParams()).toMatchObject({ tat: null, tech: null, ind: null });
+    });
   });
 });
