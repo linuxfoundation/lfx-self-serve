@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, tallies, voters]
-last_updated: 2026-11-06
+last_updated: 2026-11-12
 intercom_collection: Votes
 ---
 
@@ -80,13 +80,13 @@ Totals, abstentions and comments stay hidden until the vote closes, and the page
 
 Voters see only their own response while the vote is open. Totals and comments appear after it closes.
 
-| Your situation                    | What the page shows                                                                                                                                                                                                             |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| You haven't voted, vote is active | **Results available after voting closes**, a note that you haven't responded yet, and a **Cast vote** button.                                                                                                                   |
-| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**) and your recorded ballot. The signed-in app offers no way to change it; a personalized ballot link can still update an active ballot. |
-| The vote has closed               | The final results for each question, abstentions, and comments without names. On a named vote, a note says **Your vote is included in these results.** If no one voted, it says **No votes were submitted.**                    |
-| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                                           |
-| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                                         |
+| Your situation                    | What the page shows                                                                                                                                                                                                                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| You haven't voted, vote is active | **Results available after voting closes**, a note that you haven't responded yet, and a **Cast vote** button.                                                                                                                                                                       |
+| You voted, vote is active         | **Your vote has been recorded** (or **Your responses to N questions have been recorded**) and your recorded ballot. This page has no ballot-changing controls. To edit your own ballot when allowed, go to **Me → Votes → Review** and select **Update Vote** after making changes. |
+| The vote has closed               | The final results for each question, abstentions, and comments without names. On a named vote, a note says **Your vote is included in these results.** If no one voted, it says **No votes were submitted.**                                                                        |
+| You aren't on the voter list      | **You're not a voter on this vote**. Only invited voters can cast a ballot, and results are shared with voters after the vote closes.                                                                                                                                               |
+| You were removed from the vote    | **You don't have access to this vote**.                                                                                                                                                                                                                                             |
 
 If the final results don't load, the page says **Couldn't load results. Try reloading this page.**
 

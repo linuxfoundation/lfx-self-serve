@@ -40,6 +40,7 @@ import type {
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
+  IndexedPollAnswer,
   MyVoteBallot,
   MyVoteResponse,
   MyVotesQuickFilter,
@@ -53,6 +54,7 @@ import type {
   UserChoice,
   Vote,
   VoteAnswerSummaryLine,
+  VoteBallotChangeEligibility,
   VoteBallotQuestionView,
   VoteBallotSubmission,
   VoteCastFormPrefill,
@@ -100,11 +102,26 @@ export function isVoteAwaitingMyBallot(vote: Vote): boolean {
 }
 
 /**
- * True when My Votes can show the viewer's recorded ballot in a read-only drawer: active and already responded (#4331).
- * My Votes opens the cast drawer in read-only review mode for these rows instead of navigating to the vote page.
+ * True when My Votes can open the viewer's recorded-ballot Review drawer: active and already responded (#4331).
+ * Ballot-change eligibility separately determines whether the recorded ballot is editable.
  */
 export function isVoteBallotReviewable(vote: Vote): boolean {
   return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.RESPONDED;
+}
+
+/** True unless the vote's creator made submitted ballots final (#4723); votes without the setting are allowed. */
+export function isVoteChangeAllowed(vote: Pick<Vote, 'allow_vote_change'> | null | undefined): boolean {
+  return vote?.allow_vote_change !== false;
+}
+
+/**
+ * True when the voter may change their submitted ballot now (#4723).
+ * @description ITX's `can_change_vote` wins whenever it is reported. When it is omitted (an older backend), derive it
+ * from the vote: changes allowed, the vote active, and a submitted ballot from a voter who was not removed.
+ */
+export function canChangeSubmittedBallot({ canChangeVote, allowVoteChange, status, submitted, voterRemoved }: VoteBallotChangeEligibility): boolean {
+  if (typeof canChangeVote === 'boolean') return canChangeVote;
+  return allowVoteChange !== false && submitted && !voterRemoved && normalizePollStatus(status) === PollStatus.ACTIVE;
 }
 
 /** Matches the personal summary's status/response semantics at a shared time snapshot. */
@@ -215,6 +232,8 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : VOTE_DEFAULT_CLOSE_TIME,
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
+    // Legacy votes predate the setting and behave as "allowed" (#4723).
+    allow_vote_change: vote.allow_vote_change ?? true,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
   };
@@ -223,7 +242,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
 /**
  * Maps a Vote API response to a VoteFormValue for prefilling the create form when cloning a vote
  * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
- * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
+ * prompts, abstain, allow vote change) — cast ballots, results, and the source vote's status/uid are never part of a form
  * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
  * edit: {@link mapFiltersToEligibility} widens to 'all' whenever the filter set contains Observer or
  * Emeritus, so a clone can re-expand to a broader electorate than the source actually had. This is a
@@ -476,6 +495,7 @@ export function buildCreateVoteRequest(formValue: VoteFormValue, projectUid: str
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
+    allow_vote_change: formValue.allow_vote_change,
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -495,6 +515,7 @@ export function buildDraftVoteRequest(formValue: VoteFormValue, projectUid: stri
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
+    allow_vote_change: formValue.allow_vote_change,
     poll_questions,
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -516,6 +537,7 @@ export function buildUpdateVoteRequest(formValue: VoteFormValue, projectUid: str
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
+    allow_vote_change: formValue.allow_vote_change,
     poll_questions: formValue.questions.map(mapQuestionToApiFormat),
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -535,6 +557,7 @@ export function buildDraftUpdateVoteRequest(formValue: VoteFormValue, projectUid
     committee_uid: formValue.committee?.uid || '',
     committee_filters: mapEligibilityToFilters(formValue.eligible_participants),
     allow_abstain: formValue.allow_abstain,
+    allow_vote_change: formValue.allow_vote_change,
     poll_questions,
     poll_comment_prompts: mapCommentPromptsToApiFormat(formValue.commentPrompts),
   };
@@ -758,8 +781,8 @@ function parseVoteVoterChoiceKey(choiceKey: string): { questionId: string; choic
   return { questionId: choiceKey.slice(0, separator), choiceId: choiceKey.slice(separator + 1) };
 }
 
-/** A ranked answer's preferences in rank order — `ranked_user_choice` when present, else `user_choice`; unranked entries keep their order. */
-function rankedAnswerChoices(answer: PollAnswer): UserChoice[] {
+/** A ranked answer's preferences in rank order — nonempty `ranked_user_choice`, else `user_choice`; unranked entries keep their order. */
+export function rankedAnswerChoices(answer: IndexedPollAnswer): UserChoice[] {
   const choices = answer.ranked_user_choice?.length ? answer.ranked_user_choice : (answer.user_choice ?? []);
   return choices
     .map((choice, index) => ({ choice, index }))
@@ -982,7 +1005,7 @@ export function buildVoteBallotQuestions(vote: Pick<Vote, 'poll_type' | 'poll_qu
 /**
  * Turns the caller's current ballot into cast-drawer form values (#4331)
  * @description Single choice keeps the first selected choice, multiple choice every selected choice; ranked questions
- * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked in the read-only review.
+ * keep only the voter's recorded preferences in rank order. Unranked choices stay unranked when Review opens.
  * Recorded choice ids are preserved even when current question metadata no longer declares them; unanswered questions are omitted.
  */
 export function mapMyBallotToCastForm(vote: Pick<Vote, 'poll_type' | 'poll_questions'>, ballot: MyVoteBallot): VoteCastFormPrefill {

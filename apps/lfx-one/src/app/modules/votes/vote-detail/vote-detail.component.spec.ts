@@ -6,6 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
@@ -104,6 +105,8 @@ function httpError(status: number): Observable<never> {
 describe('VoteDetailComponent', () => {
   let voteService: {
     fetchVote: ReturnType<typeof vi.fn>;
+    getVote: ReturnType<typeof vi.fn>;
+    updateMyResponse: ReturnType<typeof vi.fn>;
     getMyVoteResponse: ReturnType<typeof vi.fn>;
     getMyVoteBallot: ReturnType<typeof vi.fn>;
     getVoteResults: ReturnType<typeof vi.fn>;
@@ -124,6 +127,7 @@ describe('VoteDetailComponent', () => {
     await TestBed.configureTestingModule({
       imports: [VoteDetailComponent],
       providers: [
+        provideNoopAnimations(),
         { provide: VoteService, useValue: voteService },
         { provide: UserService, useValue: { impersonating } },
         { provide: ProjectService, useValue: projectService },
@@ -168,6 +172,8 @@ describe('VoteDetailComponent', () => {
     impersonating.set(false);
     voteService = {
       fetchVote: vi.fn().mockReturnValue(of(makeVote())),
+      getVote: vi.fn().mockReturnValue(of(makeVote())),
+      updateMyResponse: vi.fn().mockReturnValue(of(undefined)),
       getMyVoteResponse: vi.fn().mockReturnValue(of(null)),
       getMyVoteBallot: vi.fn().mockReturnValue(of(null)),
       getVoteResults: vi.fn().mockReturnValue(of(makeResults())),
@@ -625,13 +631,14 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
     });
 
-    it('does not read a ballot for a manager', async () => {
+    it('keeps the manager page focused on results without loading a personal ballot', async () => {
       projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
       voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
       const fixture = await setup();
 
       expect(read(fixture, 'audience')).toBe('creator');
       expect(voteService.getMyVoteBallot).not.toHaveBeenCalled();
+      expect(testId(fixture, 'vote-detail-overview-results')).not.toBeNull();
       expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
     });
 
@@ -643,6 +650,18 @@ describe('VoteDetailComponent', () => {
       expect(testId(fixture, 'vote-detail-my-ballot')).toBeNull();
       expect(testId(fixture, 'vote-detail-my-ballot-error')?.textContent).toContain("Couldn't load your ballot.");
     });
+  });
+
+  it.each([false, true])('never offers ballot-changing controls on the vote page (manager %s)', async (manager) => {
+    projectService.getProjectStrict.mockReturnValue(of({ writer: manager } as Project));
+    voteService.fetchVote.mockReturnValue(of(makeVote({ allow_vote_change: true })));
+    voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED)));
+    const fixture = await setup();
+
+    expect(testId(fixture, 'vote-detail-manager-ballot')).toBeNull();
+    expect(testId(fixture, 'vote-detail-manager-change-vote')).toBeNull();
+    expect(testId(fixture, 'vote-detail-voter-change-vote')).toBeNull();
+    expect(read(fixture, 'castDrawerVisible')).toBe(false);
   });
 
   describe('participation card', () => {
