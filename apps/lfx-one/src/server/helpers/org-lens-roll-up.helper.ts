@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
-import type { OrgLensRollUpScope, OrgRollUpSetOrg, OrgRollUpSetResponse } from '@lfx-one/shared/interfaces';
+import type { AccessAwareOrgsResult, OrgLensRollUpScope, OrgRollUpSetOrg } from '@lfx-one/shared/interfaces';
 import { orgRollUpRootUid } from '@lfx-one/shared/utils/org-lens-url.utils';
 import type { Request } from 'express';
 
@@ -53,9 +53,9 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw forbidden();
   }
 
-  let rollUpSet: OrgRollUpSetResponse;
+  let roster: AccessAwareOrgsResult;
   try {
-    rollUpSet = await roleGrants.getRollUpSet(req, username);
+    roster = await roleGrants.getAccessAwareOrgs(req, username);
   } catch (error) {
     logger.warning(req, operation, 'Roll-up set lookup failed; cannot verify Org Lens roll-up access', {
       roll_up_key: rollUpKey,
@@ -63,6 +63,7 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     });
     throw unavailable(error, '/query/resources');
   }
+  const rollUpSet = roleGrants.toRollUpSet(roster);
   if (rollUpSet.lookupOutcome === 'failed') {
     throw unavailable(undefined, '/query/resources');
   }
@@ -75,8 +76,8 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
     throw forbidden();
   }
 
-  const roster = roleGrants.getAccessAwareOrgs(req, username);
-  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation, roster)));
+  const sharedRoster = Promise.resolve(roster);
+  const checks = await Promise.allSettled(family.orgs.map((org) => assertOrgLensRead(req, org.accountId, operation, sharedRoster)));
   const members: OrgRollUpSetOrg[] = [];
   checks.forEach((check, index) => {
     if (check.status === 'fulfilled') {

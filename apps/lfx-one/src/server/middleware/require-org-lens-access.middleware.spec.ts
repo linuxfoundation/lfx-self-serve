@@ -10,7 +10,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getAccessAwareOrgs = vi.fn();
-const getRollUpSet = vi.fn();
+const toRollUpSet = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 const getEffectiveUsername = vi.fn();
 
@@ -19,7 +19,7 @@ const getEffectiveUsername = vi.fn();
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
-    public getRollUpSet = getRollUpSet;
+    public toRollUpSet = toRollUpSet;
   },
 }));
 // The per-org authorizer question (`b2b_org:<uid>#auditor`) the gate asks alongside the roster.
@@ -326,7 +326,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   }
 
   beforeEach(() => {
-    getRollUpSet.mockResolvedValue(rollUpSet());
+    toRollUpSet.mockReturnValue(rollUpSet());
     getAccessAwareOrgs.mockResolvedValue(grants([ROOT, SUBSIDIARY]));
   });
 
@@ -335,14 +335,14 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     const { next } = await runRollUp(req);
 
     expect(statusOf(next)).toBe('allow');
-    expect(getRollUpSet).toHaveBeenCalledWith(req, 'jdoe');
+    expect(getAccessAwareOrgs).toHaveBeenCalledWith(req, 'jdoe');
     await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
       rollUpKey: ROLL_UP,
       rootUid: ROOT,
       members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
       complete: true,
     });
-    expect(getRollUpSet).toHaveBeenCalledTimes(1);
+    expect(toRollUpSet).toHaveBeenCalledTimes(1);
   });
 
   it('loads the caller roster once for the whole family, not once per member', async () => {
@@ -353,7 +353,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   });
 
   it('serves the verified members of a family present in a partial roll-up set, marked incomplete', async () => {
-    getRollUpSet.mockResolvedValue(rollUpSet([org(ROOT, 'Parent Co')], { degraded: true, lookupOutcome: 'partial' }));
+    toRollUpSet.mockReturnValue(rollUpSet([org(ROOT, 'Parent Co')], { degraded: true, lookupOutcome: 'partial' }));
     getAccessAwareOrgs.mockResolvedValue({ ...grants([ROOT]), degraded: true });
     const req = buildRollUpReq();
 
@@ -389,7 +389,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   });
 
   it('refuses a family the caller holds no organization in, rather than widening to that family', async () => {
-    getRollUpSet.mockResolvedValue({
+    toRollUpSet.mockReturnValue({
       families: [{ rootUid: OTHER_ROOT, rootName: 'Other', rootLogoUrl: null, orgs: [org(OTHER_ROOT, 'Other')] }],
       degraded: false,
       lookupOutcome: 'ok',
@@ -398,12 +398,12 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     const { next } = await runRollUp(buildRollUpReq());
 
     expect(statusOf(next)).toBe(403);
-    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
   it('picks the addressed family when another family is listed before it', async () => {
     const addressed = rollUpSet();
-    getRollUpSet.mockResolvedValue({
+    toRollUpSet.mockReturnValue({
       ...addressed,
       families: [{ rootUid: OTHER_ROOT, rootName: 'Other', rootLogoUrl: null, orgs: [org(OTHER_ROOT, 'Other')] }, ...addressed.families],
     });
@@ -434,7 +434,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   });
 
   it('returns a retriable 503 when the roll-up set could not be loaded', async () => {
-    getRollUpSet.mockResolvedValue({ families: [], degraded: true, lookupOutcome: 'failed' });
+    toRollUpSet.mockReturnValue({ families: [], degraded: true, lookupOutcome: 'failed' });
 
     const { next } = await runRollUp(buildRollUpReq());
 
@@ -443,7 +443,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   });
 
   it('returns a retriable 503 when the roll-up set lookup throws', async () => {
-    getRollUpSet.mockRejectedValue(new Error('query-service unreachable'));
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
 
     const { next } = await runRollUp(buildRollUpReq());
 
@@ -451,7 +451,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
   });
 
   it('returns a 503, not a 403, for a family missing from a degraded roll-up set', async () => {
-    getRollUpSet.mockResolvedValue({ families: [], degraded: true, lookupOutcome: 'partial' });
+    toRollUpSet.mockReturnValue({ families: [], degraded: true, lookupOutcome: 'partial' });
 
     const { next } = await runRollUp(buildRollUpReq());
 
@@ -463,14 +463,14 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     const { next } = await runRollUp(buildRollUpReq('HEAD'));
 
     expect(statusOf(next)).toBe('allow');
-    expect(getRollUpSet).toHaveBeenCalledTimes(1);
+    expect(toRollUpSet).toHaveBeenCalledTimes(1);
   });
 
   it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('refuses a %s on a roll-up key before asking any upstream', async (method) => {
     const { next } = await runRollUp(buildRollUpReq(method));
 
     expect(statusOf(next)).toBe(400);
-    expect(getRollUpSet).not.toHaveBeenCalled();
+    expect(toRollUpSet).not.toHaveBeenCalled();
     expect(getAccessAwareOrgs).not.toHaveBeenCalled();
   });
 
@@ -480,7 +480,7 @@ describe('requireOrgLensAccess — family roll-up key', () => {
     const { next } = await runRollUp(buildRollUpReq());
 
     expect(statusOf(next)).toBe(403);
-    expect(getRollUpSet).not.toHaveBeenCalled();
+    expect(toRollUpSet).not.toHaveBeenCalled();
   });
 
   it('treats a malformed roll-up key as a malformed organization id', async () => {
@@ -496,6 +496,6 @@ describe('requireOrgLensAccess — family roll-up key', () => {
 
   it('rejects a key without a valid top account id before loading the roll-up set', async () => {
     await expect(resolveOrgLensRollUp(buildRollUpReq(), 'family-123', 'handler')).rejects.toMatchObject({ statusCode: 400 });
-    expect(getRollUpSet).not.toHaveBeenCalled();
+    expect(toRollUpSet).not.toHaveBeenCalled();
   });
 });
