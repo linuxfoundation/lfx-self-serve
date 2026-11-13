@@ -803,8 +803,11 @@ environment:
     value:
 
   # Dark-launch gate for the Foundation Lens Participating Companies endpoints (#5697). OFF answers every
-  # /api/foundation-participating-orgs request with a neutral 404. The data is a fictional demo set until the
-  # foundation-level warehouse model exists (#5707), so keep it OFF wherever real users can reach the app.
+  # /api/foundation-participating-orgs request with a neutral 404. ON reads the live warehouse table
+  # PROJECT_PARTICIPATING_ORGS (#5707), so it needs Snowflake access to that table. Before enabling it, someone with
+  # access must run the two foundation queries against a real foundation (the foundation's own row carries its slug,
+  # and unique contributors per company stay at or under the sum of its project lines) and measure the largest
+  # foundation roster against the cache cap.
   # Pairs with the client-side `foundation-participating-orgs-enabled` flag, which hides the route and nav item.
   LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED:
     value:
