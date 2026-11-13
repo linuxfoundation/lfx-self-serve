@@ -48,7 +48,9 @@ describe('FoundationParticipatingOrgsService', () => {
     URL.revokeObjectURL = vi.fn();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // The download revokes its object URL on a deferred tick; let it run before the stubs are restored, or it hits the real, missing method.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     URL.createObjectURL = originalCreate;
     URL.revokeObjectURL = originalRevoke;
     http?.verify();
