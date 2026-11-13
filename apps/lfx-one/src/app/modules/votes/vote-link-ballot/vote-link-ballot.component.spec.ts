@@ -501,6 +501,38 @@ describe('VoteLinkBallotComponent (#4363)', () => {
       expect(testId('vote-link-ballot-final')).not.toBeNull();
     });
 
+    it.each(['pending', 'stale', 'failed'] as const)('locks a rejected first submission on a locked vote while reload is %s', async (reloadState) => {
+      const locked = { ...BALLOT, allow_vote_change: false };
+      await open(of(locked));
+      const reload = new Subject<VoteLinkBallot>();
+      getLinkBallot.mockReturnValue(reload);
+      submitLinkResponse.mockReturnValue(throwError(() => httpError(400, 'vote is not awaiting response')));
+
+      submit();
+      fixture.detectChanges();
+      expect(testId('vote-link-ballot-final')).not.toBeNull();
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      submit();
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), false);
+
+      if (reloadState === 'stale') {
+        reload.next({ ...locked, ballot: { ...locked.ballot, can_change_vote: true } });
+        reload.complete();
+      } else if (reloadState === 'failed') {
+        reload.error(httpError(500, 'server error'));
+      }
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(state()).toBe('ready');
+      expect(testId('vote-link-ballot-final')?.textContent).toContain("Your vote is final and can't be changed.");
+      expect(testId('vote-link-ballot-form')).toBeNull();
+      expect(testId('vote-link-update-prompt')).toBeNull();
+      expect(getLinkBallot).toHaveBeenCalledTimes(2);
+      submit();
+      expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.anything(), false);
+    });
+
     it('shows the pre-submit notice on a first submission of a locked vote only', async () => {
       await open(of({ ...BALLOT, allow_vote_change: false }));
       expect(testId('vote-link-final-notice')?.textContent).toContain("Once you submit, your vote can't be changed.");

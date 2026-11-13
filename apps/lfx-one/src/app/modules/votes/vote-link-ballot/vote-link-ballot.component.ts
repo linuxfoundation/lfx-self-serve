@@ -69,7 +69,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   /** Submit with PUT (the ballot exists) or POST (first submission). */
   protected readonly updateMode = signal<boolean>(false);
   protected readonly abstainedLast = signal<boolean>(false);
-  /** Set when an update returned 409 because the vote makes submitted ballots final, whatever the loaded ballot said (#4723). */
+  /** Set when a rejected submission confirms the ballot is final, whatever the loaded ballot said (#4723). */
   private readonly changeBlocked = signal<boolean>(false);
   /** Public branding for the ballot's project; null while loading, when the ballot names no project, or on any miss. */
   protected readonly project = signal<PublicProjectSummary | null>(null);
@@ -177,8 +177,9 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
           if (mayRetry && err instanceof HttpErrorResponse && err.status === 400) {
             if (!update && message.includes(VOTE_LINK_NOT_AWAITING_RESPONSE)) {
               // The ballot was already submitted elsewhere. Only a vote that allows changes may turn this into an
-              // update; otherwise reload so the submitted ballot renders as final (#4723).
+              // update; otherwise lock immediately and reload the submitted ballot (#4723).
               if (!this.changeAllowed()) {
+                this.changeBlocked.set(true);
                 this.submitting.set(false);
                 this.reloadBallot();
                 return;
