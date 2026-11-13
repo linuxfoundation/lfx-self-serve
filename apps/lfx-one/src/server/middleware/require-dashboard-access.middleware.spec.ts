@@ -27,6 +27,12 @@ vi.mock('../services/project.service', () => ({
   },
 }));
 
+vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() } }));
+
+const resolveRootProjectUid = vi.fn();
+vi.mock('../helpers/root-project.helper', () => ({ resolveRootProjectUid: (...args: unknown[]) => resolveRootProjectUid(...args) }));
+vi.mock('../services/nats.service', () => ({ NatsService: class {} }));
+
 const { requireDashboardAccess, requireExecutiveOrLFStaff } = await import('./require-dashboard-access.middleware');
 
 interface PersonaResult {
@@ -55,7 +61,10 @@ function buildReq(query: Record<string, string> = {}): Request {
 /** The middleware either calls next() with nothing (allow) or next(error) (deny). */
 function verdict(next: ReturnType<typeof vi.fn>): 'allow' | 'deny' {
   expect(next).toHaveBeenCalledTimes(1);
-  return next.mock.calls[0][0] === undefined ? 'allow' : 'deny';
+  const error = next.mock.calls[0][0];
+  // A denial must be a deliberate error, never an incidental crash inside the middleware.
+  expect(error instanceof TypeError).toBe(false);
+  return error === undefined ? 'allow' : 'deny';
 }
 
 describe('requireDashboardAccess', () => {
@@ -249,7 +258,7 @@ describe('requireExecutiveOrLFStaff', () => {
     return next;
   };
   const rootWriter = (): PersonaResult => ({ personas: ['executive-director'], personaProjects: {}, isRootWriter: true, isLFStaff: false });
-  const proj = (uid: string, slug: string, parent_uid = '') => ({ uid, slug, parent_uid });
+  const proj = (uid: string, slug: string, parentUid = '') => ({ uid, slug, parent_uid: parentUid });
 
   /** Wires the slug lookup plus a uid -> project map for getProjectById. */
   const projects = (...list: ReturnType<typeof proj>[]) => {
@@ -266,6 +275,8 @@ describe('requireExecutiveOrLFStaff', () => {
     getProjectIdBySlug.mockReset();
     getProjectById.mockReset();
     checkProjectWriter.mockReset();
+    resolveRootProjectUid.mockReset();
+    resolveRootProjectUid.mockResolvedValue('uid-root');
   });
 
   it('allows LF staff without resolving the project', async () => {
@@ -345,6 +356,21 @@ describe('requireExecutiveOrLFStaff', () => {
     checkProjectWriter.mockResolvedValue(true);
     expect(verdict(await run())).toBe('deny');
     expect(checkProjectWriter).not.toHaveBeenCalled();
+  });
+
+  it('allows a root writer when ROOT itself is unreadable, recognising it by uid', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-root'));
+    checkProjectWriter.mockResolvedValue(true);
+    expect(verdict(await run())).toBe('allow');
+    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'f');
+  });
+
+  it('maps a slug lookup outage to 503 ACCESS_CHECK_UNAVAILABLE', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a']));
+    getProjectIdBySlug.mockRejectedValue(new Error('nats timeout'));
+    const next = await run();
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 503, code: 'ACCESS_CHECK_UNAVAILABLE' });
   });
 
   it('forwards a persona lookup failure instead of allowing', async () => {

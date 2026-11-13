@@ -1,13 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PROJECT_ANCESTRY_MAX_DEPTH, PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import {
+  PROJECT_ANCESTRY_MAX_DEPTH,
+  PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN,
+  PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
+  ROOT_PROJECT_SLUG,
+} from '@lfx-one/shared/constants';
 import type { PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, ServiceValidationError } from '../errors';
+import { resolveRootProjectUid } from '../helpers/root-project.helper';
+import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from '../services/logger.service';
+import { NatsService } from '../services/nats.service';
 import { ProjectService } from '../services/project.service';
 
 const ED: PersonaType = 'executive-director';
@@ -88,6 +95,7 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
 // just below the hidden ROOT), never on ROOT itself and never when the chain could not be fully resolved.
 // The route's own `requireProjectParticipatingOrgsAccess` (project `viewer`) still runs after this gate.
 const projectService = new ProjectService();
+const natsService = new NatsService();
 
 export async function requireExecutiveOrLFStaff(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const operation = 'require_executive_or_lf_staff';
@@ -119,7 +127,21 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
     const edSlugs = new Set(edProjects.map((project) => project.projectSlug.toLowerCase()));
 
     // The requested project: an unknown slug is left to the viewer gate (404); an outage surfaces as itself.
-    const { uid, exists } = await projectService.getProjectIdBySlug(req, slug, { unavailableAsMissing: false });
+    let uid: string;
+    let exists: boolean;
+    try {
+      ({ uid, exists } = await projectService.getProjectIdBySlug(req, slug, { unavailableAsMissing: false }));
+    } catch (error) {
+      // Same outage contract as `requireProjectParticipatingOrgsAccess`: "couldn't check" is a 503, never a 500.
+      logger.warning(req, operation, 'Project slug lookup failed; cannot verify foundation scope', { slug, err: error });
+      throw new MicroserviceError(PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE, 503, 'ACCESS_CHECK_UNAVAILABLE', {
+        operation,
+        service: 'LFX_V2_SERVICE',
+        path: '/project-slug-to-uid',
+        clientMessage: PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
+        originalError: error instanceof Error ? error : undefined,
+      });
+    }
     if (!exists) {
       next();
       return;
@@ -127,6 +149,9 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
 
     // Climb project -> parent -> ... Ancestor reads are metadata-only (`access: false`) and fail closed: an
     // unreadable ancestor ends the climb as "incomplete", which can never grant the root-writer fallback.
+    // The hidden ROOT sentinel is not user-readable, so it is recognised by uid (NATS-resolved) rather than by reading it;
+    // if ROOT cannot be resolved the climb simply cannot be confirmed complete at a top-level project (fails closed).
+    const rootUid = await resolveRootProjectUid(req, natsService);
     let project: Project = await projectService.getProjectById(req, uid, false);
     let foundation: Project | null = null;
     let complete = false;
@@ -144,6 +169,10 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
       if (edUids.has(project.parent_uid)) {
         next();
         return;
+      }
+      if (rootUid && project.parent_uid === rootUid) {
+        complete = true;
+        break;
       }
 
       let parent: Project;
