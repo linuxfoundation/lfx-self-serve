@@ -140,7 +140,7 @@ export class SidebarNavService {
     // The stored selection often carries no parent_uid; the fetched record does, but only trust it for this same project
     // (it can describe the previous project, or the foundation under a preview, while a switch is in flight).
     const fetched = this.projectContextService.menuProject();
-    const parentUid = project.parent_uid || (fetched?.uid === project.uid ? fetched.parent_uid : undefined);
+    const parentUid = project.parent_uid || (fetched && fetched.uid === project.uid ? fetched.parent_uid : undefined);
     const scoped = this.personaService.personaProjects()['executive-director'] ?? [];
     return scoped.some(
       (scope) =>

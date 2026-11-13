@@ -391,6 +391,15 @@ describe('SidebarNavService', () => {
     expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
   });
 
+  it('does not throw when the selection has no uid and no project record has been fetched', () => {
+    activeLens.set('project');
+    selectedProject.set({ slug: 'p-slug' } as never);
+    activeProject.set(null);
+    personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+  });
+
   it('ignores a fetched record that describes a different project (stale during a switch or a foundation preview)', () => {
     activeLens.set('project');
     selectedProject.set({ uid: 'child', slug: 'child' } as never);
