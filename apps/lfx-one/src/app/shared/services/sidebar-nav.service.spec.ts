@@ -328,7 +328,7 @@ describe('SidebarNavService', () => {
     }
   });
 
-  it('shows Participating companies right after Documents on the project lens, for non-writers too, and not on the foundation lens', () => {
+  it('shows Participating companies right after Documents on the project lens for executive directors and LF staff (non-writers too), and not on the foundation lens', () => {
     const service = TestBed.inject(SidebarNavService);
     activeLens.set('project');
     canWrite.set(false);
@@ -341,6 +341,14 @@ describe('SidebarNavService', () => {
     expect(itemLabels.indexOf('Participating companies')).toBe(itemLabels.indexOf('Documents') + 1);
 
     activeLens.set('foundation');
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+  });
+
+  it('hides Participating companies on the project lens from users who are not executive directors or LF staff', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('project');
+    hasFullFoundationAccess.set(false);
+
     expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 

@@ -429,16 +429,17 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
-      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
-      // project `viewer` on every read.
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). Executive directors
+      // and LF staff only (as Health Metrics). The guard checks the role only; the BFF additionally scopes an ED to
+      // projects under a foundation they direct (403 renders the no-access state) and requires project `viewer`.
       {
         path: 'project/participating-orgs',
         title: 'Participating Companies',
-        data: { lens: 'project' },
+        data: { lens: 'project', accessDeniedRedirect: '/project/overview' },
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.
         runGuardsAndResolvers: 'paramsOrQueryParamsChange',
-        canActivate: [projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
       // Pre-rename addresses (#5064): every `/org/…` form — `/org`, `/org/not-found`, `/org/{slug|SFID}/{page}`,
@@ -972,6 +973,13 @@ export const routes: Routes = [
     canActivate: [authGuard, votePresenterGuard],
     data: { preload: false },
     loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
+  },
+  // Paired like `meetings/:id` below: the redesigned not-found page when `meetingPageRedesignGuard` matches, else the legacy one.
+  {
+    path: 'meetings/not-found',
+    title: 'Meeting Not Found',
+    canMatch: [meetingPageRedesignGuard],
+    loadComponent: () => import('./modules/meetings/meeting-page/not-found/meeting-page-not-found.component').then((m) => m.MeetingPageNotFoundComponent),
   },
   {
     path: 'meetings/not-found',

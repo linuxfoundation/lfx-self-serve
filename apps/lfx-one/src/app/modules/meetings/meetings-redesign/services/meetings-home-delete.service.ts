@@ -18,11 +18,12 @@ import { MeetingsHomeStore } from './meetings-home.store';
 /**
  * Delete Meeting on the meetings home page, following the legacy meeting card's flow.
  * @description A recurring meeting first asks whether to cancel one date or delete the series; the confirmation runs the
- * request, then the rows go from the list at once and the feeds reload. Provided by the page, next to the store it updates.
+ * request, then the rows go from the list at once and the feeds reload. Provided by the page, next to the store it updates;
+ * the standalone meeting page has no list, so there only the feeds reload.
  */
 @Injectable()
 export class MeetingsHomeDeleteService {
-  private readonly store = inject(MeetingsHomeStore);
+  private readonly store = inject(MeetingsHomeStore, { optional: true });
   private readonly userService = inject(UserService);
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
@@ -77,10 +78,10 @@ export class MeetingsHomeDeleteService {
     ref.closed.pipe(take(1)).subscribe((done) => {
       if (!done) return;
       if (occurrence) {
-        this.store.removeOccurrence(row.meeting.id, occurrence.occurrence_id);
+        this.store?.removeOccurrence(row.meeting.id, occurrence.occurrence_id);
         this.toast.show({ variant: 'dark', message: 'Meeting occurrence cancelled' });
       } else {
-        this.store.removeMeeting(row.meeting.id);
+        this.store?.removeMeeting(row.meeting.id);
         this.toast.show({ variant: 'dark', message: 'Meeting deleted' });
       }
       this.userService.refreshUserMeetings();

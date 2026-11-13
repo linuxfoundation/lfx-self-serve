@@ -434,7 +434,9 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
       fixture.componentInstance['onPageTabChange']('formations');
       expect(navigate).toHaveBeenLastCalledWith(
         [],
-        expect.objectContaining({ queryParams: { tab: 'formations', stage: null, foundation: null, type: null, q: null, sort: null, dir: null } })
+        expect.objectContaining({
+          queryParams: { tab: 'formations', stage: null, foundation: null, type: null, q: null, sort: null, dir: null, tat: null, tech: null, ind: null },
+        })
       );
 
       fixture.componentInstance['onPageTabChange']('pipeline');

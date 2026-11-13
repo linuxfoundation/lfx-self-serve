@@ -3,8 +3,8 @@ title: Navigate Your Dashboard
 description: How to switch lenses and use the LFX Self Serve dashboard effectively.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, lens, navigation, company, company, employer]
-last_updated: 2026-11-10
+tags: [dashboard, lens, navigation, company, employer]
+last_updated: 2026-11-12
 intercom_collection: Dashboards
 ---
 
@@ -41,7 +41,7 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 ## Project lens
 
-The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
+The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics. Executive directors and LF Staff also see **Participating companies** (`/project/participating-orgs`), which lists the companies contributing to the project; every executive director sees the entry, but can open the list only for projects under a foundation they direct (and can view). For other projects the page shows a no-access message. Other roles don't see the page.
 
 ## Company lens
 

@@ -11,12 +11,17 @@ import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { FormationService } from '@services/formation.service';
 import {
+  FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS,
+  FORMATION_PIPELINE_CLASSIFICATION_KEYS,
+  FORMATION_PIPELINE_CLASSIFICATION_PANEL_CLASSES,
+  FORMATION_PIPELINE_CLASSIFICATION_LABELS,
   FORMATION_PIPELINE_COLUMNS,
   FORMATION_PIPELINE_COPY,
   FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
@@ -29,6 +34,8 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   FilterPillOption,
+  FormationPipelineClassificationKey,
+  FormationPipelineClassificationSelection,
   FormationPipelineFoundationKindFilter,
   FormationPipelineResponse,
   FormationPipelineSort,
@@ -46,7 +53,12 @@ import {
   comparePipelineText,
   countPipelineRows,
   emptyPipelineCounts,
+  emptyPipelineClassification,
+  filterPipelineRowsByClassification,
   filterPipelineRowsByFoundationKind,
+  getPipelineClassificationOptions,
+  hasPipelineClassificationFilter,
+  pruneUnknownPipelineClassification,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
   parsePipelineUrlState,
@@ -89,6 +101,7 @@ import {
     EmptyStateComponent,
     FilterPillsComponent,
     InputTextComponent,
+    MultiSelectComponent,
     SelectComponent,
     StatCardGridComponent,
     TableComponent,
@@ -115,7 +128,14 @@ export class FormationsPipelineComponent {
     search: new FormControl<string>(this.initialState.search, { nonNullable: true }),
     foundation: new FormControl<string | null>(this.initialState.foundationUid),
     foundationKind: new FormControl<FormationPipelineFoundationKindFilter>(this.initialState.foundationKind, { nonNullable: true }),
+    technical_activity_type: new FormControl<string[]>(this.initialState.classification.technical_activity_type, { nonNullable: true }),
+    technology: new FormControl<string[]>(this.initialState.classification.technology, { nonNullable: true }),
+    industry: new FormControl<string[]>(this.initialState.classification.industry, { nonNullable: true }),
   });
+  protected readonly classificationKeys = FORMATION_PIPELINE_CLASSIFICATION_KEYS;
+  protected readonly classificationLabels = FORMATION_PIPELINE_CLASSIFICATION_LABELS;
+  protected readonly classificationPlaceholders = FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS;
+  protected readonly classificationPanelClasses = FORMATION_PIPELINE_CLASSIFICATION_PANEL_CLASSES;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   protected readonly loading = signal(true);
@@ -126,10 +146,14 @@ export class FormationsPipelineComponent {
   private readonly knownFoundations = signal<ReadonlyMap<string, string>>(new Map());
   /** Declared before `response`, whose first read can already consult it. */
   private foundationsRequested = false;
+  /** A link may name classification values this data does not have; they are dropped once, against the first rows that load. */
+  private classificationChecked = false;
 
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly foundationUid: Signal<string | null> = this.initFoundationUid();
   private readonly foundationKind: Signal<FormationPipelineFoundationKindFilter> = this.initFoundationKind();
+  /** The three classification multi-selects' values (#5619 Part C). */
+  private readonly classification: Signal<FormationPipelineClassificationSelection> = this.initClassification();
   private readonly response: Signal<FormationPipelineResponse> = this.initResponse();
 
   /** The query params for the current filters and sort; the search is the debounced term. */
@@ -139,14 +163,34 @@ export class FormationsPipelineComponent {
       foundationUid: this.foundationUid(),
       foundationKind: this.foundationKind(),
       search: this.searchTerm(),
+      classification: this.classification(),
       sort: this.sort(),
     })
   );
 
   /** The foundation's rows narrowed by the foundation type and the name search, client-side: no refetch while the rows are already loaded. */
-  private readonly searchedRows = computed(() =>
+  private readonly kindAndSearchRows = computed(() =>
     filterPipelineRowsByFoundationKind(this.response().rows, this.foundationKind()).filter((row) => matchesPipelineSearch(row.name, this.searchTerm()))
   );
+  /** Those rows narrowed by the classification filters too; the counts, pills, stat cards, table and CSV all read from here (#5619 Part C). */
+  private readonly searchedRows = computed(() => filterPipelineRowsByClassification(this.kindAndSearchRows(), this.classification()));
+  /**
+   * The options of each classification select: the values present in the rows after every OTHER filter (stage, foundation type,
+   * search and the other two classification filters), each with its count. A selected value the other filters have emptied stays
+   * listed with a zero count, so it can still be seen and cleared.
+   */
+  protected readonly classificationOptions = computed<Record<FormationPipelineClassificationKey, { label: string; value: string }[]>>(() => {
+    const selection = this.classification();
+    const staged = filterPipelineRowsByStage(this.kindAndSearchRows(), this.stage());
+    const entries = FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => {
+      const present = getPipelineClassificationOptions(filterPipelineRowsByClassification(staged, selection, key), key);
+      const listed = new Set(present.map((option) => option.value));
+      const kept = (selection[key] ?? []).filter((value) => !listed.has(value)).map((value) => ({ value, count: 0 }));
+      const options = [...present, ...kept].sort((a, b) => comparePipelineText(a.value, b.value));
+      return [key, options.map((option) => ({ label: `${option.value} (${option.count})`, value: option.value }))] as const;
+    });
+    return Object.fromEntries(entries) as Record<FormationPipelineClassificationKey, { label: string; value: string }[]>;
+  });
   /** Stage counts over the searched rows, so the pills and stat cards agree with the table. */
   protected readonly counts = computed(() => countPipelineRows(this.searchedRows()));
   protected readonly isFiltered = computed(
@@ -154,7 +198,8 @@ export class FormationsPipelineComponent {
       this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE ||
       !!this.searchTerm().trim() ||
       !!this.foundationUid() ||
-      this.foundationKind() !== FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND
+      this.foundationKind() !== FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND ||
+      hasPipelineClassificationFilter(this.classification())
   );
   protected readonly foundationKindOptions = computed(() => [
     { label: this.copy.allFoundationKinds, value: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND },
@@ -197,6 +242,14 @@ export class FormationsPipelineComponent {
     this.initUrlSync();
   }
 
+  /**
+   * The Foundation select was focused or opened: if the background foundation-options read failed and nothing is listed, try it
+   * again (the Retry button is shown only when the main load failed, which hides this select).
+   */
+  protected onFoundationSelectOpen(): void {
+    this.loadFoundationOptionsForDeepLink(this.foundationUid());
+  }
+
   protected onStageChange(stage: string): void {
     this.stage.set(this.toStageFilter(stage));
   }
@@ -226,7 +279,7 @@ export class FormationsPipelineComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({ search: '', foundation: null, foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND });
+    this.filterForm.reset({ search: '', foundation: null, foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND, ...emptyPipelineClassification() });
     this.stage.set(FORMATION_PIPELINE_DEFAULT_STAGE);
   }
 
@@ -285,6 +338,23 @@ export class FormationsPipelineComponent {
       .subscribe((queryParams) => this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true }));
   }
 
+  private initClassification(): Signal<FormationPipelineClassificationSelection> {
+    const read = (): FormationPipelineClassificationSelection => ({
+      // A cleared multi-select can leave `null` on its control (`nonNullable` only governs `reset()`), so every value is coalesced.
+      technical_activity_type: this.filterForm.controls.technical_activity_type.value ?? [],
+      technology: this.filterForm.controls.technology.value ?? [],
+      industry: this.filterForm.controls.industry.value ?? [],
+    });
+    return toSignal(
+      this.filterForm.valueChanges.pipe(
+        map(read),
+        distinctUntilChanged((previous, next) => JSON.stringify(previous) === JSON.stringify(next)),
+        takeUntilDestroyed(this.destroyRef)
+      ),
+      { initialValue: this.initialState.classification }
+    );
+  }
+
   private initFoundationKind(): Signal<FormationPipelineFoundationKindFilter> {
     return toSignal(this.filterForm.controls.foundationKind.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef)), {
       initialValue: this.initialState.foundationKind,
@@ -300,6 +370,7 @@ export class FormationsPipelineComponent {
           this.loading.set(true);
           return this.formationService.getFormationPipeline(foundationUid).pipe(
             tap((response) => {
+              this.pruneUnknownClassification(response);
               this.rememberFoundations(response, foundationUid);
               this.loadFoundationOptionsForDeepLink(foundationUid);
             }),
@@ -316,7 +387,22 @@ export class FormationsPipelineComponent {
     );
   }
 
-  /** A link that opens already scoped to a foundation has no unfiltered read to list the foundations from, so the select would show no label: read it once in the background. */
+  /** Drops link-borne classification values that no loaded row holds, once, so a stale or hand-edited link opens a sane view. */
+  private pruneUnknownClassification(response: FormationPipelineResponse): void {
+    if (this.classificationChecked) {
+      return;
+    }
+    this.classificationChecked = true;
+    const current = this.classification();
+    const pruned = pruneUnknownPipelineClassification(current, response.rows);
+    for (const key of FORMATION_PIPELINE_CLASSIFICATION_KEYS) {
+      if (pruned[key].length !== current[key].length) {
+        this.filterForm.controls[key].setValue(pruned[key]);
+      }
+    }
+  }
+
+  /** A link that opens already scoped to a foundation has no unfiltered read to list the foundations from, so the select would show no label: read it in the background. A failed read is logged and retried with the next successful read. */
   private loadFoundationOptionsForDeepLink(foundationUid: string | null): void {
     if (!foundationUid || this.foundationsRequested || this.knownFoundations().size > 0) {
       return;
@@ -325,7 +411,12 @@ export class FormationsPipelineComponent {
     this.formationService
       .getFormationPipeline(null)
       .pipe(
-        catchError(() => EMPTY),
+        catchError((error: unknown) => {
+          // Let the next successful read try again, rather than leave the select unlabeled for good.
+          console.error('[FormationsPipeline] Failed to load the foundation options', error);
+          this.foundationsRequested = false;
+          return EMPTY;
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((response) => this.rememberFoundations(response, null));

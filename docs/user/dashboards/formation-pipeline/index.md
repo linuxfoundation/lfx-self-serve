@@ -54,15 +54,16 @@ The cards above the pills show the same stages. Select a card to filter by that 
 
 - **Foundation** narrows the list to one foundation and everything beneath it. The choices come from the foundations your projects sit under. Select **All foundations** to clear it. The counts on the pills and cards follow the foundation.
 - **Foundation type** narrows the list by the project's direct parent. **Directly under LF** projects have The Linux Foundation as their parent, which is where new foundations and directed funds sit. **Under an existing foundation** projects have another project as their parent. **No parent yet** projects have none. Select **All projects** to clear it. The counts follow it, and it works together with the stage, foundation and search.
+- **Technical activity type**, **Technology** and **Industry** narrow the list by the classification set on each project. Each is a multi-select: pick one or more values, and a project stays when it has **any** of the values you picked in that filter. Used together, a project must match every filter you set. The values listed are the ones present in the projects you are looking at, sorted, each with the number of projects that have it; they follow the stage, foundation, foundation type, search and the other two filters. A project can have several values, or none: while any of these three filters is set, projects with no value for it are hidden, and they all show again when you clear the filters. The counts on the pills and cards follow them.
 - **Search projects** matches part of a project name, whatever the case. The counts follow your search.
 
 If your filters hide every project, the list says so and offers **Reset filters**.
 
-Your stage, foundation, foundation type, search and sort are kept in the page address, so you can bookmark a view or send the link to a colleague and they see the same list. Leaving the **Pipeline** tab clears them.
+Your stage, foundation, foundation type, classification filters, search and sort are kept in the page address, so you can bookmark a view or send the link to a colleague and they see the same list. Leaving the **Pipeline** tab clears them.
 
 ## Export the list as a CSV
 
-Select **Export CSV** to download the projects you are looking at, across all pages, with the same columns in the same order. The file is named `formation-pipeline-` followed by today's date. **Formation lead** is one column, and **ED** and **PM** are separate columns in the file. It opens in Excel with names in any language.
+Select **Export CSV** to download the projects you are looking at, across all pages, with the same columns in the same order. The file is named `formation-pipeline-` followed by today's date. **Formation lead** is one column, and **ED** and **PM** are separate columns in the file. Three columns at the end, **Technical activity type**, **Technology** and **Industry**, list each project's values separated by a semicolon. It opens in Excel with names in any language.
 
 ## On a phone
 
