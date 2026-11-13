@@ -12,7 +12,6 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { personaDetectionService } from '../utils/persona-helper';
-import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 
@@ -89,13 +88,10 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
 // Variant for routes keyed by a *project* slug (e.g. `/api/projects/:slug/participating-orgs*`), where
 // `foundationSlug` is absent so `requireDashboardAccess` would skip scoping. LF Staff pass outright. An executive
 // director passes only for a project that is, or sits under, a foundation they direct: the project's parent chain
-// is read server-side (metadata only, fails closed) and matched against the ED's scoped projects. A root writer,
-// who carries the ED persona without ED scopes, passes only with verified writer access on the requested project
-// itself: `global_writer` is withheld on some (Draft/Confidential) projects, so the hidden-ROOT grant alone is not
-// trusted, and a grant on an umbrella ancestor is not consulted.
+// is read server-side (metadata only, fails closed) and matched against the ED's scoped projects. Everyone else
+// gets 403 — including a root writer with no ED scopes: the page is view-only, so write grants play no part.
 // The route's own `requireProjectParticipatingOrgsAccess` (project `viewer`) still runs after this gate.
 const projectService = new ProjectService();
-const accessCheckService = new AccessCheckService();
 
 export async function requireExecutiveOrLFStaff(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const operation = 'require_executive_or_lf_staff';
@@ -123,6 +119,12 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
     }
 
     const edProjects = result.personaProjects?.[ED] ?? [];
+    if (edProjects.length === 0) {
+      // The ED persona without any scoped foundation (e.g. a root writer): nothing to match against.
+      logger.warning(req, operation, 'ED persona without a scoped foundation attempted an executive-only project endpoint', { path: req.path });
+      next(denied(req, operation));
+      return;
+    }
     const edUids = new Set(edProjects.map((project) => project.projectUid));
     const edSlugs = new Set(edProjects.map((project) => project.projectSlug.toLowerCase()));
 
@@ -142,21 +144,18 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
 
     // Climb project -> parent -> ... until an ED-scoped project is found. Ancestor reads are metadata-only
     // (`access: false`); an unreadable ancestor (or the hidden ROOT) simply ends the climb as "not in scope".
-    // Skipped when the ED has no scoped projects (e.g. a root writer): there is nothing to match against.
-    let project: Project | null = null;
-    if (edProjects.length > 0) {
-      try {
-        project = await projectService.getProjectById(req, uid, false);
-      } catch (error) {
-        // A definite upstream answer (e.g. 403/404) passes through; anything else is "couldn't check" -> 503.
-        const status = (error as { statusCode?: unknown }).statusCode;
-        if (typeof status === 'number' && status < 500) {
-          throw error;
-        }
-        throw unavailable(req, operation, '/projects/:uid', error);
+    let project: Project;
+    try {
+      project = await projectService.getProjectById(req, uid, false);
+    } catch (error) {
+      // A definite upstream answer (e.g. 403/404) passes through; anything else is "couldn't check" -> 503.
+      const status = (error as { statusCode?: unknown }).statusCode;
+      if (typeof status === 'number' && status < 500) {
+        throw error;
       }
+      throw unavailable(req, operation, '/projects/:uid', error);
     }
-    for (let depth = 0; project && depth < PROJECT_ANCESTRY_MAX_DEPTH; depth++) {
+    for (let depth = 0; depth < PROJECT_ANCESTRY_MAX_DEPTH; depth++) {
       if (edUids.has(project.uid) || edSlugs.has((project.slug ?? '').toLowerCase())) {
         next();
         return;
@@ -181,20 +180,6 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
         break;
       }
       project = parent;
-    }
-
-    if (result.isRootWriter) {
-      // Verified writer access on the uid already resolved above (no second slug lookup); a failed check is a 503, not a 403.
-      let isWriter: boolean;
-      try {
-        isWriter = await accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
-      } catch (error) {
-        throw unavailable(req, operation, '/access-check', error);
-      }
-      if (isWriter) {
-        next();
-        return;
-      }
     }
 
     logger.warning(req, operation, 'ED requested a project outside their foundation scope', { path: req.path, requested_slug: slug });
