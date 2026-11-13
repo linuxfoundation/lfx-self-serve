@@ -16,6 +16,22 @@ const roleGrants = new OrgRoleGrantsService();
 
 const scopeByRequest = new WeakMap<Request, Map<string, Promise<OrgLensRollUpScope>>>();
 
+/**
+ * Read gate and scope for an Org Lens family roll-up key (`family-<top account id>`).
+ *
+ * The candidate organizations come from the caller's own roll-up set, never from the request, and
+ * each one must pass `assertOrgLensRead`. `members` is the only set of organizations a roll-up read
+ * may serve; one the caller is refused on is left out. `complete: false` means the caller's
+ * roll-up set was partial, so the family may be missing organizations the page should say it
+ * cannot show.
+ *
+ * Throws 400 for a malformed key, 403 when the caller can read no organization in the family, and
+ * a retriable 503 when access cannot be verified (lookup failed, a member's check could not be
+ * answered, or the family is absent from a partial set).
+ *
+ * Memoized per request and key: the route middleware and a handler that also resolves share one
+ * roster lookup and one set of member checks.
+ */
 export async function resolveOrgLensRollUp(req: Request, rollUpKey: string, operation: string): Promise<OrgLensRollUpScope> {
   let byKey = scopeByRequest.get(req);
   if (!byKey) {
