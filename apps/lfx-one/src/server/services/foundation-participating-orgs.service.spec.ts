@@ -132,6 +132,15 @@ describe('FoundationParticipatingOrgsService', () => {
     expect(summary).not.toHaveProperty('dataSource');
   });
 
+  it('orders companies with the same name and value by company key, in both directions', async () => {
+    const twin = (key: string) => company(key, { name: 'Twin Co', commits: 5, contributors: 2 });
+    getFoundation.mockResolvedValue({ ...FOUNDATION, companies: [twin('b-key'), twin('a-key'), twin('c-key')] });
+    for (const dir of ['asc', 'desc'] as const) {
+      const { rows } = await service.getPage(req, { ...base, sort: 'commits', dir });
+      expect(rows.map((row) => row.participantKey)).toEqual(['a-key', 'b-key', 'c-key']);
+    }
+  });
+
   it('keeps an unknown build date unknown instead of claiming today', async () => {
     getFoundation.mockResolvedValueOnce({ ...FOUNDATION, asOfDate: null });
     expect((await service.getSummary(req, { foundationSlug: SLUG, range: '12mo' }))?.asOfDate).toBeNull();

@@ -191,7 +191,8 @@ export class FoundationParticipatingOrgsService {
       const missingA = isMissing(a, filters.sort);
       const missingB = isMissing(b, filters.sort);
       if (missingA !== missingB) return missingA ? 1 : -1;
-      return (missingA ? 0 : compare(a, b, filters.sort) * direction) || a.name.localeCompare(b.name);
+      // Name, then the company key, so two companies that share a name and a value never swap between page reads.
+      return (missingA ? 0 : compare(a, b, filters.sort) * direction) || a.name.localeCompare(b.name) || a.participantKey.localeCompare(b.participantKey);
     });
   }
 
