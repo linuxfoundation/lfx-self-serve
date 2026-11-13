@@ -5,7 +5,7 @@ import { DialogRef } from '@angular/cdk/dialog';
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Meeting, MeetingHomeRow, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -46,7 +46,7 @@ describe('MeetingDetailsContext', () => {
         MeetingDetailsContext,
         { provide: MeetingDetailsSource, useValue: source },
         { provide: MeetingService, useValue: { getMeetingDetail: detail, removedRegistrationMeetingIds: signal(new Set<string>()) } },
-        { provide: UserService, useValue: { refreshUserMeetings, refreshUserPastMeetings: vi.fn() } },
+        { provide: UserService, useValue: { refreshUserMeetings, refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => [] } },
         { provide: UiToastService, useValue: { show: toast } },
       ],
     });
@@ -209,7 +209,7 @@ describe('MeetingDetailsContext', () => {
   it('reloads the participants now and after 1s, and the past list behind the drawer', () => {
     vi.useFakeTimers();
     const refreshUserPastMeetings = vi.fn();
-    TestBed.overrideProvider(UserService, { useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings } });
+    TestBed.overrideProvider(UserService, { useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings, confirmedMeetingRsvps: () => [] } });
     const context = create(buildRow(PAST as unknown as Meeting));
 
     context.refreshParticipants();
@@ -217,6 +217,122 @@ describe('MeetingDetailsContext', () => {
     expect(refreshUserPastMeetings).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1000);
     expect(context.participantsVersion()).toBe(2);
+  });
+
+  it('keeps a saved answer after a feed refresh retires it, and takes a newer copy of the same answer', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+    });
+    const context = create(buildRow(MEETING));
+    const saved = { id: 'rsvp-1', registrant_id: 'reg-1', response_type: 'accepted', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([saved]);
+    expect(context.savedRsvps()).toEqual([saved]);
+
+    confirmed.set([]);
+    expect(context.savedRsvps()).toEqual([saved]);
+
+    const changed = { ...saved, response_type: 'declined', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+    confirmed.set([changed]);
+    expect(context.savedRsvps()).toEqual([changed]);
+  });
+
+  it('keeps a write saved after a retirement even when its acknowledgement is older than the kept copy', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+    });
+    const context = create(buildRow(MEETING));
+    const saved = { id: 'rsvp-1', registrant_id: 'reg-1', response_type: 'accepted', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([saved]);
+    context.savedRsvps();
+    confirmed.set([]);
+    context.savedRsvps();
+    const rewritten = { ...saved, response_type: 'declined', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+    confirmed.set([rewritten]);
+
+    expect(context.savedRsvps()).toEqual([rewritten]);
+  });
+
+  it('drops answers from other registrations once a newer all-dates answer covers them', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+    });
+    const context = create(buildRow(MEETING));
+    const single = { id: 'rsvp-a', registrant_id: 'reg-a', response_type: 'accepted', scope: 'single', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+    const allDates = { id: 'rsvp-b', registrant_id: 'reg-b', response_type: 'declined', scope: 'all', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([single]);
+    expect(context.savedRsvps()).toEqual([single]);
+    confirmed.set([allDates]);
+
+    expect(context.savedRsvps()).toEqual([allDates]);
+  });
+
+  it('drops a retired answer once its registration ends in a partial removal', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    const ended = new Set<string>();
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: (rsvp: MeetingRsvp) => !ended.has(rsvp.registrant_id),
+      },
+    });
+    const context = create(buildRow(MEETING));
+    const removed = { id: 'rsvp-a', registrant_id: 'reg-a', response_type: 'accepted', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+    const surviving = { id: 'rsvp-b', registrant_id: 'reg-b', response_type: 'declined', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([removed, surviving]);
+    context.savedRsvps();
+    confirmed.set([]);
+    expect(context.savedRsvps()).toEqual([removed, surviving]);
+
+    ended.add('reg-a');
+    confirmed.set([]);
+    expect(context.savedRsvps()).toEqual([surviving]);
+  });
+
+  it('keeps a retired answer from a registration missing from the opening row', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: {
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: (rsvp: MeetingRsvp, meeting: Meeting) => meeting.my_registrant_ids?.includes(rsvp.registrant_id) ?? true,
+      },
+    });
+    const context = create(buildRow({ ...MEETING, my_registrant_ids: ['reg-old'] } as Meeting));
+    const saved = { id: 'rsvp-new', registrant_id: 'reg-new', response_type: 'accepted', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([saved]);
+    context.savedRsvps();
+    confirmed.set([]);
+
+    expect(context.savedRsvps()).toEqual([saved]);
+  });
+
+  it('keeps recovered history at its own timestamp beside a newer retired single-date answer', () => {
+    const confirmed = signal<MeetingRsvp[]>([]);
+    TestBed.overrideProvider(UserService, {
+      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+    });
+    const context = create(buildRow(MEETING));
+    const single = { id: 'rsvp-s', registrant_id: 'reg-a', response_type: 'declined', scope: 'single', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
+    const history = { id: 'rsvp-h', registrant_id: 'reg-a', response_type: 'accepted', scope: 'all', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
+
+    confirmed.set([single]);
+    context.savedRsvps();
+    confirmed.set([]);
+    context.savedRsvps();
+    confirmed.set([history]);
+
+    expect(context.savedRsvps()).toEqual([history, single]);
   });
 
   it('counts a past row viewer as a member', () => {

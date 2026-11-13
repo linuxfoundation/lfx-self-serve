@@ -144,6 +144,7 @@ describe('MeetingDetailsToolsComponent', () => {
       participantsVersion,
       refreshParticipants,
       removedRegistrantUids: removedUids,
+      savedRsvps: confirmed,
     };
 
     TestBed.configureTestingModule({

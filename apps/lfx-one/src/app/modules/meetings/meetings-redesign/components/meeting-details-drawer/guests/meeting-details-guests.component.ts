@@ -30,6 +30,7 @@ import {
   getMeetingGuestFilterFields,
   getMeetingGuestRowActions,
   getOfferedMeetingGuestFilters,
+  isBatchRegistrantOperationResponse,
   isMeetingInviteResponsesEnabled,
   resortMeetingGuestRows,
   selectApplicableRsvp,
@@ -54,6 +55,7 @@ import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { catchError, combineLatest, debounceTime, filter, map, Observable, of, startWith, switchMap, take, tap, throwError } from 'rxjs';
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
@@ -120,7 +122,7 @@ export class MeetingDetailsGuestsComponent {
   protected readonly canAddGuests: Signal<boolean> = computed(() => this.context.organizer() && !this.ended());
   protected readonly searchLabel: Signal<string> = computed(() => (this.ended() ? 'Search participants' : 'Search guests'));
   /** RSVPs the viewer saved in the drawer, which can be newer than the registrants endpoint. */
-  private readonly confirmedRsvps$: Observable<MeetingRsvp[]> = toObservable(computed(() => this.userService.confirmedMeetingRsvps(this.context.meeting().id)));
+  private readonly confirmedRsvps$: Observable<MeetingRsvp[]> = toObservable(this.context.savedRsvps);
   /** The viewer removed themselves here, which the registrants endpoint can still miss while it indexes. */
   private readonly removedSelf$: Observable<boolean> = toObservable(
     computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.context.meeting().id))
@@ -215,9 +217,9 @@ export class MeetingDetailsGuestsComponent {
             this.showError(response.failures[0]?.error?.message || 'Failed to update host');
           }
         },
-        error: () => {
+        error: (error: unknown) => {
           this.hostUpdating.update((uids) => this.withUid(uids, uid, false));
-          this.showError('Failed to update host. Please try again.');
+          this.showError(this.failureReason(error, 'Failed to update host. Please try again.'));
         },
       });
   }
@@ -462,9 +464,9 @@ export class MeetingDetailsGuestsComponent {
             this.showError(response.failures[0]?.error?.message || 'Failed to remove guest');
           }
         },
-        error: () => {
+        error: (error: unknown) => {
           this.deleting.set(false);
-          this.showError('Failed to remove guest. Please try again.');
+          this.showError(this.failureReason(error, 'Failed to remove guest. Please try again.'));
         },
       });
   }
@@ -507,6 +509,16 @@ export class MeetingDetailsGuestsComponent {
     if (add) next.add(uid);
     else next.delete(uid);
     return next;
+  }
+
+  /** A batch where every item failed comes back as a 400 carrying the batch, with the reason on its failure. */
+  private failureReason(error: unknown, fallback: string): string {
+    if (!(error instanceof HttpErrorResponse) || !isBatchRegistrantOperationResponse(error.error)) return extractErrorMessage(error, fallback);
+    const failure = error.error.failures[0]?.error;
+    const upstream = (failure?.details as { statusCode?: unknown } | undefined)?.statusCode;
+    // Through the shared reader with the upstream status, so its checks on 5xx, blank, long or multi-line text still apply.
+    const status = typeof upstream === 'number' ? upstream : error.status;
+    return extractErrorMessage(new HttpErrorResponse({ status, error: { error: failure?.message, code: failure?.code } }), fallback);
   }
 
   private showError(description: string): void {
