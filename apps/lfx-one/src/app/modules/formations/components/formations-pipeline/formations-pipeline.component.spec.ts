@@ -982,5 +982,38 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(text).not.toContain('Bravo');
       expect(text).toContain('Alpha');
     });
+
+    it('builds classification options, counts and CSV columns from the visible rows only', async () => {
+      // The server drops Draft and Confidential before the response, so a hidden project's values never arrive.
+      const visible = [
+        row({
+          uid: 'v1',
+          name: 'Visible One',
+          stage: 'engaged',
+          technical_activity_type: ['Open Source Software'],
+          technology: ['Quantum'],
+          industry: ['Finance'],
+        }),
+        row({ uid: 'v2', name: 'Visible Two', stage: 'exploratory', technical_activity_type: ['Open Source Software', 'Open Data'], technology: ['Quantum'] }),
+      ];
+      await render(of(response(visible, 'staff')));
+
+      const options = fixture.componentInstance['classificationOptions']();
+      expect(options.technical_activity_type.map((o) => o.label)).toEqual(['Open Data (1)', 'Open Source Software (2)']);
+      expect(options.technology.map((o) => o.label)).toEqual(['Quantum (2)']);
+      expect(options.industry.map((o) => o.label)).toEqual(['Finance (1)']);
+
+      let captured: Blob | null = null;
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => ((captured = blob as Blob), 'blob:x'));
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      fixture.componentInstance['exportCsv']();
+
+      const lines = (await (captured as unknown as Blob).text()).split('\r\n').filter(Boolean);
+      expect(lines[0]).toContain('Technical activity type,Technology,Industry');
+      expect(lines).toHaveLength(3);
+      expect(lines.join('\n')).toContain('Open Source Software; Open Data');
+      expect(lines.some((line) => line.includes('Finance'))).toBe(true);
+    });
   });
 });
