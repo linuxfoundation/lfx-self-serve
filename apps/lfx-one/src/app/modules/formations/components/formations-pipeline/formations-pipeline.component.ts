@@ -393,7 +393,7 @@ export class FormationsPipelineComponent {
     }
   }
 
-  /** A link that opens already scoped to a foundation has no unfiltered read to list the foundations from, so the select would show no label: read it once in the background. */
+  /** A link that opens already scoped to a foundation has no unfiltered read to list the foundations from, so the select would show no label: read it in the background. A failed read is logged and retried with the next successful read. */
   private loadFoundationOptionsForDeepLink(foundationUid: string | null): void {
     if (!foundationUid || this.foundationsRequested || this.knownFoundations().size > 0) {
       return;
@@ -402,7 +402,12 @@ export class FormationsPipelineComponent {
     this.formationService
       .getFormationPipeline(null)
       .pipe(
-        catchError(() => EMPTY),
+        catchError((error: unknown) => {
+          // Let the next successful read try again, rather than leave the select unlabeled for good.
+          console.error('[FormationsPipeline] Failed to load the foundation options', error);
+          this.foundationsRequested = false;
+          return EMPTY;
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((response) => this.rememberFoundations(response, null));

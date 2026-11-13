@@ -219,6 +219,46 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(fixture.componentInstance['filterForm'].controls.foundation.value).toBe('f2');
     });
 
+    it('retries the background foundation-options read after it fails, on the next refresh', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      let unfilteredReads = 0;
+      getFormationPipeline = vi.fn((foundationUid: string | null) => {
+        if (foundationUid) return of(response([row({ uid: 'only', name: 'Only' })]));
+        unfilteredReads += 1;
+        return unfilteredReads === 1
+          ? throwError(() => new HttpErrorResponse({ status: 503 }))
+          : of(response([row({ uid: 'p', parent: { uid: 'f2', name: 'Foundation Two' } })]));
+      });
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationsPipelineComponent],
+        providers: [
+          provideRouter([]),
+          { provide: FormationService, useValue: { getFormationPipeline } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ foundation: 'f2' }) } } },
+        ],
+      }).compileComponents();
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture = TestBed.createComponent(FormationsPipelineComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const labels = (): string[] => fixture.componentInstance['foundationOptions']().map((option: { label: string }) => option.label);
+      expect(unfilteredReads).toBe(1);
+      expect(consoleError).toHaveBeenCalledWith('[FormationsPipeline] Failed to load the foundation options', expect.anything());
+      expect(labels()).not.toContain('Foundation Two');
+      expect(rowIds()).toEqual(['only']);
+
+      fixture.componentInstance['onRetry']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(unfilteredReads).toBe(2);
+      expect(labels()).toContain('Foundation Two');
+    });
+
     it('ignores bad values, and the foundation types an earlier link may carry, and opens on the defaults', async () => {
       await render(of(response(ROWS)), { stage: 'bogus', type: 'bogus', sort: 'bogus', foundation: 'no spaces allowed' });
 
