@@ -1222,6 +1222,17 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(component.groupTypeFilter()).toBeNull();
     });
 
+    it('keeps a linked group the options do not list when the list is incomplete', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ group: 'missing-branch-group' });
+      vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+        of({ projects: [{ uid: 'scope', name: 'Synthetic scope', slug: 'scope' }], groups: [], complete: false })
+      );
+      const component = mount();
+      openScope(component);
+
+      expect(component.groupFilter()).toBe('missing-branch-group');
+    });
+
     it('keeps a linked group the loaded options offer', () => {
       route.snapshot.queryParamMap = convertToParamMap({ projects: 'all', group: 'wg', group_type: 'Working Group' });
       const component = mount();

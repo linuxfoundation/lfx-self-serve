@@ -1478,7 +1478,10 @@ export class MeetingsDashboardComponent {
           this.rollupProjectsFilter.set(valid.length > 0 ? choice.filter((uid) => all.includes(uid)) : []);
         }
         // A group or group type from a link may sit outside the seeded scope; drop it rather than match nothing.
-        this.reconcileGroupFilters();
+        // Only a complete list can say so: from an incomplete one (a missed branch) the linked filter stays.
+        if (options.complete) {
+          this.reconcileGroupFilters();
+        }
       });
   }
 
