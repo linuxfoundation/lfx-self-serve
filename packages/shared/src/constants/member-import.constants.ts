@@ -119,13 +119,6 @@ export const MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX = 100;
 /** BFF upstream timeout for one bulk member create request, above the 30 s default. */
 export const MEMBER_IMPORT_BULK_TIMEOUT_MS = 60_000;
 
-/** Assumed time per row for the estimated progress bar until a chunk in this dialog has answered. */
-export const MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS = 200;
-
-/** Bounds on the per-row pace learned from an answered chunk, so one outlier cannot race or freeze the estimate. */
-export const MEMBER_IMPORT_PROGRESS_MIN_ROW_MS = 50;
-export const MEMBER_IMPORT_PROGRESS_MAX_ROW_MS = 2_000;
-
 /** Automatic pauses one import run may take before it stops and leaves rows for a manual retry. */
 export const MEMBER_IMPORT_MAX_PAUSES = 3;
 

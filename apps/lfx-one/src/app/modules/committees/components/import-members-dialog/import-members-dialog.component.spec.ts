@@ -8,12 +8,7 @@ import { HttpErrorResponse, HttpHeaders, provideHttpClient } from '@angular/comm
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import {
-  MEMBER_IMPORT_BULK_CHUNK_SIZE,
-  MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS,
-  MEMBER_IMPORT_PROGRESS_MAX_ROW_MS,
-  MEMBER_IMPORT_PROGRESS_MIN_ROW_MS,
-} from '@lfx-one/shared/constants';
+import { MEMBER_IMPORT_BULK_CHUNK_SIZE } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeInvite,
@@ -768,79 +763,73 @@ describe('ImportMembersDialogComponent', () => {
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 30, conflicts: 0 });
     });
 
-    it('estimates in-flight rows one at a time on the bar while counts and statuses stay confirmed', async () => {
+    it('shows an inline spinner and only confirmed processed rows until results arrive', async () => {
       await upload(`email\n${emails(30)}`);
+      expect(query('import-members-progress')).toBeNull();
       vi.useFakeTimers();
       component.startImport();
       await render();
 
-      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 3);
-      expect(component.estimatedRows()).toBe(3);
-      expect(component.progressValue()).toBe(3);
-      expect(component.batchSettled()).toBe(0);
-      expect(component.addedCount()).toBe(0);
-      expect(component.statusMessage()).toBe('Adding members: 0 of 30 done.');
-      fixture.detectChanges();
-      const bar = query('import-members-progress-bar')?.querySelector('[role="progressbar"]') as HTMLElement;
-      expect(bar.getAttribute('aria-valuenow')).toBe('3');
-      expect(bar.getAttribute('aria-valuemax')).toBe('30');
-      expect(bar.getAttribute('aria-valuetext')).toBe('0 of 30 done');
+      expect(query('import-members-spinner')?.getAttribute('aria-hidden')).toBe('true');
+      expect(query('import-members-progress')?.textContent).toContain('Importing members…');
+      expect(query('import-members-processed-count')?.textContent?.trim()).toBe('0 of 30 processed');
+      expect(fixture.nativeElement.querySelector('[role="progressbar"]')).toBeNull();
+      expect(component.statusMessage()).toBe('Importing members: 0 of 30 processed.');
 
-      // Never completes a chunk on its own: it waits one row short until the response arrives.
-      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 100);
-      expect(component.progressValue()).toBe(24);
+      vi.advanceTimersByTime(60_000);
+      await render();
+      expect(query('import-members-processed-count')?.textContent?.trim()).toBe('0 of 30 processed');
+      expect(component.addedCount()).toBe(0);
       expect(component.rows()[0].status).toBe('importing');
 
-      respond(0);
-      expect(component.batchSettled()).toBe(25);
-      expect(component.progressValue()).toBe(25);
-
-      // The next chunk starts its own estimate at the pace learned from the first response.
-      const learnedRowMs = (MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 103) / 25;
-      vi.advanceTimersByTime(learnedRowMs * 2);
-      expect(component.estimatedRows()).toBe(2);
-      expect(component.progressValue()).toBe(27);
+      respond(0, {
+        0: { status: 'failed', reason: 'invalid' },
+        1: { status: 'skipped', reason: 'already_member' },
+      });
+      await render();
+      expect(query('import-members-processed-count')?.textContent?.trim()).toBe('25 of 30 processed');
+      expect(component.addedCount()).toBe(23);
+      expect(component.failedCount()).toBe(1);
+      expect(component.skippedCount()).toBe(1);
+      expect(component.statusMessage()).toBe('Importing members: 25 of 30 processed.');
+      expect(query('import-members-spinner')).not.toBeNull();
 
       respond(1);
+      await render();
       expect(component.phase()).toBe('results');
-      expect(component.estimatedRows()).toBe(0);
-      expect(component.addedCount()).toBe(30);
+      expect(component.batchSettled()).toBe(30);
+      expect(query('import-members-progress')).toBeNull();
+      expect(query('import-members-spinner')).toBeNull();
     });
 
-    it('bounds the learned pace so an instant or very slow response cannot race or freeze the next estimate', async () => {
-      await upload(`email\n${emails(60)}`);
+    it('replaces the spinner with a pause icon and keeps the confirmed count through recovery', async () => {
+      await upload(`email\n${emails(30)}`);
       vi.useFakeTimers();
       component.startImport();
-
-      // An instant response learns no faster than the minimum pace.
       respond(0);
-      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_MIN_ROW_MS - 1);
-      expect(component.estimatedRows()).toBe(0);
-      vi.advanceTimersByTime(1);
-      expect(component.estimatedRows()).toBe(1);
+      failBulk(1, 429, { 'Retry-After': '30' });
+      await render();
 
-      // A response slower than the maximum pace per row learns no slower than the maximum.
-      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_MAX_ROW_MS * MEMBER_IMPORT_BULK_CHUNK_SIZE * 2);
-      respond(1);
-      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_MAX_ROW_MS - 1);
-      expect(component.estimatedRows()).toBe(0);
-      vi.advanceTimersByTime(1);
-      expect(component.estimatedRows()).toBe(1);
-    });
-
-    it('drops the estimate back to confirmed rows when a chunk fails', async () => {
-      await upload(`email\n${emails(10)}`);
-      vi.useFakeTimers();
-      component.startImport();
-      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 5);
-      expect(component.progressValue()).toBe(5);
-
-      failBulk(0, 429, { 'Retry-After': '30' });
       expect(component.paused()).toBe(true);
-      expect(component.estimatedRows()).toBe(0);
-      expect(component.progressValue()).toBe(0);
-      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 5);
-      expect(component.estimatedRows()).toBe(0);
+      expect(query('import-members-spinner')).toBeNull();
+      expect(query('import-members-paused-icon')?.getAttribute('aria-hidden')).toBe('true');
+      expect(query('import-members-progress')?.textContent).toContain('Paused');
+      expect(query('import-members-processed-count')?.textContent?.trim()).toBe('25 of 30 processed');
+      expect(query('import-members-paused-notice')?.textContent).toContain('This pause lasts about 30 seconds;');
+
+      vi.advanceTimersByTime(30_000);
+      await render();
+      expect(component.paused()).toBe(false);
+      expect(query('import-members-paused-icon')).toBeNull();
+      expect(query('import-members-paused-notice')).toBeNull();
+      expect(query('import-members-spinner')).not.toBeNull();
+      expect(query('import-members-progress')?.textContent).toContain('Importing members…');
+      expect(query('import-members-processed-count')?.textContent?.trim()).toBe('25 of 30 processed');
+
+      respond(2);
+      await render();
+      expect(component.phase()).toBe('results');
+      expect(query('import-members-progress')).toBeNull();
     });
 
     it('sends notification emails when the user opts in', async () => {
@@ -879,8 +868,11 @@ describe('ImportMembersDialogComponent', () => {
 
       expect(component.stopping()).toBe(true);
       expect(component.phase()).toBe('importing');
-      expect(component.statusMessage()).toBe('Stopping after the current batch: 0 of 60 done.');
-      expect(query('import-members-progress')?.textContent).toContain('Stopping after the current batch: 0 of 60 done…');
+      expect(component.statusMessage()).toBe('Stopping after the current batch: 0 of 60 processed.');
+      expect(query('import-members-progress')?.textContent).toContain('Stopping after the current batch…');
+      expect(query('import-members-processed-count')?.textContent?.trim()).toBe('0 of 60 processed');
+      expect(query('import-members-spinner')).not.toBeNull();
+      expect(query('import-members-stopping-notice')?.textContent).toContain('Rows after this batch will not be sent.');
       expect(query('import-members-stop-reason')).toBeNull();
       const stoppingButton = query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement;
       expect(stoppingButton.textContent).toContain('Stopping…');
@@ -918,7 +910,8 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('importing');
       expect(component.stopping()).toBe(false);
       expect(component.stopReason()).toBeNull();
-      expect(query('import-members-progress')?.textContent).toContain('Adding members: 0 of 5 done');
+      expect(query('import-members-progress')?.textContent).toContain('Importing members…');
+      expect(query('import-members-processed-count')?.textContent?.trim()).toBe('0 of 5 processed');
       expect((query('import-members-stop-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
       respond(1);
       expect(component.addedCount()).toBe(30);

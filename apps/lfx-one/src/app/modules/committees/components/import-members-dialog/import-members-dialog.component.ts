@@ -21,9 +21,6 @@ import {
   MEMBER_IMPORT_MAX_PAUSES,
   MEMBER_IMPORT_MAX_RECORDS,
   MEMBER_IMPORT_PAGE_SIZE,
-  MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS,
-  MEMBER_IMPORT_PROGRESS_MAX_ROW_MS,
-  MEMBER_IMPORT_PROGRESS_MIN_ROW_MS,
   MEMBER_IMPORT_RETRY_AFTER_MAX_MS,
   MEMBER_IMPORT_STATUS_DISPLAY,
   MEMBER_IMPORT_TEMPLATE_FILENAME,
@@ -57,7 +54,7 @@ import {
   prepareMemberImportRows,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
-import { UiProgressComponent } from '@shared/uikit/progress/progress.component';
+import { UiSpinnerComponent } from '@shared/uikit/spinner/spinner.component';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { FileSelectEvent } from 'primeng/fileupload';
@@ -68,10 +65,8 @@ import {
   concatMap,
   defer,
   EMPTY,
-  finalize,
   from,
   ignoreElements,
-  interval,
   map,
   mergeMap,
   Observable,
@@ -95,8 +90,8 @@ import {
  * and resubmit only the affected rows, at most MEMBER_IMPORT_MAX_PAUSES times; resubmitting is safe
  * because upstream reports a row that was already written as an existing member. Each row keeps its
  * own outcome; Retry resubmits rows that were not sent and failures that can still succeed, and
- * Close returns confirmed counts and any unresolved attempt so the roster refreshes. While a chunk is
- * in flight, a progress bar estimates its rows one at a time; counts and statuses come only from results.
+ * Close returns confirmed counts and any unresolved attempt so the roster refreshes. An inline spinner
+ * shows activity while a chunk is in flight; the processed count and row statuses come only from results.
  * Never resolves organizations, creates invitations, or changes permissions.
  * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
  * instead of writing them; the wizard saves them with Done or Update Group.
@@ -112,7 +107,7 @@ import {
     FilterPillsComponent,
     TableComponent,
     TagComponent,
-    UiProgressComponent,
+    UiSpinnerComponent,
   ],
   templateUrl: './import-members-dialog.component.html',
   styleUrl: './import-members-dialog.component.scss',
@@ -160,8 +155,6 @@ export class ImportMembersDialogComponent {
   public stopReason = signal<string | null>(null);
   public batchTotal = signal(0);
   public batchSettled = signal(0);
-  /** Rows of the in-flight chunk the progress bar assumes are done; never shown as a count or status. */
-  public estimatedRows = signal(0);
   /** Epoch ms when a paused run resumes automatically; null while not paused. */
   public resumeAt = signal<number | null>(null);
   /** Length of the current pause, rounded up to whole seconds, for the paused notice. */
@@ -181,10 +174,6 @@ export class ImportMembersDialogComponent {
   /** Ends the current pause early; in-flight requests are never cancelled. */
   private readonly stopRequested = new Subject<void>();
   private retryDeadlineTimer?: Subscription;
-  /** The in-flight chunk's estimate; a finished chunk can only stop its own. */
-  private progressEstimate?: Subscription;
-  /** Per-row pace for the estimate, learned from the last answered chunk. */
-  private progressRowMs = MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS;
 
   public readonly busy = computed(() => this.reading() || this.phase() === 'importing');
   public readonly readyCount = computed(() => this.countRows('ready'));
@@ -197,8 +186,6 @@ export class ImportMembersDialogComponent {
   public readonly notSubmittedCount = computed(() => this.countRows('not_submitted'));
   public readonly retryableCount = computed(() => this.rows().filter((row) => this.isRetryable(row)).length);
   public readonly paused = computed(() => this.resumeAt() !== null);
-  /** Confirmed rows plus the in-flight estimate, for the progress bar only. */
-  public readonly progressValue = computed(() => Math.min(this.batchTotal(), this.batchSettled() + this.estimatedRows()));
   /** The manager requested a stop outside a pause; the in-flight batch settles before the run ends. */
   public readonly stopping = computed(() => this.phase() === 'importing' && !this.paused() && this.manualStopRequested());
   public readonly conflictCount = computed(() => this.rows().filter((row) => row.conflict).length);
@@ -462,9 +449,9 @@ export class ImportMembersDialogComponent {
             return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
           }
           if (this.stopping()) {
-            return `Stopping after the current batch: ${this.batchSettled()} of ${this.batchTotal()} done.`;
+            return `Stopping after the current batch: ${this.batchSettled()} of ${this.batchTotal()} processed.`;
           }
-          return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
+          return `Importing members: ${this.batchSettled()} of ${this.batchTotal()} processed.`;
         case 'results': {
           const notSubmitted = this.notSubmittedCount() > 0 ? `, ${this.notSubmittedCount()} not yet submitted` : '';
           const unknown = this.unknownCount() > 0 ? `, ${this.unknownCount()} outcome unknown` : '';
@@ -573,8 +560,6 @@ export class ImportMembersDialogComponent {
       }
 
       this.patchRows(sendable, { status: 'importing', reason: undefined });
-      const startedAt = Date.now();
-      const estimate = this.startProgressEstimate(sendable.length);
       return this.committeeService
         .bulkCreateCommitteeMembers(
           this.committeeUid,
@@ -582,15 +567,6 @@ export class ImportMembersDialogComponent {
           { skipNotification }
         )
         .pipe(
-          // Drop the estimate before results apply, so the bar lands exactly on the confirmed count.
-          tap({
-            next: () => {
-              this.learnProgressPace(startedAt, sendable.length);
-              this.stopProgressEstimate(estimate);
-            },
-            error: () => this.stopProgressEstimate(estimate),
-          }),
-          finalize(() => this.stopProgressEstimate(estimate)),
           switchMap((result) => this.applyChunkResult(sendable, result, skipNotification)),
           catchError((err: unknown) => this.handleChunkError(sendable, err, skipNotification))
         );
@@ -736,34 +712,6 @@ export class ImportMembersDialogComponent {
         })
       );
     });
-  }
-
-  /**
-   * Advances the estimate one row at a time at the learned pace while a chunk is in flight. It stops
-   * one row short of the chunk, so only the response completes it.
-   */
-  private startProgressEstimate(rowCount: number): Subscription {
-    this.progressEstimate?.unsubscribe();
-    this.estimatedRows.set(0);
-    const estimate = interval(this.progressRowMs)
-      .pipe(take(Math.max(0, rowCount - 1)), takeUntilDestroyed(this.destroyRef))
-      .subscribe((tick) => this.estimatedRows.set(tick + 1));
-    this.progressEstimate = estimate;
-    return estimate;
-  }
-
-  /** Resets the bar only for the current estimate, so `finalize` repeating the response `tap`'s stop is a no-op. */
-  private stopProgressEstimate(estimate: Subscription): void {
-    estimate.unsubscribe();
-    if (this.progressEstimate === estimate) {
-      this.progressEstimate = undefined;
-      this.estimatedRows.set(0);
-    }
-  }
-
-  private learnProgressPace(startedAt: number, rowCount: number): void {
-    const rowMs = (Date.now() - startedAt) / rowCount;
-    this.progressRowMs = Math.min(Math.max(rowMs, MEMBER_IMPORT_PROGRESS_MIN_ROW_MS), MEMBER_IMPORT_PROGRESS_MAX_ROW_MS);
   }
 
   /** Clear elapsed cooldowns without resubmitting; recheck long deadlines in bounded timer intervals. */
