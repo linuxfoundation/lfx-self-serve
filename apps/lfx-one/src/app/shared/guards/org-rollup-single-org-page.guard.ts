@@ -3,7 +3,8 @@
 
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_EASYCLA_PAGE_SEGMENT, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_PAGE_SEGMENT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { easyclaReturnOrgParam } from '@lfx-one/shared/utils';
 
 import { AccountContextService } from '../services/account-context.service';
 
@@ -53,7 +54,7 @@ export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRoute
   if (isLegacyEasyclaReturn(route)) {
     return true;
   }
-  return inject(Router).createUrlTree(['/org', accountContext.selectedAccount().uid, 'overview']);
+  return inject(Router).createUrlTree(['/company', accountContext.selectedAccount().uid, 'overview']);
 };
 
 /**
@@ -61,7 +62,7 @@ export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRoute
  * with no `:orgSegment` above it, carrying a non-empty organization to adopt.
  */
 function isLegacyEasyclaReturn(route: ActivatedRouteSnapshot): boolean {
-  if (!route.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM)?.trim()) {
+  if (!easyclaReturnOrgParam((name) => route.queryParamMap.get(name))?.trim()) {
     return false;
   }
   if (!route.pathFromRoot.some((node) => node.routeConfig?.path === ORG_EASYCLA_PAGE_SEGMENT)) {

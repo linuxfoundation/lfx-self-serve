@@ -163,7 +163,7 @@ describe('ParticipatingOrgsComponent', () => {
 
     const name = query(`participating-orgs-row-${SYNTHETIC_ORG_ACCOUNT_ID}-name`);
     expect(name?.tagName).toBe('A');
-    expect(name?.getAttribute('href')).toBe(`/org/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
+    expect(name?.getAttribute('href')).toBe(`/company/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
     expect(text('participating-orgs-subtitle')).toBe(
       'Every company contributing to Synthetic Project, ranked by activity and split by Synthetic Foundation membership.'
     );
@@ -455,7 +455,7 @@ describe('ParticipatingOrgsComponent', () => {
 
     expect(text('participating-orgs-tabs')).toContain('All (6)');
     expect(text('participating-orgs-tabs')).toContain('Members (5)');
-    expect(text('stat-card-Contributing Orgs')).toContain('3');
+    expect(text('stat-card-Contributing Companies')).toContain('3');
     expect(text('stat-card-Members')).toContain('2 contributing');
   });
 

@@ -439,7 +439,7 @@ export class CrowdfundingService {
     ]);
     // An empty list would read as "no affiliations", so a failed roster lookup is an error, not a default.
     if (orgs.upstreamFailed) {
-      throw new MicroserviceError('Organization role grants lookup failed', 502, 'UPSTREAM_ERROR', {
+      throw new MicroserviceError('Company role grants lookup failed', 502, 'UPSTREAM_ERROR', {
         operation: 'cf_get_attribution_options',
         service: 'org-role-grants',
       });

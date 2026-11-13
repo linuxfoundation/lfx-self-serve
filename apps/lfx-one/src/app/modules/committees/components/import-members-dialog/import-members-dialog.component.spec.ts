@@ -306,7 +306,7 @@ describe('ImportMembersDialogComponent', () => {
 
       expect(component.invalidCount()).toBe(1);
       expect(component.canImport()).toBe(false);
-      expect(query('import-members-row-issues-2')?.textContent).toContain('Organization website must be a full https:// address.');
+      expect(query('import-members-row-issues-2')?.textContent).toContain('Company website must be a full https:// address.');
       component.startImport();
       expectNothingWritten();
     });

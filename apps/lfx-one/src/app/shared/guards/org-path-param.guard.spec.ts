@@ -109,35 +109,35 @@ describe('orgPathParamGuard', () => {
 
     it('adopts the addressed organization so the initial HTML is not the cookie organization, without rewriting', async () => {
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc', 'Bravo LLC')));
-      expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
+      expect(await outcome(UID_B, `/company/${UID_B}/projects`)).toBe(true);
       expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: 'Bravo LLC' }));
     });
 
     it('renders no organization on a miss instead of redirecting or keeping the cookie organization', async () => {
       resolve.mockReturnValue(of(null));
-      expect(await outcome('unknown-org', '/org/unknown-org/overview')).toBe(true);
+      expect(await outcome('unknown-org', '/company/unknown-org/overview')).toBe(true);
       expect(clearAccount).toHaveBeenCalledTimes(1);
       expect(adoptFromAddress).not.toHaveBeenCalled();
     });
 
     it('renders no organization when the resolver cannot answer a slug, and the stub for an SFID', async () => {
       resolve.mockReturnValueOnce(httpError(503));
-      expect(await outcome('bravo-llc', '/org/bravo-llc/overview')).toBe(true);
+      expect(await outcome('bravo-llc', '/company/bravo-llc/overview')).toBe(true);
       expect(clearAccount).toHaveBeenCalledTimes(1);
 
       resolve.mockReturnValueOnce(httpError(503));
-      expect(await outcome(UID_B, `/org/${UID_B}/overview`)).toBe(true);
+      expect(await outcome(UID_B, `/company/${UID_B}/overview`)).toBe(true);
       expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: '' }));
     });
 
     it('does not round-trip for the already-selected organization', async () => {
-      expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe(true);
+      expect(await outcome(UID_A, `/company/${UID_A}/projects`)).toBe(true);
       expect(resolve).not.toHaveBeenCalled();
     });
   });
 
   it('rejects an empty segment without resolving', async () => {
-    expect(await outcome('   ', '/org/%20%20%20/overview')).toBe('/org/not-found');
+    expect(await outcome('   ', '/company/%20%20%20/overview')).toBe('/company/not-found');
     expect(resolve).not.toHaveBeenCalled();
   });
 
@@ -152,20 +152,20 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: sfidShaped }));
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
 
-      expect(await outcome(sfidShaped, `/org/${sfidShaped}/projects`)).toBe('/org/bravo-llc/projects');
+      expect(await outcome(sfidShaped, `/company/${sfidShaped}/projects`)).toBe('/company/bravo-llc/projects');
       expect(resolve).toHaveBeenCalledWith(sfidShaped, UID_A);
     });
 
     it('is a no-op when the address already uses the selected slug', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
-      expect(await outcome('acme-inc', '/org/acme-inc/projects?tab=active#top')).toBe(true);
+      expect(await outcome('acme-inc', '/company/acme-inc/projects?tab=active#top')).toBe(true);
       expect(resolve).not.toHaveBeenCalled();
       expect(adoptFromAddress).not.toHaveBeenCalled();
     });
 
     it('rewrites the SFID form to the known slug, keeping child segments, query and fragment (FR-002)', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
-      expect(await outcome(UID_A, `/org/${UID_A}/projects/abc?tab=active#top`)).toBe('/org/acme-inc/projects/abc?tab=active#top');
+      expect(await outcome(UID_A, `/company/${UID_A}/projects/abc?tab=active#top`)).toBe('/company/acme-inc/projects/abc?tab=active#top');
       expect(resolve).not.toHaveBeenCalled();
     });
 
@@ -174,10 +174,10 @@ describe('orgPathParamGuard', () => {
     // route (the org-items default, the cookie) is otherwise left unpinned here, and a later persona
     // refresh — empty for a staff viewer — re-seeds over it under the address it does not match.
     it.each([
-      ['slug', 'acme-inc', '/org/acme-inc/overview', true],
-      ['SFID (no slug)', null, `/org/${UID_A}/overview`, true],
-      ['SFID (slug known — canonicalizes)', 'acme-inc', `/org/${UID_A}/overview`, '/org/acme-inc/overview'],
-    ])('pins the already-selected organization when the address names it by %s, with the shortcut outcome intact', async (_label, slug, url, expected) => {
+      ['slug', 'acme-inc', '/company/acme-inc/overview', true],
+      ['SFID (no slug)', null, `/company/${UID_A}/overview`, true],
+      ['SFID (slug known — canonicalizes)', 'acme-inc', `/company/${UID_A}/overview`, '/company/acme-inc/overview'],
+    ])('pins the already-selected company when the address names it by %s, with the shortcut outcome intact', async (_label, slug, url, expected) => {
       selectedAccount.set(account({ uid: UID_A, slug }));
       expect(await outcome(url.split('/')[2], url)).toBe(expected);
       expect(pinSelection).toHaveBeenCalledTimes(1);
@@ -188,20 +188,20 @@ describe('orgPathParamGuard', () => {
 
     it('does not pin through the shortcut when the resolver is the one answering', async () => {
       resolve.mockReturnValue(of(hit(UID_B, 'beta')));
-      await outcome('beta', '/org/beta/overview');
+      await outcome('beta', '/company/beta/overview');
       expect(adoptFromAddress).toHaveBeenCalledTimes(1);
       expect(pinSelection).not.toHaveBeenCalled();
     });
 
     it('keeps the SFID form when the organization is known to have no slug', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: null }));
-      expect(await outcome(UID_A, `/org/${UID_A}/overview`)).toBe(true);
+      expect(await outcome(UID_A, `/company/${UID_A}/overview`)).toBe(true);
       expect(resolve).not.toHaveBeenCalled();
     });
 
     it('keeps the SFID form when the slug is a reserved page name, so a static route is never shadowed (DR-007 §5)', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'overview' }));
-      expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe(true);
+      expect(await outcome(UID_A, `/company/${UID_A}/projects`)).toBe(true);
       expect(resolve).not.toHaveBeenCalled();
     });
 
@@ -212,7 +212,7 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A })); // slug undefined: no indexed row has answered for it
       resolve.mockReturnValue(of(hit(UID_A, 'acme-inc')));
 
-      expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe('/org/acme-inc/projects');
+      expect(await outcome(UID_A, `/company/${UID_A}/projects`)).toBe('/company/acme-inc/projects');
       expect(resolve).toHaveBeenCalledWith(UID_A, UID_A);
       expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A, slug: 'acme-inc' }));
     });
@@ -223,7 +223,7 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc', 'Bravo LLC')));
 
-      expect(await outcome('bravo-llc', '/org/bravo-llc/people')).toBe(true);
+      expect(await outcome('bravo-llc', '/company/bravo-llc/people')).toBe(true);
       expect(resolve).toHaveBeenCalledWith('bravo-llc', UID_A);
       expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountId: UID_B, accountName: 'Bravo LLC', slug: 'bravo-llc' }));
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
@@ -232,38 +232,38 @@ describe('orgPathParamGuard', () => {
     it('matches an upper-case slug case-insensitively and rewrites the address to lowercase (FR-004)', async () => {
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
 
-      expect(await outcome('BRAVO-LLC', '/org/BRAVO-LLC/projects?tab=active#top')).toBe('/org/bravo-llc/projects?tab=active#top');
+      expect(await outcome('BRAVO-LLC', '/company/BRAVO-LLC/projects?tab=active#top')).toBe('/company/bravo-llc/projects?tab=active#top');
       expect(resolve).toHaveBeenCalledWith('bravo-llc', null);
     });
 
     it('canonicalizes encoded surrounding whitespace away, not just letter case', async () => {
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
-      expect(await outcome(' bravo-llc ', '/org/%20bravo-llc%20/projects?x=1#top')).toBe('/org/bravo-llc/projects?x=1#top');
+      expect(await outcome(' bravo-llc ', '/company/%20bravo-llc%20/projects?x=1#top')).toBe('/company/bravo-llc/projects?x=1#top');
       expect(resolve).toHaveBeenCalledWith('bravo-llc', null);
     });
 
     it('rewrites a resolved SFID address to the slug form (FR-002)', async () => {
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
-      expect(await outcome(UID_B, `/org/${UID_B}/people`)).toBe('/org/bravo-llc/people');
+      expect(await outcome(UID_B, `/company/${UID_B}/people`)).toBe('/company/bravo-llc/people');
     });
 
     it('leaves a resolved SFID address alone when the organization has no slug or its slug is a page name', async () => {
       resolve.mockReturnValueOnce(of(hit(UID_B, null)));
-      expect(await outcome(UID_B, `/org/${UID_B}/people`)).toBe(true);
+      expect(await outcome(UID_B, `/company/${UID_B}/people`)).toBe(true);
 
       resolve.mockReturnValueOnce(of(hit(UID_B, 'people')));
-      expect(await outcome(UID_B, `/org/${UID_B}/people`)).toBe(true);
+      expect(await outcome(UID_B, `/company/${UID_B}/people`)).toBe(true);
     });
 
     it('records whether the resolved organization is CLA-only, before adopting it', async () => {
       resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true }));
-      await outcome(UID_B, `/org/${UID_B}/easycla`);
+      await outcome(UID_B, `/company/${UID_B}/easycla`);
       expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true);
       expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(adoptFromAddress.mock.invocationCallOrder[0]);
 
       selectedAccount.set(placeholder);
       resolve.mockReturnValueOnce(of(hit(UID_B, null)));
-      await outcome(UID_B, `/org/${UID_B}/people`);
+      await outcome(UID_B, `/company/${UID_B}/people`);
       expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false);
     });
 
@@ -271,7 +271,7 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       resolve.mockReturnValue(of(null));
 
-      expect(await outcome('unknown-org', '/org/unknown-org/overview')).toBe('/org/not-found');
+      expect(await outcome('unknown-org', '/company/unknown-org/overview')).toBe('/company/not-found');
       expect(adoptFromAddress).not.toHaveBeenCalled();
       expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     });
@@ -282,14 +282,14 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       resolve.mockReturnValue(httpError(503));
 
-      expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
+      expect(await outcome(UID_B, `/company/${UID_B}/projects`)).toBe(true);
       expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, accountName: '' }));
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
     });
 
     it('lets an SFID address through on a network failure / timeout (status 0)', async () => {
       resolve.mockReturnValue(httpError(0));
-      expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe(true);
+      expect(await outcome(UID_B, `/company/${UID_B}/projects`)).toBe(true);
       expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
     });
 
@@ -297,13 +297,13 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       resolve.mockReturnValue(httpError(400));
 
-      expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe('/org/not-found');
+      expect(await outcome(UID_B, `/company/${UID_B}/projects`)).toBe('/company/not-found');
       expect(adoptFromAddress).not.toHaveBeenCalled();
     });
 
     it('never trusts a slug address the resolver could not answer', async () => {
       resolve.mockReturnValue(httpError(503));
-      expect(await outcome('bravo-llc', '/org/bravo-llc/projects')).toBe('/org/not-found');
+      expect(await outcome('bravo-llc', '/company/bravo-llc/projects')).toBe('/company/not-found');
       expect(adoptFromAddress).not.toHaveBeenCalled();
     });
   });
@@ -325,8 +325,8 @@ describe('orgPathParamGuard', () => {
      * behaviour and is covered by its own specs — asserting it here against a mock that honours the
      * argument would only restate this expectation.
      */
-    it('adopts /org/family-{root} without asking the resolver, for that family, opting into admission while pending', async () => {
-      expect(await runGuard(SEGMENT, `/org/${SEGMENT}/people`)).toBe(true);
+    it('adopts /company/family-{root} without asking the resolver, for that family, opting into admission while pending', async () => {
+      expect(await runGuard(SEGMENT, `/company/${SEGMENT}/people`)).toBe(true);
       expect(selectRollUp).toHaveBeenCalledWith(ROOT, { admitWhilePending: true });
       expect(resolve).not.toHaveBeenCalled();
     });
@@ -338,7 +338,7 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
       demoteAddressedRollUp.mockReturnValue(account({ uid: UID_A, slug: 'alpha-inc' }));
-      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/alpha-inc/people');
+      expect(await outcome(SEGMENT, `/company/${SEGMENT}/people`)).toBe('/company/alpha-inc/people');
     });
 
     /**
@@ -351,7 +351,7 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
 
-      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/beta-llc/people');
+      expect(await outcome(SEGMENT, `/company/${SEGMENT}/people`)).toBe('/company/beta-llc/people');
       expect(demoteAddressedRollUp).toHaveBeenCalledTimes(1);
       expect(demoteAddressedRollUp).toHaveBeenCalledWith(ROOT);
     });
@@ -361,7 +361,7 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
 
-      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people?employees=jdoe&tab=board`)).toBe('/org/beta-llc/people?tab=board');
+      expect(await outcome(SEGMENT, `/company/${SEGMENT}/people?employees=jdoe&tab=board`)).toBe('/company/beta-llc/people?tab=board');
     });
 
     // Which organization, whether the stored choice survives, and the address pin are all the
@@ -370,20 +370,20 @@ describe('orgPathParamGuard', () => {
       selectRollUp.mockReturnValue(false);
       demoteAddressedRollUp.mockReturnValue(null);
 
-      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/not-found');
+      expect(await outcome(SEGMENT, `/company/${SEGMENT}/people`)).toBe('/company/not-found');
     });
 
     // Salesforce ids are case-sensitive: lowercasing the address used to hand the service a
     // different (or no) top account. Only the prefix may change case.
     it('keeps the top account id exact when the prefix arrives in another case', async () => {
-      expect(await runGuard(`Family-${ROOT}`, `/org/Family-${ROOT}/people`)).toBe(true);
+      expect(await runGuard(`Family-${ROOT}`, `/company/Family-${ROOT}/people`)).toBe(true);
       expect(selectRollUp).toHaveBeenCalledWith(ROOT, { admitWhilePending: true });
     });
 
     it('renders without a selection on the server rather than redirecting', async () => {
       platformId = 'server';
       selectRollUp.mockReturnValue(false);
-      expect(await runGuard(SEGMENT, `/org/${SEGMENT}/people`)).toBe(true);
+      expect(await runGuard(SEGMENT, `/company/${SEGMENT}/people`)).toBe(true);
       expect(clearAccount).toHaveBeenCalled();
     });
 
@@ -391,13 +391,13 @@ describe('orgPathParamGuard', () => {
      * Regression guard, PR #4415 review round 1. The server validates `prefer` against
      * `ORG_ACCOUNT_ID_PATTERN` and rejects anything else outright, so leaving roll-up mode by a Back
      * or a concrete-organization link sent the roll-up segment as `prefer`, drew a 400, and landed a perfectly valid
-     * address on `/org/not-found`.
+     * address on `/company/not-found`.
      */
     it('never offers the roll-up sentinel to the slug resolver as a preference', async () => {
       selectedAccount.set(account({ uid: SEGMENT, accountId: SEGMENT, slug: null }));
       resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
 
-      await runGuard('beta-llc', '/org/beta-llc/overview');
+      await runGuard('beta-llc', '/company/beta-llc/overview');
 
       expect(resolve).toHaveBeenCalledWith('beta-llc', null);
     });
@@ -406,7 +406,7 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
       resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
 
-      await runGuard('beta-llc', '/org/beta-llc/overview');
+      await runGuard('beta-llc', '/company/beta-llc/overview');
 
       expect(resolve).toHaveBeenCalledWith('beta-llc', UID_A);
     });

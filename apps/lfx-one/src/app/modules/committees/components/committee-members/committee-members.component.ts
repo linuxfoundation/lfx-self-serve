@@ -1106,7 +1106,7 @@ export class CommitteeMembersComponent implements OnInit {
         }
       });
 
-      const options: { label: string; value: string | null }[] = [{ label: 'All Organizations', value: null }];
+      const options: { label: string; value: string | null }[] = [{ label: 'All Companies', value: null }];
       Array.from(orgSet)
         .sort()
         .forEach((org) => {

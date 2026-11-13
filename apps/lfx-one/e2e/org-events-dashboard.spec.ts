@@ -5,7 +5,7 @@ import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
-const ORG_EVENTS_URL = '/org/events';
+const ORG_EVENTS_URL = '/company/events';
 const DATA_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
@@ -270,9 +270,9 @@ test.describe('Org Events Dashboard', () => {
     // The org's own registrant count only. The goal is no longer in the payload at all (#4432).
     await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
     // And the HEADER drops "/ Goal" too. `showGoal` reads the payload, so shortening it to
-    // `!== null` would leave external admins reading "My Org / Goal" with the cell assertion above
+    // `!== null` would leave external admins reading "My Company / Goal" with the cell assertion above
     // still passing — `undefined !== null` is true. The exact match is what catches that.
-    await expect(page.getByTestId('org-events-panel-past').getByText('My Org', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('org-events-panel-past').getByText('My Company', { exact: true })).toBeVisible();
     await expect(page.getByTestId('org-event-action-event-1')).toHaveCount(0);
   });
 
@@ -337,7 +337,7 @@ test.describe('Org Events Dashboard', () => {
       const panel = page.getByTestId(`org-events-panel-${tab}`);
       await expect(panel).toBeVisible();
 
-      await expect(panel.getByText('My Org / Goal')).toBeVisible();
+      await expect(panel.getByText('My Company / Goal')).toBeVisible();
       await expect(panel.getByTestId('org-event-attendees-event-1')).toHaveText('3 / 1,500');
       await expect(panel.getByTestId('org-event-attendees-event-2')).toHaveText('0 / 2,200');
     }
@@ -349,8 +349,8 @@ test.describe('Org Events Dashboard', () => {
 
     // Upcoming tab: the cell is the org's count alone; no goal is served or rendered (#4432).
     await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
-    // Header too — the exact match fails on "My Org / Goal", which the cell assertion cannot see.
-    await expect(page.getByTestId('org-events-panel-upcoming').getByText('My Org', { exact: true })).toBeVisible();
+    // Header too — the exact match fails on "My Company / Goal", which the cell assertion cannot see.
+    await expect(page.getByTestId('org-events-panel-upcoming').getByText('My Company', { exact: true })).toBeVisible();
 
     await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();
     await expect(page.getByTestId('event-attendees-drawer-title')).toBeVisible();

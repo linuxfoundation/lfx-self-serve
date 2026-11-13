@@ -54,9 +54,7 @@ describe('OrgEasyclaManagerQuestionDialogComponent', () => {
     const fixture = await render();
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
 
-    expect(byTestId(fixture, 'org-easycla-manager-question-heading')?.textContent?.trim()).toBe(
-      'Are you authorized to be a CLA Manager for your organization?'
-    );
+    expect(byTestId(fixture, 'org-easycla-manager-question-heading')?.textContent?.trim()).toBe('Are you authorized to be a CLA Manager for your company?');
     expect(byTestId(fixture, 'org-easycla-manager-question-heading')?.id).toBe(OrgEasyclaManagerQuestionDialogComponent.headingId);
     expect(text).toContain(ORG_CLA_MANAGER_QUESTION_COPY.message);
     expect(text).toContain('If not sure please select "No"');

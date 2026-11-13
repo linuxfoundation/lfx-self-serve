@@ -39,7 +39,7 @@ Select **Back to Donations** to return to the Donations page.
 
 ## Hide or show your name on a recurring donation
 
-Hiding your name on a recurring donation lists every charge of the subscription, past and future, as **Anonymous** wherever donations are listed, including to the initiative's team. The amount still shows, and if you donated on behalf of an organization its name and logo still show. Only you can see that the donation is yours.
+Hiding your name on a recurring donation lists every charge of the subscription, past and future, as **Anonymous** wherever donations are listed, including to the initiative's team. The amount still shows, and if you donated on behalf of a company its name and logo still show. Only you can see that the donation is yours.
 
 1. Open the recurring donation detail page (see steps above).
 2. Under **Your Name**, select **Hide my name**. To show your name again, select **Show my name**.

@@ -6,7 +6,7 @@
   @if (!hideHeader()) {
     <div class="flex flex-col gap-1">
       <h2>Work Experience</h2>
-      <p class="text-sm text-slate-500">Your employment history determines which organization your contributions are attributed to.</p>
+      <p class="text-sm text-slate-500">Your employment history determines which company your contributions are attributed to.</p>
     </div>
   }
 
@@ -44,7 +44,7 @@
       <lfx-table [value]="sortedExperience()" dataKey="id" styleClass="rounded-b-xl border border-gray-200" data-testid="work-experience-table">
         <ng-template #header>
           <tr class="border-b border-slate-100 bg-white">
-            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Organization</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Company</th>
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Job Title</th>
             <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Dates</th>
             <th class="px-5 py-3 text-right">

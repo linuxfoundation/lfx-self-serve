@@ -23,7 +23,7 @@ import {
 
 test.setTimeout(120_000);
 
-const TRAINEES_URL = '/org/people?tab=training';
+const TRAINEES_URL = '/company/people?tab=training';
 const TABLE_TOTAL = SYNTHETIC_TRAINEE_COUNT;
 const OUTSIDE_TOTAL = SYNTHETIC_OUTSIDE_LEARNER_COUNT;
 const STATS = syntheticTrainingStats();
@@ -213,7 +213,7 @@ test.describe('Org Overview — Education tiles', () => {
   ];
 
   test('show the stubbed stats with unit, window and as-of date', async ({ page }) => {
-    guard = await gotoOrgPageWithTrainees(page, '/org/overview');
+    guard = await gotoOrgPageWithTrainees(page, '/company/overview');
     for (const tile of tiles) {
       const card = page.getByTestId(tile.testId);
       await expect(card).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -226,12 +226,12 @@ test.describe('Org Overview — Education tiles', () => {
 
   for (const tile of tiles) {
     test(`${tile.name}: click and Enter open the Training page`, async ({ page }) => {
-      guard = await gotoOrgPageWithTrainees(page, '/org/overview');
+      guard = await gotoOrgPageWithTrainees(page, '/company/overview');
       const card = page.getByTestId(tile.testId);
       await expect(card).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
       await card.click();
-      await expect(page).toHaveURL(/\/org\/(?:[^/]+\/)?training(?:\?.*)?$/);
+      await expect(page).toHaveURL(/\/company\/(?:[^/]+\/)?training(?:\?.*)?$/);
       await expect(page.getByTestId('org-training-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
       await page.goBack();
@@ -239,7 +239,7 @@ test.describe('Org Overview — Education tiles', () => {
       await expect(action).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
       await action.focus();
       await page.keyboard.press('Enter');
-      await expect(page).toHaveURL(/\/org\/(?:[^/]+\/)?training(?:\?.*)?$/);
+      await expect(page).toHaveURL(/\/company\/(?:[^/]+\/)?training(?:\?.*)?$/);
     });
   }
 });

@@ -14,7 +14,7 @@ import { DATA_LOAD_TIMEOUT, gotoOrgPageWithTrainees, type OrgTrainingApiGuard } 
 
 test.setTimeout(120_000);
 
-const TRAINEES_URL = '/org/people?tab=training';
+const TRAINEES_URL = '/company/people?tab=training';
 const MOBILE_VIEWPORT = { width: 375, height: 812 };
 
 let guard: OrgTrainingApiGuard;

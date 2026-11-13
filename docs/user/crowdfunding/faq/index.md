@@ -35,7 +35,7 @@ To cancel a recurring donation, go to **Crowdfunding → Donations** in LFX Self
 
 ## Can I hide my name on a donation?
 
-Yes. Choose to donate anonymously when you donate on LFX Crowdfunding, or change it later in LFX Self Serve: go to **Crowdfunding → Donations**, select the **More options** menu (⋯) on the donation or recurring donation, and choose **Hide my name** or **Show my name**. An anonymous donation is still listed with its amount, but your name and email show as **Anonymous** to everyone else, including the initiative's team and the organization you donated on behalf of. On a recurring donation the setting applies to every charge. See [View Donations](../view-donations/#hide-or-show-your-name).
+Yes. Choose to donate anonymously when you donate on LFX Crowdfunding, or change it later in LFX Self Serve: go to **Crowdfunding → Donations**, select the **More options** menu (⋯) on the donation or recurring donation, and choose **Hide my name** or **Show my name**. An anonymous donation is still listed with its amount, but your name and email show as **Anonymous** to everyone else, including the initiative's team and the company you donated on behalf of. On a recurring donation the setting applies to every charge. See [View Donations](../view-donations/#hide-or-show-your-name).
 
 ## What if a charge on my recurring donation can't be processed?
 

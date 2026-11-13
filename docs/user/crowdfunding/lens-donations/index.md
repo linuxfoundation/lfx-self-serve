@@ -1,28 +1,28 @@
 ---
-title: Organization Donations
-description: View the crowdfunding donations made on behalf of an organization in the LFX Self Serve Org lens.
+title: Company Donations
+description: View the crowdfunding donations made on behalf of a company in the LFX Self Serve Company lens.
 audience: [all]
 product_area: Crowdfunding
-tags: [crowdfunding, donations, organization, lens]
+tags: [crowdfunding, donations, company, lens]
 last_updated: 2026-11-10
 intercom_collection: Crowdfunding
 ---
 
-When someone donates to a crowdfunding initiative on behalf of a company, LFX matches the donation to the company's organization by its domain. LFX Self Serve lists those donations under the organization in the **Organization** lens, so the people who can view the organization can see who donated in its name.
+When someone donates to a crowdfunding initiative on behalf of a company, LFX matches the donation to the company by its domain. LFX Self Serve lists those donations under the company in the **Company** lens, so the people who can view the company can see who donated in its name.
 
 ## Who sees it
 
-Anyone who can view the selected organization in the **Organization** lens.
+Anyone who can view the selected company in the **Company** lens.
 
 ## Navigation
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Switch to the **Organization** lens and select the organization.
+2. Switch to the **Company** lens and select the company.
 3. Select **Crowdfunding Donations** from the left navigation sidebar.
 
 ## What the page shows
 
-The page header reads **Donations**, with the description "Donations on LFX Crowdfunding made on behalf of" followed by the organization name. Each row shows:
+The page header reads **Donations**, with the description "Donations on LFX Crowdfunding made on behalf of" followed by the company name. Each row shows:
 
 - **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made
@@ -31,19 +31,19 @@ The page header reads **Donations**, with the description "Donations on LFX Crow
 
 The newest donations come first. Select **Load more** to see older ones.
 
-Only donations matched to the organization by its domain appear. If a donor named the company with a different domain, or didn't name a company, the donation isn't listed.
+Only donations matched to the company by its domain appear. If a donor named the company with a different domain, or didn't name a company, the donation isn't listed.
 
 ## Empty state
 
-**No donations yet** — no donations have been matched to the organization by its domain.
+**No donations yet** — no donations have been matched to the company by its domain.
 
 ## Error states
 
-- **You don't have access to these donations** — only people who can view the organization can see the donations made on its behalf.
+- **You don't have access to these donations** — only people who can view the company can see the donations made on its behalf.
 - **Donations couldn't be loaded** — LFX Crowdfunding is unavailable right now. Select **Try again** after a moment.
 
 ## Related
 
-- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or company
 - [Donations](../my-donations/) — the donations you made, in the Me lens
 - [Crowdfunding](../) — overview of the Crowdfunding section

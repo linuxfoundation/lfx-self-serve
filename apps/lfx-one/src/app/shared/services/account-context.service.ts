@@ -10,6 +10,7 @@ import {
   ACCOUNT_COOKIE_KEY,
   ORG_ACCOUNT_ID_PATTERN,
   ORG_LENS_SWITCH_PARAMS_RESET,
+  ORG_LENS_URL_ROOT,
   ORG_NOT_FOUND_PATH,
   ROLLUP_MIN_ORGANIZATIONS,
 } from '@lfx-one/shared/constants';
@@ -933,7 +934,7 @@ export class AccountContextService {
     // `normalizeOrgSegment`, because the guards admit `/org/Family-…/people` — the match guard
     // normalizes before testing and the roll-up branch returns without canonicalizing — so a
     // mixed-case prefix would otherwise keep its combined-view URL after demotion.
-    if (segments.length < 2 || segments[0].path !== 'org' || !isOrgRollUpSegment(normalizeOrgSegment(segments[1].path))) {
+    if (segments.length < 2 || segments[0].path !== ORG_LENS_URL_ROOT || !isOrgRollUpSegment(normalizeOrgSegment(segments[1].path))) {
       return;
     }
     const segment = next ? orgUrlSegment(next) : null;

@@ -43,7 +43,7 @@ const LATEST_ANNUAL = MOCK_ANNUAL.rows[MOCK_ANNUAL.rows.length - 1] as { year: n
 const EXPECTED_CUMULATIVE_INVESTMENT = formatCurrency(MOCK_ANNUAL.rows.reduce((sum, row) => sum + row.expenditure, 0));
 const EXPECTED_CUMULATIVE_RETURN = formatCurrency(MOCK_ANNUAL.rows.reduce((sum, row) => sum + row.totalReturn, 0));
 
-test.describe('Org Lens ROI Metrics — portfolio summary', () => {
+test.describe('Company Lens ROI Metrics — portfolio summary', () => {
   test('renders the page shell and the four headline figures', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
@@ -69,7 +69,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await page.getByTestId('org-roi-model-overview-toggle').click();
     const investment = page.getByTestId('org-roi-model-overview-investment');
     await expect(investment).toBeVisible();
-    await expect(investment).toContainText('same for every organization');
+    await expect(investment).toContainText('same for every company');
     await expect(investment).toContainText('No salary, payroll, or invoice data is used.');
   });
 
@@ -129,7 +129,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   });
 
   test('does not call a completed final year partial', async ({ page }) => {
-    // An organization whose activity stopped years ago has a complete last year. Labelling it
+    // A company whose activity stopped years ago has a complete last year. Labelling it
     // "still accruing" would misexplain a genuine decline as a calendar artefact.
     await stubOrgLensContext(page, {
       annual: {
@@ -153,7 +153,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-annual-trend-apportionment-note')).toHaveCount(0);
   });
 
-  test('presents the rates as global constants, not this organization\u2019s figures', async ({ page }) => {
+  test('presents the rates as global constants, not this company\u2019s figures', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
@@ -161,8 +161,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     const scope = page.getByTestId('org-roi-model-overview-rates-scope');
     await expect(scope).toContainText('global constants');
-    await expect(scope).toContainText('applied identically to every organization');
-    await expect(scope).toContainText('not specific to your organization');
+    await expect(scope).toContainText('applied identically to every company');
+    await expect(scope).toContainText('not specific to your company');
 
     await expect(page.getByTestId('org-roi-model-overview-rates')).toContainText('$200,000');
     await expect(page.getByTestId('org-roi-model-overview-rates')).toContainText('$150,000');
@@ -224,9 +224,9 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-category-donut-chart')).toBeVisible();
   });
 
-  test('hides the figures and the date window when the summary is for another organization', async ({ page }) => {
+  test('hides the figures and the date window when the summary is for another company', async ({ page }) => {
     // The summary keeps its previous value while a new request is in flight, so anything derived
-    // from it describes the organization the viewer just left. Both surfaces key off the payload's
+    // from it describes the company the viewer just left. Both surfaces key off the payload's
     // own orgUid rather than assuming the summary in hand belongs to the selected account.
     await stubOrgLensContext(page, { summary: { ...MOCK_SUMMARY, orgUid: '001410000000000XYZ' } });
     await gotoOrgRoiPage(page);
@@ -260,7 +260,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     }
   });
 
-  test('explains an unmapped organization without implying a pending fix', async ({ page }) => {
+  test('explains an unmapped company without implying a pending fix', async ({ page }) => {
     await stubOrgLensContext(page, {
       summary: { ...MOCK_SUMMARY, hasData: false, totalExpenditure: null, totalReturn: null, profit: null, roi: null, bcr: null },
       coverage: { orgUid: MOCK_ACCOUNT_ID, hasData: false, coverageReason: 'unmapped' },
@@ -274,7 +274,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-category-donut')).toHaveCount(0);
   });
 
-  test('explains a mapped-but-unestimated organization without promising later figures', async ({ page }) => {
+  test('explains a mapped-but-unestimated company without promising later figures', async ({ page }) => {
     await stubOrgLensContext(page, {
       summary: { ...MOCK_SUMMARY, hasData: false, totalExpenditure: null, totalReturn: null, profit: null, roi: null, bcr: null },
       coverage: { orgUid: MOCK_ACCOUNT_ID, hasData: false, coverageReason: 'not_estimated' },
@@ -360,7 +360,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
       route.fulfill({
         status: 403,
         contentType: 'application/json',
-        body: JSON.stringify({ code: 'FORBIDDEN', message: 'You do not have access to Org Lens data for this organization.' }),
+        body: JSON.stringify({ code: 'FORBIDDEN', message: 'You do not have access to Company Lens data for this company.' }),
       })
     );
 
@@ -375,7 +375,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     const forbidden = page.getByTestId('org-roi-forbidden-state');
     await expect(forbidden).toBeVisible();
     await expect(forbidden).toHaveAttribute('data-state', 'section-no-access');
-    await expect(page.getByTestId('org-roi-forbidden-title')).toHaveText('You do not have access to this organization');
+    await expect(page.getByTestId('org-roi-forbidden-title')).toHaveText('You do not have access to this company');
     await expect(page.getByTestId('org-roi-forbidden-primary')).toContainText('How access to a company is granted');
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
 
@@ -390,7 +390,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   });
 
   test('surfaces an error rather than a skeleton when the failed request cleared the summary', async ({ page }) => {
-    // A failure empties the summary, so it stops matching the selected organization. If the
+    // A failure empties the summary, so it stops matching the selected company. If the
     // org-identity check were tested before the failure branches, every error would render as a
     // permanent loading skeleton and neither refusal nor outage would ever reach the viewer.
     await stubOrgLensContext(page);
@@ -475,7 +475,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   });
 });
 
-test.describe('Org Lens ROI Metrics — investment by category', () => {
+test.describe('Company Lens ROI Metrics — investment by category', () => {
   test('renders every above-threshold category with its shared label', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
@@ -543,14 +543,14 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
   });
 
   test('carries the investment disclosure on the category breakdown', async ({ page }) => {
-    // The surface the privacy audit was most concerned about: 19.4% of covered organizations have a
+    // The surface the privacy audit was most concerned about: 19.4% of covered companies have a
     // single code contributor, so a lone "Code Contribution" amount can read as one person's pay.
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
     const note = page.getByTestId('org-roi-category-donut-modelled-cost-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('same for every organization');
+    await expect(note).toContainText('same for every company');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
   });
 

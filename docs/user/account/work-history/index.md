@@ -8,12 +8,12 @@ last_updated: 2026-11-05
 intercom_collection: Account
 ---
 
-The **Work history & Affiliations** tab is where you record your employment history and review how your open-source contributions are attributed to organizations. It has two sections — **Work history** and **Project Involvement** — and it is the tab that opens by default under the Profile & Account hub at `/profile/attributions`.
+The **Work history & Affiliations** tab is where you record your employment history and review how your open-source contributions are attributed to companies. It has two sections — **Work history** and **Project Involvement** — and it is the tab that opens by default under the Profile & Account hub at `/profile/attributions`.
 
 ## What you can do
 
 - Add, edit, and delete work experience entries, and mark your current employer
-- See how your project contributions are attributed to organizations over time
+- See how your project contributions are attributed to companies over time
 - Confirm or adjust your affiliation history when the system needs it
 - See whether a project lists you as a maintainer or a contributor
 
@@ -25,15 +25,15 @@ The **Work history & Affiliations** tab is where you record your employment hist
 
 ## Work history
 
-Your employment history determines which organization your contributions are attributed to. Your work experience also populates the **Organization** choices in the [Edit Profile drawer](../../profile/edit-profile/#set-your-organization).
+Your employment history determines which company your contributions are attributed to. Your work experience also populates the **Company** choices in the [Edit Profile drawer](../../profile/edit-profile/#set-your-company).
 
-Your entries appear in a table with **Organization**, **Job Title**, and **Dates** columns.
+Your entries appear in a table with **Company**, **Job Title**, and **Dates** columns.
 
 ### Add a work experience
 
 1. Select **Add work experience**.
-2. In the **Add work experience** dialog, fill in the fields. **Organization**, **Role**, and **Start Date** are marked required (`*`):
-   - **Organization** — search and pick your employer (for example, `Google`, `Red Hat`).
+2. In the **Add work experience** dialog, fill in the fields. **Company**, **Role**, and **Start Date** are marked required (`*`):
+   - **Company** — search and pick your employer (for example, `Google`, `Red Hat`).
    - **Role** — your job title (for example, `Senior Software Engineer`).
    - **Start Date** — month and year.
    - **End Date** — month and year, or select **I currently work here** to mark it as your current role (this hides the end date).
@@ -57,12 +57,12 @@ Only projects that LFX tracks appear here. Activity in a personal repository, or
 Your contributions are attributed based on three inputs (see the **How affiliations work** dialog on the tab):
 
 - **Verified identities** — your connected accounts (such as GitHub) and verified email addresses link activity to you.
-- **Work experience** — tells us which organization you represented during each time period.
-- **Contribution timestamp overlap** — matching when you contributed against your employment dates attributes each contribution to the right organization.
+- **Work experience** — tells us which company you represented during each time period.
+- **Contribution timestamp overlap** — matching when you contributed against your employment dates attributes each contribution to the right company.
 
 ### Confirm or adjust your affiliation history
 
-When the system attributes contributions from your employment timeline, you may see an **Affiliations calculated from work history** banner: _We've attributed your project contributions based on your employment timeline. Confirm or adjust if needed._ Select **Confirm Affiliation History** (or **Edit Affiliation** on a project) to open the affiliation editor, where you can adjust the organization and dates per project and override anything the system got wrong.
+When the system attributes contributions from your employment timeline, you may see an **Affiliations calculated from work history** banner: _We've attributed your project contributions based on your employment timeline. Confirm or adjust if needed._ Select **Confirm Affiliation History** (or **Edit Affiliation** on a project) to open the affiliation editor, where you can adjust the company and dates per project and override anything the system got wrong.
 
 ### Maintainer and Contributor labels
 
@@ -76,6 +76,6 @@ If you haven't connected any identities or added work experience yet, the sectio
 
 - [Account overview](../) — all account areas and navigation
 - [Identities](../identities/) — verified identities feed contribution attribution
-- [Edit your profile](../../profile/edit-profile/#set-your-organization) — the Organization field is populated from your work history
+- [Edit your profile](../../profile/edit-profile/#set-your-company) — the Company field is populated from your work history
 - [Account FAQ](../faq/) — short answers about affiliations and account areas
 - [Permissions](../../permissions/) — how access to a project is actually granted

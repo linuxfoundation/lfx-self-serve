@@ -4,7 +4,7 @@ description: Frequently asked questions about meetings in LFX Self Serve.
 audience: [all]
 product_area: Meetings
 tags: [meetings, faq, schedule, join, host key, attendance]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -56,7 +56,7 @@ Make sure you're in the right lens. Your personal **Meetings** view (Me lens) sh
 
 ## Can I register myself for a meeting I wasn't invited to?
 
-Yes, if the meeting is **public and not restricted**, and you're **signed in**. Its join page shows a **Register for Meeting** button with a short form for your name, email, and optionally your job title and organization. This button isn't available for **Restricted** meetings. For those, ask the organizer to add you as a guest. See [Join a Meeting](../join-meeting/).
+Yes, if the meeting is **public and not restricted**, and you're **signed in**. Its join page shows a **Register for Meeting** button with a short form for your name, email, and optionally your job title and company. This button isn't available for **Restricted** meetings. For those, ask the organizer to add you as a guest. See [Join a Meeting](../join-meeting/).
 
 ## Can I RSVP to a meeting I'm invited to?
 

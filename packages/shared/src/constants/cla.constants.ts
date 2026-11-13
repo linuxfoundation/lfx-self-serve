@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgClaDesigneeRefusal, OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import { ORG_LENS_URL_ROOT } from './org-lens-url.constants';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -20,7 +21,7 @@ export const UNNAMED_CLA_GROUP = 'Unnamed CLA group';
 export const CLA_GROUP_MATCH_TYPE_LABELS = {
   claGroup: 'CLA group name',
   project: 'Project name',
-  organization: 'Linked organization',
+  organization: 'Linked repository source',
   repository: 'Repository link',
 } as const;
 
@@ -235,11 +236,11 @@ export const ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE = 'EASYCLA_ROLE_MISSING';
 
 export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
   title: "We couldn't load your CLAs",
-  reason: "You don't have an EasyCLA role at this organization.",
+  reason: "You don't have an EasyCLA role at this company.",
   supportLead: 'Please',
   supportLabel: 'contact support',
   supportTail: 'if you need EasyCLA assistance.',
-  signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this organization",
+  signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this company",
 } as const;
 
 /**
@@ -251,7 +252,7 @@ export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
  * item 4) is one release after the gate has been on for a full signing-session lifetime, not one
  * release after this deploy.
  */
-export const ORG_EASYCLA_PATH = '/org/easycla';
+export const ORG_EASYCLA_PATH = `/${ORG_LENS_URL_ROOT}/easycla`;
 
 /**
  * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,
@@ -288,11 +289,13 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
- * Legacy query parameter naming the organization a corporate signing session was opened for, on
- * return addresses of the leftover shape (`legacyOrgEasyclaReturnPath`). Spec 050 moves the
+ * Current name of the query parameter naming the organization a corporate signing session was opened for, on
+ * return addresses of the leftover shape (`legacyOrgEasyclaReturnPath`). This is the READ-side name: the BFF does
+ * not write it yet. It still mints {@link ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM} (`?org=`) on `/org/easycla/…`, so a
+ * previous-release replica or a rollback can adopt the named company; this release 301s that to `?company=`. Spec 050 moves the
  * organization into the path (`orgEasyclaReturnPath`, lfx-self-serve#2743) behind the
  * `ORG_EASYCLA_RETURN_IN_PATH` rollout gate (`ServerFeatureFlag.OrgEasyclaReturnInPath`); until that
- * gate is on, the BFF still writes this parameter. The Org Lens page reads it on the leftover
+ * gate is on, the BFF writes the legacy `?org=` form. The Company Lens page reads this one (and the legacy one) on the leftover
  * `/org/easycla/…` mount only — never under `/org/:orgSegment/easycla`, where the path is the
  * authority — and keeps reading it for one release after the gate flips, so a signing trip opened
  * against the old shape lands on the right organization when it comes back.
@@ -301,7 +304,13 @@ export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
  * own authorized organizations and ignores anything absent from that list, so a crafted link cannot
  * select an organization the viewer does not hold.
  */
-export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
+export const ORG_EASYCLA_RETURN_ORG_PARAM = 'company';
+
+/**
+ * The pre-rename name of {@link ORG_EASYCLA_RETURN_ORG_PARAM} (`?org=`, #5064). Still written into signing return URLs
+ * (with the `/org` root) so a rollback or an older replica can route them; this release 301s them to `/company` + `?company=`.
+ */
+export const ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM = 'org';
 
 /**
  * Query parameter saying a corporate signing trip is in flight, carried on the CLA Group address
@@ -328,6 +337,7 @@ export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
  */
 export const ORG_EASYCLA_RETURN_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
   [ORG_EASYCLA_RETURN_ORG_PARAM]: null,
+  [ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM]: null,
   [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null,
 });
 
@@ -351,7 +361,7 @@ export const CCLA_SIGN_COPY = {
     authorityHeading: 'Authorization Confirmation',
     authorityLabel: 'I am authorized to sign this Contributor License Agreement (CLA) on behalf of my company.',
     embargoHeading: 'Compliance Confirmation',
-    embargoLabel: 'I hereby certify that I am not, and/or the organization I am representing is not:',
+    embargoLabel: 'I hereby certify that I am not, and/or the company I am representing is not:',
     embargoConditions: [
       'located in Cuba, Iran, North Korea, Syria, the Crimea Region of Ukraine, or the Russian-controlled areas of the Donetsk or Luhansk regions of Ukraine;',
       'owned or controlled by, acting for or on behalf of, or an individual or entity that has in the past acted for or on behalf of the Government of Cuba, Iran, North Korea, Syria, or Venezuela;',
@@ -460,7 +470,7 @@ export const CCLA_SIGN_COPY = {
      * Names the organization rather than the CLA group, because that is the true scope of the
      * refusal: the group is not spent, this organization's corporate agreement for it exists.
      */
-    alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
+    alreadySignedDisabledReason: 'Your company has already signed a corporate CLA for this CLA group.',
   },
   /**
    * ACS deny on attestation Continue. Toast so the dialog can stay open; EasyCLA v4 still
@@ -469,7 +479,7 @@ export const CCLA_SIGN_COPY = {
    */
   forbidden: {
     summary: "Can't start signing",
-    detail: "You aren't designated to sign this corporate CLA for your organization.",
+    detail: "You aren't designated to sign this corporate CLA for your company.",
   },
   /**
    * Shown on the CLA Group detail page when the signatory has come back from signing and the
@@ -667,7 +677,7 @@ export const ORG_CLA_AUTHORITY_NAME_MIN_LENGTH = 2;
  * would disagree with the label in the legacy console while both are live. The count beside it
  * is `approvalCriteriaCount` for the same reason the label is not trusted: it counts rules.
  */
-export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My Organization';
+export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My Company';
 
 /** Toast copy for a completed approval-list write. */
 export const ORG_CLA_APPROVAL_RECEIPT = {
@@ -739,7 +749,7 @@ export const ORG_CLA_DESIGNEE_NAME_MAX = 60;
  * title is dropped because the overview already says so. Contact Company Admin is not offered.
  */
 export const ORG_CLA_MANAGER_QUESTION_COPY = {
-  question: 'Are you authorized to be a CLA Manager for your organization?',
+  question: 'Are you authorized to be a CLA Manager for your company?',
   message: 'A CLA Manager is the person who manages the list of approved contributors to this project for your company.',
   note: 'If not sure please select "No"',
   noLabel: 'No',
@@ -770,10 +780,10 @@ export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
 
 /** Why a designee assignment or nomination did not go through, keyed by the BFF's upstream code. */
 export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<OrgClaDesigneeRefusal, string> = {
-  'already-signed': 'This CLA has already been signed for your organization. Reload the page to see it.',
+  'already-signed': 'This CLA has already been signed for your company. Reload the page to see it.',
   'no-lf-login': 'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Contact support.',
-  sanctioned: 'Your organization cannot sign this CLA at this time. Contact support for more information.',
-  'not-authorized': 'You are not allowed to request a CLA Manager for this organization.',
+  sanctioned: 'Your company cannot sign this CLA at this time. Contact support for more information.',
+  'not-authorized': 'You are not allowed to request a CLA Manager for this company.',
   unknown: 'We could not complete the request. Try again, or contact support if it keeps failing.',
 };
 
@@ -782,7 +792,7 @@ export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<OrgClaDesigneeRefusal, string
 // ---------------------------------------------------------------------------
 
 /** The heading and subtitle over the Contributor Acknowledgments table, as the M3 prototype words them. */
-export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments from My Organization';
+export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments from My Company';
 export const ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE = "Employees who've acknowledged they're covered by this CLA.";
 
 /**

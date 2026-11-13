@@ -25,7 +25,7 @@ export const KEY_CONTACT_ROLE_CATALOG: readonly KeyContactRoleConfig[] = [
     required: true,
     minContacts: 1,
     maxContacts: 1,
-    tooltip: 'Primary voting representative for your organization on this membership.',
+    tooltip: 'Primary voting representative for your company on this membership.',
   },
   {
     role: 'Billing Contact',
@@ -97,7 +97,7 @@ export const KEY_CONTACT_ROLE_CATALOG: readonly KeyContactRoleConfig[] = [
     required: true,
     minContacts: 1,
     maxContacts: 1,
-    tooltip: 'Authorized to sign membership agreements on behalf of your organization.',
+    tooltip: 'Authorized to sign membership agreements on behalf of your company.',
   },
 ] as const;
 
@@ -128,7 +128,7 @@ export const KEY_CONTACT_PRIMARY_CONTACT_TYPE: OrgMembershipKeyContactType = 're
 
 /** Spec 018 FR-032a: CSV header row, 9 columns, in this exact order. */
 export const MEMBERSHIP_AGREEMENT_CSV_HEADERS = [
-  'Organization',
+  'Company',
   'Foundation',
   'Agreement Name',
   'Signed Date',

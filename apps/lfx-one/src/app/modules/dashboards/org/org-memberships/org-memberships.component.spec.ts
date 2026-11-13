@@ -73,12 +73,12 @@ async function render(memberships: OrgActiveMembership[] = [], projects: OrgMemb
     imports: [OrgMembershipsComponent],
     providers: [
       provideRouter([]),
-      // The Org Projects side panel is a p-drawer, which binds synthetic animation listeners.
+      // The Company Projects side panel is a p-drawer, which binds synthetic animation listeners.
       provideNoopAnimations(),
       // The empty state no longer carries a support link (#5447); MessageService stays provided for the page's other controls.
       MessageService,
       { provide: AccountContextService, useValue: { selectedAccount } },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
       {
         provide: OrgLensEmptyStateService,
@@ -163,7 +163,7 @@ describe('OrgMembershipsComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Acme Motors');
   });
 
-  it('renders a non-zero Org Projects count as a control that opens the projects side panel', async () => {
+  it('renders a non-zero Company Projects count as a control that opens the projects side panel', async () => {
     const { fixture } = await render([membershipRow(3)]);
     await settleActiveFetch(fixture);
 
@@ -216,7 +216,7 @@ describe('OrgMembershipsComponent', () => {
     expect(hasInDocument('membership-projects-drawer-title')).toBe(false);
   });
 
-  it('leaves a zero Org Projects count non-interactive', async () => {
+  it('leaves a zero Company Projects count non-interactive', async () => {
     const { fixture } = await render([membershipRow(0)]);
     await settleActiveFetch(fixture);
 

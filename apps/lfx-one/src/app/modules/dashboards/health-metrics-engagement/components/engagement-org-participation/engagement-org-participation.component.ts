@@ -145,7 +145,7 @@ export class EngagementOrgParticipationComponent {
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
-    const orgs = `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'}`;
+    const orgs = `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'company' : 'companies'}`;
     // The lapsed part drops at zero, as in the design.
     return counts.lapsedOrgs > 0 ? `${orgs} · ${counts.lapsedOrgs.toLocaleString('en-US')} lapsed` : orgs;
   });

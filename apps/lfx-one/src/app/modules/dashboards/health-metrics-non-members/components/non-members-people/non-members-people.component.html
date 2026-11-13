@@ -15,13 +15,13 @@
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="non-members-people-controls">
       <div class="w-full sm:w-64">
-        <label class="sr-only" for="non-members-people-search">Search person or organization</label>
+        <label class="sr-only" for="non-members-people-search">Search person or company</label>
         <lfx-input-text
           [form]="searchForm"
           control="search"
           inputId="non-members-people-search"
           [maxlength]="maxSearchLength"
-          placeholder="Search person or organization…"
+          placeholder="Search person or company…"
           icon="fa-light fa-search"
           size="small"
           styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
@@ -62,7 +62,7 @@
       <ng-template #header>
         <tr>
           <th scope="col">Person</th>
-          <th scope="col">Organization</th>
+          <th scope="col">Company</th>
           <th scope="col" class="text-right">Meetings attended</th>
           <th scope="col" class="text-right">Last attended</th>
         </tr>
@@ -108,7 +108,7 @@
         <tr>
           <td colspan="4" class="py-6 text-center text-[13px] text-gray-500" data-testid="non-members-people-no-match">
             @if (!loading()) {
-              No person or organization matches “{{ search() }}”.
+              No person or company matches “{{ search() }}”.
             }
           </td>
         </tr>

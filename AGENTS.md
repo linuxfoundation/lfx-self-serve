@@ -29,6 +29,8 @@ Use these naturally — do not paraphrase:
 
 When a feature affects multiple personas differently, flag it explicitly.
 
+**User-facing copy says "company", never "organization" or "Org Lens"** (foundations, universities and LF itself included). Glossary: `.claude/rules/copy-terminology.md`; enforced in CI by `check-company-copy.mjs`.
+
 ## Quick Start
 
 **Prerequisites:** Node.js 22.13+ (or 23.4+; `node:sqlite` is unflagged from those releases) and Yarn 4.x (via corepack). Docker or OrbStack is only needed when running the optional local microservice stack; normal app development uses the shared dev environment.

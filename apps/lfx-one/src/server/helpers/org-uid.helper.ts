@@ -15,6 +15,6 @@ export function assertOrgUid(orgUid: string | undefined, operation: string): ass
     throw ServiceValidationError.forField('orgUid', 'orgUid path parameter is required', { operation });
   }
   if (!ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
-    throw ServiceValidationError.forField('orgUid', 'Invalid organization id format', { operation });
+    throw ServiceValidationError.forField('orgUid', 'Invalid company id format', { operation });
   }
 }

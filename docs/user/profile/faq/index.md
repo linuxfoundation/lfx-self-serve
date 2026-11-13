@@ -10,7 +10,7 @@ intercom_collection: Profile
 
 ## Where do I edit my profile details?
 
-Open [**Profile & Account**](/profile) and select **Edit profile** in the profile panel on the right. A drawer opens where you can update your About Me, name, photo, job title, organization, primary email, location, and t-shirt size. Select **Save Changes** when done. Two of these are exceptions that save immediately when you make them — uploading a **photo** and choosing a **primary email** — so **Cancel** will not revert those two. See [Edit your profile](../edit-profile/).
+Open [**Profile & Account**](/profile) and select **Edit profile** in the profile panel on the right. A drawer opens where you can update your About Me, name, photo, job title, company, primary email, location, and t-shirt size. Select **Save Changes** when done. Two of these are exceptions that save immediately when you make them — uploading a **photo** and choosing a **primary email** — so **Cancel** will not revert those two. See [Edit your profile](../edit-profile/).
 
 ## What is my LFID, and where do I find it?
 

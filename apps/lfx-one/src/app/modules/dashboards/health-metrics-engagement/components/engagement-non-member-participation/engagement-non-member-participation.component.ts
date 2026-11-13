@@ -79,7 +79,7 @@ export class EngagementNonMemberParticipationComponent {
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
-    return `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'}`;
+    return `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'company' : 'companies'}`;
   });
 
   public constructor() {

@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-11-03
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -38,7 +38,7 @@ The bar hides while the guest list is open, and it doesn't appear if you aren't 
 
 ### If you're not signed in
 
-You don't need an LFX account to join a Public or Private meeting. For a Private meeting, open the link the organizer shared, because it includes the meeting's password. Fill in the **Enter your information** form with your **Full Name**, **Email**, and **Organization**, then select **Join Meeting**.
+You don't need an LFX account to join a Public or Private meeting. For a Private meeting, open the link the organizer shared, because it includes the meeting's password. Fill in the **Enter your information** form with your **Full Name**, **Email**, and **Company**, then select **Join Meeting**.
 
 A **Restricted** meeting is different. There's no form to get past it: you need to **sign in**, and your account has to match someone on the meeting's guest list. If it doesn't, ask the organizer to add you, then sign in again.
 
@@ -57,7 +57,7 @@ If the organizer turned on **Show attendees to guests**, invited people can open
 
 ## Register for a meeting
 
-If a meeting is public and not restricted, and you haven't already been invited, a signed-in visitor sees a **Register for Meeting** button. Selecting it opens a short form: **First Name**, **Last Name**, and **Email** are required, and **Job Title** and **Organization** are optional. Submitting it adds you as a registrant.
+If a meeting is public and not restricted, and you haven't already been invited, a signed-in visitor sees a **Register for Meeting** button. Selecting it opens a short form: **First Name**, **Last Name**, and **Email** are required, and **Job Title** and **Company** are optional. Submitting it adds you as a registrant.
 
 The button doesn't appear if you aren't signed in, if you're already invited, or if the meeting is Restricted. For a Restricted meeting, ask the organizer to add you.
 

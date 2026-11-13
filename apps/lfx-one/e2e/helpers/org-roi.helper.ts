@@ -27,7 +27,7 @@ export const BUBBLE_MAX_POINTS = 250;
 /** Imported, unlike the ceilings above: a rendering detail rather than a promise to the viewer. */
 export const NO_VALUE = ORG_LENS_ROI_NO_VALUE;
 
-export const ORG_ROI_URL = '/org/roi';
+export const ORG_ROI_URL = '/company/roi';
 export const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
 /**
@@ -268,19 +268,19 @@ export const DETAIL_PROJECT = PROJECTS_BY_RETURN[0];
 export const DETAIL_LOSS_PROJECT = MOCK_PROJECT_INPUTS.find((input) => input.return < input.expenditure) as (typeof MOCK_PROJECT_INPUTS)[number];
 
 export function orgRoiProjectDetailUrl(slug: string): string {
-  return `/org/roi/projects/${slug}`;
+  return `/company/roi/projects/${slug}`;
 }
 
 /**
- * The fixture organization's Org Lens address for `path`, legacy (`/org/{path}`) or org-addressed
- * (`/org/{MOCK_ACCOUNT_ID}/{path}`). Spec 050 rewrites a legacy address to the selected organization's
+ * The fixture organization's Org Lens address for `path`, legacy (`/company/{path}`) or org-addressed
+ * (`/company/{MOCK_ACCOUNT_ID}/{path}`). Spec 050 rewrites a legacy address to the selected organization's
  * form once the default selection lands, so which of the two a link or URL carries depends on that
  * timing, not on the feature under test. Only those two forms match — never another organization's
  * address and never a different page.
  */
 export function orgLensAddressPattern(...path: string[]): RegExp {
   const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`/org/(?:${escape(MOCK_ACCOUNT_ID)}/)?${path.map(escape).join('/')}$`);
+  return new RegExp(`/company/(?:${escape(MOCK_ACCOUNT_ID)}/)?${path.map(escape).join('/')}$`);
 }
 
 /**
@@ -443,7 +443,7 @@ export async function gotoOrgRoiPage(page: Page): Promise<void> {
 }
 
 /**
- * The project detail route. It is a child of `/org/roi`, so it is matched by the same LF-staff-only
+ * The project detail route. It is a child of `/company/roi`, so it is matched by the same LF-staff-only
  * guard; any other e2e user is redirected away and the case is skipped.
  */
 export async function gotoOrgRoiProjectDetail(page: Page, slug: string): Promise<void> {
@@ -462,6 +462,6 @@ async function gotoRoiRoute(page: Page, url: string, testId: string): Promise<vo
 
   // The guard redirects asynchronously, so arriving at the URL is not the same as staying on it —
   // asserting immediately would pass against a page that is about to leave.
-  await expect(page).toHaveURL(/\/org\/roi/, { timeout: 15_000 });
+  await expect(page).toHaveURL(/\/company\/roi/, { timeout: 15_000 });
   await expect(page.getByTestId(testId)).toBeVisible({ timeout: 15_000 });
 }

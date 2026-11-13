@@ -2,17 +2,26 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Org Lens URL scheme (spec 050 / lfx-self-serve#2570): `/org/{segment}/{page}` where `segment`
+ * Org Lens URL scheme (spec 050 / lfx-self-serve#2570): `/company/{segment}/{page}` (was `/org/…` until #5064) where `segment`
  * is the organization's lowercase slug, or its 18-char SFID when it has none. Shared by the
  * router, the guards, the selector navigation, and the BFF segment resolver so the three tiers
  * cannot drift on what a segment is.
  */
 
-/** Route parameter carrying the organization segment on the addressed mount (`/org/:orgSegment/…`). The router declares it as `':' + ORG_SEGMENT_PARAM`; guards and pages read it by this name. */
+/**
+ * First URL segment of every Company Lens address (`/company/{segment}/{page}`). The lens id stays `org`
+ * and code names are unchanged (epic #5060); only the address people see and share is `company`.
+ */
+export const ORG_LENS_URL_ROOT = 'company';
+
+/** Root of the pre-rename addresses (`/org/…`). Never generated; every such address redirects permanently to `/company/…` (#5064). */
+export const ORG_LENS_LEGACY_URL_ROOT = 'org';
+
+/** Route parameter carrying the organization segment on the addressed mount (`/company/:orgSegment/…`). The router declares it as `':' + ORG_SEGMENT_PARAM`; guards and pages read it by this name. */
 export const ORG_SEGMENT_PARAM = 'orgSegment';
 
 /** In-shell not-found page for unresolvable / inaccessible / unavailable Org Lens addresses (FR-022). Declared as a sibling of the `org` route node so a `canMatch` fail-closed redirect cannot loop back into itself. */
-export const ORG_NOT_FOUND_PATH = '/org/not-found';
+export const ORG_NOT_FOUND_PATH = `/${ORG_LENS_URL_ROOT}/not-found`;
 
 /** `ORG_NOT_FOUND_PATH` as primary URL segments, for callers that compare an address segment by segment. */
 export const ORG_NOT_FOUND_SEGMENTS: readonly string[] = ORG_NOT_FOUND_PATH.split('/').filter(Boolean);
@@ -76,7 +85,7 @@ export const ORG_ROLLUP_SEGMENT_PATTERN = /^family-(001[A-Za-z0-9]{15})$/;
 export const ORG_ROLLUP_SEGMENT_RESERVED_PATTERN = /^family-001[a-z0-9]{15}$/i;
 
 /** Display name of a family roll-up whose family name is not known yet (cookie restore or deep link before the grant sets load). */
-export const ROLLUP_ACCOUNT_NAME = 'All Organizations Roll-Up';
+export const ROLLUP_ACCOUNT_NAME = 'All Companies Roll-Up';
 
 /** Fewest organizations in one family a roll-up is worth offering over: with one, it is the organization. */
 export const ROLLUP_MIN_ORGANIZATIONS = 2;

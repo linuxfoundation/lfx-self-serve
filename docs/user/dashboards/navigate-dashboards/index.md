@@ -3,7 +3,7 @@ title: Navigate Your Dashboard
 description: How to switch lenses and use the LFX Self Serve dashboard effectively.
 audience: [all]
 product_area: Dashboards
-tags: [dashboard, lens, navigation, organization, company, employer]
+tags: [dashboard, lens, navigation, company, employer]
 last_updated: 2026-11-12
 intercom_collection: Dashboards
 ---
@@ -14,10 +14,10 @@ The LFX Self Serve dashboard adapts based on your roles and the lens you have se
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Locate the lens switcher in the top navigation or sidebar.
-3. Select one of the available lenses: **Me**, **Foundation**, **Projects**, or **Organization**. If you can use both Foundation and Projects, they appear as a single **Projects** tab that lists foundations and projects.
+3. Select one of the available lenses: **Me**, **Foundation**, **Projects**, or **Company**. If you can use both Foundation and Projects, they appear as a single **Projects** tab that lists foundations and projects.
 4. The dashboard and left navigation update automatically to reflect the selected lens.
 
-On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or organization from it to switch, or close the menu to stay where you were.
+On a phone or small screen, the lens switcher sits in the navigation menu. Selecting a lens there shows that lens's menu without leaving the page you are on: pick a page, project, foundation, or company from it to switch, or close the menu to stay where you were.
 
 Your lens selection is saved for 30 days. The next time you sign in, the app restores your last-used lens.
 
@@ -43,9 +43,9 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics. Executive directors and LF Staff also see **Participating companies** (`/project/participating-orgs`), which lists the companies contributing to the project; every executive director sees the entry, but can open the list only for projects under a foundation they direct (and can view). For other projects the page shows a no-access message. Other roles don't see the page.
 
-## Org lens
+## Company lens
 
-The **Organization** lens (also called the Org lens) shows your company's membership status and participation across Linux Foundation projects. "Organization" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your organization has granted you access. See [Who can access this](../#who-can-access-this).
+The **Company** lens shows your company's membership status and participation across Linux Foundation projects. "Company" here means your company or employer, not a project group or committee. Everyone can open the lens, but your company's pages show only if your company has granted you access. See [Who can access this](../#who-can-access-this).
 
 ## Switch project context
 

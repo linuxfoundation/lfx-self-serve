@@ -390,13 +390,13 @@ export class EditKeyContactModalComponent {
     const min = this.minContacts();
     const max = this.maxContacts();
     if (min === 1 && max === 1) {
-      return 'Your organization must have one key contact of this type.';
+      return 'Your company must have one key contact of this type.';
     }
     if (min >= 1 && max > 1) {
-      return `Your organization must have at least ${min}, and can have up to ${max} contacts of this type.`;
+      return `Your company must have at least ${min}, and can have up to ${max} contacts of this type.`;
     }
     if (min === 0 && max > 1) {
-      return `Your organization can have up to ${max} contacts of this type.`;
+      return `Your company can have up to ${max} contacts of this type.`;
     }
     return '';
   }

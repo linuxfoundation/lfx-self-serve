@@ -211,7 +211,7 @@ export class FoundationHealthComponent {
   }
 
   private initializeCompanyBusFactorCard() {
-    return computed(() => this.transformCompanyBusFactor(this.getMetricConfig('Organization Dependency')));
+    return computed(() => this.transformCompanyBusFactor(this.getMetricConfig('Company Dependency')));
   }
 
   private initializeActiveContributorsCard() {
@@ -433,7 +433,7 @@ export class FoundationHealthComponent {
       ...metric,
       loading: this.companyBusFactorLoading(),
       value: data.topCompaniesCount.toString(),
-      subtitle: 'Contribution concentration across organizations',
+      subtitle: 'Contribution concentration across companies',
       busFactor,
     };
   }

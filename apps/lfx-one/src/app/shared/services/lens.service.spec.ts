@@ -43,7 +43,7 @@ describe('LensService — menu lens preview', () => {
     };
     const navigate = vi.fn();
     const events = new Subject<RouterEvent>();
-    const orgLensLandingLink = vi.fn(() => ['/org', 'acme', 'overview']);
+    const orgLensLandingLink = vi.fn(() => ['/company', 'acme', 'overview']);
     TestBed.configureTestingModule({
       providers: [
         LensService,
@@ -76,7 +76,7 @@ describe('LensService — menu lens preview', () => {
 
     lens.switchLens('org');
     expect(lens.activeLens()).toBe('org');
-    expect(navigate).toHaveBeenCalledWith(['/org', 'acme', 'overview']);
+    expect(navigate).toHaveBeenCalledWith(['/company', 'acme', 'overview']);
   });
 
   it("lands a switch to any other lens on that lens's default route", () => {
@@ -296,7 +296,7 @@ describe('LensService — menu lens preview', () => {
       lens.previewMenuLens('org');
       lens.commitMenuLens('org', secondRestore);
       events.next(cancel(7, NavigationCancellationCode.SupersededByNewNavigation));
-      events.next(new NavigationStart(8, '/org/acme/overview'));
+      events.next(new NavigationStart(8, '/company/acme/overview'));
       events.next(cancel(8));
 
       expect(lens.activeLens()).toBe('me');

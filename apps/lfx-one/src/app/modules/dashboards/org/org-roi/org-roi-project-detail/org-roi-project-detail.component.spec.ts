@@ -49,7 +49,7 @@ describe('OrgRoiProjectDetailComponent — page-level empty state (#2961)', () =
         MessageService,
         { provide: IntercomService, useValue: { show: vi.fn() } },
         { provide: AccountContextService, useValue: { selectedAccount: signal(ACCOUNT) } },
-        { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         {
           provide: OrgLensEmptyStateService,

@@ -288,7 +288,7 @@ export class OrganizationService {
     const result = await this.snowflakeService.execute<OrganizationMaintainersMonthlyRow>(query, [accountId, foundationSlug]);
 
     if (result.rows.length === 0) {
-      throw new ResourceNotFoundError('Organization maintainers data', accountId, {
+      throw new ResourceNotFoundError('Company maintainers data', accountId, {
         operation: 'get_organization_maintainers',
       });
     }
@@ -337,7 +337,7 @@ export class OrganizationService {
     const result = await this.snowflakeService.execute<OrganizationContributorsMonthlyRow>(query, [accountId, foundationSlug]);
 
     if (result.rows.length === 0) {
-      throw new ResourceNotFoundError('Organization contributors data', accountId, {
+      throw new ResourceNotFoundError('Company contributors data', accountId, {
         operation: 'get_organization_contributors',
       });
     }
@@ -440,7 +440,7 @@ export class OrganizationService {
     const result = await this.snowflakeService.execute<OrganizationEventAttendanceMonthlyRow>(query, [accountId, foundationSlug]);
 
     if (result.rows.length === 0) {
-      throw new ResourceNotFoundError('Organization event attendance data', accountId, {
+      throw new ResourceNotFoundError('Company event attendance data', accountId, {
         operation: 'get_event_attendance_monthly',
       });
     }

@@ -46,7 +46,7 @@ const createLayout = async (): Promise<LayoutHarness> => {
     providers: [
       MessageService,
       { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
-      { provide: Router, useValue: { url: '/org/acme/overview', events: routerEvents, currentNavigation } },
+      { provide: Router, useValue: { url: '/company/acme/overview', events: routerEvents, currentNavigation } },
       { provide: ActivatedRoute, useValue: route },
       {
         provide: LensService,
@@ -72,7 +72,7 @@ const createLayout = async (): Promise<LayoutHarness> => {
     routerEvents,
     endNavigation: (extras = {}, trigger = 'imperative') => {
       currentNavigation.set({ extras, trigger });
-      routerEvents.next(new NavigationEnd(1, '/org/overview', '/org/acme/overview'));
+      routerEvents.next(new NavigationEnd(1, '/company/overview', '/company/acme/overview'));
       currentNavigation.set(null);
     },
     menuButton: () => element.querySelector<HTMLButtonElement>('[data-testid="mobile-menu-button"]')!,
@@ -247,7 +247,7 @@ describe('MainLayoutComponent mobile drawer', () => {
     const { fixture, appService, routerEvents, menuButton, backdrop } = await createLayout();
     appService.openMobileSidebar();
 
-    routerEvents.next(new NavigationEnd(1, '/org', '/org/acme/overview'));
+    routerEvents.next(new NavigationEnd(1, '/company', '/company/acme/overview'));
     await fixture.whenStable();
     expect(appService.showMobileSidebar()).toBe(false);
     expect(backdrop()).toBeNull();
@@ -340,7 +340,7 @@ describe('MainLayoutComponent mobile drawer', () => {
     menuButton().click();
     await fixture.whenStable();
     const link = document.createElement('a');
-    link.href = '/org/acme/overview';
+    link.href = '/company/acme/overview';
     sentinels()[0].after(link);
 
     // Tabbing past either end lands on one of the trap's sentinels, which hands focus back inside the panel.

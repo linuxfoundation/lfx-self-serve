@@ -18,7 +18,7 @@ import type { OrgAllEmployeeDetail, OrgContributionsResponse, OrgPersonCompanyEm
 import { expect, Page, test } from '@playwright/test';
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
-const CONTRIBUTIONS_URL = '/org/contributions';
+const CONTRIBUTIONS_URL = '/company/contributions';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;

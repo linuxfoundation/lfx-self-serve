@@ -115,7 +115,7 @@ describe('EngagementOrgParticipationComponent', () => {
     await render();
 
     const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
-    expect(label?.textContent?.trim()).toBe('Search organization');
+    expect(label?.textContent?.trim()).toBe('Search company');
     expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
   });
 
@@ -137,13 +137,13 @@ describe('EngagementOrgParticipationComponent', () => {
     await render(response({ counts: { orgs: 136, lapsedOrgs: 54 } }), (counts) => emitted.push(counts));
 
     expect(emitted).toEqual([null, { orgs: 136, lapsedOrgs: 54 }]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('136 organizations · 54 lapsed');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('136 companies · 54 lapsed');
   });
 
   it('drops the lapsed part of the caption at zero', async () => {
     await render(response({ counts: { orgs: 1, lapsedOrgs: 0 } }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('1 organization');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('1 company');
   });
 
   // The design's tier pill: blue for Platinum / Premier / Founding in any case, grey for every other tier.
@@ -223,7 +223,7 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-2"]')).not.toBeNull();
     // The caption still counts the foundation, not the cut — the segment narrows the table only.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('2 organizations · 1 lapsed');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('2 companies · 1 lapsed');
   });
 
   it('restores the lapsed segment from the URL, so a deep link lands on the cut it named', async () => {

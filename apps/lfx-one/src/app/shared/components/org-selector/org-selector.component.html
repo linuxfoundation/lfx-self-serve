@@ -14,7 +14,7 @@
     [attr.aria-controls]="isSingleOrg() ? null : 'org-selector-listbox'"
     [attr.aria-expanded]="isSingleOrg() ? null : isPanelOpen()"
     [attr.aria-disabled]="isSingleOrg() || null"
-    [attr.aria-label]="'Organization switcher, currently ' + displayName()"
+    [attr.aria-label]="'Company switcher, currently ' + displayName()"
     [attr.aria-describedby]="navbarRoleTooltip() ? roleDescriptionId : null"
     data-testid="org-selector">
     <span class="lfxn__context-body">
@@ -49,7 +49,7 @@
             <span [id]="roleDescriptionId" class="sr-only">{{ navbarRoleTooltip() }}</span>
           }
         } @else {
-          <span class="lfxn__org-role" data-testid="org-selector-trigger-lens-label">Organization</span>
+          <span class="lfxn__org-role" data-testid="org-selector-trigger-lens-label">Company</span>
         }
       </span>
     </span>
@@ -67,7 +67,7 @@
     aria-haspopup="listbox"
     aria-controls="org-selector-listbox"
     [attr.aria-expanded]="popover.overlayVisible"
-    [attr.aria-label]="'Organization switcher, currently ' + displayName()"
+    [attr.aria-label]="'Company switcher, currently ' + displayName()"
     data-testid="org-selector">
     <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200" data-testid="org-selector-trigger-logo">
       <div class="flex items-center justify-center size-full p-1.5">
@@ -100,7 +100,7 @@
             >{{ selectedRoleLabel() }}</span
           >
         } @else {
-          <span class="text-xs font-normal text-gray-400 leading-none truncate" data-testid="org-selector-trigger-lens-label">Organization</span>
+          <span class="text-xs font-normal text-gray-400 leading-none truncate" data-testid="org-selector-trigger-lens-label">Company</span>
         }
       </div>
     </div>
@@ -128,7 +128,7 @@
           pInputText
           type="text"
           [formControl]="searchControl"
-          placeholder="Search organizations..."
+          placeholder="Search companies..."
           class="pl-10 h-9 w-full text-sm !border-0 !bg-transparent !shadow-none focus:!ring-0"
           data-testid="org-search-input" />
       </div>
@@ -159,7 +159,7 @@
     <div
       id="org-selector-listbox"
       role="listbox"
-      aria-label="Organizations"
+      aria-label="Companies"
       class="max-h-[400px] overflow-y-auto"
       data-testid="org-selector-list"
       [attr.data-item-count]="displayedItems().length"
@@ -328,9 +328,9 @@
               Search is unavailable right now. Try again shortly.
             </div>
           } @else if (showSearchPrompt()) {
-            <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-search-prompt">Search for any organization…</div>
+            <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-search-prompt">Search for any company…</div>
           } @else {
-            <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-empty">No organizations found</div>
+            <div class="text-center py-8 text-gray-500 text-sm" data-testid="org-selector-empty">No companies found</div>
           }
         }
       }

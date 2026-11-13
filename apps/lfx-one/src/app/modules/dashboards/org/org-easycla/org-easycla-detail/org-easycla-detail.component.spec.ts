@@ -61,7 +61,7 @@ const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
 function roleMissingError(): HttpErrorResponse {
   return new HttpErrorResponse({
     status: 403,
-    error: { error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' },
+    error: { error: "You don't have an EasyCLA role at this company.", code: 'EASYCLA_ROLE_MISSING' },
   });
 }
 
@@ -70,7 +70,7 @@ describe('OrgEasyclaDetailComponent', () => {
   const OTHER_ORG = { uid: '0014100000OtherOrgAA', accountName: 'Other' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
-  /** Which mount the page is rendered under: the legacy `/org/easycla/…` (no `orgSegment` ancestor) or `/org/{segment}/easycla/…`. */
+  /** Which mount the page is rendered under: the legacy `/company/easycla/…` (no `orgSegment` ancestor) or `/company/{segment}/easycla/…`. */
   let orgSegment: string | null = null;
   const mountPath = (): { paramMap: ReturnType<typeof convertToParamMap> }[] => [
     { paramMap: convertToParamMap(orgSegment ? { orgSegment } : {}) },
@@ -1684,7 +1684,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
     /**
      * The gate that replaced the removed route-shape test (#2364). Both modes now share
-     * `/org/easycla/:claGroupId`, so the presence of a `signatureId` parameter is no longer a
+     * `/company/easycla/:claGroupId`, so the presence of a `signatureId` parameter is no longer a
      * this-is-an-agreement signal — and it was load-bearing: the previous route's `history.state`
      * is still what the location returns until Angular has written the new entry, so without a
      * gate a stale selection would latch under an unrelated group.
@@ -1723,7 +1723,7 @@ describe('OrgEasyclaDetailComponent', () => {
       await fixture.whenStable();
 
       // The list of the organization now selected: the address follows the selection (spec 050 US2).
-      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(['/company', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1751,7 +1751,7 @@ describe('OrgEasyclaDetailComponent', () => {
       await fixture.whenStable();
 
       // The list of the organization now selected: the address follows the selection (spec 050 US2).
-      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(['/company', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1781,7 +1781,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(openDialog).toHaveBeenCalledTimes(1);
       // The list of the organization now selected: the address follows the selection (spec 050 US2).
-      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(['/company', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1854,7 +1854,7 @@ describe('OrgEasyclaDetailComponent', () => {
       await fixture.whenStable();
 
       // The list of the organization now selected: the address follows the selection (spec 050 US2).
-      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(['/company', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
       // The router is a spy, so this component is still mounted and the preview it should not be
       // showing is still on screen. Start is the assertion that means something in that window:
       // whatever the page renders before the navigation lands, it cannot open a session for the
@@ -1874,7 +1874,7 @@ describe('OrgEasyclaDetailComponent', () => {
       await render(previewing({ orgUid: OTHER_ORG.uid }));
 
       // The selection is still Acme; only the stale choice named Other — so the list is Acme's.
-      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(['/company', SELECTED_ACCOUNT.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1915,7 +1915,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
   /**
    * Angular reuses this component as the route parameters change, and since #2364 the preview and
-   * the agreement share `/org/easycla/:claGroupId`. When a signatory moves from the preview onto
+   * the agreement share `/company/easycla/:claGroupId`. When a signatory moves from the preview onto
    * the agreement they just signed, the previous route's `history.state` is still what
    * `Location.getState()` returns until Angular has written the new entry — so the constructor of
    * the reused instance can read a picker choice that has nothing to do with the address it is
@@ -2520,7 +2520,7 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(state).toBeTruthy();
     expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
     expect(byTestId(fixture, 'org-easycla-detail-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+      "You don't have an EasyCLA role at this company. Please contact support if you need EasyCLA assistance."
     );
     expect(state?.textContent).not.toContain('Refresh');
     expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
@@ -2903,7 +2903,7 @@ describe('OrgEasyclaDetailComponent', () => {
      */
     const STRIPPED_ADDRESS = {
       relativeTo: expect.anything(),
-      queryParams: { org: null, signed: null },
+      queryParams: { company: null, org: null, signed: null },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     };
@@ -2938,7 +2938,7 @@ describe('OrgEasyclaDetailComponent', () => {
          * waits there while the page carries on. The case lands it by calling `landAdoption`.
          */
         adoptionLandsLater?: Held[];
-        /** Render under `/org/{orgSegment}/easycla/…` instead of the legacy mount. */
+        /** Render under `/company/{orgSegment}/easycla/…` instead of the legacy mount. */
         orgSegment?: string;
       } = {}
     ) {
@@ -3081,7 +3081,7 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(selectedAccount()?.uid).toBe(NAMED.uid);
     });
 
-    // Spec 050 phase 2: under `/org/{segment}/easycla/…` the path names the organization and the
+    // Spec 050 phase 2: under `/company/{segment}/easycla/…` the path names the organization and the
     // path guard is its authority (it adopted the selection before activation). A `?org=` there —
     // carried over by a switch off a legacy return, or crafted — must not override it: the selection
     // stays what the guard adopted, the wait runs against *that* organization's list and settles on
@@ -3427,13 +3427,13 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
         expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
-        expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
+        expect(navigate).not.toHaveBeenCalledWith(['/company', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
 
         const reload = vi.fn();
         vi.stubGlobal('location', { reload });
         pending?.querySelector('button')?.click();
         expect(reload).toHaveBeenCalledOnce();
-        expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
+        expect(navigate).not.toHaveBeenCalledWith(['/company', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
       } finally {
         vi.unstubAllGlobals();
         vi.useRealTimers();
@@ -3448,7 +3448,7 @@ describe('OrgEasyclaDetailComponent', () => {
     it.each([
       ['another CLA Group', () => paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }))],
       [
-        'another organization',
+        'another company',
         () => {
           getClaGroups.mockReturnValue(of({ orgUid: ELSEWHERE.uid, claGroups: [] }));
           selectedAccount.set(ELSEWHERE);
@@ -4441,7 +4441,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(targets.length).toBe(1);
     expect((targets[0] as HTMLElement).tagName).toBe('INPUT');
     const link = byTestId(fixture, 'org-easycla-detail-auto-ecla-learn-more') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/docs/organization/easycla#what-does-auto-acknowledge-do');
+    expect(link.getAttribute('href')).toBe('/docs/company/easycla#what-does-auto-acknowledge-do');
     expect(link.textContent?.trim()).toBe('Learn more about Auto Acknowledge →');
   });
 
@@ -4509,7 +4509,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   it('rolls back and toasts with the producer sentence when the write is refused', async () => {
     const error = new HttpErrorResponse({
       status: 403,
-      error: { error: 'This organization is on the OFAC list. Contact support.' },
+      error: { error: 'This company is on the OFAC list. Contact support.' },
     });
     setAutoCreateEcla.mockReturnValue(throwError(() => error));
     const fixture = await render(row({ autoCreateEcla: false }));
@@ -4525,7 +4525,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'error',
-        detail: 'This organization is on the OFAC list. Contact support.',
+        detail: 'This company is on the OFAC list. Contact support.',
       })
     );
   });
@@ -4608,7 +4608,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
     expect(component.autoEclaPending()).toBe(false);
 
-    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -4751,7 +4751,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     const component = returned.componentInstance as unknown as { autoEclaValue: () => boolean };
     expect(component.autoEclaValue()).toBe(false);
 
-    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     returned.detectChanges();
 
     expect(component.autoEclaValue()).toBe(true);
@@ -4775,7 +4775,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     fixture.detectChanges();
 
     component.onAutoEclaToggle(true);
-    first.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    first.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -4798,7 +4798,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This company is on the OFAC list. Contact support.' } }));
     fixture.detectChanges();
     await fixture.whenStable();
 

@@ -978,7 +978,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: 'Organization Engagement',
+        label: 'Company Engagement',
         isSection: true,
         expanded: true,
         items: [
@@ -1016,14 +1016,14 @@ export class SidebarNavService {
       //
       // Profile is dropped in roll-up mode. It is single-org by definition (#4125) and will never
       // gain a combined rendering, and `orgLensPath` prefixes every item with the selected segment
-      // — so the link read `/org/family-{id}/profile`, where the page asks for
+      // — so the link read `/company/family-{id}/profile`, where the page asks for
       // `/api/orgs/uid/family-{id}`, the SFID validator refuses the roll-up key and the caller lands on an error page (#4415, Copilot).
       // `withEasyclaNavItem` already handles Profile being absent.
       ...(this.accountContext.isRollUp()
         ? []
         : [
             {
-              label: 'Organization Profile',
+              label: 'Company Profile',
               icon: 'fa-light fa-memo',
               routerLink: org('profile'),
               dividerBefore: true,

@@ -73,17 +73,17 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   {
     key: 'orgs',
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
-    label: 'Organization participation',
-    heading: 'Organization participation',
+    label: 'Company participation',
+    heading: 'Company participation',
     description:
-      'Which member organizations actually turn up, and when they were last seen. Last engaged is the stronger churn signal — recency beats rate, and it is not surfaced anywhere in PCC today.',
+      'Which member companies actually turn up, and when they were last seen. Last engaged is the stronger churn signal — recency beats rate, and it is not surfaced anywhere in PCC today.',
   },
   {
     key: 'reps',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Representatives',
     heading: 'Representatives',
-    description: 'The people behind the organizations. A seat that is never filled is a paid benefit going unused — and an early churn signal.',
+    description: 'The people behind the companies. A seat that is never filled is a paid benefit going unused — and an early churn signal.',
   },
   {
     key: 'nonmem',
@@ -91,12 +91,12 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     label: 'Non-member participation',
     heading: 'Non-member participation',
     description:
-      'Organizations turning up to meetings without paying for membership. Showing up is a stronger buying signal than contributing code — they are already spending staff time.',
+      'Companies turning up to meetings without paying for membership. Showing up is a stronger buying signal than contributing code — they are already spending staff time.',
     note: {
       tone: 'caution',
       parts: [
         {
-          text: 'Organization matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
+          text: 'Company matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
         },
       ],
     },
@@ -115,7 +115,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     empty: { icon: 'fa-light fa-envelope-open-text', source: HEALTH_METRICS_L2_EMPTY_SOURCES.newsletter, snapshot: true },
     label: 'Newsletter recipient engagement',
     heading: 'Newsletter recipient engagement',
-    description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and organizations surface first.',
+    description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and companies surface first.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 

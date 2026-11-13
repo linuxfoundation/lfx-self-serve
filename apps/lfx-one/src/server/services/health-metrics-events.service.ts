@@ -781,7 +781,7 @@ export class HealthMetricsEventsService {
     const result = await executeSnowflakeViewRead<OrganizationRow>(this.snowflakeService, req, sql, binds, {
       view: ORGANIZATIONS_VIEW,
       operation: 'get_events_organizations',
-      clientMessage: 'Organizations at events are unavailable right now.',
+      clientMessage: 'Companies at events are unavailable right now.',
     });
 
     const first = result.rows[0];

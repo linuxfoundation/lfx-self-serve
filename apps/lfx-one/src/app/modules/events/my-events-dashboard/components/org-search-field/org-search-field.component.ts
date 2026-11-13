@@ -80,7 +80,7 @@ export class OrgSearchFieldComponent {
                 this.messageService.add({
                   severity: 'error',
                   summary: 'Error',
-                  detail: 'Failed to search organizations. Please try again.',
+                  detail: 'Failed to search companies. Please try again.',
                 });
               }
               return of([]);

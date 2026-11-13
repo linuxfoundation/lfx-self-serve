@@ -42,6 +42,6 @@ export function orgScopeOptions(info: Pick<OrgLensOrgScope, 'relatedOrgCount'> |
 /** Tooltip describing what the picked scope counts, naming the account's Insights organization when it is known. */
 export function orgScopeTooltip(scope: OrgScopeFilter, info: Pick<OrgLensOrgScope, 'insightsOrgName'> | null | undefined): string {
   if (scope === 'all') return ORG_SCOPE_ALL_TOOLTIP;
-  const name = info?.insightsOrgName?.trim() || 'the organization';
-  return `Counts only ${name}, the organization on its LFX Insights page, and only repositories LFX Insights counts. Maintainer roles are not affected.`;
+  const name = info?.insightsOrgName?.trim() || 'the company';
+  return `Counts only ${name}, the company on its LFX Insights page, and only repositories LFX Insights counts. Maintainer roles are not affected.`;
 }

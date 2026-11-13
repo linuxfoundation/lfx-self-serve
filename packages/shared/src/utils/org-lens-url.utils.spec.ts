@@ -5,8 +5,11 @@ import { describe, expect, it } from 'vitest';
 
 import { ORG_EASYCLA_PATH, ROLLUP_ACCOUNT_NAME } from '../constants';
 import {
+  companyLensRedirectTarget,
+  easyclaReturnOrgParam,
   isOrgRollUpSegment,
   isOrgSlugSegment,
+  legacyDocsRedirectTarget,
   legacyOrgEasyclaReturnPath,
   normalizeOrgSegment,
   orgEasyclaReturnPath,
@@ -75,15 +78,15 @@ describe('normalizeOrgSegment', () => {
 
 describe('orgLensPagePath', () => {
   it('keeps the addressed organization when the URL names one', () => {
-    expect(orgLensPagePath(['org', 'acme-inc', 'roi'], 'overview')).toBe('/org/acme-inc/overview');
-    expect(orgLensPagePath(['org', UID, 'roi', 'project-1'], 'overview')).toBe(`/org/${UID}/overview`);
+    expect(orgLensPagePath(['company', 'acme-inc', 'roi'], 'overview')).toBe('/company/acme-inc/overview');
+    expect(orgLensPagePath(['company', UID, 'roi', 'project-1'], 'overview')).toBe(`/company/${UID}/overview`);
   });
 
   it('uses the legacy page address when the URL is a bare page or outside Org Lens', () => {
-    expect(orgLensPagePath(['org', 'roi'], 'overview')).toBe('/org/overview');
-    expect(orgLensPagePath(['org', 'easycla', 'group-1'], 'overview')).toBe('/org/overview');
-    expect(orgLensPagePath(['org'], 'overview')).toBe('/org/overview');
-    expect(orgLensPagePath(['project', 'acme'], 'overview')).toBe('/org/overview');
+    expect(orgLensPagePath(['company', 'roi'], 'overview')).toBe('/company/overview');
+    expect(orgLensPagePath(['company', 'easycla', 'group-1'], 'overview')).toBe('/company/overview');
+    expect(orgLensPagePath(['company'], 'overview')).toBe('/company/overview');
+    expect(orgLensPagePath(['project', 'acme'], 'overview')).toBe('/company/overview');
   });
 });
 
@@ -92,7 +95,7 @@ describe('orgLensPagePath shape rules', () => {
   it.each(['acme/inc', 'acme?x=1', 'acme#top', '-acme'])(
     'falls back to the legacy page when the addressed segment %p is neither slug nor SFID shaped',
     (segment) => {
-      expect(orgLensPagePath(['org', segment, 'roi'], 'overview')).toBe('/org/overview');
+      expect(orgLensPagePath(['company', segment, 'roi'], 'overview')).toBe('/company/overview');
     }
   );
 
@@ -100,24 +103,24 @@ describe('orgLensPagePath shape rules', () => {
   // case is the path-param guard's to canonicalize on the next navigation, not this builder's.
   it('passes the addressed segment through unchanged, whatever its letter case', () => {
     const mixed = '0014100000MgAaAaAa';
-    expect(orgLensPagePath(['org', mixed, 'roi'], 'overview')).toBe(`/org/${mixed}/overview`);
-    expect(orgLensPagePath(['org', 'ACME-Inc', 'roi'], 'overview')).toBe('/org/ACME-Inc/overview');
+    expect(orgLensPagePath(['company', mixed, 'roi'], 'overview')).toBe(`/company/${mixed}/overview`);
+    expect(orgLensPagePath(['company', 'ACME-Inc', 'roi'], 'overview')).toBe('/company/ACME-Inc/overview');
   });
 });
 
 describe('orgLensDestinationKey', () => {
   it('drops the organization from an Org Lens address and leaves everything else alone', () => {
-    expect(orgLensDestinationKey('/org/acme-inc/projects')).toBe('/org/projects');
-    expect(orgLensDestinationKey(`/org/${UID}/projects/k8s`)).toBe('/org/projects/k8s');
-    expect(orgLensDestinationKey('/org/projects')).toBe('/org/projects');
-    expect(orgLensDestinationKey('/org/easycla')).toBe('/org/easycla');
-    expect(orgLensDestinationKey('/org/acme-inc')).toBe('/org/acme-inc');
+    expect(orgLensDestinationKey('/company/acme-inc/projects')).toBe('/company/projects');
+    expect(orgLensDestinationKey(`/company/${UID}/projects/k8s`)).toBe('/company/projects/k8s');
+    expect(orgLensDestinationKey('/company/projects')).toBe('/company/projects');
+    expect(orgLensDestinationKey('/company/easycla')).toBe('/company/easycla');
+    expect(orgLensDestinationKey('/company/acme-inc')).toBe('/company/acme-inc');
     expect(orgLensDestinationKey('/project/cncf/overview')).toBe('/project/cncf/overview');
   });
 });
 
 describe('orgEasyclaReturnPath', () => {
-  it('addresses the CLA Group under the organization, as the /org/:orgSegment/easycla/:claGroupId route expects', () => {
+  it('addresses the CLA Group under the organization, as the /company/:orgSegment/easycla/:claGroupId route expects', () => {
     expect(orgEasyclaReturnPath('0014100000Te2ovAAB', 'cla-group-uuid-1')).toBe('/org/0014100000Te2ovAAB/easycla/cla-group-uuid-1');
   });
 
@@ -127,7 +130,7 @@ describe('orgEasyclaReturnPath', () => {
   });
 
   it('is the leftover address plus the organization segment', () => {
-    expect(ORG_EASYCLA_PATH).toBe('/org/easycla');
+    expect(ORG_EASYCLA_PATH).toBe('/company/easycla');
     expect(orgEasyclaReturnPath('0014100000Te2ovAAB', 'g')).toBe('/org/0014100000Te2ovAAB/easycla/g');
   });
 });
@@ -139,6 +142,73 @@ describe('legacyOrgEasyclaReturnPath', () => {
 
   it('encodes the CLA Group id so it cannot append a segment', () => {
     expect(legacyOrgEasyclaReturnPath('g/../x?y')).toBe('/org/easycla/g%2F..%2Fx%3Fy');
+  });
+});
+
+describe('companyLensRedirectTarget', () => {
+  it.each([
+    ['/org', '/company'],
+    ['/org/', '/company/'],
+    ['/org/not-found', '/company/not-found'],
+    ['/org/acme-inc/projects', '/company/acme-inc/projects'],
+    [`/org/${UID}/memberships/linux-foundation`, `/company/${UID}/memberships/linux-foundation`],
+    ['/org/overview', '/company/overview'],
+    ['/org/projects/uepf', '/company/projects/uepf'],
+  ])('moves %s to %s', (from, to) => {
+    expect(companyLensRedirectTarget(from)).toBe(to);
+  });
+
+  it('keeps the query string verbatim', () => {
+    expect(companyLensRedirectTarget('/org/acme/people?employees=a%20b&tab=board')).toBe('/company/acme/people?employees=a%20b&tab=board');
+    expect(companyLensRedirectTarget('/org?x=1')).toBe('/company?x=1');
+  });
+
+  it('renames the pre-rename EasyCLA return parameter on both EasyCLA mounts', () => {
+    expect(companyLensRedirectTarget('/org/easycla/g1?org=001A&signed=1')).toBe('/company/easycla/g1?company=001A&signed=1');
+    expect(companyLensRedirectTarget('/org/acme/easycla/g1?signed=1&org=001A')).toBe('/company/acme/easycla/g1?signed=1&company=001A');
+  });
+
+  it('leaves ?org= alone off EasyCLA, and lets an existing ?company= win', () => {
+    expect(companyLensRedirectTarget('/org/acme/projects?org=x')).toBe('/company/acme/projects?org=x');
+    expect(companyLensRedirectTarget('/org/easycla/g1?org=old&company=new')).toBe('/company/easycla/g1?company=new');
+  });
+
+  it.each(['/', '/organization', '/orgs', '/org-x', '/api/orgs/x', '/company/overview', '//org/overview', '/docs/org'])('does not match %s', (path) => {
+    expect(companyLensRedirectTarget(path)).toBeNull();
+  });
+});
+
+describe('easyclaReturnOrgParam', () => {
+  it('prefers ?company= and falls back to the pre-rename ?org=', () => {
+    expect(easyclaReturnOrgParam((n) => ({ company: 'A', org: 'B' })[n as 'company'])).toBe('A');
+    expect(easyclaReturnOrgParam((n) => ({ org: 'B' })[n as 'org'] ?? null)).toBe('B');
+    expect(easyclaReturnOrgParam(() => null)).toBeNull();
+  });
+});
+
+describe('legacyDocsRedirectTarget', () => {
+  it.each([
+    ['/docs/organization', '/docs/company'],
+    ['/docs/organization/choose-an-organization', '/docs/company/choose-a-company'],
+    ['/docs/organization/org-overview', '/docs/company/company-overview'],
+    ['/docs/organization/memberships', '/docs/company/memberships'],
+    ['/docs/organization/easycla', '/docs/company/easycla'],
+    ['/docs/organization/manage-org-lens-access', '/docs/company/manage-company-lens-access'],
+    ['/docs/organization/org-events', '/docs/company/company-events'],
+    ['/docs/organization/org-profile', '/docs/company/company-profile'],
+    ['/docs/organization/people', '/docs/company/people'],
+    ['/docs/organization/faq', '/docs/company/faq'],
+    ['/docs/dashboards/organization-involvement', '/docs/dashboards/company-involvement'],
+    ['/docs/dashboards/organization-involvement/', '/docs/dashboards/company-involvement'],
+    ['/docs/Organization/Org-Overview', '/docs/company/company-overview'],
+    ['/docs/organization/projects', '/docs/company/projects'],
+    ['/docs/organization/easycla?x=1', '/docs/company/easycla?x=1'],
+  ])('moves %s to %s', (from, to) => {
+    expect(legacyDocsRedirectTarget(from)).toBe(to);
+  });
+
+  it.each(['/docs', '/docs/company/faq', '/docs/organizations', '/organization'])('does not match %s', (path) => {
+    expect(legacyDocsRedirectTarget(path)).toBeNull();
   });
 });
 
@@ -197,20 +267,20 @@ describe('family roll-up segment', () => {
   });
 
   it('builds the synthetic selection with the key in both identifier fields', () => {
-    expect(orgRollUpAccount(ROOT, 'Acme')).toEqual({ accountId: SEGMENT, accountName: 'All Acme Organizations', membershipTier: '', uid: SEGMENT, slug: null });
+    expect(orgRollUpAccount(ROOT, 'Acme')).toEqual({ accountId: SEGMENT, accountName: 'All Acme Companies', membershipTier: '', uid: SEGMENT, slug: null });
     expect(orgRollUpAccount(ROOT, null).accountName).toBe(ROLLUP_ACCOUNT_NAME);
     expect(orgRollUpAccount(ROOT, '  ').accountName).toBe(ROLLUP_ACCOUNT_NAME);
   });
 
   // A feature fallback redirecting inside a roll-up must keep it rather than dropping the viewer
-  // back to the legacy `/org/{page}` form under their cookie selection.
+  // back to the legacy `/company/{page}` form under their cookie selection.
   it('survives a page-path rebuild', () => {
-    expect(orgLensPagePath(['org', SEGMENT, 'people'], 'contributions')).toBe(`/org/${SEGMENT}/contributions`);
+    expect(orgLensPagePath(['company', SEGMENT, 'people'], 'contributions')).toBe(`/company/${SEGMENT}/contributions`);
   });
 
   // The sidebar tracks rows by destination; the roll-up is an organization, so it is stripped the
   // same way a slug or SFID is. Deliberately NOT page-listed — that would break this.
   it('is stripped from the destination key like any other organization segment', () => {
-    expect(orgLensDestinationKey(`/org/${SEGMENT}/people`)).toBe('/org/people');
+    expect(orgLensDestinationKey(`/company/${SEGMENT}/people`)).toBe('/company/people');
   });
 });

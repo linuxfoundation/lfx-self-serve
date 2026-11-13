@@ -22,7 +22,7 @@ describe('OrgTrainingStatsErrorComponent', () => {
     const alert = el.querySelector('[data-testid="some-stats-error"]');
     expect(alert?.getAttribute('role')).toBe('alert');
     expect(alert?.textContent).toContain("Couldn't load training stats");
-    expect(alert?.textContent).toContain("fetching this organization's training numbers");
+    expect(alert?.textContent).toContain("fetching this company's training numbers");
   });
 
   it('shows a custom message', () => {

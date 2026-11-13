@@ -445,17 +445,17 @@ describe('validateMemberImportRow', () => {
 
   it('requires the complete organization name + https website pair whenever either is given', () => {
     expect(messages({ email: 'ada@example.com', organization_name: 'Acme Motors' })).toEqual([
-      'organization_website: Organization website is required when a name is given.',
+      'organization_website: Company website is required when a name is given.',
     ]);
     expect(messages({ email: 'ada@example.com', organization_website: 'https://acme-motors.example' })).toEqual([
-      'organization_name: Organization name is required when a website is given.',
+      'organization_name: Company name is required when a website is given.',
     ]);
     expect(messages({ email: 'ada@example.com', organization_name: 'Acme Motors', organization_website: 'http://acme-motors.example' })).toEqual([
-      'organization_website: Organization website must be a full https:// address.',
+      'organization_website: Company website must be a full https:// address.',
     ]);
     expect(messages({ email: 'ada@example.com', organization_name: 'Acme Motors', organization_website: 'acme-motors.example' })).toHaveLength(1);
     expect(messages({ email: 'ada@example.com', organization_name: 'o'.repeat(201), organization_website: 'https://acme-motors.example' })).toEqual([
-      'organization_name: Organization name must be 200 characters or fewer.',
+      'organization_name: Company name must be 200 characters or fewer.',
     ]);
   });
 
@@ -463,7 +463,7 @@ describe('validateMemberImportRow', () => {
     'rejects an organization website whose spelling URL parsing repairs: %s',
     (website) => {
       expect(messages({ email: 'ada@example.com', organization_name: 'Example Org', organization_website: website }, BUSINESS_EMAIL)).toEqual([
-        'organization_website: Organization website must be a full https:// address.',
+        'organization_website: Company website must be a full https:// address.',
       ]);
     }
   );
@@ -476,8 +476,8 @@ describe('validateMemberImportRow', () => {
 
   it('requires an organization for business-email and voting groups', () => {
     expect(messages({ email: 'ada@example.com' }, BUSINESS_EMAIL)).toEqual([
-      'organization_name: Organization name is required for this group.',
-      'organization_website: Organization website is required for this group.',
+      'organization_name: Company name is required for this group.',
+      'organization_website: Company website is required for this group.',
     ]);
   });
 

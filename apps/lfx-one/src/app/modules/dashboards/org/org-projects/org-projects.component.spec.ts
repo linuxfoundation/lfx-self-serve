@@ -509,13 +509,13 @@ describe('OrgProjectsComponent — Employees filter', () => {
 
   // The org selector switches the account, then re-addresses the page through the real navigation service.
   it.each([
-    { mount: 'legacy', url: '/org/projects?employees=p-known&utm_source=x' },
-    { mount: 'organization-addressed', url: '/org/org-a/projects?employees=p-known&utm_source=x' },
-  ])('strips ?employees= when switching organization from the $mount address, and shows the new org’s projects', async ({ url }) => {
+    { mount: 'legacy', url: '/company/projects?employees=p-known&utm_source=x' },
+    { mount: 'organization-addressed', url: '/company/org-a/projects?employees=p-known&utm_source=x' },
+  ])('strips ?employees= when switching company from the $mount address, and shows the new org’s projects', async ({ url }) => {
     TestBed.overrideProvider(OrgLensNavigationService, { useFactory: () => new OrgLensNavigationService() });
     TestBed.inject(Router).resetConfig([
-      { path: 'org/projects', component: OrgProjectsComponent },
-      { path: 'org/:orgSegment/projects', component: OrgProjectsComponent },
+      { path: 'company/projects', component: OrgProjectsComponent },
+      { path: 'company/:orgSegment/projects', component: OrgProjectsComponent },
     ]);
     const harness = await RouterTestingHarness.create(url);
     router = TestBed.inject(Router);
@@ -530,7 +530,7 @@ describe('OrgProjectsComponent — Employees filter', () => {
 
     // The legacy address re-mounts the page under the addressed route, so read the instance again.
     page = harness.routeDebugElement?.componentInstance as OrgProjectsComponent;
-    expect(router.url).toBe('/org/org-b/projects?utm_source=x');
+    expect(router.url).toBe('/company/org-b/projects?utm_source=x');
     expect(page['filterForm'].controls.employees.value).toEqual([]);
     const names = page['sortedProjects']().map((p) => p.name);
     expect(names.sort()).toEqual(['Delta', 'Echo']);

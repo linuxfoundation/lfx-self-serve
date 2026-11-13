@@ -47,47 +47,47 @@ describe('OrgLensNavigationService', () => {
 
   describe('orgLensLink', () => {
     it('addresses the selected organization', () => {
-      expect(service.orgLensLink('projects')).toEqual(['/org', 'acme-inc', 'projects']);
-      expect(service.orgLensLink('projects', 'k8s')).toEqual(['/org', 'acme-inc', 'projects', 'k8s']);
-      expect(service.orgLensPath('roi')).toBe('/org/acme-inc/roi');
+      expect(service.orgLensLink('projects')).toEqual(['/company', 'acme-inc', 'projects']);
+      expect(service.orgLensLink('projects', 'k8s')).toEqual(['/company', 'acme-inc', 'projects', 'k8s']);
+      expect(service.orgLensPath('roi')).toBe('/company/acme-inc/roi');
     });
 
     it('falls back to the legacy page address while nothing is selected', () => {
       selectedAccount.set(placeholder);
-      expect(service.orgLensLink('memberships', 'cncf')).toEqual(['/org', 'memberships', 'cncf']);
+      expect(service.orgLensLink('memberships', 'cncf')).toEqual(['/company', 'memberships', 'cncf']);
     });
   });
 
   describe('orgLensLandingLink', () => {
     it("addresses the overview of a selection carrying the index slug, the menu's Dashboard link", () => {
-      expect(service.orgLensLandingLink()).toEqual(['/org', 'acme-inc', 'overview']);
+      expect(service.orgLensLandingLink()).toEqual(['/company', 'acme-inc', 'overview']);
     });
 
     it('addresses a uid-only selection once it is pinned, by an address or by the org list', () => {
       selectedAccount.set({ ...placeholder, uid: UID_A });
       isAddressedSelection.set(true);
-      expect(service.orgLensLandingLink()).toEqual(['/org', UID_A, 'overview']);
+      expect(service.orgLensLandingLink()).toEqual(['/company', UID_A, 'overview']);
     });
 
     it('lands an unconfirmed uid-only stub restored from the cookie on the legacy overview, for the org list to re-address', () => {
       selectedAccount.set({ ...placeholder, uid: UID_A });
-      expect(service.orgLensLandingLink()).toEqual(['/org', 'overview']);
+      expect(service.orgLensLandingLink()).toEqual(['/company', 'overview']);
     });
 
     it('lands on the legacy overview while nothing is selected', () => {
       selectedAccount.set(placeholder);
-      expect(service.orgLensLandingLink()).toEqual(['/org', 'overview']);
+      expect(service.orgLensLandingLink()).toEqual(['/company', 'overview']);
     });
   });
 
   describe('isOnAddressedPage', () => {
     it.each([
-      ['/org/acme-inc/overview', true],
-      [`/org/${UID_A}/projects/k8s`, true],
-      ['/org/overview', false],
-      ['/org/easycla/abc-123', false],
-      ['/org', false],
-      ['/org/not-found', false],
+      ['/company/acme-inc/overview', true],
+      [`/company/${UID_A}/projects/k8s`, true],
+      ['/company/overview', false],
+      ['/company/easycla/abc-123', false],
+      ['/company', false],
+      ['/company/not-found', false],
       ['/project/cncf/overview', false],
     ])('%s → %s', (url, expected) => {
       currentUrl = url;
@@ -97,9 +97,9 @@ describe('OrgLensNavigationService', () => {
 
   describe('navigateToSelectedOrg', () => {
     it('swaps the organization and keeps the page, query and fragment on an addressed page, dropping only ?employees=', () => {
-      currentUrl = '/org/other-org/projects/k8s?card=contributors&employees=p-1#top';
+      currentUrl = '/company/other-org/projects/k8s?card=contributors&employees=p-1#top';
       service.navigateToSelectedOrg();
-      expect(navigatedTo()).toBe('/org/acme-inc/projects/k8s');
+      expect(navigatedTo()).toBe('/company/acme-inc/projects/k8s');
       // Pushed, not replaced: a switch is a user intent, and Back must return to the pre-switch
       // organization and page (US2 scenario 3).
       expect(navigate.mock.calls[0][1]).toEqual(
@@ -109,84 +109,84 @@ describe('OrgLensNavigationService', () => {
 
     // DR-004 exemption ended (lfx-self-serve#2743): EasyCLA pages re-address like every other page.
     it.each([
-      ['/org/easycla', '/org/acme-inc/easycla'],
-      ['/org/easycla/abc-123', '/org/acme-inc/easycla/abc-123'],
-      ['/org/other-org/easycla/abc-123', '/org/acme-inc/easycla/abc-123'],
+      ['/company/easycla', '/company/acme-inc/easycla'],
+      ['/company/easycla/abc-123', '/company/acme-inc/easycla/abc-123'],
+      ['/company/other-org/easycla/abc-123', '/company/acme-inc/easycla/abc-123'],
     ])('re-addresses EasyCLA pages too (%s)', (url, expected) => {
       currentUrl = url;
       service.navigateToSelectedOrg();
       expect(navigatedTo()).toBe(expected);
     });
 
-    // A switch off a pre-deploy return (`/org/easycla/{g}?org={A}&signed=1`) must not carry the
+    // A switch off a pre-deploy return (`/company/easycla/{g}?org={A}&signed=1`) must not carry the
     // return state onto the organization-addressed page: preserved, `?org=` would be re-adopted
     // under B's address (undoing the switch) and `?signed=1` would resume A's wait under B. The
     // rest of the query (`?sig=`) still describes the page and rides along.
     it('drops the return parameters, and only those, when a switch leaves a legacy EasyCLA address', () => {
-      currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1&sig=s1';
+      currentUrl = '/company/easycla/abc-123?org=0014100000MgbBBBBB&signed=1&sig=s1';
       service.navigateToSelectedOrg('switch');
-      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigatedTo()).toBe('/company/acme-inc/easycla/abc-123');
       expect(navigate.mock.calls[0][1]).toEqual(
-        expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null, org: null, signed: null } })
+        expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null, company: null, org: null, signed: null } })
       );
     });
 
-    // A gated return (`/org/{A}/easycla/{g}?signed=1`) is the same trip on the other mount: the
+    // A gated return (`/company/{A}/easycla/{g}?signed=1`) is the same trip on the other mount: the
     // page is reused across the switch, so a preserved `?signed=1` would resume A's wait under B.
     // Return state never belongs to another organization, whichever mount it started on.
     it('drops the return parameters when a switch leaves an organization-addressed EasyCLA page', () => {
-      currentUrl = '/org/other-org/easycla/abc-123?signed=1&org=0014100000MgbBBBBB&sig=s1';
+      currentUrl = '/company/other-org/easycla/abc-123?signed=1&org=0014100000MgbBBBBB&sig=s1';
       service.navigateToSelectedOrg('switch');
-      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigatedTo()).toBe('/company/acme-inc/easycla/abc-123');
       expect(navigate.mock.calls[0][1]).toEqual(
-        expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null, org: null, signed: null } })
+        expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null, company: null, org: null, signed: null } })
       );
     });
 
     // An Employees selection came from the previous organization's roster, so a switch drops it on
     // every Org Lens page; the rest of the query still describes the page and is merged through.
     it('drops ?employees=, and only that, on a switch between organization-addressed non-EasyCLA pages', () => {
-      currentUrl = '/org/other-org/contributions?range=90d&employees=p-1';
+      currentUrl = '/company/other-org/contributions?range=90d&employees=p-1';
       service.navigateToSelectedOrg('switch');
-      expect(navigatedTo()).toBe('/org/acme-inc/contributions');
+      expect(navigatedTo()).toBe('/company/acme-inc/contributions');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { employees: null } }));
     });
 
     // Why the selector's same-org early return is load-bearing: on a legacy address a switch does
     // not know the selection is unchanged (there is no segment to compare) and inserts regardless.
     it('inserts the organization on a legacy page address even when the selection did not change', () => {
-      currentUrl = '/org/people';
+      currentUrl = '/company/people';
       service.navigateToSelectedOrg('switch');
-      expect(navigatedTo()).toBe('/org/acme-inc/people');
+      expect(navigatedTo()).toBe('/company/acme-inc/people');
     });
 
     // A legacy address names no organization to go back to — Back would re-render it under the new
     // selection — so the insert replaces the entry even for a switch.
     it('inserts the organization on a legacy page address, replacing the entry', () => {
-      currentUrl = '/org/people';
+      currentUrl = '/company/people';
       service.navigateToSelectedOrg();
-      expect(navigatedTo()).toBe('/org/acme-inc/people');
+      expect(navigatedTo()).toBe('/company/acme-inc/people');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
     });
 
-    it('lands on the overview from the bare /org, replacing the entry', () => {
-      currentUrl = '/org';
+    it('lands on the overview from the bare /company, replacing the entry', () => {
+      currentUrl = '/company';
       service.navigateToSelectedOrg();
-      expect(navigatedTo()).toBe('/org/acme-inc/overview');
+      expect(navigatedTo()).toBe('/company/acme-inc/overview');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
     });
 
     // The dead end is a page the viewer came from and can meaningfully return to, so the pick pushes.
     // Anything beneath it is still the dead end ('not-found' is also a page-segment key, so the
     // subtree check must win over the legacy-insert branch), and lands on the overview too.
-    it.each(['/org/not-found', '/org/not-found/anything'])('lands on the overview from %s, pushing the entry', (url) => {
+    it.each(['/company/not-found', '/company/not-found/anything'])('lands on the overview from %s, pushing the entry', (url) => {
       currentUrl = url;
       service.navigateToSelectedOrg();
-      expect(navigatedTo()).toBe('/org/acme-inc/overview');
+      expect(navigatedTo()).toBe('/company/acme-inc/overview');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false }));
     });
 
-    it.each(['/org/acme-inc/projects', `/org/${UID_A}/projects`])('is a no-op when the address already names the selection (%s)', (url) => {
+    it.each(['/company/acme-inc/projects', `/company/${UID_A}/projects`])('is a no-op when the address already names the selection (%s)', (url) => {
       currentUrl = url;
       service.navigateToSelectedOrg();
       expect(navigate).not.toHaveBeenCalled();
@@ -200,7 +200,7 @@ describe('OrgLensNavigationService', () => {
 
     it('is a no-op while no segment is known', () => {
       selectedAccount.set(placeholder);
-      currentUrl = '/org/other-org/projects';
+      currentUrl = '/company/other-org/projects';
       service.navigateToSelectedOrg();
       expect(navigate).not.toHaveBeenCalled();
     });
@@ -213,17 +213,17 @@ describe('OrgLensNavigationService', () => {
    * returning to the organization the pick was made from.
    */
   describe('navigateToRollUpHome', () => {
-    it.each([['/org'], ['/org/people'], ['/org/easycla/abc-123']])('replaces an address that names no organization (%s)', (url) => {
+    it.each([['/company'], ['/company/people'], ['/company/easycla/abc-123']])('replaces an address that names no organization (%s)', (url) => {
       currentUrl = url;
       service.navigateToRollUpHome('0014100000RootAAAA');
-      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
+      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/overview');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
     });
 
-    it.each([['/org/acme-inc/projects'], ['/org/not-found']])('pushes from an address Back should return to (%s)', (url) => {
+    it.each([['/company/acme-inc/projects'], ['/company/not-found']])('pushes from an address Back should return to (%s)', (url) => {
       currentUrl = url;
       service.navigateToRollUpHome('0014100000RootAAAA');
-      expect(navigatedTo()).toBe('/org/family-0014100000RootAAAA/overview');
+      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/overview');
       expect(navigate.mock.calls[0][1]?.replaceUrl).toBeFalsy();
     });
 
@@ -237,12 +237,12 @@ describe('OrgLensNavigationService', () => {
 
   describe('isOnNotFound', () => {
     it.each([
-      ['/org/not-found', true],
-      ['/org/not-found?from=x', true],
+      ['/company/not-found', true],
+      ['/company/not-found?from=x', true],
       // Beneath the dead end is still the dead end — never the legacy `not-found` page segment.
-      ['/org/not-found/anything', true],
-      ['/org/acme-inc/overview', false],
-      ['/org/people', false],
+      ['/company/not-found/anything', true],
+      ['/company/acme-inc/overview', false],
+      ['/company/people', false],
       ['/', false],
     ])('%s → %s', (url, expected) => {
       currentUrl = url;
@@ -256,40 +256,40 @@ describe('OrgLensNavigationService', () => {
    */
   describe("navigateToSelectedOrg('default')", () => {
     it('inserts the organization on a legacy page address and replaces the history entry', () => {
-      currentUrl = '/org/people?tab=admins#top';
+      currentUrl = '/company/people?tab=admins#top';
       service.navigateToSelectedOrg('default');
-      expect(navigatedTo()).toBe('/org/acme-inc/people');
+      expect(navigatedTo()).toBe('/company/acme-inc/people');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true, queryParamsHandling: 'preserve', preserveFragment: true }));
       expect(navigate.mock.calls[0][1]).not.toHaveProperty('queryParams');
     });
 
-    it('lands on the overview from the bare /org', () => {
-      currentUrl = '/org';
+    it('lands on the overview from the bare /company', () => {
+      currentUrl = '/company';
       service.navigateToSelectedOrg('default');
-      expect(navigatedTo()).toBe('/org/acme-inc/overview');
+      expect(navigatedTo()).toBe('/company/acme-inc/overview');
     });
 
     // DR-004 Option-B trace: a pre-deploy corporate-signing return on the legacy EasyCLA address
     // names its organization in `?org=`, which the page adopts after the org list has answered — a
     // default insert in between would address the default organization instead.
     it('leaves a legacy EasyCLA return address alone', () => {
-      currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1';
+      currentUrl = '/company/easycla/abc-123?org=0014100000MgbBBBBB&signed=1';
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
     });
 
     // Without the return parameter there is nothing to adopt later; a plain leftover visit is a
     // legacy page like any other and gets its organization inserted.
-    it.each(['/org/easycla', '/org/easycla/abc-123?sig=s1'])('inserts the organization on a plain legacy EasyCLA address (%s)', (url) => {
+    it.each(['/company/easycla', '/company/easycla/abc-123?sig=s1'])('inserts the organization on a plain legacy EasyCLA address (%s)', (url) => {
       currentUrl = url;
       service.navigateToSelectedOrg('default');
-      expect(navigatedTo()).toMatch(/^\/org\/acme-inc\/easycla/);
+      expect(navigatedTo()).toMatch(/^\/company\/acme-inc\/easycla/);
     });
 
     // FR-022–FR-024 / SC-004: the dead end stays a dead end. Only the viewer's own pick leaves it;
     // a default picked from the org list would silently substitute another organization for the
     // one the link named.
-    it.each(['/org/not-found', '/org/not-found/anything'])('never leaves the not-found page (%s)', (url) => {
+    it.each(['/company/not-found', '/company/not-found/anything'])('never leaves the not-found page (%s)', (url) => {
       currentUrl = url;
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
@@ -298,16 +298,16 @@ describe('OrgLensNavigationService', () => {
     // The org list can answer before the path guard has adopted the addressed organization; the
     // address is the authority then, not the default.
     it('never overrides an address that already names an organization', () => {
-      currentUrl = '/org/other-org/projects/k8s';
+      currentUrl = '/company/other-org/projects/k8s';
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    // A gated corporate-signing return (`/org/{A}/easycla/{g}?signed=1`) is an addressed page
+    // A gated corporate-signing return (`/company/{A}/easycla/{g}?signed=1`) is an addressed page
     // with a wait in flight. The default must leave it — and its `?signed=` — exactly as it is:
     // the strip belongs to the viewer's own switch off the page, never to the automatic default.
     it('never touches an organization-addressed EasyCLA return, wait state included', () => {
-      currentUrl = '/org/other-org/easycla/abc-123?signed=1';
+      currentUrl = '/company/other-org/easycla/abc-123?signed=1';
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
     });
@@ -327,7 +327,7 @@ describe('OrgLensNavigationService', () => {
         providers: [
           provideRouter([
             {
-              path: 'org',
+              path: 'company',
               children: [
                 { path: 'easycla/:claGroupId', component: Page },
                 { path: `:${ORG_SEGMENT_PARAM}`, children: [{ path: 'easycla/:claGroupId', component: Page }] },
@@ -344,13 +344,13 @@ describe('OrgLensNavigationService', () => {
       return leaf;
     }
 
-    it('is true under /org/:orgSegment/easycla/…', async () => {
-      const leaf = await leafSnapshotAt('/org/acme-inc/easycla/abc-123');
+    it('is true under /company/:orgSegment/easycla/…', async () => {
+      const leaf = await leafSnapshotAt('/company/acme-inc/easycla/abc-123');
       expect(TestBed.inject(OrgLensNavigationService).isOrgAddressed(leaf)).toBe(true);
     });
 
-    it('is false on the leftover /org/easycla/… mount', async () => {
-      const leaf = await leafSnapshotAt('/org/easycla/abc-123');
+    it('is false on the leftover /company/easycla/… mount', async () => {
+      const leaf = await leafSnapshotAt('/company/easycla/abc-123');
       expect(TestBed.inject(OrgLensNavigationService).isOrgAddressed(leaf)).toBe(false);
     });
   });

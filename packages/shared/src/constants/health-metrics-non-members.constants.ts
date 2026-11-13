@@ -24,21 +24,21 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'Company participation',
     heading: 'Company participation',
     description:
-      'Organizations engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
+      'Companies engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
   },
   {
     key: 'people',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'People',
     heading: 'People',
-    description: 'The individuals behind those organizations — the actual contact to reach out to. A company is a lead; a person is a conversation.',
+    description: 'The individuals behind those companies — the actual contact to reach out to. A company is a lead; a person is a conversation.',
   },
   {
     key: 'conversion',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
-    description: 'What the pipeline is worth if the warmest organizations convert. Framed as upside — this section carries no risk badges, only opportunity.',
+    description: 'What the pipeline is worth if the warmest companies convert. Framed as upside — this section carries no risk badges, only opportunity.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -46,7 +46,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
 export const HEALTH_METRICS_NON_MEMBERS_BLANK: HealthMetricsL2Blank = {
   icon: 'fa-light fa-buildings',
   noun: 'non-member',
-  lead: 'Organizations show here once they take part in foundation activities without a membership.',
+  lead: 'Companies show here once they take part in foundation activities without a membership.',
   reasons: [
     'No code, event, meeting or training activity is recorded yet',
     'New activity can take 24–48 hours to appear',
@@ -101,7 +101,7 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 
 /** Under the table until the organization match is validated; the design's caution wording. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
-  'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
+  'Company matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
 
 /** Last-activity dates ignore the period; the Organizations caution note says so instead of the headers. */
 export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged is all-time, not limited to the selected period.';

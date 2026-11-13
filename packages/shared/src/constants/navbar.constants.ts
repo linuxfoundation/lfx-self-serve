@@ -49,23 +49,23 @@ export const NAV_TOOLTIP_HIDE_DELAY_MS = 150;
  * `{source}` is the organization an inherited role comes from (see NAVBAR_ORG_ROLE_UNKNOWN_SOURCE).
  */
 export const NAVBAR_ORG_ROLE_TOOLTIPS: Readonly<Record<OrgRolePersona, string>> = {
-  'direct-writer': "You can view and edit this organization's profile, members and settings.",
-  'direct-auditor': "You can view this organization's details, but not edit them.",
-  'inherited-writer': 'You can view and edit this organization through your admin access to {source}.',
-  'inherited-auditor': 'You can view this organization through your access to {source}.',
+  'direct-writer': "You can view and edit this company's profile, members and settings.",
+  'direct-auditor': "You can view this company's details, but not edit them.",
+  'inherited-writer': 'You can view and edit this company through your admin access to {source}.',
+  'inherited-auditor': 'You can view this company through your access to {source}.',
 };
 
 export const NAVBAR_ORG_CLA_ONLY_ROLE = {
   label: 'CLA Manager',
   icon: 'fa-light fa-file-signature',
-  tooltip: 'You are a CLA Manager or initial CLA Manager designee for this organization. Only its EasyCLA page opens.',
+  tooltip: 'You are a CLA Manager or initial CLA Manager designee for this company. Only its EasyCLA page opens.',
 } as const;
 
 /** Stands in for `{source}` when the organization an inherited role comes from is unknown. */
-export const NAVBAR_ORG_ROLE_UNKNOWN_SOURCE = 'a related organization';
+export const NAVBAR_ORG_ROLE_UNKNOWN_SOURCE = 'a related company';
 
 /** Appended to a direct role on an organization that is part of a hierarchy (the "(Original)" label). */
-export const NAVBAR_ORG_ROLE_DIRECT_SUFFIX = 'Granted directly on this organization.';
+export const NAVBAR_ORG_ROLE_DIRECT_SUFFIX = 'Granted directly on this company.';
 
 /** Decorative, disabled menu rows shown faded beneath the navbar's no-access message. */
 export const NAVBAR_NO_ACCESS_GHOST_ITEMS: readonly NavbarGhostItem[] = [

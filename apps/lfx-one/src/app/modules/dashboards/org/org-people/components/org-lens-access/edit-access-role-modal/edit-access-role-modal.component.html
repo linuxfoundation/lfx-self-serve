@@ -9,7 +9,7 @@
   [resizable]="false"
   [dismissableMask]="true"
   [style]="{ width: '28rem' }"
-  header="Edit Org Lens Access"
+  header="Edit Company Lens Access"
   styleClass="lfx-edit-access-role-modal">
   @if (user(); as person) {
     <div class="flex flex-col gap-5 py-1" data-testid="org-access-edit-modal">
@@ -51,7 +51,7 @@
           data-testid="org-access-edit-change-to" />
         @if (lastAdminNotice()) {
           <p class="text-xs text-gray-500" data-testid="org-access-edit-last-admin-notice">
-            This is the organization's only Admin. Promote another Admin before changing this role.
+            This is the company's only Admin. Promote another Admin before changing this role.
           </p>
         }
       </div>

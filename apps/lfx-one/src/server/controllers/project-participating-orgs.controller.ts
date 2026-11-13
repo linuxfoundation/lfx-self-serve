@@ -202,7 +202,7 @@ function parseAccountIds(req: Request, operation: string): string[] {
     throw ServiceValidationError.forField(name, `${name} must list at most ${PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE} ids`, { operation });
   }
   if (accountIds.some((id) => !ORG_ACCOUNT_ID_PATTERN.test(id))) {
-    throw ServiceValidationError.forField(name, `${name} must be canonical organization account ids`, { operation });
+    throw ServiceValidationError.forField(name, `${name} must be canonical company account ids`, { operation });
   }
   return accountIds;
 }

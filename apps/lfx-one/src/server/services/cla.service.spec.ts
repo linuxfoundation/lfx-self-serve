@@ -180,12 +180,12 @@ describe('claReturnUrl', () => {
   });
 
   it('leaves the URL unchanged when no query is asked for', () => {
-    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla')).toBe('https://app.lfx.dev/org/easycla');
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/company/easycla')).toBe('https://app.lfx.dev/company/easycla');
   });
 
   it('names the organization on the address, so the page does not have to guess it', () => {
-    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: '0014100000AcmeAAAA' })).toBe(
-      'https://app.lfx.dev/org/easycla?org=0014100000AcmeAAAA'
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/company/easycla', { org: '0014100000AcmeAAAA' })).toBe(
+      'https://app.lfx.dev/company/easycla?org=0014100000AcmeAAAA'
     );
   });
 
@@ -197,16 +197,16 @@ describe('claReturnUrl', () => {
     ['0014100000AcmeAAAA&next=https://evil.example.com', 'evil.example.com'],
     ['../../evil', 'evil'],
   ])('encodes %p so it cannot break out of the query string', (value, smuggled) => {
-    const url = claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: value });
+    const url = claReturnUrl(reqWithHost('app.lfx.dev'), '/company/easycla', { org: value });
 
     expect(new URL(url).origin).toBe('https://app.lfx.dev');
-    expect(new URL(url).pathname).toBe('/org/easycla');
+    expect(new URL(url).pathname).toBe('/company/easycla');
     expect(new URL(url).searchParams.get('org')).toBe(value);
     expect(url).not.toContain(`/${smuggled}`);
   });
 
   it('still refuses an untrusted host when a query is supplied', () => {
-    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/org/easycla', { org: '0014100000AcmeAAAA' })).toThrow(MicroserviceError);
+    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/company/easycla', { org: '0014100000AcmeAAAA' })).toThrow(MicroserviceError);
   });
 });
 

@@ -25,7 +25,7 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
-const DETAIL_URL_BOARD = '/org/memberships/sample-foundation#board';
+const DETAIL_URL_BOARD = '/company/memberships/sample-foundation#board';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 test.setTimeout(90_000);

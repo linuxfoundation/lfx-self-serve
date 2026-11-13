@@ -16,7 +16,7 @@ Select **Meetings** from the left navigation. What you see depends on your lens:
 
 - **Me lens** (your personal view): meetings across all of your projects. There's no way to create a meeting here. If no upcoming meetings are listed, you'll see "No upcoming meetings — Meetings from your committees and projects will appear here."
 - **Foundation or Project lens**: the foundation's or project's meetings, plus the meetings of every project beneath it, such as a foundation's sub-projects. You only see the sub-project meetings you have access to. This is where **Create Meeting** appears, if you have write access. If none are scheduled, you'll see "No meetings yet — Schedule a meeting to get started."
-- **Org lens**: a meeting analytics view for the organization. It has no **Create Meeting** button.
+- **Company lens**: a meeting analytics view for the company. It has no **Create Meeting** button.
 
 The Me, Foundation, and Project lenses share the same dashboard, scoped differently.
 

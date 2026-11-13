@@ -121,7 +121,7 @@ describe('MembersRenewalsComponent', () => {
     expect(query(`members-renewals-row-${ACCOUNT_ID}-balance`)).toBeNull();
     expect(query(`members-renewals-row-${ACCOUNT_ID}-renewed`)).toBeNull();
     expect([...fixture.nativeElement.querySelectorAll('th')].map((th: HTMLElement) => th.textContent?.trim())).toEqual([
-      'Organization',
+      'Company',
       'Tier',
       'Renewal date',
       'Dues',

@@ -109,7 +109,7 @@ export class OrganizationInvolvementComponent {
   );
   public readonly selectedFilter = signal<string>('all');
   protected readonly activeDrawer = signal<DashboardDrawerType | null>(null);
-  public readonly accountName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Organization');
+  public readonly accountName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Company');
   public readonly filterOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: 'contributions', label: 'Contribution' },

@@ -176,10 +176,13 @@ describe('SidebarNavService', () => {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
         },
-        // Spec 050 US2: Org Lens items address the selected organization. Most cases assert the tree
-        // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
+        // Spec 050 US2: Company Lens items address the selected company. Most cases assert the tree
+        // shape, so the builder is stubbed to the legacy form; `orgSegment` names a company for
         // the cases that assert the org-scoped form.
-        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
+        {
+          provide: OrgLensNavigationService,
+          useValue: { orgLensPath: (page: string) => (orgSegment() ? `/company/${orgSegment()}/${page}` : `/company/${page}`) },
+        },
         {
           provide: AccountContextService,
           useValue: {
@@ -517,25 +520,25 @@ describe('SidebarNavService', () => {
 
   /**
    * Copilot on PR #4415. `orgLensPath` prefixes every item with the selected segment, so in
-   * roll-up mode Profile linked to `/org/family-{id}/profile`, where the page asks for
+   * roll-up mode Profile linked to `/company/family-{id}/profile`, where the page asks for
    * `/api/orgs/uid/family-{id}`, the SFID validator refuses the sentinel and the caller lands on an error
    * page. Profile is single-org by definition (#4125), so it is dropped rather than re-pointed.
    */
-  it('drops Organization Profile in roll-up mode, and keeps every other Org Lens item', () => {
+  it('drops Company Profile in roll-up mode, and keeps every other Org Lens item', () => {
     activeLens.set('org');
     selectedOrgUid.set('family-0014100000RootAAAA');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(labels(items)).not.toContain('Organization Profile');
-    expect(findByLink(items, '/org/family-0014100000RootAAAA/profile')).toBeUndefined();
+    expect(labels(items)).not.toContain('Company Profile');
+    expect(findByLink(items, '/company/family-0014100000RootAAAA/profile')).toBeUndefined();
     expect(labels(items)).toContain('Dashboard');
     expect(labels(items)).toContain('Memberships');
-    expect(labels(sectionItems(items, 'Organization Engagement'))).toContain('People');
+    expect(labels(sectionItems(items, 'Company Engagement'))).toContain('People');
   });
 
-  // EasyCLA is single-organization for the same reason as Profile: a corporate CLA belongs to one
-  // company, so `/org/family-{id}/easycla` could only error (#4415, Copilot).
+  // EasyCLA is single-company for the same reason as Profile: a corporate CLA belongs to one
+  // company, so `/company/family-{id}/easycla` could only error (#4415, Copilot).
   it('drops EasyCLA in roll-up mode', () => {
     activeLens.set('org');
     selectedOrgUid.set('family-0014100000RootAAAA');
@@ -543,10 +546,10 @@ describe('SidebarNavService', () => {
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
     expect(labels(items)).not.toContain('EasyCLA');
-    expect(findByLink(items, '/org/family-0014100000RootAAAA/easycla')).toBeUndefined();
+    expect(findByLink(items, '/company/family-0014100000RootAAAA/easycla')).toBeUndefined();
   });
 
-  // Crowdfunding Donations is single-organization too: its endpoint takes one `orgUid` (#4415, Copilot).
+  // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
   it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
     activeLens.set('org');
     cfOrgDonationsEnabled.set(true);
@@ -557,28 +560,28 @@ describe('SidebarNavService', () => {
     expect(labels(items)).not.toContain('Crowdfunding Donations');
   });
 
-  it('keeps Organization Profile for a concrete organization', () => {
+  it('keeps Company Profile for a concrete organization', () => {
     activeLens.set('org');
     selectedOrgUid.set('0014100000MgaAAAAA');
 
-    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Organization Profile');
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Company Profile');
   });
 
-  it('places EasyCLA as a top-level item directly before Organization Profile, under the org-admin divider', () => {
+  it('places EasyCLA as a top-level item directly before Company Profile, under the org-admin divider', () => {
     activeLens.set('org');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const itemLabels = labels(items);
-    const easycla = findByLink(items, '/org/easycla');
+    const easycla = findByLink(items, '/company/easycla');
 
     expect(easycla).toEqual(
       expect.objectContaining({ label: 'EasyCLA', icon: 'fa-light fa-file-signature', testId: 'sidebar-org-easycla', dividerBefore: true })
     );
     expect(easycla?.isSection).toBeFalsy();
-    expect(itemLabels.indexOf('EasyCLA')).toBe(itemLabels.indexOf('Organization Engagement') + 1);
-    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
-    expect(items.find((item) => item.label === 'Organization Profile')?.dividerBefore).toBe(false);
-    expect(labels(sectionItems(items, 'Organization Engagement'))).toEqual([
+    expect(itemLabels.indexOf('EasyCLA')).toBe(itemLabels.indexOf('Company Engagement') + 1);
+    expect(itemLabels.indexOf('Company Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(items.find((item) => item.label === 'Company Profile')?.dividerBefore).toBe(false);
+    expect(labels(sectionItems(items, 'Company Engagement'))).toEqual([
       'People',
       'Code Contributions',
       'Events',
@@ -588,7 +591,7 @@ describe('SidebarNavService', () => {
     ]);
   });
 
-  it('opts only EasyCLA into subpath highlighting across the Org Lens tree', () => {
+  it('opts only EasyCLA into subpath highlighting across the Company Lens tree', () => {
     activeLens.set('org');
 
     const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
@@ -597,27 +600,27 @@ describe('SidebarNavService', () => {
     expect(labels(optedIn)).toEqual(['EasyCLA']);
   });
 
-  it('aliases only EasyCLA, to the leftover /org/easycla mount, so an addressed link still highlights there', () => {
+  it('aliases only EasyCLA, to the leftover /company/easycla mount, so an addressed link still highlights there', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
 
     const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
     const aliased = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeAliases);
 
-    expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/org/acme-inc/easycla', activeAliases: ['/org/easycla'] })]);
+    expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/company/acme-inc/easycla', activeAliases: ['/company/easycla'] })]);
   });
 
-  it('keeps EasyCLA directly above Organization Profile and closes the menu with the LF Staff Only section', () => {
+  it('keeps EasyCLA directly above Company Profile and closes the menu with the LF Staff Only section', () => {
     activeLens.set('org');
     lfStaff.set(true);
 
     const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
 
-    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(itemLabels.indexOf('Company Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
     expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
   });
 
-  describe('a CLA-only organization (M3)', () => {
+  describe('a CLA-only company (M3)', () => {
     const CLA_ONLY_UID = '0014100000ClaOnlyA';
 
     beforeEach(() => {
@@ -630,50 +633,50 @@ describe('SidebarNavService', () => {
     it('shows the EasyCLA item and nothing else', () => {
       const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-      expect(items).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: `/org/${CLA_ONLY_UID}/easycla` })]);
+      expect(items).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: `/company/${CLA_ONLY_UID}/easycla` })]);
       expect(items[0].dividerBefore).toBeFalsy();
     });
 
-    it('keeps the full org sidebar for any other selected organization', () => {
+    it('keeps the full org sidebar for any other selected company', () => {
       selectedOrgUid.set('0014100000OtherOrg');
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Dashboard');
     });
   });
 
-  it('addresses every Org Lens item to the selected organization, with ROI Metrics under LF Staff Only', () => {
+  it('addresses every Company Lens item to the selected company, with ROI Metrics under LF Staff Only', () => {
     activeLens.set('org');
     lfStaff.set(true);
     orgSegment.set('acme-inc');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagement = sectionItems(items, 'Organization Engagement');
+    const engagement = sectionItems(items, 'Company Engagement');
     const lfStaffOnly = sectionItems(items, 'LF Staff Only');
     const itemLabels = labels(items);
 
-    expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
-    expect(findByLink(lfStaffOnly, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
-    expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
-    // Phase 2 (lfx-self-serve#2743): EasyCLA is addressed like every other Org Lens item.
-    expect(findByLink(items, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
+    expect(findByLink(items, '/company/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
+    expect(findByLink(lfStaffOnly, '/company/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
+    expect(findByLink(engagement, '/company/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
+    // Phase 2 (lfx-self-serve#2743): EasyCLA is addressed like every other Company Lens item.
+    expect(findByLink(items, '/company/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
     const orgLinks = [...items, ...engagement, ...lfStaffOnly].map((item) => item.routerLink).filter((link): link is string => !!link);
-    expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
+    expect(orgLinks.filter((link) => !link.startsWith('/company/acme-inc/'))).toEqual([]);
     expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
-    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(itemLabels.indexOf('Company Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
   });
 
-  // lfx-self-serve-ops#1219: only the pages with an organization scope picker carry it; the Dashboard always shows the default.
-  it('carries the organization scope and the team members pick to Projects, People and Code Contributions, and not to the Dashboard', () => {
+  // lfx-self-serve-ops#1219: only the pages with a company scope picker carry it; the Dashboard always shows the default.
+  it('carries the company scope and the team members pick to Projects, People and Code Contributions, and not to the Dashboard', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagement = sectionItems(items, 'Organization Engagement');
+    const engagement = sectionItems(items, 'Company Engagement');
 
-    expect(findByLink(items, '/org/acme-inc/overview')?.carryQueryParams).toBeUndefined();
-    expect(findByLink(items, '/org/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);
-    expect(findByLink(engagement, '/org/acme-inc/people')?.carryQueryParams).toEqual(['range', 'participation', 'orgScope', 'teamMembers']);
-    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
+    expect(findByLink(items, '/company/acme-inc/overview')?.carryQueryParams).toBeUndefined();
+    expect(findByLink(items, '/company/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/company/acme-inc/people')?.carryQueryParams).toEqual(['range', 'participation', 'orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
   });
 
   // lfx-self-serve#4598: Counted by and Count carry between People and Events only; each page opts in on both ends.
@@ -681,13 +684,13 @@ describe('SidebarNavService', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
 
-    const engagement = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Organization Engagement');
+    const engagement = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement');
 
-    expect(findByLink(engagement, '/org/acme-inc/events')?.carryQueryParams).toEqual(['range', 'participation']);
-    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
+    expect(findByLink(engagement, '/company/acme-inc/events')?.carryQueryParams).toEqual(['range', 'participation']);
+    expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
   });
 
-  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization', () => {
+  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected company', () => {
     const orgUid = '001000000000000AAA';
     activeLens.set('org');
     orgSegment.set('acme-inc');
@@ -695,19 +698,19 @@ describe('SidebarNavService', () => {
     const service = TestBed.inject(SidebarNavService);
 
     orgWriterSet.set(new Set(['001000000000000BBB']));
-    expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(service.sidebarItems(), '/company/acme-inc/initiatives')).toBeUndefined();
 
     orgWriterSet.set(new Set([orgUid]));
     const items = service.sidebarItems();
     const itemLabels = labels(items);
-    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(
+    expect(findByLink(items, '/company/acme-inc/initiatives')).toEqual(
       expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
     );
     expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Projects') + 1);
   });
 
   describe('the LF Staff Only section', () => {
-    const ROI_LINK = '/org/acme-inc/roi';
+    const ROI_LINK = '/company/acme-inc/roi';
 
     beforeEach(() => {
       activeLens.set('org');
@@ -740,12 +743,14 @@ describe('SidebarNavService', () => {
     selectedOrgUid.set('001000000000000AAA');
     const service = TestBed.inject(SidebarNavService);
 
-    expect(findByLink(service.sidebarItems(), '/org/acme-inc/donations')).toBeUndefined();
+    expect(findByLink(service.sidebarItems(), '/company/acme-inc/donations')).toBeUndefined();
 
     cfOrgDonationsEnabled.set(true);
     const items = service.sidebarItems();
-    expect(findByLink(items, '/org/acme-inc/donations')).toEqual(expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' }));
-    expect(findByLink(items, '/org/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(items, '/company/acme-inc/donations')).toEqual(
+      expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' })
+    );
+    expect(findByLink(items, '/company/acme-inc/initiatives')).toBeUndefined();
     expect(labels(items).indexOf('Crowdfunding Donations')).toBe(labels(items).indexOf('Projects') + 1);
   });
 
