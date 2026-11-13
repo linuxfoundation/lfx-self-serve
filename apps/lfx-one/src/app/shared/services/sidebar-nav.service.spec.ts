@@ -383,6 +383,14 @@ describe('SidebarNavService', () => {
     expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
   });
 
+  it('shows Participating companies when only the slug matches, case-insensitively (as the BFF gate does)', () => {
+    activeLens.set('project');
+    selectedProject.set({ uid: 'p-uid', slug: 'p-slug' } as never);
+    personaProjects.set({ 'executive-director': [{ projectUid: 'other-uid', projectSlug: 'P-Slug', projectName: 'P' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
+  });
+
   it('ignores a fetched record that describes a different project (stale during a switch or a foundation preview)', () => {
     activeLens.set('project');
     selectedProject.set({ uid: 'child', slug: 'child' } as never);
