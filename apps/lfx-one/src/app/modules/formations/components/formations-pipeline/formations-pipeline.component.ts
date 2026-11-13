@@ -185,7 +185,7 @@ export class FormationsPipelineComponent {
     const entries = FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => {
       const present = getPipelineClassificationOptions(filterPipelineRowsByClassification(staged, selection, key), key);
       const listed = new Set(present.map((option) => option.value));
-      const kept = selection[key].filter((value) => !listed.has(value)).map((value) => ({ value, count: 0 }));
+      const kept = (selection[key] ?? []).filter((value) => !listed.has(value)).map((value) => ({ value, count: 0 }));
       const options = [...present, ...kept].sort((a, b) => comparePipelineText(a.value, b.value));
       return [key, options.map((option) => ({ label: `${option.value} (${option.count})`, value: option.value }))] as const;
     });
@@ -240,6 +240,14 @@ export class FormationsPipelineComponent {
 
   public constructor() {
     this.initUrlSync();
+  }
+
+  /**
+   * The Foundation select was focused or opened: if the background foundation-options read failed and nothing is listed, try it
+   * again (the Retry button is shown only when the main load failed, which hides this select).
+   */
+  protected onFoundationSelectOpen(): void {
+    this.loadFoundationOptionsForDeepLink(this.foundationUid());
   }
 
   protected onStageChange(stage: string): void {
@@ -332,9 +340,10 @@ export class FormationsPipelineComponent {
 
   private initClassification(): Signal<FormationPipelineClassificationSelection> {
     const read = (): FormationPipelineClassificationSelection => ({
-      technical_activity_type: this.filterForm.controls.technical_activity_type.value,
-      technology: this.filterForm.controls.technology.value,
-      industry: this.filterForm.controls.industry.value,
+      // A cleared multi-select can leave `null` on its control (`nonNullable` only governs `reset()`), so every value is coalesced.
+      technical_activity_type: this.filterForm.controls.technical_activity_type.value ?? [],
+      technology: this.filterForm.controls.technology.value ?? [],
+      industry: this.filterForm.controls.industry.value ?? [],
     });
     return toSignal(
       this.filterForm.valueChanges.pipe(

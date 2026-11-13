@@ -27,7 +27,7 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-          <div class="w-full min-[600px]:w-56 max-[599px]:[&_.p-select]:min-h-11">
+          <div class="w-full min-[600px]:w-56 max-[599px]:[&_.p-select]:min-h-11" (focusin)="onFoundationSelectOpen()">
             <lfx-select
               [form]="filterForm"
               control="foundation"

@@ -135,7 +135,7 @@ export function emptyPipelineClassification(): FormationPipelineClassificationSe
 
 /** Whether any classification filter has a value selected. */
 export function hasPipelineClassificationFilter(selection: FormationPipelineClassificationSelection): boolean {
-  return FORMATION_PIPELINE_CLASSIFICATION_KEYS.some((key) => selection[key].length > 0);
+  return FORMATION_PIPELINE_CLASSIFICATION_KEYS.some((key) => (selection[key] ?? []).length > 0);
 }
 
 /**
@@ -149,9 +149,9 @@ export function filterPipelineRowsByClassification(
   selection: FormationPipelineClassificationSelection,
   skip?: FormationPipelineClassificationKey
 ): FormationPipelineRow[] {
-  const active = FORMATION_PIPELINE_CLASSIFICATION_KEYS.filter((key) => key !== skip && selection[key].length > 0);
+  const active = FORMATION_PIPELINE_CLASSIFICATION_KEYS.filter((key) => key !== skip && (selection[key] ?? []).length > 0);
   if (active.length === 0) return [...rows];
-  return rows.filter((row) => active.every((key) => row[key].some((value) => selection[key].includes(value))));
+  return rows.filter((row) => active.every((key) => row[key].some((value) => (selection[key] ?? []).includes(value))));
 }
 
 /** The values of one classification field present in the rows, sorted, each with the number of rows holding it. */
@@ -168,9 +168,11 @@ export function getPipelineClassificationOptions(
   return [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => comparePipelineText(a.value, b.value));
 }
 
-/** The values of a link's classification param, made safe: trimmed, non-empty, within the length bound, de-duplicated, at most the allowed number. */
-export function sanitizePipelineClassificationValues(values: readonly string[]): string[] {
-  const kept = values.map((value) => value.trim()).filter((value) => value.length > 0 && value.length <= FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUE_LENGTH);
+/** The values of a link's classification param, made safe (a `null` or missing list, as a cleared multi-select can leave on its control, is empty): trimmed, non-empty, within the length bound, de-duplicated, at most the allowed number. */
+export function sanitizePipelineClassificationValues(values: readonly string[] | null | undefined): string[] {
+  const kept = (values ?? [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && value.length <= FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUE_LENGTH);
   return [...new Set(kept)].slice(0, FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES);
 }
 
@@ -182,7 +184,7 @@ export function pruneUnknownPipelineClassification(
   const pruned = emptyPipelineClassification();
   for (const key of FORMATION_PIPELINE_CLASSIFICATION_KEYS) {
     const present = new Set(rows.flatMap((row) => row[key]));
-    pruned[key] = selection[key].filter((value) => present.has(value));
+    pruned[key] = (selection[key] ?? []).filter((value) => present.has(value));
   }
   return pruned;
 }
@@ -504,7 +506,7 @@ export function buildPipelineUrlParams(state: FormationPipelineUrlState): Record
     [names.search]: search || null,
     ...Object.fromEntries(
       FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => {
-        const values = sanitizePipelineClassificationValues(state.classification[key]);
+        const values = sanitizePipelineClassificationValues(state.classification[key] ?? []);
         return [FORMATION_PIPELINE_CLASSIFICATION_PARAMS[key], values.length ? values : null];
       })
     ),

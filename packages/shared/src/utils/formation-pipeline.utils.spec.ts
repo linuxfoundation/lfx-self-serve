@@ -582,6 +582,18 @@ describe('Pipeline classification filters (#5619 Part C)', () => {
       expect(fromQuery(`tat=&tat=${long}&tech=Quantum`).classification).toEqual(select({ technology: ['Quantum'] }));
     });
 
+    it('treats a null or missing selection (a cleared multi-select) as empty everywhere', () => {
+      const cleared = { technical_activity_type: null, technology: undefined, industry: [] } as unknown as ReturnType<typeof emptyPipelineClassification>;
+      expect(hasPipelineClassificationFilter(cleared)).toBe(false);
+      expect(filterPipelineRowsByClassification(rows, cleared)).toHaveLength(rows.length);
+      expect(filterPipelineRowsByClassification(rows, cleared, 'industry')).toHaveLength(rows.length);
+      expect(pruneUnknownPipelineClassification(cleared, rows)).toEqual(emptyPipelineClassification());
+      expect(sanitizePipelineClassificationValues(null)).toEqual([]);
+      expect(sanitizePipelineClassificationValues(undefined)).toEqual([]);
+      const params = buildPipelineUrlParams({ ...getDefaultPipelineUrlState(), classification: cleared });
+      expect(params).toMatchObject({ tat: null, tech: null, ind: null });
+    });
+
     it('treats prototype-looking values as plain text', () => {
       const parsed = fromQuery('tat=__proto__&tech=constructor&ind=toString');
       expect(parsed.classification).toEqual(select({ technical_activity_type: ['__proto__'], technology: ['constructor'], industry: ['toString'] }));

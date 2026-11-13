@@ -259,6 +259,48 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(labels()).toContain('Foundation Two');
     });
 
+    it('retries the failed foundation-options read when the Foundation select is focused, and labels it', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      let unfilteredReads = 0;
+      getFormationPipeline = vi.fn((foundationUid: string | null) => {
+        if (foundationUid) return of(response([row({ uid: 'only', name: 'Only' })]));
+        unfilteredReads += 1;
+        return unfilteredReads === 1
+          ? throwError(() => new HttpErrorResponse({ status: 503 }))
+          : of(response([row({ uid: 'p', parent: { uid: 'f2', name: 'Foundation Two' } })]));
+      });
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationsPipelineComponent],
+        providers: [
+          provideRouter([]),
+          { provide: FormationService, useValue: { getFormationPipeline } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ foundation: 'f2' }) } } },
+        ],
+      }).compileComponents();
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture = TestBed.createComponent(FormationsPipelineComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const labels = (): string[] => fixture.componentInstance['foundationOptions']().map((option: { label: string }) => option.label);
+      expect(unfilteredReads).toBe(1);
+      expect(labels()).not.toContain('Foundation Two');
+
+      q('formations-pipeline-foundation')!.dispatchEvent(new Event('focusin', { bubbles: true }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(unfilteredReads).toBe(2);
+      expect(labels()).toContain('Foundation Two');
+
+      // Once listed (or while a read is in flight) focusing again reads nothing more.
+      q('formations-pipeline-foundation')!.dispatchEvent(new Event('focusin', { bubbles: true }));
+      await fixture.whenStable();
+      expect(unfilteredReads).toBe(2);
+    });
+
     it('ignores bad values, and the foundation types an earlier link may carry, and opens on the defaults', async () => {
       await render(of(response(ROWS)), { stage: 'bogus', type: 'bogus', sort: 'bogus', foundation: 'no spaces allowed' });
 
@@ -744,6 +786,20 @@ describe('FormationsPipelineComponent (#5475)', () => {
       await set('technical_activity_type', [SPEC]);
 
       expect(optionsOf('technical_activity_type')).toContain(`${SPEC} (0)`);
+    });
+
+    it('keeps working when clearing a select leaves null on its control, and drops that param from the URL', async () => {
+      await render(of(response(CROWD)), {});
+      await set('technology', ['Quantum']);
+      expect(lastParams()).toMatchObject({ tech: ['Quantum'] });
+
+      await set('technology', null as unknown as string[]);
+
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c', 'd']);
+      expect(optionsOf('technology')).toEqual(['AI & ML (2)', 'Quantum (2)']);
+      expect(fixture.componentInstance['isFiltered']()).toBe(false);
+      expect(lastParams()).toMatchObject({ tech: null });
+      expect(q('formations-pipeline-error')).toBeNull();
     });
 
     it('gives each select its own panel class, so the wrapper can size every panel to its trigger', async () => {
