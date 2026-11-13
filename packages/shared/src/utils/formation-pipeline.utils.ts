@@ -2,6 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  FORMATION_PIPELINE_CLASSIFICATION_CSV_SEPARATOR,
+  FORMATION_PIPELINE_CLASSIFICATION_KEYS,
+  FORMATION_PIPELINE_CLASSIFICATION_LABELS,
+  FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUE_LENGTH,
+  FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES,
+  FORMATION_PIPELINE_CLASSIFICATION_PARAMS,
   FORMATION_PIPELINE_COLUMNS,
   FORMATION_PIPELINE_COPY,
   FORMATION_PIPELINE_CSV_FILENAME_PREFIX,
@@ -15,6 +21,7 @@ import {
   FORMATION_PIPELINE_PROSPECT_LABEL,
   FORMATION_PIPELINE_LAUNCH_SOON_DAYS,
   FORMATION_PIPELINE_QUERY_PARAMS,
+  FORMATION_PIPELINE_STAFF_HIDDEN_STAGES,
   FORMATION_PIPELINE_SEARCH_MAX_LENGTH,
   FORMATION_PIPELINE_STAGE_LABELS,
   FORMATION_PIPELINE_STAGE_SEVERITY,
@@ -26,6 +33,9 @@ import {
 } from '../constants/formation-pipeline.constants';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
+  FormationPipelineClassificationKey,
+  FormationPipelineClassificationOption,
+  FormationPipelineClassificationSelection,
   FormationPipelineCounts,
   FormationPipelineFoundationKindFilter,
   FormationPipelineLaunch,
@@ -37,6 +47,7 @@ import type {
   FormationPipelineStage,
   FormationPipelineStageFilter,
   FormationPipelineUrlState,
+  FormationPipelineViewer,
 } from '../interfaces/formation-pipeline.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import { formatIsoDateLabel, parseIsoDateAsUtcMidnight, timeAgo } from './date-time.utils';
@@ -61,6 +72,16 @@ export function getPipelineStageKey(stage: string | null | undefined): Formation
 /** What the formation team reads for a stored stage: a v2 `Prospect` shows as "Draft" (#5619); every other value is shown as stored. The stored value never changes. */
 export function getFormationStageDisplayLabel(stage: string): string {
   return stage === FORMATION_PIPELINE_STAGE_UPSTREAM.prospect ? FORMATION_PIPELINE_PROSPECT_LABEL : stage;
+}
+
+/** Whether a viewer may see a stage at all: LF staff outside the formation team never see Draft or Confidential (#5544). */
+export function isPipelineStageVisible(stage: FormationPipelineStage, viewer: FormationPipelineViewer): boolean {
+  return viewer === 'formation_team' || !FORMATION_PIPELINE_STAFF_HIDDEN_STAGES.includes(stage);
+}
+
+/** The stages of the live pipeline this viewer sees (the default view). */
+export function getPipelineLiveStages(viewer: FormationPipelineViewer): FormationPipelineStage[] {
+  return FORMATION_PIPELINE_LIVE_STAGES.filter((stage) => isPipelineStageVisible(stage, viewer));
 }
 
 /** A zeroed {@link FormationPipelineCounts}. */
@@ -92,9 +113,13 @@ export function matchesPipelineSearch(name: string, search: string | null | unde
 }
 
 /** Rows in the selected stage; `all` keeps every row. */
-export function filterPipelineRowsByStage(rows: readonly FormationPipelineRow[], stage: FormationPipelineStageFilter): FormationPipelineRow[] {
+export function filterPipelineRowsByStage(
+  rows: readonly FormationPipelineRow[],
+  stage: FormationPipelineStageFilter,
+  viewer: FormationPipelineViewer = 'formation_team'
+): FormationPipelineRow[] {
   if (stage === 'all') return [...rows];
-  if (stage === 'in_pipeline') return rows.filter((row) => FORMATION_PIPELINE_LIVE_STAGES.includes(row.stage));
+  if (stage === 'in_pipeline') return rows.filter((row) => getPipelineLiveStages(viewer).includes(row.stage));
   return rows.filter((row) => row.stage === stage);
 }
 
@@ -103,9 +128,86 @@ export function filterPipelineRowsByFoundationKind(rows: readonly FormationPipel
   return kind === 'all' ? [...rows] : rows.filter((row) => row.foundation_kind === kind);
 }
 
-/** Rows in the live pipeline (Draft, Exploratory, Engaged, On hold). */
-export function countLivePipelineRows(counts: FormationPipelineCounts): number {
-  return FORMATION_PIPELINE_LIVE_STAGES.reduce((sum, stage) => sum + counts[stage], 0);
+/**
+ * A classification array as upstream may send it: only non-empty strings survive, trimmed and de-duplicated, in order. A
+ * missing key, `null`, a non-array or an empty array is `[]` (#5619 Part C).
+ */
+export function normalizePipelineClassification(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
+/** All three classification filters off. */
+export function emptyPipelineClassification(): FormationPipelineClassificationSelection {
+  return { technical_activity_type: [], technology: [], industry: [] };
+}
+
+/** Whether any classification filter has a value selected. */
+export function hasPipelineClassificationFilter(selection: FormationPipelineClassificationSelection): boolean {
+  return FORMATION_PIPELINE_CLASSIFICATION_KEYS.some((key) => (selection[key] ?? []).length > 0);
+}
+
+/**
+ * Rows that pass the classification filters. A row passes a filter when ANY of its values is selected (OR within a filter);
+ * the filters combine with each other (AND across). A filter with nothing selected is off; while any is on, a row whose
+ * array is empty for it is hidden, and there is no "Not set" option (#5619 Part C).
+ * `skip` leaves one filter out, which is how an option list sees the rows "after the other filters".
+ */
+export function filterPipelineRowsByClassification(
+  rows: readonly FormationPipelineRow[],
+  selection: FormationPipelineClassificationSelection,
+  skip?: FormationPipelineClassificationKey
+): FormationPipelineRow[] {
+  const active = FORMATION_PIPELINE_CLASSIFICATION_KEYS.filter((key) => key !== skip && (selection[key] ?? []).length > 0);
+  if (active.length === 0) return [...rows];
+  return rows.filter((row) => active.every((key) => row[key].some((value) => (selection[key] ?? []).includes(value))));
+}
+
+/** The values of one classification field present in the rows, sorted, each with the number of rows holding it. */
+export function getPipelineClassificationOptions(
+  rows: readonly FormationPipelineRow[],
+  key: FormationPipelineClassificationKey
+): FormationPipelineClassificationOption[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    for (const value of row[key]) {
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+  }
+  return [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => comparePipelineText(a.value, b.value));
+}
+
+/** The values of a link's classification param, made safe (a `null` or missing list, as a cleared multi-select can leave on its control, is empty): trimmed, non-empty, within the length bound, de-duplicated, at most the allowed number. */
+export function sanitizePipelineClassificationValues(values: readonly string[] | null | undefined): string[] {
+  const kept = (values ?? [])
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && value.length <= FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUE_LENGTH);
+  return [...new Set(kept)].slice(0, FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES);
+}
+
+/** The selection with every value that no row holds dropped: a link may name a value this data does not have, and an unknown value is not kept. */
+export function pruneUnknownPipelineClassification(
+  selection: FormationPipelineClassificationSelection,
+  rows: readonly FormationPipelineRow[]
+): FormationPipelineClassificationSelection {
+  const pruned = emptyPipelineClassification();
+  for (const key of FORMATION_PIPELINE_CLASSIFICATION_KEYS) {
+    const present = new Set(rows.flatMap((row) => row[key]));
+    pruned[key] = (selection[key] ?? []).filter((value) => present.has(value));
+  }
+  return pruned;
+}
+
+/** Rows in the live stages this viewer sees (Draft, Exploratory, Engaged, On hold; staff never see Draft). */
+export function countLivePipelineRows(counts: FormationPipelineCounts, viewer: FormationPipelineViewer = 'formation_team'): number {
+  return getPipelineLiveStages(viewer).reduce((sum, stage) => sum + counts[stage], 0);
 }
 
 /** The calendar day of an ISO date or timestamp, as UTC midnight; `null` when absent or unparseable. */
@@ -226,16 +328,16 @@ export function sortPipelineRows(rows: readonly FormationPipelineRow[], sort: Fo
   });
 }
 
-/** Stage pills: `In pipeline` (the default), `All`, then every stage, with counts. Disengaged and Confidential appear only when they hold rows. */
-export function buildPipelinePillOptions(counts: FormationPipelineCounts): FilterPillOption[] {
-  const stagePills = FORMATION_PIPELINE_STAGES.filter((stage) => counts[stage] > 0 || !FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES.includes(stage)).map(
-    (stage) => ({
-      id: stage,
-      label: `${FORMATION_PIPELINE_STAGE_LABELS[stage]} (${counts[stage]})`,
-    })
-  );
+/** Stage pills: `In pipeline` (the default), `All`, then every stage the viewer sees, with counts. Disengaged and Confidential appear only when they hold rows; staff never get a Draft or Confidential pill. */
+export function buildPipelinePillOptions(counts: FormationPipelineCounts, viewer: FormationPipelineViewer = 'formation_team'): FilterPillOption[] {
+  const stagePills = FORMATION_PIPELINE_STAGES.filter(
+    (stage) => isPipelineStageVisible(stage, viewer) && (counts[stage] > 0 || !FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES.includes(stage))
+  ).map((stage) => ({
+    id: stage,
+    label: `${FORMATION_PIPELINE_STAGE_LABELS[stage]} (${counts[stage]})`,
+  }));
   return [
-    { id: 'in_pipeline', label: `${FORMATION_PIPELINE_COPY.inPipeline} (${countLivePipelineRows(counts)})` },
+    { id: 'in_pipeline', label: `${FORMATION_PIPELINE_COPY.inPipeline} (${countLivePipelineRows(counts, viewer)})` },
     { id: 'all', label: `${FORMATION_PIPELINE_COPY.allStages} (${counts.total})` },
     ...stagePills,
   ];
@@ -246,7 +348,8 @@ export function buildPipelineStatCards(
   counts: FormationPipelineCounts,
   rows: readonly FormationPipelineRow[],
   selected: FormationPipelineStageFilter,
-  now: Date = new Date()
+  now: Date = new Date(),
+  viewer: FormationPipelineViewer = 'formation_team'
 ): StatCardItem[] {
   const withLaunch = rows.filter((row) => row.stage === 'exploratory' && toUtcDay(row.announcement_date)).length;
   const launchingSoon = rows.filter((row) => row.stage === 'engaged' && getPipelineLaunch(row.announcement_date, now).soon).length;
@@ -257,7 +360,7 @@ export function buildPipelineStatCards(
     on_hold: FORMATION_PIPELINE_STAT_CAPTIONS.on_hold,
     archived: FORMATION_PIPELINE_STAT_CAPTIONS.archived,
   };
-  return FORMATION_PIPELINE_STAT_STAGES.map((stage) => ({
+  return FORMATION_PIPELINE_STAT_STAGES.filter((stage) => isPipelineStageVisible(stage, viewer)).map((stage) => ({
     value: counts[stage],
     label: FORMATION_PIPELINE_STAGE_LABELS[stage],
     subLine: subLines[stage],
@@ -305,6 +408,11 @@ export function getPipelineUpdatedLabel(updatedAt: string | null | undefined): s
   return updatedAt ? timeAgo(updatedAt) : '';
 }
 
+/** `rowsToCsv` neutralizes a formula prefix only at the start of a cell; a multi-value cell holds several values, so each is neutralized before joining (a `;` list separator would otherwise start a new cell in some locales). */
+function neutralizeCsvValue(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 const PIPELINE_CSV_HEADER: string[] = [
   'Project',
   'Foundation',
@@ -317,6 +425,7 @@ const PIPELINE_CSV_HEADER: string[] = [
   'PM',
   'Opportunity owner',
   'Updated',
+  ...FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => FORMATION_PIPELINE_CLASSIFICATION_LABELS[key]),
 ];
 
 /**
@@ -339,6 +448,7 @@ export function buildPipelineCsvRows(rows: readonly FormationPipelineRow[]): str
       personName(row.program_manager),
       getPipelineOpportunityOwner(row),
       row.updated_at ?? '',
+      ...FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => row[key].map(neutralizeCsvValue).join(FORMATION_PIPELINE_CLASSIFICATION_CSV_SEPARATOR)),
     ]),
   ];
 }
@@ -355,6 +465,7 @@ export function getDefaultPipelineUrlState(): FormationPipelineUrlState {
     foundationUid: null,
     foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
     search: '',
+    classification: emptyPipelineClassification(),
     sort: { ...FORMATION_PIPELINE_DEFAULT_SORT },
   };
 }
@@ -364,7 +475,7 @@ export function getDefaultPipelineUrlState(): FormationPipelineUrlState {
  * or hand-edited link still opens the page: an unknown stage or type, a sort column that does not exist, a foundation uid of
  * the wrong shape, a search past the API's length limit (cut to it).
  */
-export function parsePipelineUrlState(params: { get(name: string): string | null }): FormationPipelineUrlState {
+export function parsePipelineUrlState(params: { get(name: string): string | null; getAll(name: string): string[] }): FormationPipelineUrlState {
   const names = FORMATION_PIPELINE_QUERY_PARAMS;
   const state = getDefaultPipelineUrlState();
 
@@ -385,6 +496,10 @@ export function parsePipelineUrlState(params: { get(name: string): string | null
 
   state.search = normalizePipelineSearch(params.get(names.search));
 
+  for (const key of FORMATION_PIPELINE_CLASSIFICATION_KEYS) {
+    state.classification[key] = sanitizePipelineClassificationValues(params.getAll(FORMATION_PIPELINE_CLASSIFICATION_PARAMS[key]));
+  }
+
   const sortKey = FORMATION_PIPELINE_COLUMNS.find((column) => column.key === params.get(names.sort))?.key;
   if (sortKey) {
     state.sort = { key: sortKey, direction: params.get(names.direction) === 'desc' ? 'desc' : 'asc' };
@@ -396,7 +511,7 @@ export function parsePipelineUrlState(params: { get(name: string): string | null
  * The query params for a state, with `null` for every field at its default so a `merge` navigation drops it from the URL
  * and the default view keeps a clean address. The inverse of {@link parsePipelineUrlState}.
  */
-export function buildPipelineUrlParams(state: FormationPipelineUrlState): Record<string, string | null> {
+export function buildPipelineUrlParams(state: FormationPipelineUrlState): Record<string, string | string[] | null> {
   const names = FORMATION_PIPELINE_QUERY_PARAMS;
   const defaults = getDefaultPipelineUrlState();
   const search = normalizePipelineSearch(state.search);
@@ -406,6 +521,12 @@ export function buildPipelineUrlParams(state: FormationPipelineUrlState): Record
     [names.foundation]: state.foundationUid,
     [names.foundationKind]: state.foundationKind === defaults.foundationKind ? null : state.foundationKind,
     [names.search]: search || null,
+    ...Object.fromEntries(
+      FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => {
+        const values = sanitizePipelineClassificationValues(state.classification[key] ?? []);
+        return [FORMATION_PIPELINE_CLASSIFICATION_PARAMS[key], values.length ? values : null];
+      })
+    ),
     [names.sort]: defaultSort ? null : state.sort.key,
     [names.direction]: defaultSort ? null : state.sort.direction,
   };

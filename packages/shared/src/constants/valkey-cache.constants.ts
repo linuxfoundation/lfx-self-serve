@@ -170,6 +170,12 @@ export const VALKEY_CACHE = {
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
 
+  /** Domain + schema-version segment for the per-user meetings roll-up scope (GH-5566): the project UIDs under a foundation or parent project that the caller can see. */
+  MEETING_ROLLUP_SCOPE_NAMESPACE: 'meeting-rollup-scope:v1',
+
+  /** Freshness window for the meetings roll-up scope. Long enough that one dashboard load (list, counts, paged calendar feeds, Load More) reuses one tree walk and pages against the same scope; short enough that a new sub-project shows up within minutes. */
+  MEETING_ROLLUP_SCOPE_TTL_SECONDS: 300,
+
   /**
    * Freshness window for the Org Lens Groups aggregate (15 minutes). Deliberately shorter than the
    * 1-hour `ORG_LENS_SNOWFLAKE_TTL_SECONDS` the rest of Org Lens uses: this window bounds *upstream*

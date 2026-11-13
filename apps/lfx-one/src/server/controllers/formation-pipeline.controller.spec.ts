@@ -37,7 +37,7 @@ function buildRes(): any {
 describe('formation-pipeline.controller — getFormationPipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getPipeline.mockResolvedValue({ rows: [], counts: { total: 0 } });
+    getPipeline.mockResolvedValue({ rows: [], counts: { total: 0 }, viewer: 'formation_team' });
   });
 
   it('defaults to every pipeline stage and sends no-store', async () => {
