@@ -805,13 +805,13 @@ describe('MeetingService project-lens meeting fetchers (#4964)', () => {
       expect(params().get('root_project_uid')).toBe('root');
     });
 
-    it('saves the project selection for a root, and swallows a failed save', async () => {
+    it('saves the project selection for a root, and reports a failed save without throwing', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       put.mockReturnValueOnce(of({ project_uids: [] }));
       put.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
 
-      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', []))).resolves.toBeUndefined();
-      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', ['a']))).resolves.toBeUndefined();
+      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', []))).resolves.toBe(true);
+      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', ['a']))).resolves.toBe(false);
       expect(put).toHaveBeenNthCalledWith(1, '/api/meetings/rollup-projects', { root_project_uid: 'root', project_uids: [] });
     });
 

@@ -141,7 +141,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.spyOn(meetings, 'getMeetingsCountByProject').mockReturnValue(of(0));
     vi.spyOn(meetings, 'getPastMeetingsCountByProject').mockReturnValue(of(0));
     vi.spyOn(meetings, 'getRollupProjectsPreference').mockReturnValue(of(null));
-    vi.spyOn(meetings, 'saveRollupProjectsPreference').mockReturnValue(of(undefined));
+    vi.spyOn(meetings, 'saveRollupProjectsPreference').mockReturnValue(of(true));
     vi.spyOn(meetings, 'getRollupFilterOptions').mockReturnValue(
       of({
         projects: [
@@ -1127,6 +1127,10 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
 
         expect(component.rollupProjectsFilter()).toEqual(['scope', 'child']);
         expect(hint()).toBe(false);
+
+        component.onRollupProjectsFilterChange(['scope']);
+        flush();
+        expect(hint()).toBe(true);
       });
 
       it('saves a change for the root after a pause, and Reset filters saves the default', () => {

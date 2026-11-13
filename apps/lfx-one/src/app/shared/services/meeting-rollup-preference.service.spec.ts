@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MeetingRollupPreferenceService } from './meeting-rollup-preference.service';
 
 describe('MeetingRollupPreferenceService', () => {
-  let saves: { rootUid: string; projectUids: string[]; done: Subject<void> }[];
+  let saves: { rootUid: string; projectUids: string[]; done: Subject<boolean> }[];
   let service: MeetingRollupPreferenceService;
 
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('MeetingRollupPreferenceService', () => {
           provide: MeetingService,
           useValue: {
             saveRollupProjectsPreference: vi.fn((rootUid: string, projectUids: string[]) => {
-              const done = new Subject<void>();
+              const done = new Subject<boolean>();
               saves.push({ rootUid, projectUids, done });
               return done;
             }),
@@ -73,5 +73,20 @@ describe('MeetingRollupPreferenceService', () => {
     vi.advanceTimersByTime(600);
     saves[0].done.complete();
     expect(service.latestChoice('a')).toEqual(['1']);
+  });
+
+  it('forgets a remembered choice whose save failed, but not one a newer choice replaced', () => {
+    service.save('a', ['1']);
+    vi.advanceTimersByTime(600);
+    saves[0].done.next(false);
+    saves[0].done.complete();
+    expect(service.latestChoice('a')).toBeUndefined();
+
+    service.save('b', ['1']);
+    vi.advanceTimersByTime(600);
+    service.save('b', ['2']);
+    saves[1].done.next(false);
+    saves[1].done.complete();
+    expect(service.latestChoice('b')).toEqual(['2']);
   });
 });

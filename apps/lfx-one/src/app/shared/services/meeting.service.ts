@@ -223,14 +223,17 @@ export class MeetingService {
     );
   }
 
-  /** Saves the signed-in user's project selection for a roll-up root (empty = all projects). A failed save is logged, not surfaced. */
-  public saveRollupProjectsPreference(rootUid: string, projectUids: string[]): Observable<void> {
+  /**
+   * Saves the signed-in user's project selection for a roll-up root (empty = all projects). Emits whether
+   * it was saved; a failure is logged and reported as `false` rather than thrown, so a save queue keeps going.
+   */
+  public saveRollupProjectsPreference(rootUid: string, projectUids: string[]): Observable<boolean> {
     const body: MeetingRollupProjectsPreferenceRequest = { root_project_uid: rootUid, project_uids: projectUids };
     return this.http.put<MeetingRollupProjectsPreference>('/api/meetings/rollup-projects', body).pipe(
-      map(() => undefined),
+      map(() => true),
       catchError((error) => {
         console.error('Failed to save the meeting project selection:', error);
-        return of(undefined);
+        return of(false);
       })
     );
   }

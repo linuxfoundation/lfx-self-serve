@@ -3,7 +3,7 @@
 
 import { inject, Injectable } from '@angular/core';
 import { MeetingService } from '@services/meeting.service';
-import { concatMap, debounceTime, groupBy, mergeMap, Subject } from 'rxjs';
+import { concatMap, debounceTime, groupBy, map, mergeMap, Subject } from 'rxjs';
 
 /**
  * Saves the user's meetings roll-up project choice per root (GH-5566).
@@ -11,7 +11,8 @@ import { concatMap, debounceTime, groupBy, mergeMap, Subject } from 'rxjs';
  * still saved. Each root waits for its own pause (a change on another root never drops it), and saves
  * go out one at a time in the order they were made, so an older choice can never land after a newer one.
  * It also remembers each root's latest choice for the session, so returning to a root before its save
- * lands shows that choice rather than the older one still stored.
+ * lands shows that choice rather than the older one still stored. A save that fails drops that remembered
+ * choice (unless a newer one replaced it), so a later visit reads what is actually stored.
  */
 @Injectable({ providedIn: 'root' })
 export class MeetingRollupPreferenceService {
@@ -24,9 +25,15 @@ export class MeetingRollupPreferenceService {
       .pipe(
         groupBy((change) => change.rootUid),
         mergeMap((changesForRoot) => changesForRoot.pipe(debounceTime(600))),
-        concatMap(({ rootUid, projectUids }) => this.meetingService.saveRollupProjectsPreference(rootUid, projectUids))
+        concatMap(({ rootUid, projectUids }) =>
+          this.meetingService.saveRollupProjectsPreference(rootUid, projectUids).pipe(map((saved) => ({ rootUid, projectUids, saved })))
+        )
       )
-      .subscribe();
+      .subscribe(({ rootUid, projectUids, saved }) => {
+        if (!saved && this.latest.get(rootUid) === projectUids) {
+          this.latest.delete(rootUid);
+        }
+      });
   }
 
   /** Queues `projectUids` as the user's choice for `rootUid` (empty = all projects); the latest per root wins. */

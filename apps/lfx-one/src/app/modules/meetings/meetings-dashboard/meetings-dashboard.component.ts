@@ -209,9 +209,12 @@ export class MeetingsDashboardComponent {
   // The project picker's label while nothing is checked: the default view, the root's own meetings.
   protected readonly rollupProjectsPlaceholder: Signal<string> = computed(() => `${this.project()?.name ?? 'This project'} only`);
   // The default view of a tree with sub-projects: an empty list there points to the project filter.
-  protected readonly showRootOnlyHint: Signal<boolean> = computed(
-    () => this.activeLens() !== 'me' && this.rollupProjectsMode() === 'default' && this.rollupProjectOptions().length > 1
-  );
+  protected readonly showRootOnlyHint: Signal<boolean> = computed(() => {
+    const selected = this.rollupProjectsFilter();
+    // Checking only the root is the same view as the default.
+    const rootOnly = this.rollupProjectsMode() === 'default' || (selected.length === 1 && selected[0] === this.project()?.uid);
+    return this.activeLens() !== 'me' && rootOnly && this.rollupProjectOptions().length > 1;
+  });
   protected readonly rootOnlyEmptyTitle: Signal<string> = computed(
     () => `No ${this.timeFilter() === 'past' ? 'past ' : ''}meetings for ${this.project()?.name ?? 'this project'}`
   );
