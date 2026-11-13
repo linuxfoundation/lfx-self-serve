@@ -899,8 +899,26 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(component.meetingTypeFilter()).toBe('Technical');
       expect(component.isCalendarView()).toBe(true);
       expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, ['meeting_type:Technical'], expected);
-      expect(meetings.getMeetingsCountByProject).toHaveBeenCalledWith('scope', expected);
+      expect(meetings.getPastMeetingsCountByProject).toHaveBeenCalledWith('scope', expected);
       expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, undefined, { ...expected, pageSize: 1000 });
+    });
+
+    it('counts upcoming meetings from the loaded meetings, including a series that started in the past', () => {
+      const series = {
+        uid: 'series',
+        id: 'series',
+        start_time: '2020-01-01T12:00:00Z',
+        duration: 30,
+        recurrence: { type: 1, repeat_interval: 1 },
+        occurrences: [{ occurrence_id: '1', start_time: '2099-01-01T12:00:00Z', duration: 30 }],
+      } as unknown as Meeting;
+      const ended = { uid: 'ended', id: 'ended', start_time: '2020-01-01T12:00:00Z', duration: 30, recurrence: null } as unknown as Meeting;
+      vi.mocked(meetings.getMeetingsByProjectPaginated).mockReturnValue(of({ data: [series, ended], page_token: undefined }));
+      const component = mount();
+      openScope(component);
+
+      expect(component['fpUpcomingCount']()).toBe(1);
+      expect(component['fpRecurringCount']()).toBe(1);
     });
 
     it('drops a meeting type the URL names that does not exist', () => {

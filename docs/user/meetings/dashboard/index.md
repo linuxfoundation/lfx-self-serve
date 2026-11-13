@@ -28,7 +28,7 @@ The tiles at the top of the page summarize the tab you're on:
 
 - **Me lens, Upcoming**: **Meetings in the Next 7 Days**, which counts each upcoming date, including dates you declined, and **Needs response**. Selecting **Needs response** opens the response queue and clears other filters, so they can't hide a meeting that needs your answer.
 - **Me lens, Past**: **Past This Month** and **Recordings Available** from the past 30 days.
-- **Foundation or Project lens**: **Upcoming Meetings**, **Recurring Series**, **Past Meetings**, and **Recordings Available** from the past 30 days. They count the projects you have picked.
+- **Foundation or Project lens**: **Upcoming Meetings**, **Recurring Series**, **Past Meetings**, and **Recordings Available** from the past 30 days. They count the projects you have picked. **Upcoming Meetings** includes every recurring series that still has a session ahead.
 
 ## List and Calendar views
 

@@ -256,12 +256,11 @@ export class MeetingsDashboardComponent {
   public hasMore: Signal<boolean>;
   public autoLoadTriggerIndex: Signal<number>;
 
-  private fpUpcomingLoading = signal(false);
+  protected readonly fpUpcomingLoading = signal(false);
   private fpPastLoading = signal(false);
   // Per-lens loading flags so Me/FP recording-count pipelines cannot clobber each other on lens switch.
   protected readonly meRecordingsCountLoading = signal(false);
   protected readonly fpRecordingsCountLoading = signal(false);
-  protected fpUpcomingCountLoading = signal(false);
   protected fpPastCountLoading = signal(false);
 
   // Raw user meetings cached for client-side filtering (Me lens only)
@@ -385,9 +384,11 @@ export class MeetingsDashboardComponent {
 
     // Foundation/Project lens stat cards
     // fpStatsLoading gates recurring/recordings cards (backed by raw full-page fetches).
-    // fpUpcomingCount/fpPastCount use the count API directly — they resolve independently.
+    // fpPastCount uses the count API directly. fpUpcomingCount counts the loaded upcoming meetings, like
+    // the list: the count API can only test a meeting's first start time, so it would miss every recurring
+    // series that started in the past but still has sessions ahead.
     this.fpStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading()));
-    this.fpUpcomingCount = this.initFpUpcomingCount();
+    this.fpUpcomingCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().length : 0));
     this.fpPastCount = this.initFpPastCount();
     this.fpRecurringCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null).length : 0));
     this.fpRecordingsAvailableCount = this.initFpRecordingsAvailableCount();
@@ -1141,10 +1142,6 @@ export class MeetingsDashboardComponent {
       const attended = pastThisMonth.filter((m) => m.user_attended === true).length;
       return Math.round((attended / pastThisMonth.length) * 100);
     });
-  }
-
-  private initFpUpcomingCount(): Signal<number> {
-    return this.initFpCount(this.fpUpcomingCountLoading, (uid) => this.meetingService.getMeetingsCountByProject(uid, this.rollupQueryOptions()));
   }
 
   private initFpPastCount(): Signal<number> {
