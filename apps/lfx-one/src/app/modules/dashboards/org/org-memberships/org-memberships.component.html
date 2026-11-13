@@ -238,7 +238,7 @@
                             <a
                               [routerLink]="membership.membershipLink"
                               [attr.data-testid]="'memberships-active-row-link-' + membership.foundationSlug"
-                              [attr.aria-label]="membership.organization?.name + ' membership in ' + membership.foundationName"
+                              [attr.aria-label]="membership.companyLinkLabel"
                               class="font-medium text-blue-600 hover:underline">
                               {{ membership.organization?.name }}
                             </a>

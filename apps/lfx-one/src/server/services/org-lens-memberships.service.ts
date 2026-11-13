@@ -285,10 +285,6 @@ export class OrgLensMembershipsService {
     return row ? row.foundationSlug : null;
   }
 
-  /**
-   * Cards over the rows shown. Active counts each foundation once, however many organizations of the family hold it;
-   * Renewing counts each organization's membership; Governance Roles adds up every row's board and committee seats.
-   */
   private static familyMembershipsSummary(rows: readonly OrgLensMembershipSummaryRow[]): OrgMembershipsSummary {
     return {
       activeMemberships: new Set(rows.map((row) => row.FOUNDATION_ID)).size,
@@ -373,7 +369,6 @@ export class OrgLensMembershipsService {
     return result.rows;
   }
 
-  /** Every (organization, foundation) row of the family. */
   private async fetchFamilyActiveMembershipRows(familyAccountId: string): Promise<OrgLensMembershipSummaryRow[]> {
     const query = `
       SELECT

@@ -125,7 +125,6 @@ export class OrgLensMembershipsController {
     });
 
     try {
-      // A family roll-up has no Discover list, so a roll-up key is refused here like any non-SFID.
       assertOrgUid(orgUid, 'get_org_lens_memberships_discover');
 
       const response = await this.service.getDiscoverOpportunities(orgUid);

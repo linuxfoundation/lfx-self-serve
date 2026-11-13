@@ -41,12 +41,6 @@ import { foundationInitials, foundationLogoSquareClasses } from '../components/o
 import { environment } from '@environments/environment';
 import { MembershipProjectsDrawerComponent } from './components/membership-projects-drawer/membership-projects-drawer.component';
 
-/**
- * Active-membership row plus its detail-page router commands (`null` when the row carries no foundation slug). In a roll-up,
- * `groupStart` marks the first organization's line under each foundation, where the foundation's header row is drawn.
- */
-type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[] | null; groupStart: boolean };
-
 @Component({
   selector: 'lfx-org-memberships',
   standalone: true,
@@ -91,7 +85,6 @@ export class OrgMembershipsComponent {
     { id: 'discover' as const, label: 'Discover', icon: 'fa-light fa-magnifying-glass' },
   ];
 
-  /** A family roll-up has no Discover tab. */
   protected readonly tabs = computed(() => (this.isRollUp() ? this.allTabs.filter((tab) => tab.id !== 'discover') : this.allTabs));
 
   private readonly allTiers = signal<string[]>([]);
@@ -117,7 +110,7 @@ export class OrgMembershipsComponent {
 
   /** Org Projects side panel: the row whose count was clicked, and the panel's open state. */
   protected readonly projectsDrawerVisible = signal(false);
-  protected readonly activeProjectsRow = signal<ActiveMembershipLinkedRow | null>(null);
+  protected readonly activeProjectsRow = signal<ActiveMembershipRow | null>(null);
 
   protected readonly searchTerm = signal('');
   protected readonly selectedTier = signal('');
@@ -174,7 +167,7 @@ export class OrgMembershipsComponent {
 
   protected readonly activeData = toSignal<OrgActiveMembershipsResponse | null>(this.activeResponse$, { initialValue: null });
   protected readonly summary = computed(() => this.activeData()?.summary);
-  protected readonly memberships: Signal<ActiveMembershipLinkedRow[]> = computed(() => this.initMemberships());
+  protected readonly memberships: Signal<ActiveMembershipRow[]> = computed(() => this.initMemberships());
   protected readonly companyOptions: Signal<OrgDropdownOption[]> = computed(() => this.initCompanyOptions(this.activeData()?.organizations));
 
   protected readonly activeState: Signal<OrgMembershipsPageState> = computed(() => this.initActiveState());
@@ -251,7 +244,7 @@ export class OrgMembershipsComponent {
     }
   }
 
-  protected openProjectsDrawer(membership: ActiveMembershipLinkedRow): void {
+  protected openProjectsDrawer(membership: ActiveMembershipRow): void {
     this.activeProjectsRow.set(membership);
     this.projectsDrawerVisible.set(true);
   }
@@ -297,9 +290,8 @@ export class OrgMembershipsComponent {
     return this.orgLens.orgLensLink('memberships', membership.foundationSlug);
   }
 
-  private initMemberships(): ActiveMembershipLinkedRow[] {
+  private initMemberships(): ActiveMembershipRow[] {
     const memberships = this.activeData()?.memberships ?? [];
-    // A roll-up's table is grouped by foundation, so it keeps this order instead of letting the table sort it.
     const ordered = this.isRollUp()
       ? [...memberships].sort((a, b) => a.foundationName.localeCompare(b.foundationName) || a.foundationId.localeCompare(b.foundationId))
       : memberships;
@@ -308,6 +300,7 @@ export class OrgMembershipsComponent {
       // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
       membershipLink: this.membershipLink(m),
       groupStart: index === 0 || ordered[index - 1].foundationId !== m.foundationId,
+      companyLinkLabel: m.organization ? `${m.organization.name} membership in ${m.foundationName}` : null,
       initials: foundationInitials(m.foundationName),
       tierRange: `${this.formatDateShort(m.tierStartDate)} – ${this.formatDateShort(m.tierEndDate)}`,
       memberSinceFormatted: this.formatDateShort(m.memberSince),

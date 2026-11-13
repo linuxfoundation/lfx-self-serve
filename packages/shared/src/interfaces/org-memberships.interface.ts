@@ -431,6 +431,9 @@ export interface ActiveMembershipRow extends OrgActiveMembership {
   initials: string;
   tierRange: string;
   memberSinceFormatted: string;
+  membershipLink: string[] | null;
+  groupStart: boolean;
+  companyLinkLabel: string | null;
 }
 
 export interface ExpiredMembershipRow extends OrgExpiredMembership {
