@@ -3,10 +3,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, withCache } = vi.hoisted(() => ({
+const { execute, withCache, withFoundationCache } = vi.hoisted(() => ({
   execute: vi.fn(),
   // Pass-through: these tests cover the reads; the key only has to separate every query that reads different rows.
   withCache: vi.fn((_slug: string, _resource: string, _discriminator: unknown[], fetcher: () => Promise<unknown>) => fetcher()),
+  withFoundationCache: vi.fn((_slug: string, _discriminator: unknown[], fetcher: () => Promise<unknown>) => fetcher()),
 }));
 
 vi.mock('./snowflake.service', () => ({
@@ -16,7 +17,7 @@ vi.mock('./snowflake.service', () => ({
     }
   },
 }));
-vi.mock('./valkey.service', () => ({ withProjectParticipatingOrgsCache: withCache }));
+vi.mock('./valkey.service', () => ({ withProjectParticipatingOrgsCache: withCache, withFoundationParticipatingOrgsCache: withFoundationCache }));
 // `date-format.helper` reaches the `@lfx-one/shared/utils` barrel, which cannot load in this server-only runtime.
 vi.mock('../helpers/date-format.helper', () => ({ toIsoDate: (value: unknown) => (value ? String(value).slice(0, 10) : null) }));
 
@@ -64,6 +65,8 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       expect(companiesBinds).toEqual(['synthetic-foundation', '90d', 'synthetic-foundation', '90d']);
       expect(placeholders(companiesSql)).toBe(4);
       expect(companiesSql).toContain('project_id = foundation_id');
+      // A project with contributors but no commits still counts as one the company is involved in, as the breakdown lists it.
+      expect(companiesSql).toMatch(/project_id <> foundation_id\s+AND \(commits > 0 OR contributors > 0\)/);
       expect(companiesSql).toContain('PROJECT_PARTICIPATING_ORGS');
       const [projectsSql, projectsBinds] = execute.mock.calls[1];
       expect(projectsBinds).toEqual(['90d', 'synthetic-foundation']);
@@ -74,7 +77,7 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       expect(execute.mock.calls[0][2]).toEqual({ expectMissingObject: true });
       expect(execute.mock.calls[1][2]).toEqual({ expectMissingObject: true });
 
-      expect(withCache).toHaveBeenCalledWith('synthetic-foundation', 'foundation-lens', ['90d'], expect.any(Function), expect.any(Function));
+      expect(withFoundationCache).toHaveBeenCalledWith('synthetic-foundation', ['90d'], expect.any(Function), expect.any(Function));
       expect(foundation).toEqual({
         slug: 'synthetic-foundation',
         name: 'Synthetic Foundation',
@@ -169,10 +172,18 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       execute.mockResolvedValueOnce({ rows: [lineRow()] });
       await source.getProjectLines('synthetic-foundation', '12mo', { projectSlug: 'busy', companyKeys: ['a', 'b'], limit: 9 });
       const [sql, binds, options] = execute.mock.calls[0];
-      expect(binds).toEqual(['synthetic-foundation', '12mo', 'busy', '["a","b"]']);
+      expect(binds).toEqual(['["a","b"]', 'synthetic-foundation', '12mo', 'busy']);
       expect(placeholders(sql)).toBe(4);
       expect(options).toEqual({ expectMissingObject: true });
       expect(withCache).not.toHaveBeenCalled();
+    });
+
+    it("orders by the caller's company order, then commits, before the row limit, so a cap drops the lowest-ranked companies", async () => {
+      execute.mockResolvedValueOnce({ rows: [] });
+      await source.getProjectLines('synthetic-foundation', '12mo', { companyKeys: ['b', 'a'], limit: 9 });
+      const sql: string = execute.mock.calls[0][0];
+      expect(sql).toMatch(/JOIN TABLE\(FLATTEN\(input => PARSE_JSON\(\?\)\)\) k ON l\.participant_key = k\.value::varchar/);
+      expect(sql).toMatch(/ORDER BY k\.index ASC, l\.commits DESC, l\.project_slug ASC\s+LIMIT 9/);
     });
 
     it('clamps a limit to the export cap plus one', async () => {

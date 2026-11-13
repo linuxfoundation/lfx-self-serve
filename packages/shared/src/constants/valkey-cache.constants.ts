@@ -254,6 +254,11 @@ export const VALKEY_CACHE = {
    * production behaviour for every later test in the run.
    */
   MAX_VALUE_BYTES_BY_SUBRESOURCE: {
+    // ESTIMATED, not yet measured against the warehouse: one named-key JSON company object is about 330 bytes (key, account id,
+    // name, logo URL, tier, six figures), so the 9,000-company scale in the epic is about 3.0 MB plus a few hundred project rows;
+    // x 1.25 rounds up to 4 MiB. Re-measure the largest foundation on the dev build before the flag is enabled and replace this
+    // comment with the measured size and date. Without it every write above 1 MiB is skipped and every page re-reads both queries.
+    'project-participating-orgs-sf:v2:foundation-lens': 4 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,050,250
     // bytes for the largest org measured (down from 4,446,040 pre-compaction).
     // This roster compacts least of the five (×2.2) because its rows are mostly long values —

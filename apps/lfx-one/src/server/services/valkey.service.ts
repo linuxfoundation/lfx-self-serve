@@ -760,6 +760,23 @@ export function withProjectParticipatingOrgsCache<T>(
   );
 }
 
+/**
+ * Read-through helper for the Foundation Lens participating-companies roster, which sits in the same namespace as the
+ * per-project entries but names its sub-resource first (`...:foundation-lens:<slug>:<digest>`), so `MAX_VALUE_BYTES_BY_SUBRESOURCE`
+ * can size it: the whole foundation roster is larger than the 1 MiB default at the largest foundations.
+ */
+export function withFoundationParticipatingOrgsCache<T>(
+  foundationSlug: string,
+  discriminator: readonly (string | number)[],
+  fetcher: () => Promise<T>,
+  accept: (value: unknown) => boolean
+): Promise<T> {
+  const key = isFilterSafeIdentifier(foundationSlug)
+    ? `${keyPrefix()}:${VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_NAMESPACE}:foundation-lens:${foundationSlug}:${createHash('sha256').update(JSON.stringify(discriminator)).digest('hex').slice(0, 16)}`
+    : null;
+  return valkeyService.withCache(key, VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_TTL_SECONDS, fetcher, accept);
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,

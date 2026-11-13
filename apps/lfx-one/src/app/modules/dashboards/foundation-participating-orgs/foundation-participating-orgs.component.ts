@@ -481,7 +481,8 @@ export class FoundationParticipatingOrgsComponent {
     const summary = this.summary();
     // Nothing is claimed about the build date until a summary reports it.
     if (!summary) return '';
-    return `Data through ${formatIsoDateLabel(summary.asOfDate)} · Source: LFX Insights`;
+    // An unknown build date is left out, never replaced by today's: that would call possibly stale figures current.
+    return summary.asOfDate ? `Data through ${formatIsoDateLabel(summary.asOfDate)} · Source: LFX Insights` : 'Source: LFX Insights';
   }
 
   /** A 403 on either read is the viewer lacking access to the foundation; any other failure (503 included) is retryable. */

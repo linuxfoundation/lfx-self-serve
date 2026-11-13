@@ -132,6 +132,11 @@ describe('FoundationParticipatingOrgsService', () => {
     expect(summary).not.toHaveProperty('dataSource');
   });
 
+  it('keeps an unknown build date unknown instead of claiming today', async () => {
+    getFoundation.mockResolvedValueOnce({ ...FOUNDATION, asOfDate: null });
+    expect((await service.getSummary(req, { foundationSlug: SLUG, range: '12mo' }))?.asOfDate).toBeNull();
+  });
+
   it('answers the empty state when no company has activity, and for a foundation the warehouse does not know', async () => {
     getFoundation.mockResolvedValueOnce({ ...FOUNDATION, companies: [company('idle', { isMember: true, tier: 'Silver' })] });
     expect(await service.getSummary(req, { foundationSlug: SLUG, range: '12mo' })).toBeNull();

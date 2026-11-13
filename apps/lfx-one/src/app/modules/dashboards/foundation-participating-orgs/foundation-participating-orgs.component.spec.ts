@@ -310,6 +310,12 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(tiles.map((tile) => tile.subLineClass)).toEqual(Array(4).fill(FOUNDATION_PARTICIPATING_ORGS_STAT_SUBLINE_CLASS));
   });
 
+  it('names the source without a date when the warehouse reports no build date', async () => {
+    getSummary.mockReturnValue(of({ summary: summary({ asOfDate: null }) }));
+    await render();
+    expect(text('foundation-participating-orgs-data-line')).toBe('Source: LFX Insights');
+  });
+
   it('says nothing about the data source until a summary arrives', async () => {
     getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
     await render();

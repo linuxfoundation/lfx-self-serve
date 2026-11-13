@@ -18,7 +18,7 @@ import type {
 import { toIsoDate } from '../helpers/date-format.helper';
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
 import { SnowflakeService } from './snowflake.service';
-import { withProjectParticipatingOrgsCache } from './valkey.service';
+import { withFoundationParticipatingOrgsCache, withProjectParticipatingOrgsCache } from './valkey.service';
 
 /**
  * Reads Foundation Lens → Participating Companies from the lf-dbt `PROJECT_PARTICIPATING_ORGS` table the project page uses.
@@ -36,9 +36,8 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
 
   public async getFoundation(slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null> {
     // Wrapped so a foundation with no rows is a cache hit too.
-    const entry = await withProjectParticipatingOrgsCache(
+    const entry = await withFoundationParticipatingOrgsCache(
       slug,
-      'foundation-lens',
       [range],
       async () => ({ foundation: await this.fetchFoundation(slug, range) }),
       isFoundationEntry
@@ -86,7 +85,7 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
         WHERE foundation_slug = ?
           AND time_range = ?
           AND project_id <> foundation_id
-          AND commits > 0
+          AND (commits > 0 OR contributors > 0)
         GROUP BY participant_key
       )
       SELECT f.*, COALESCE(i.projects_involved, 0) AS projects_involved
@@ -138,35 +137,37 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     range: FoundationParticipatingOrgsRange,
     filter: FoundationParticipatingOrgsSourceLineFilter
   ): Promise<FoundationParticipatingOrgsSourceProjectLine[]> {
-    const binds: string[] = [slug, range];
+    const predicateBinds: string[] = [];
     const predicates: string[] = [];
     if (filter.projectSlug) {
-      predicates.push('AND project_slug = ?');
-      binds.push(filter.projectSlug);
+      predicates.push('AND l.project_slug = ?');
+      predicateBinds.push(filter.projectSlug);
     }
     if (filter.companyKey) {
-      predicates.push('AND participant_key = ?');
-      binds.push(filter.companyKey);
+      predicates.push('AND l.participant_key = ?');
+      predicateBinds.push(filter.companyKey);
     }
-    if (filter.companyKeys) {
-      // One JSON bind, however many companies, matched through FLATTEN.
-      predicates.push('AND participant_key IN (SELECT value::varchar FROM TABLE(FLATTEN(input => PARSE_JSON(?))))');
-      binds.push(JSON.stringify(filter.companyKeys));
-    }
+    // The given companies arrive in the order the caller ranked them. One JSON bind, however many companies, joined through
+    // FLATTEN so the rows come back in that order and a row limit drops the lowest-ranked companies' lines first.
+    const join = filter.companyKeys ? 'JOIN TABLE(FLATTEN(input => PARSE_JSON(?))) k ON l.participant_key = k.value::varchar' : '';
+    const joinBinds = filter.companyKeys ? [JSON.stringify(filter.companyKeys)] : [];
+    const order = filter.companyKeys ? 'k.index ASC, l.commits DESC, l.project_slug ASC' : 'l.participant_key ASC, l.commits DESC, l.project_slug ASC';
     // Inlined, not bound: clamped to a positive integer first.
     const limit = filter.limit ? `LIMIT ${Math.max(1, Math.min(Math.floor(filter.limit), FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1))}` : '';
     const sql = `
-      SELECT participant_key, project_slug, commits, commits_change, contributors, contributors_change
-      FROM ${tableName()}
-      WHERE foundation_slug = ?
-        AND time_range = ?
-        AND project_id <> foundation_id
-        AND participant_key IS NOT NULL
-        AND (commits > 0 OR contributors > 0)
+      SELECT l.participant_key, l.project_slug, l.commits, l.commits_change, l.contributors, l.contributors_change
+      FROM ${tableName()} l
+      ${join}
+      WHERE l.foundation_slug = ?
+        AND l.time_range = ?
+        AND l.project_id <> l.foundation_id
+        AND l.participant_key IS NOT NULL
+        AND (l.commits > 0 OR l.contributors > 0)
         ${predicates.join('\n        ')}
-      ORDER BY participant_key ASC, project_slug ASC
+      ORDER BY ${order}
       ${limit}
     `;
+    const binds = [...joinBinds, slug, range, ...predicateBinds];
     const result = await this.execute<FoundationParticipatingOrgsLineRow>(sql, binds);
     return result.rows
       .filter((row) => !!row.PARTICIPANT_KEY && !!row.PROJECT_SLUG)

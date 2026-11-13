@@ -48,8 +48,8 @@ export interface FoundationParticipatingOrgsSummary {
   projectSlug: string | null;
   projectName: string | null;
   range: FoundationParticipatingOrgsRange;
-  /** Build date of the warehouse tables the figures come from (ISO `YYYY-MM-DD`). */
-  asOfDate: string;
+  /** Build date of the warehouse tables the figures come from (ISO `YYYY-MM-DD`); null when the warehouse does not report one. */
+  asOfDate: string | null;
   /** Companies with activity in the range that match the search and tier filters (the All tab). */
   companiesCount: number;
   /** Tier classes the foundation's roster actually holds (unfiltered), in display order; the tier picker offers these only. */
