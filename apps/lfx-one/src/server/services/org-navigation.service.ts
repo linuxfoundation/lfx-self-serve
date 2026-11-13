@@ -61,8 +61,9 @@ export class OrgNavigationService {
 
     if (params.claOnly) {
       // Inline on the main list for a caller who holds nothing, so nothing is deferred to answer here.
+      // A roster this request could not confirm is an unchecked list, not an empty one.
       if (pageToken || claOnlyEntry || !claOnlyListApplies(access.isStaff, rosterAnswered)) {
-        return { items: [], next_page_token: null, upstream_failed: false, total: 0 };
+        return { items: [], next_page_token: null, upstream_failed: !rosterAnswered, total: 0 };
       }
       return this.getDeferredClaOnlyItems(req, new Set(access.resolved.keys()));
     }

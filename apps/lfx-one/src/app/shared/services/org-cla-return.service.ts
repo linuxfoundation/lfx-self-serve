@@ -4,7 +4,7 @@
 import { computed, inject, Injectable, Injector, Signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { Account, OrgItem } from '@lfx-one/shared/interfaces';
-import { combineLatest, filter, map, Observable, of, shareReplay, skip, switchMap, take, timeout } from 'rxjs';
+import { combineLatest, filter, map, Observable, of, shareReplay, switchMap, take, timeout } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgNavigationService } from './org-navigation.service';
@@ -100,11 +100,13 @@ export class OrgClaReturnService {
   /**
    * Resolves the named organization against the access-aware catalogue, or null.
    *
-   * Two-pass: wait until the catalogue has loaded, or until no-access is a settled miss — a
+   * Two-pass: wait until the catalogue has loaded with its CLA-only rows (M3: a grant holder's
+   * arrive on a second request, after `loaded`), or until no-access is a settled miss — a
    * no-access viewer never boots the catalogue, so waiting on `loaded` would hang. An immediate
    * match is returned as-is. Only when the named organization is absent does this pin and reload
-   * (`resetAndReload`), then skip the current emission and wait for the next loaded one before
-   * matching again. Dropping `skip(1)` would re-match the stale pre-reload list and treat a
+   * (`resetAndReload`), then wait for the reload's own first page and its CLA-only rows before
+   * matching again. `loaded` stays true across a reload and the reload clears the CLA-only rows at
+   * once, so waiting on either alone would re-match the stale pre-reload list and treat a
    * not-yet-listed organization as a miss. That second wait is bounded: a reload that never
    * re-emits resolves to null rather than leaving adopt() pending. The first wait for a loaded
    * catalogue or a settled no-access answer is not this bound.
@@ -116,19 +118,21 @@ export class OrgClaReturnService {
     // is passed rather than relying on an ambient injection context.
     const items$ = toObservable(this.orgNavigation.items, { injector: this.injector });
     const loaded$ = toObservable(this.orgNavigation.loaded, { injector: this.injector });
+    const claOnlyPending$ = toObservable(this.orgNavigation.claOnlyPending, { injector: this.injector });
+    const landedGeneration$ = toObservable(this.orgNavigation.firstPageLandedGeneration, { injector: this.injector });
     const noAccess$ = toObservable(this.hasNoOrgAccess, { injector: this.injector });
 
-    return combineLatest([items$, loaded$, noAccess$]).pipe(
-      filter(([, loaded, noAccess]) => noAccess || loaded),
+    return combineLatest([items$, loaded$, claOnlyPending$, noAccess$]).pipe(
+      filter(([, loaded, claOnlyPending, noAccess]) => noAccess || (loaded && !claOnlyPending)),
       take(1),
-      switchMap(([items, , noAccess]) => {
+      switchMap(([items, , , noAccess]) => {
         if (noAccess) return of(null);
         const immediate = this.catalogueAccountNamed(items, named);
         if (immediate) return of(immediate);
         this.orgNavigation.resetAndReload(named);
-        return combineLatest([items$, loaded$]).pipe(
-          skip(1),
-          filter(([, loaded]) => loaded),
+        const reloadGeneration = this.orgNavigation.generation();
+        return combineLatest([items$, landedGeneration$, claOnlyPending$]).pipe(
+          filter(([, landedGeneration, claOnlyPending]) => landedGeneration >= reloadGeneration && !claOnlyPending),
           map(([current]) => this.catalogueAccountNamed(current, named)),
           take(1),
           timeout({ first: OrgClaReturnService.catalogueReloadTimeoutMs, with: () => of(null) })

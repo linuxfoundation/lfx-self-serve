@@ -260,16 +260,17 @@ describe('OrgNavigationService — CLA-only organizations', () => {
       });
 
       it.each([
-        ['the roll-up is degraded', { degraded: true }],
-        ['the staff check failed', { staffCheck: 'failed' }],
-        ['the caller is staff', { isStaff: true }],
-      ])('answers an empty list without asking when %s', async (_label, overrides) => {
+        ['the roster never loaded', { upstreamFailed: true }, true],
+        ['the roll-up is degraded', { degraded: true }, true],
+        ['the staff check failed', { staffCheck: 'failed' }, true],
+        ['the caller is staff', { isStaff: true }, false],
+      ])('answers an empty list without asking when %s, reporting whether the list went unchecked', async (_label, overrides, upstreamFailed) => {
         holds(overrides);
 
         const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true });
 
         expect(listClaOnlyOrgs).not.toHaveBeenCalled();
-        expect(response).toEqual({ items: [], next_page_token: null, upstream_failed: false, total: 0 });
+        expect(response).toEqual({ items: [], next_page_token: null, upstream_failed: upstreamFailed, total: 0 });
       });
     });
 

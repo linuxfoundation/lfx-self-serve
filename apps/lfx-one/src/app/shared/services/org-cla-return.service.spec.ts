@@ -18,14 +18,31 @@ describe('OrgClaReturnService', () => {
 
   let items: ReturnType<typeof signal>;
   let loaded: ReturnType<typeof signal<boolean>>;
+  let claOnlyPending: ReturnType<typeof signal<boolean>>;
+  let generation: ReturnType<typeof signal<number>>;
+  let firstPageLandedGeneration: ReturnType<typeof signal<number>>;
   let resetAndReload: ReturnType<typeof vi.fn>;
   let adoptFromAddress: ReturnType<typeof vi.fn>;
   let service: OrgClaReturnService;
 
+  /** A reload's first page landing, as the real service reports it. */
+  const landReload = (rows: ReturnType<typeof catalogueItem>[], claOnlyRowsPending = false): void => {
+    items.set(rows);
+    claOnlyPending.set(claOnlyRowsPending);
+    firstPageLandedGeneration.set(generation());
+  };
+
   beforeEach(() => {
     items = signal([catalogueItem(ELSEWHERE)]);
     loaded = signal(true);
-    resetAndReload = vi.fn();
+    claOnlyPending = signal(false);
+    generation = signal(1);
+    firstPageLandedGeneration = signal(1);
+    // Like the real service: the reload starts a new generation and clears the CLA-only rows at once.
+    resetAndReload = vi.fn(() => {
+      generation.update((g) => g + 1);
+      claOnlyPending.set(false);
+    });
     adoptFromAddress = vi.fn();
 
     TestBed.configureTestingModule({
@@ -39,7 +56,7 @@ describe('OrgClaReturnService', () => {
             refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
           },
         },
-        { provide: OrgNavigationService, useValue: { items, loaded, resetAndReload } },
+        { provide: OrgNavigationService, useValue: { items, loaded, claOnlyPending, generation, firstPageLandedGeneration, resetAndReload } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       ],
@@ -66,7 +83,8 @@ describe('OrgClaReturnService', () => {
 
   it('selects the named organization when the pin reload answers in time', async () => {
     resetAndReload.mockImplementation(() => {
-      items.set([catalogueItem(ELSEWHERE), catalogueItem(NAMED)]);
+      generation.update((g) => g + 1);
+      landReload([catalogueItem(ELSEWHERE), catalogueItem(NAMED)]);
     });
 
     const match = await firstValueFrom(service.adopt(NAMED.uid));
@@ -83,6 +101,39 @@ describe('OrgClaReturnService', () => {
 
     expect(resetAndReload).not.toHaveBeenCalled();
     expect(match?.uid).toBe(NAMED.uid);
+  });
+
+  it('waits for the CLA-only rows before treating the name as missing', async () => {
+    vi.useFakeTimers();
+    claOnlyPending.set(true);
+
+    const result = firstValueFrom(service.organizationNamed(NAMED.uid));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resetAndReload).not.toHaveBeenCalled();
+
+    items.set([catalogueItem(ELSEWHERE), catalogueItem(NAMED)]);
+    claOnlyPending.set(false);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(result).resolves.toEqual(expect.objectContaining({ uid: NAMED.uid }));
+    expect(resetAndReload).not.toHaveBeenCalled();
+  });
+
+  it('matches a CLA-only row that arrives after the pin reload lands its held page', async () => {
+    vi.useFakeTimers();
+
+    const result = firstValueFrom(service.organizationNamed(NAMED.uid));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
+
+    landReload([catalogueItem(ELSEWHERE)], true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    items.set([catalogueItem(ELSEWHERE), catalogueItem(NAMED)]);
+    claOnlyPending.set(false);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(result).resolves.toEqual(expect.objectContaining({ uid: NAMED.uid }));
   });
 });
 

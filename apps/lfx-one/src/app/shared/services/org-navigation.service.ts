@@ -326,11 +326,12 @@ export class OrgNavigationService {
       tap(clearLoadingIfActive),
       catchError(() => {
         // Reset failures emit an empty page so handleEmptyOrgResponse can redirect;
-        // scroll-triggered failures stay silent (just lose the spinner).
+        // scroll-triggered failures stay silent (just lose the spinner). The term is kept so the
+        // CLA-only rows stay filtered by the search that failed.
         clearLoadingIfActive();
         if (reset) {
           return of({
-            page: { items: [], nextPageToken: null, upstreamFailed: true, reset: true },
+            page: { items: [], nextPageToken: null, upstreamFailed: true, reset: true, term: term.trim() },
             generation: pageGeneration,
           } satisfies TaggedOrgListPage);
         }

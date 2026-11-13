@@ -643,6 +643,25 @@ describe('OrgNavigationService default selection', () => {
       }
     });
 
+    it('keeps the CLA-only rows filtered by a search whose request failed', async () => {
+      vi.useFakeTimers();
+      try {
+        bootstrapHinted([item(UID_A, 'Acme')]);
+        flushClaOnly([claOnlyRow(UID_C, 'Gamma Labs'), claOnlyRow(UID_B, 'Beta Labs')]);
+
+        service.setSearchTerm(' gam ');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(1000);
+        http.expectOne(isMainRequest).flush('down', { status: 502, statusText: 'Bad Gateway' });
+        TestBed.tick();
+
+        expect(service.items().map((row) => row.uid)).toEqual([UID_C]);
+        expect(service.upstreamFailed()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('lists a held organization once, as held, when the CLA-only answer also names it', () => {
       bootstrapHinted([item(UID_B, 'Beta'), item(UID_A, 'Acme')]);
       flushClaOnly([claOnlyRow(UID_A, 'Acme'), claOnlyRow(UID_C, 'Gamma')]);
