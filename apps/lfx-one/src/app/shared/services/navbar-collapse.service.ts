@@ -45,7 +45,7 @@ export class NavbarCollapseService {
   public readonly touch = this.touchDevice.asReadonly();
   /** The panel is open over the page from the rail. */
   public readonly peek = this.peeking.asReadonly();
-  /** The peek is pinned (a narrow viewport's toggle, or a touch device): it ignores the pointer leaving and closes on an outside click. */
+  /** The peek is pinned (a touch device, which has no pointer to leave it): it ignores the pointer leaving. */
   public readonly peekPinned = this.peekPinnedState.asReadonly();
   /** The rail shrinks back from a peek: the panel keeps its overlay positioning until the morph ends. */
   public readonly peekOut = this.peekClosing.asReadonly();

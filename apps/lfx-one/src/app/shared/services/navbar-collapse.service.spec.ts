@@ -98,6 +98,7 @@ describe('NavbarCollapseService', () => {
 
   it('starts docked open in a new session, ignoring and clearing a preference left in localStorage', () => {
     localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'navigate' } as PerformanceNavigationTiming]);
     const service = setup();
 
     service.init();
