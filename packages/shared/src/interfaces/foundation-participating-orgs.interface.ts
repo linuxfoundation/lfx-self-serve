@@ -57,6 +57,8 @@ export interface FoundationParticipatingOrgsSummary {
   asOfDate: string;
   /** Companies with activity in the range that match the search and tier filters (the All tab). */
   companiesCount: number;
+  /** Tier classes the foundation's roster actually holds (unfiltered), in display order; the tier picker offers these only. */
+  availableTiers: MembershipTierClass[];
   /** The full membership roster matching the search and tier filters, contributing or not. */
   membersCount: number;
   /** Matching members with activity in the range (the Members tab). */

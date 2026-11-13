@@ -73,6 +73,7 @@ export class FoundationParticipatingOrgsService {
       projectName: project?.name ?? null,
       range,
       asOfDate: new Date().toISOString().slice(0, 10),
+      availableTiers: MEMBERSHIP_TIER_ORDER.filter((tier) => foundation.companies.some((company) => company.tier === tier)),
       companiesCount: matching.length,
       membersCount: foundation.companies.filter((company) => company.tier !== null && matches({ name: company.name, membershipTierClass: company.tier }, query))
         .length,

@@ -78,6 +78,11 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
     expect(none?.companiesCount).toBe(0);
   });
 
+  it('lists only the tiers the roster holds, in display order', () => {
+    const tiers = service.getSummary(req, { foundationSlug: SLUG, range: '12mo' })?.availableTiers;
+    expect(tiers).toEqual(['Platinum', 'Gold', 'Silver']);
+  });
+
   it('marks the figures as demo data', () => {
     expect(service.getSummary(req, { foundationSlug: SLUG, range: '12mo' })?.dataSource).toBe('demo');
   });

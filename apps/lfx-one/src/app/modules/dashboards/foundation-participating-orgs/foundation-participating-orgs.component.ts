@@ -27,7 +27,6 @@ import {
   FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS,
   FOUNDATION_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS,
   FOUNDATION_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
-  MEMBERSHIP_TIER_ORDER,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR,
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
@@ -95,7 +94,6 @@ export class FoundationParticipatingOrgsComponent {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly rangeOptions = [...FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS];
-  protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
   protected readonly maxSearchLength = FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH;
   protected readonly commitShareTooltip = FOUNDATION_PARTICIPATING_ORGS_COMMIT_SHARE_TOOLTIP;
 
@@ -181,6 +179,11 @@ export class FoundationParticipatingOrgsComponent {
   protected readonly foundationName = computed(() => this.summary()?.foundationName ?? this.foundation()?.name ?? 'this foundation');
   protected readonly dataLine = computed(() => this.initDataLine());
   protected readonly subtitle = computed(() => this.initSubtitle());
+  /** Tier classes the foundation holds, from its roster; the last known list stays while a new summary loads. */
+  protected readonly tierOptions = linkedSignal<FoundationParticipatingOrgsSummary | null, { label: MembershipTierClass; value: MembershipTierClass }[]>({
+    source: () => this.summary(),
+    computation: (summary, previous) => (summary ? summary.availableTiers.map((tier) => ({ label: tier, value: tier })) : (previous?.value ?? [])),
+  });
   protected readonly tiles: Signal<StatCardItem[]> = computed(() => this.initTiles());
   protected readonly tabs: Signal<FilterPillOption[]> = computed(() => this.initTabs());
   protected readonly exportMenu: Signal<MenuItem[]> = computed(() => this.initExportMenu());
@@ -391,6 +394,8 @@ export class FoundationParticipatingOrgsComponent {
             this.breakdownScope = `${query.foundationSlug}|${query.range}`;
             this.breakdowns.set({});
             this.expanded.set(new Set());
+            // The filter text belongs to the cache just dropped, so the controls go with it.
+            this.clearBreakdownFilters();
           }
         }),
         switchMap(([query]) =>
@@ -432,7 +437,8 @@ export class FoundationParticipatingOrgsComponent {
   /** Demo figures are named as such and dated by generation; only warehouse figures claim LFX Insights as their source. */
   private initDataLine(): string {
     const summary = this.summary();
-    if (!summary) return 'Source: LFX Insights';
+    // Nothing is claimed about the source until a summary says what the figures are.
+    if (!summary) return '';
     const date = formatDate(summary.asOfDate);
     return summary.dataSource === 'demo' ? `Fictional demo data, generated ${date} · not from LFX Insights` : `Data through ${date} · Source: LFX Insights`;
   }
@@ -549,6 +555,12 @@ export class FoundationParticipatingOrgsComponent {
           if (slug === this.slug() && range === this.range()) this.patchBreakdown(key, { status: 'error' });
         },
       });
+  }
+
+  /** Drops every per-company filter control without emitting, so no stale value reaches the cache being rebuilt. */
+  private clearBreakdownFilters(): void {
+    const form: FormGroup = this.breakdownFilterForm;
+    Object.keys(form.controls).forEach((key) => form.removeControl(key, { emitEvent: false }));
   }
 
   private ensureBreakdownFilter(key: string): void {

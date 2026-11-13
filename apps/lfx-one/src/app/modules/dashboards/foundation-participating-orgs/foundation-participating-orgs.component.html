@@ -8,7 +8,9 @@
     [description]="subtitle()"
     titleTestId="foundation-participating-orgs-title"
     descriptionTestId="foundation-participating-orgs-subtitle">
-    <span pageHeaderDescription class="text-xs" data-testid="foundation-participating-orgs-data-line">{{ dataLine() }}</span>
+    @if (dataLine()) {
+      <span pageHeaderDescription class="text-xs" data-testid="foundation-participating-orgs-data-line">{{ dataLine() }}</span>
+    }
   </lfx-page-header>
 
   @switch (viewState()) {
@@ -119,7 +121,7 @@
               [form]="filterForm"
               control="tier"
               size="small"
-              [options]="tierOptions"
+              [options]="tierOptions()"
               placeholder="All Tiers"
               [showClear]="true"
               styleClass="w-full"

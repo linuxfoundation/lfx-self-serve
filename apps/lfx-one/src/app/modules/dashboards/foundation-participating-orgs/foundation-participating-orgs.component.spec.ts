@@ -40,6 +40,7 @@ function summary(overrides: Partial<FoundationParticipatingOrgsSummary> = {}): F
     projectName: null,
     range: '12mo',
     asOfDate: '2026-10-15',
+    availableTiers: ['Platinum', 'Gold'],
     companiesCount: 5,
     membersCount: 9,
     contributingMembersCount: 3,
@@ -185,6 +186,27 @@ describe('FoundationParticipatingOrgsComponent', () => {
     pending.next(breakdown());
     await settle();
     expect(fixture.componentInstance['breakdowns']()[KEY]?.data ?? null).toBeNull();
+  });
+
+  it('offers only the tiers the foundation holds', async () => {
+    await render();
+    expect(fixture.componentInstance['tierOptions']().map((option) => option.value)).toEqual(['Platinum', 'Gold']);
+  });
+
+  it('clears the breakdown filter text along with the cache when the range changes', async () => {
+    await render();
+    query(`foundation-participating-orgs-row-${KEY}-toggle`)?.click();
+    await settle();
+    fixture.componentInstance['breakdownFilterForm'].controls[KEY].setValue('project 3');
+    fixture.componentInstance['filterForm'].controls.range.setValue('90d');
+    await settle();
+    expect(fixture.componentInstance['breakdownFilterForm'].contains(KEY)).toBe(false);
+  });
+
+  it('says nothing about the data source until a summary arrives', async () => {
+    getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
+    await render();
+    expect(query('foundation-participating-orgs-data-line')).toBeNull();
   });
 
   it('drops the project scope when the foundation changes', async () => {
