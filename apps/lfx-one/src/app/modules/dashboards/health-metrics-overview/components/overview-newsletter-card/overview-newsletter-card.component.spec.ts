@@ -176,6 +176,30 @@ describe('OverviewNewsletterCardComponent', () => {
     }
   });
 
+  it('places an open popover again when the window resizes, so it never keeps a side that no longer fits', async () => {
+    await render();
+    const column = query('overview-newsletter-column-n1') as HTMLElement;
+    const at = (viewport: number, point: number) => {
+      Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: viewport });
+      column.getBoundingClientRect = () => ({ left: point, width: 40 }) as DOMRect;
+    };
+
+    try {
+      at(1200, 300);
+      column.dispatchEvent(new Event('focus'));
+      fixture.detectChanges();
+      expect(query('overview-newsletter-tip-n1')?.style.left).toBe('calc(0% + 12px)');
+
+      // Narrowed to 375px with the points at 187px: no side fits, so it shifts to 375 − 8 − 280 = 87px.
+      at(375, 187);
+      window.dispatchEvent(new Event('resize'));
+      fixture.detectChanges();
+      expect(query('overview-newsletter-tip-n1')?.style.left).toBe('calc(0% - 100px)');
+    } finally {
+      Reflect.deleteProperty(document.documentElement, 'clientWidth');
+    }
+  });
+
   it('cuts the end columns off at the plot, keeping the hairline and points on the newsletter', async () => {
     await render();
 

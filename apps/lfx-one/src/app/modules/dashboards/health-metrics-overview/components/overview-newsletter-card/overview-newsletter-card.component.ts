@@ -40,7 +40,8 @@ import type {
   imports: [HealthMetricsChartTipComponent, OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
   templateUrl: './overview-newsletter-card.component.html',
   // Escape closes a popover however it opened, since hovering a column doesn't focus it.
-  host: { class: 'flex min-w-0 flex-col', '(document:keydown.escape)': 'dismissTips()' },
+  // A resize or zoom re-places an open popover, so it never keeps a side the screen no longer has room for.
+  host: { class: 'flex min-w-0 flex-col', '(document:keydown.escape)': 'dismissTips()', '(window:resize)': 'replaceTips()' },
 })
 export class OverviewNewsletterCardComponent {
   private readonly analyticsService = inject(AnalyticsService);
@@ -59,6 +60,9 @@ export class OverviewNewsletterCardComponent {
   /** Hover and focus open a popover separately, and it stays while either remains (WCAG 1.4.13); hover shows over focus. */
   private readonly hoverTip = signal<HealthMetricsOverviewChartTipPlacement | null>(null);
   private readonly focusTip = signal<HealthMetricsOverviewChartTipPlacement | null>(null);
+  /** The column each open popover belongs to, kept so a resize can place it again. */
+  private hoverAnchor: { index: number; column: HTMLElement; pointOffsetPct: string } | null = null;
+  private focusAnchor: { index: number; column: HTMLElement; pointOffsetPct: string } | null = null;
   protected readonly tip = computed(() => this.hoverTip() ?? this.focusTip());
   protected readonly openTipIndex = computed(() => this.tip()?.index ?? null);
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewNewsletters({ foundationSlug }));
@@ -78,24 +82,37 @@ export class OverviewNewsletterCardComponent {
   protected readonly ticks: Signal<HealthMetricsOverviewNewsletterTickView[]> = this.initTicks();
 
   protected onColumnHover(index: number, event: Event, pointOffsetPct: string): void {
-    this.hoverTip.set(this.placeTip(index, event, pointOffsetPct));
+    this.hoverAnchor = { index, column: event.currentTarget as HTMLElement, pointOffsetPct };
+    this.hoverTip.set(this.placeTip(this.hoverAnchor));
   }
 
   protected onColumnFocus(index: number, event: Event, pointOffsetPct: string): void {
-    this.focusTip.set(this.placeTip(index, event, pointOffsetPct));
+    this.focusAnchor = { index, column: event.currentTarget as HTMLElement, pointOffsetPct };
+    this.focusTip.set(this.placeTip(this.focusAnchor));
   }
 
   protected onColumnLeave(index: number): void {
-    if (this.hoverTip()?.index === index) this.hoverTip.set(null);
+    if (this.hoverAnchor?.index !== index) return;
+    this.hoverAnchor = null;
+    this.hoverTip.set(null);
   }
 
   protected onColumnBlur(index: number): void {
-    if (this.focusTip()?.index === index) this.focusTip.set(null);
+    if (this.focusAnchor?.index !== index) return;
+    this.focusAnchor = null;
+    this.focusTip.set(null);
   }
 
   protected dismissTips(): void {
+    this.hoverAnchor = null;
+    this.focusAnchor = null;
     this.hoverTip.set(null);
     this.focusTip.set(null);
+  }
+
+  protected replaceTips(): void {
+    if (this.hoverAnchor) this.hoverTip.set(this.placeTip(this.hoverAnchor));
+    if (this.focusAnchor) this.focusTip.set(this.placeTip(this.focusAnchor));
   }
 
   /** Watches the plot's width while it is on the page; the server never measures it. */
@@ -136,8 +153,16 @@ export class OverviewNewsletterCardComponent {
    * Opens a newsletter's popover on the right of its points, or on the left when only the left has room; a screen with
    * room on neither side shifts it to stay inside the screen.
    */
-  private placeTip(index: number, event: Event, pointOffsetPct: string): HealthMetricsOverviewChartTipPlacement {
-    const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  private placeTip({
+    index,
+    column: element,
+    pointOffsetPct,
+  }: {
+    index: number;
+    column: HTMLElement;
+    pointOffsetPct: string;
+  }): HealthMetricsOverviewChartTipPlacement {
+    const column = element.getBoundingClientRect();
     const offset = Number(pointOffsetPct);
     const point = column.left + (column.width * offset) / 100;
     const viewport = document.documentElement.clientWidth;
