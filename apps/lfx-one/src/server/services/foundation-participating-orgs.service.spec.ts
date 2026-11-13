@@ -120,6 +120,19 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
     }
   });
 
+  it('keeps companies with no tier or no comparison last in both sort directions', () => {
+    for (const dir of ['asc', 'desc'] as const) {
+      const byTier = service.getPage(req, { ...base, sort: 'tier', dir }).rows;
+      const firstNonMember = byTier.findIndex((row) => !row.isMember);
+      expect(byTier.slice(firstNonMember).every((row) => !row.isMember)).toBe(true);
+      const allTime = service.getPage(req, { ...base, range: 'all', sort: 'commits_change', dir }).rows;
+      expect(allTime.length).toBeGreaterThan(0);
+      const byChange = service.getPage(req, { ...base, sort: 'commits_change', dir }).rows;
+      const firstMissing = byChange.findIndex((row) => row.commitsChange === null);
+      if (firstMissing !== -1) expect(byChange.slice(firstMissing).every((row) => row.commitsChange === null)).toBe(true);
+    }
+  });
+
   it('is deterministic for a foundation', () => {
     expect(service.getPage(req, base)).toEqual(service.getPage(req, base));
   });

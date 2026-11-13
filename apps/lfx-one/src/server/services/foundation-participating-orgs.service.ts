@@ -130,7 +130,14 @@ export class FoundationParticipatingOrgsService {
       if (filters.segment === 'non_members' && row.isMember) return false;
       return matches(row, filters);
     });
-    return items.sort((a, b) => compare(a.row, b.row, filters.sort) * (filters.dir === 'asc' ? 1 : -1) || a.row.name.localeCompare(b.row.name));
+    const direction = filters.dir === 'asc' ? 1 : -1;
+    return items.sort((a, b) => {
+      // A missing comparison or tier goes last in both directions; the direction only orders the values that exist.
+      const missingA = isMissing(a.row, filters.sort);
+      const missingB = isMissing(b.row, filters.sort);
+      if (missingA !== missingB) return missingA ? 1 : -1;
+      return (missingA ? 0 : compare(a.row, b.row, filters.sort) * direction) || a.row.name.localeCompare(b.row.name);
+    });
   }
 
   private resolveProject(foundation: FoundationParticipatingOrgsSourceFoundation, projectSlug?: string): { slug: string; name: string } | null {
@@ -218,6 +225,20 @@ function matches(
   return !search || row.name.toLowerCase().includes(search);
 }
 
+/** No % change to compare (All Time, or a project without one), or no membership tier (a non-member). */
+function isMissing(row: FoundationParticipatingOrg, field: FoundationParticipatingOrgsQuery['sort']): boolean {
+  switch (field) {
+    case 'commits_change':
+      return row.commitsChange === null;
+    case 'contributors_change':
+      return row.contributorsChange === null;
+    case 'tier':
+      return row.membershipTierClass === null;
+    default:
+      return false;
+  }
+}
+
 function compare(a: FoundationParticipatingOrg, b: FoundationParticipatingOrg, field: FoundationParticipatingOrgsQuery['sort']): number {
   switch (field) {
     case 'name':
@@ -227,11 +248,11 @@ function compare(a: FoundationParticipatingOrg, b: FoundationParticipatingOrg, f
     case 'commits':
       return a.commits - b.commits;
     case 'commits_change':
-      return (a.commitsChange ?? -Infinity) - (b.commitsChange ?? -Infinity);
+      return (a.commitsChange ?? 0) - (b.commitsChange ?? 0);
     case 'contributors':
       return a.contributors - b.contributors;
     case 'contributors_change':
-      return (a.contributorsChange ?? -Infinity) - (b.contributorsChange ?? -Infinity);
+      return (a.contributorsChange ?? 0) - (b.contributorsChange ?? 0);
   }
 }
 
