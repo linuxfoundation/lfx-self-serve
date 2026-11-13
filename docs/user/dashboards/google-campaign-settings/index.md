@@ -37,7 +37,7 @@ tags:
     implement,
     registration url,
   ]
-last_updated: 2026-11-11
+last_updated: 2026-11-13
 intercom_collection: Dashboards
 ---
 
@@ -249,9 +249,11 @@ A note on each of these creative sections says the copy came from the brief, whi
 
 ### Call to action
 
-On a Display ad, **Call to action** is a list of the button texts Google documents for responsive display ads: Apply Now, Book Now, Contact Us, Download, Learn More, Install, Visit Site, Shop Now, Sign Up, Get Quote, Subscribe and See More. Leave it on **None** and Google chooses the button.
+**Call to action** is a list of the button texts Google Ads accepts for that ad. Google Ads refuses any other text, such as "Register" or "Get Started", and only after the campaign has been created. Leave it on **None** and Google chooses the button.
 
-On a Demand Gen image ad, **Call to action** offers only **None**, and Google chooses the button. Google documents no call-to-action values for this ad, and Google Ads refused "Register" there after the campaign was created. On a Demand Gen video ad, choose from the list described under [Demand Gen video ads](#demand-gen-video-ads).
+- **Display ad:** Apply Now, Book Now, Call Now, Contact Us, Download, Explore, Get Offer, Get Quote, Install, Learn More, Order Now, Read More, See More, Shop Now, Sign Up, Subscribe, Try now and Visit Site.
+- **Demand Gen image ad:** Apply Now, Book Now, Call Now, Contact Us, Donate Now, Download, Get Offer, Get Quote, Learn More, See More, Shop Now, Sign Up, Subscribe and Visit Site. The list is not the Display one: Install, Explore and Read More, for example, work only on Display, and Donate Now only on Demand Gen.
+- **Demand Gen video ad:** choose from the list described under [Demand Gen video ads](#demand-gen-video-ads).
 
 If a saved ad holds a call to action outside its list, a message under **Call to action** says so and **Create Campaign** stays unavailable until you choose one from the list or **None**.
 
