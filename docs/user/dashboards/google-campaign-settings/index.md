@@ -37,7 +37,7 @@ tags:
     implement,
     registration url,
   ]
-last_updated: 2026-11-11
+last_updated: 2026-11-13
 intercom_collection: Dashboards
 ---
 
@@ -122,7 +122,7 @@ The exclusions cover the whole campaign. If you switch to another campaign type,
 
 ## Display bidding
 
-A Display campaign can bid with **Maximize Clicks**, **Maximize Conversions**, the default, **Maximize Conversion Value** or **Target ROAS**. For now, Display has no target CPA: **Target CPA** is not offered as a strategy, and Maximize Conversions has no **Target CPA** box. Google Display doesn't accept a target CPA from LFX One yet, so a Display campaign bids on Maximize Conversions without one, and the bidding settings say so. A target CPA you entered on another campaign type is kept but not sent. If you chose Target CPA and then switch to Display, the campaign uses the Display default, Maximize Conversions, instead.
+A Display campaign can bid with **Maximize Clicks**, **Maximize Conversions** (the default), **Target CPA**, **Maximize Conversion Value** or **Target ROAS**. Target CPA needs a **Target CPA** in the account currency, and Maximize Conversions takes one optionally. Manual CPC is not offered on Display.
 
 ## Demand Gen bidding and languages
 
