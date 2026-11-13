@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
 import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_LEFT_PAGE_STORAGE_KEY, NAVBAR_NARROW_MAX_WIDTH_PX, NAVBAR_PEEK_OUT_MS } from '@lfx-one/shared/constants';
 
 /**
@@ -12,7 +12,9 @@ import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_LEFT_PAGE_STORAGE_KEY, NAVBAR_NARR
  *
  * - `collapsed` is the viewer's docked preference, kept in `sessionStorage`. It is restored only when this tab itself left
  *   the page and came back: a reload, Back/Forward, or one of the app's own full-page redirects (sign-in, account linking,
- *   invites). Each page leaves a one-time mark on `pagehide` that the next load consumes. A new tab or browser session
+ *   invites). Each page leaves a one-time mark on `pagehide` that the next load consumes (a back/forward-cache restore
+ *   clears it, as the page resumes rather than loads). A reload with no mark, such as a tab the browser discarded to save
+ *   memory or recovered after a crash, also restores it. A new tab or browser session
  *   always starts docked open, including a duplicated tab or one opened from a link: they inherit a copy of the opener's
  *   session storage, but the opener never left its page, so there is no mark to inherit.
  * - `narrow` (a non-touch viewport under {@link NAVBAR_NARROW_MAX_WIDTH_PX}) forces the rail without
@@ -27,6 +29,7 @@ import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_LEFT_PAGE_STORAGE_KEY, NAVBAR_NARR
 export class NavbarCollapseService {
   private readonly document = inject(DOCUMENT);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly collapsedPreference = signal(false);
   private readonly narrowViewport = signal(false);
@@ -85,12 +88,24 @@ export class NavbarCollapseService {
     if (!this.isBrowser || this.initialized) return;
     this.initialized = true;
     this.clearLegacyPreference();
-    if (this.consumeLeftPageMark()) this.collapsedPreference.set(this.readPreference());
+    // Both run: the mark is consumed even on a reload, so a tab duplicated later can't inherit it.
+    const leftPage = this.consumeLeftPageMark();
+    if (leftPage || this.reloadedWithoutMark()) this.collapsedPreference.set(this.readPreference());
     else this.writePreference(false);
     this.initializedState.set(true);
 
     const view = this.document.defaultView;
-    view?.addEventListener('pagehide', () => this.markLeftPage());
+    const onPageHide = (): void => this.markLeftPage();
+    // A back/forward-cache restore resumes this page without a new init(): drop the mark it left on the way out.
+    const onPageShow = (event: PageTransitionEvent): void => {
+      if (event.persisted) this.consumeLeftPageMark();
+    };
+    view?.addEventListener('pagehide', onPageHide);
+    view?.addEventListener('pageshow', onPageShow);
+    this.destroyRef.onDestroy(() => {
+      view?.removeEventListener('pagehide', onPageHide);
+      view?.removeEventListener('pageshow', onPageShow);
+    });
     if (view?.matchMedia) {
       const narrowQuery = view.matchMedia(`(max-width: ${NAVBAR_NARROW_MAX_WIDTH_PX - 0.02}px)`);
       const touchQuery = view.matchMedia('(hover: none) and (pointer: coarse)');
@@ -181,6 +196,21 @@ export class NavbarCollapseService {
       this.document.defaultView?.sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
     } catch {
       // Storage blocked: the next load starts docked open.
+    }
+  }
+
+  /**
+   * A reload that left no mark: the browser discarded the tab to save memory, or recovered it after a crash, without a
+   * `pagehide`. A duplicated tab reports a back/forward navigation, not a reload, so it still starts docked open.
+   */
+  private reloadedWithoutMark(): boolean {
+    try {
+      const doc = this.document as Document & { wasDiscarded?: boolean };
+      if (doc.wasDiscarded) return true;
+      const entry = this.document.defaultView?.performance?.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined;
+      return entry?.type === 'reload';
+    } catch {
+      return false;
     }
   }
 

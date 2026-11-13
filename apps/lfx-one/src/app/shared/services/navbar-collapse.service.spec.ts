@@ -128,7 +128,59 @@ describe('NavbarCollapseService', () => {
     expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
   });
 
+  it('drops the mark when the page resumes from the back/forward cache, so a tab duplicated later starts docked open', () => {
+    const service = setup();
+    service.init();
+    service.setCollapsed(true);
+
+    window.dispatchEvent(new Event('pagehide'));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
+
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
+    expect(service.collapsed()).toBe(true);
+  });
+
+  it('keeps the mark on a pageshow that is a fresh load, not a cache restore', () => {
+    const service = setup();
+    service.init();
+    window.dispatchEvent(new Event('pagehide'));
+
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
+  });
+
+  it('restores the preference on a reload that left no mark (a discarded or crash-recovered tab)', () => {
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming]);
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(true);
+  });
+
+  it('starts docked open on a back/forward navigation with no mark, which is how a duplicated tab loads', () => {
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'back_forward' } as PerformanceNavigationTiming]);
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+  });
+
+  it('ignores and clears the legacy localStorage key on a same-tab return too', () => {
+    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
   it('marks the tab as leaving the page on pagehide, so its next load restores the preference', () => {
+    // Earlier services' listeners are removed when their injector is destroyed, so only this one's can write the mark.
+    TestBed.resetTestingModule();
     const service = setup();
     service.init();
     service.setCollapsed(true);
