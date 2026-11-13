@@ -343,7 +343,7 @@
                         <span
                           class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium"
                           [class]="row.membershipBadgeClass">
-                          <!-- Arbitrary 10px: the badge icon is smaller than the 12px label beside it; no Tailwind step is that small. -->
+                          <!-- Arbitrary 10px: an exact pixel size for the badge icon; at the 14px root, text-2xs would render 8.75px and text-xs 10.5px. -->
                           <i class="fa-solid fa-circle-check text-[10px]" aria-hidden="true"></i>
                           {{ row.membershipLabel }}
                         </span>

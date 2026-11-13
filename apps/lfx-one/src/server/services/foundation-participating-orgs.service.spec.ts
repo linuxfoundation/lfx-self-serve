@@ -137,7 +137,8 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
       const present = byChange.filter((row) => row.commitsChange !== null);
       expect(byChange.slice(0, present.length).every((row) => row.commitsChange !== null)).toBe(true);
       expect(present.map((row) => row.commitsChange as number)).toEqual([...present.map((row) => row.commitsChange as number)].sort((a, b) => (a - b) * sign));
-      expect(byChange.slice(present.length).every((row) => row.commitsChange === null)).toBe(true);
+      const trailing = byChange.slice(present.length).map((row) => row.name);
+      expect(trailing).toEqual([...trailing].sort((a, b) => a.localeCompare(b)));
       expect(byChange).toHaveLength(service.getPage(req, { ...base, dir }).rows.length);
 
       // All Time has no comparison for anyone, so nothing is dropped and the order falls back to name.

@@ -29,12 +29,10 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
     getBooleanFlag = vi.fn().mockReturnValue(signal(false));
     waitForReady = vi.fn().mockResolvedValue(true);
     router = {
-      createUrlTree: vi
-        .fn()
-        .mockImplementation((commands: string[], extras?: { queryParams: { project: string } }) => ({
-          redirected: commands.join('/'),
-          project: extras?.queryParams.project,
-        })),
+      createUrlTree: vi.fn().mockImplementation((commands: string[], extras?: { queryParams: { project: string } }) => ({
+        redirected: commands.join('/'),
+        project: extras?.queryParams.project,
+      })),
       getCurrentNavigation: vi.fn().mockReturnValue(null),
     };
 
@@ -75,6 +73,8 @@ describe('foundationParticipatingOrgsEnabledGuard', () => {
 
     expect(await runGuard()).toBe(true);
     expect(waitForReady).not.toHaveBeenCalled();
+    expect(getFlagOverride).toHaveBeenCalledWith(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG);
+    expect(getBooleanFlag).toHaveBeenCalledWith(FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG, false);
   });
 
   it('redirects when the provider is ready and the flag is off', async () => {

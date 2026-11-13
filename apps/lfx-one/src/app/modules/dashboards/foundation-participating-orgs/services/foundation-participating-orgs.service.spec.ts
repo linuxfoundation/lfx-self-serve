@@ -88,7 +88,7 @@ describe('FoundationParticipatingOrgsService', () => {
     expect(status).toBe(403);
   });
 
-  it('saves the CSV under the server filename and tells the user the export started', () => {
+  it('saves the CSV under the server filename and tells the user the export started', async () => {
     setup();
     let saved: string | null = null;
     service.exportCsv(FILTERS, 'by-project').subscribe((name) => (saved = name));
@@ -96,6 +96,8 @@ describe('FoundationParticipatingOrgsService', () => {
     expect(request.request.params.get('kind')).toBe('by-project');
     request.flush(new Blob(['a,b']), { headers: { 'Content-Disposition': 'attachment; filename="synthetic.csv"' } });
     expect(saved).toBe('synthetic.csv');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:synthetic');
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Export started' }));
   });
 
