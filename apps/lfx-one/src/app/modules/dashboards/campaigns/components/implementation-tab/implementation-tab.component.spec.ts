@@ -13240,13 +13240,25 @@ describe('ImplementationTabComponent google bidding', () => {
       expect(offered).toContain('target-cpa');
     });
 
-    it.each([['maximize-conversions'], ['target-cpa']])('shows the field and sends a target CPA on display under %s', (strategy) => {
-      const c = seedChannel(fixture, { includeDisplay: true, googleBiddingStrategy: strategy, googleTargetCpa: '25' });
+    // Every channel that bids to a conversion takes a target CPA under both strategies. One table
+    // for all four, so a future per-channel exception (as #5554 was) fails here, not only Display.
+    it.each([
+      ['search', 'maximize-conversions', { includeSearch: true }],
+      ['search', 'target-cpa', { includeSearch: true }],
+      ['performance max', 'maximize-conversions', { includePerformanceMax: true }],
+      ['performance max', 'target-cpa', { includePerformanceMax: true }],
+      ['demand gen', 'maximize-conversions', { includeDemandGen: true }],
+      ['demand gen', 'target-cpa', { includeDemandGen: true }],
+      ['display', 'maximize-conversions', { includeDisplay: true }],
+      ['display', 'target-cpa', { includeDisplay: true }],
+    ])('shows the field and sends a target CPA on %s under %s', (_label, strategy, patch) => {
+      const c = seedChannel(fixture, { ...patch, googleBiddingStrategy: strategy, googleTargetCpa: '25' });
       fixture.detectChanges();
 
       expect(c['googleTakesTargetCpa']()).toBe(true);
       expect(query('implementation-google-target-cpa')).not.toBeNull();
       expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: strategy, targetCpa: 25 });
+      expect(c['googleBiddingOptions']().map((o: { value: string }) => o.value)).toContain('target-cpa');
       expect(query('implementation-google-target-cpa-withheld')).toBeNull();
     });
 
