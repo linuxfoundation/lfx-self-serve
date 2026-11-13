@@ -16,6 +16,9 @@ router.get('/', (req, res, next) => meetingController.getMeetings(req, res, next
 // GET /meetings/count - get meetings count
 router.get('/count', (req, res, next) => meetingController.getMeetingsCount(req, res, next));
 
+// Roll-up filter options for a foundation or parent project's meetings list (before '/:uid').
+router.get('/rollup-filters', (req, res, next) => meetingController.getRollupFilterOptions(req, res, next));
+
 // GET /meetings/:uid - get a single meeting
 router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));
 
