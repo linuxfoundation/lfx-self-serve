@@ -1,13 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE, MEMBERSHIP_TIER_ORDER } from '@lfx-one/shared/constants';
+import {
+  FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE,
+  FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS,
+  MEMBERSHIP_TIER_ORDER,
+} from '@lfx-one/shared/constants';
 import type {
   FoundationCompanyActivity,
   FoundationParticipatingOrg,
   FoundationParticipatingOrgBreakdown,
   FoundationParticipatingOrgProjectLine,
+  FoundationParticipatingOrgsDataSourceKind,
   FoundationParticipatingOrgsExportFilters,
+  FoundationParticipatingOrgsExportKind,
   FoundationParticipatingOrgsPage,
   FoundationParticipatingOrgsProject,
   FoundationParticipatingOrgsQuery,
@@ -28,10 +34,18 @@ import { logger } from './logger.service';
  * contributors de-duplicated across projects.
  */
 export interface FoundationParticipatingOrgsDataSource {
+  /** What the figures are, so the page can say so: `demo` for the fictional set, `warehouse` for real data. */
+  readonly kind: FoundationParticipatingOrgsDataSourceKind;
+  /** Multiplier from the source's 12 month commit figures to each range (a warehouse source reports every range itself, so it uses 1). */
+  readonly rangeScale: Record<FoundationParticipatingOrgsRange, number>;
   getFoundation(slug: string): FoundationParticipatingOrgsSourceFoundation;
 }
 
-const demoSource: FoundationParticipatingOrgsDataSource = { getFoundation: getDemoFoundation };
+const demoSource: FoundationParticipatingOrgsDataSource = {
+  kind: 'demo',
+  rangeScale: FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE,
+  getFoundation: getDemoFoundation,
+};
 
 export class FoundationParticipatingOrgsService {
   public constructor(private readonly source: FoundationParticipatingOrgsDataSource = demoSource) {}
@@ -39,15 +53,13 @@ export class FoundationParticipatingOrgsService {
   public getProjects(req: Request, slug: string, range: FoundationParticipatingOrgsRange): FoundationParticipatingOrgsProject[] {
     logger.debug(req, 'get_foundation_participating_orgs_projects', 'Building project scope list', { slug, range });
     const foundation = this.source.getFoundation(slug);
-    const scale = FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE[range];
-    const commitsOf = (projectSlug: string): number =>
-      foundation.companies
-        .flatMap((company) => company.projects)
-        .filter((p) => p.projectSlug === projectSlug)
-        .reduce((sum, p) => sum + p.commits, 0) * scale;
-    // Busiest project first; the figure itself is not part of the picker.
+    // Each project's total is summed once, then the list is ordered busiest first; the figure itself is not part of the picker.
+    const totals = new Map<string, number>();
+    for (const company of foundation.companies) {
+      for (const project of company.projects) totals.set(project.projectSlug, (totals.get(project.projectSlug) ?? 0) + project.commits);
+    }
     return [...foundation.projects]
-      .sort((a, b) => commitsOf(b.slug) - commitsOf(a.slug))
+      .sort((a, b) => (totals.get(b.slug) ?? 0) - (totals.get(a.slug) ?? 0))
       .map((project) => ({ slug: project.slug, name: project.name, maturity: project.maturity }));
   }
 
@@ -66,7 +78,7 @@ export class FoundationParticipatingOrgsService {
     const memberCommits = members.reduce((sum, item) => sum + item.row.commits, 0);
     return {
       foundationSlug: slug,
-      dataSource: 'demo',
+      dataSource: this.source.kind,
       foundationName: foundation.name,
       projectCount: foundation.projects.length,
       projectSlug: project?.slug ?? null,
@@ -114,12 +126,35 @@ export class FoundationParticipatingOrgsService {
     return { total, projects: item.lines };
   }
 
-  /** Companies matching the filters, with their project lines scoped to the selected project. The row cap is applied by the caller. */
-  public getExportRows(req: Request, filters: FoundationParticipatingOrgsExportFilters): FoundationCompanyActivity[] {
-    logger.debug(req, 'export_foundation_participating_orgs', 'Building export rows', { slug: filters.foundationSlug });
-    const items = this.filtered(filters);
-    // Under a project scope the by-project file lists that project only, matching the table and the summary file.
-    return filters.projectSlug ? items.map((item) => ({ ...item, lines: item.lines.filter((line) => line.projectSlug === filters.projectSlug) })) : items;
+  /**
+   * Companies matching the filters, ready for a CSV file, with the row cap applied here: a summary file is one row per company,
+   * a by-project file one row per company and project, and `truncated` says whether the cap cut anything. Under a project
+   * scope the by-project lines are that project's only, matching the table and the summary file.
+   */
+  public getExportRows(
+    req: Request,
+    filters: FoundationParticipatingOrgsExportFilters,
+    kind: FoundationParticipatingOrgsExportKind,
+    maxRows: number = FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS
+  ): { items: FoundationCompanyActivity[]; truncated: boolean } {
+    logger.debug(req, 'export_foundation_participating_orgs', 'Building export rows', { slug: filters.foundationSlug, kind });
+    const scoped = this.filtered(filters).map((item) =>
+      filters.projectSlug ? { ...item, lines: item.lines.filter((line) => line.projectSlug === filters.projectSlug) } : item
+    );
+    if (kind === 'summary') {
+      return { items: scoped.slice(0, maxRows), truncated: scoped.length > maxRows };
+    }
+
+    const items: FoundationCompanyActivity[] = [];
+    let remaining = maxRows;
+    for (const item of scoped) {
+      if (remaining <= 0) return { items, truncated: true };
+      const lines = item.lines.slice(0, remaining);
+      items.push({ ...item, lines });
+      remaining -= lines.length;
+      if (lines.length < item.lines.length) return { items, truncated: true };
+    }
+    return { items, truncated: false };
   }
 
   private filtered(filters: FoundationParticipatingOrgsExportFilters): FoundationCompanyActivity[] {
@@ -153,7 +188,7 @@ export class FoundationParticipatingOrgsService {
     range: FoundationParticipatingOrgsRange,
     projectSlug?: string
   ): FoundationCompanyActivity[] {
-    const scale = FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE[range];
+    const scale = this.source.rangeScale[range];
     const names = new Map(foundation.projects.map((project) => [project.slug, project]));
     const items: FoundationCompanyActivity[] = [];
 
@@ -198,7 +233,7 @@ export class FoundationParticipatingOrgsService {
         contributors: single ? single.contributors : company.foundationContributors,
         contributorsChange: range === 'all' ? null : contributorsChange,
       };
-      items.push({ company, row, lines });
+      items.push({ row, lines });
     }
     return items;
   }

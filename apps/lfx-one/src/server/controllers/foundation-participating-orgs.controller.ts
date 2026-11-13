@@ -5,7 +5,6 @@ import {
   FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_HEADER,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_KINDS,
-  FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_SUMMARY_HEADER,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
   FOUNDATION_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
@@ -59,14 +58,14 @@ export class FoundationParticipatingOrgsController {
     }
   }
 
-  // GET /api/foundation-participating-orgs/summary?foundationSlug&range&projectSlug
+  // GET /api/foundation-participating-orgs/summary?foundationSlug&range&projectSlug&search&tier (the tab, sort and paging are not read)
   public async getSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_foundation_participating_orgs_summary';
     const startTime = logger.startOperation(req, operation);
     try {
-      const { foundationSlug, range, projectSlug, search, tier } = parseSummaryQuery(req, operation);
-      const summary = this.service.getSummary(req, { foundationSlug, range, projectSlug, search, tier });
-      logger.success(req, operation, startTime, { slug: foundationSlug, range, has_summary: summary !== null });
+      const query = parseSummaryQuery(req, operation);
+      const summary = this.service.getSummary(req, query);
+      logger.success(req, operation, startTime, { slug: query.foundationSlug, range: query.range, has_summary: summary !== null });
       res.json({ summary });
     } catch (error) {
       next(error);
@@ -121,7 +120,7 @@ export class FoundationParticipatingOrgsController {
     try {
       const filters = parseFilters(req, operation);
       const kind = getEnumQueryParam(req, 'kind', FOUNDATION_PARTICIPATING_ORGS_EXPORT_KINDS, 'summary', operation);
-      const items = this.service.getExportRows(req, filters);
+      const { items, truncated } = this.service.getExportRows(req, filters, kind);
       if (items.length === 0) {
         logger.success(req, operation, startTime, { slug: filters.foundationSlug, kind, result_count: 0, truncated: false });
         res.setHeader('Cache-Control', 'private, no-store');
@@ -131,15 +130,8 @@ export class FoundationParticipatingOrgsController {
 
       const header = kind === 'summary' ? FOUNDATION_PARTICIPATING_ORGS_EXPORT_SUMMARY_HEADER : FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_HEADER;
       const dataRows = kind === 'summary' ? summaryRows(items) : byProjectRows(items);
-      // The cap counts CSV rows, so a by-project file (one row per company and project) is bounded like the summary file.
-      const truncated = dataRows.length > FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS;
-      const rows = [[...header], ...dataRows.slice(0, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS)];
-      logger.success(req, operation, startTime, {
-        slug: filters.foundationSlug,
-        kind,
-        result_count: Math.min(dataRows.length, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS),
-        truncated,
-      });
+      const rows = [[...header], ...dataRows];
+      logger.success(req, operation, startTime, { slug: filters.foundationSlug, kind, result_count: dataRows.length, truncated });
       res.setHeader('Cache-Control', 'private, no-store');
       const date = new Date().toISOString().slice(0, 10);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -212,10 +204,18 @@ function parseRange(req: Request, operation: string): FoundationParticipatingOrg
   return getEnumQueryParam(req, 'range', FOUNDATION_PARTICIPATING_ORGS_RANGES, FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE, operation);
 }
 
-/** The list filters without the tab, sorting and paging; the summary covers every tab. */
+/** The list filters without the tab, sorting and paging; the summary covers every tab, so only these are read and validated. */
 function parseSummaryQuery(req: Request, operation: string): FoundationParticipatingOrgsSummaryQuery {
-  const { foundationSlug, range, projectSlug, search, tier } = parseFilters(req, operation);
-  return { foundationSlug, range, projectSlug, search, tier };
+  const projectSlug = parseProjectSlug(req, operation);
+  const search = parseSearch(req, operation);
+  const tier = parseTier(req, operation);
+  return {
+    foundationSlug: parseSlug(req, operation),
+    range: parseRange(req, operation),
+    ...(projectSlug ? { projectSlug } : {}),
+    ...(search ? { search } : {}),
+    ...(tier ? { tier } : {}),
+  };
 }
 
 /** A change fraction as a whole percent for the CSV (`0.3` → `+30%`); blank when there is no comparison. */
@@ -225,20 +225,26 @@ function changeLabel(fraction: number | null): string {
   return percent > 0 ? `+${percent}%` : `${percent}%`;
 }
 
-function parseFilters(req: Request, operation: string): FoundationParticipatingOrgsExportFilters {
+function parseSearch(req: Request, operation: string): string | undefined {
   const search = getStrictStringQueryParam(req, 'search', operation)?.trim();
   if (search && search.length > FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH) {
     throw ServiceValidationError.forField('search', `search must be at most ${FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH} characters`, { operation });
   }
+  return search || undefined;
+}
 
-  const tierParam = getStrictStringQueryParam(req, 'tier', operation);
-  let tier: MembershipTierClass | undefined;
-  if (tierParam) {
-    if (!(MEMBERSHIP_TIER_ORDER as readonly string[]).includes(tierParam)) {
-      throw ServiceValidationError.forField('tier', 'tier must be a membership tier class', { operation });
-    }
-    tier = tierParam as MembershipTierClass;
+function parseTier(req: Request, operation: string): MembershipTierClass | undefined {
+  const tier = getStrictStringQueryParam(req, 'tier', operation);
+  if (!tier) return undefined;
+  if (!(MEMBERSHIP_TIER_ORDER as readonly string[]).includes(tier)) {
+    throw ServiceValidationError.forField('tier', 'tier must be a membership tier class', { operation });
   }
+  return tier as MembershipTierClass;
+}
+
+function parseFilters(req: Request, operation: string): FoundationParticipatingOrgsExportFilters {
+  const search = parseSearch(req, operation);
+  const tier = parseTier(req, operation);
   const projectSlug = parseProjectSlug(req, operation);
 
   return {

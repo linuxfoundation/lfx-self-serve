@@ -63,7 +63,7 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
   });
 
   it('exports every project for each company, not only the top 10', () => {
-    const items = service.getExportRows(req, base);
+    const { items } = service.getExportRows(req, base, 'by-project');
     expect(items.some((item) => item.lines.length > 10)).toBe(true);
     for (const item of items) expect(item.lines.length).toBe(item.row.projectsInvolved);
   });
@@ -89,7 +89,7 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
 
   it('limits the by-project export to the selected project under a project scope', () => {
     const [project] = service.getProjects(req, SLUG, '12mo');
-    const items = service.getExportRows(req, { ...base, projectSlug: project.slug });
+    const { items } = service.getExportRows(req, { ...base, projectSlug: project.slug }, 'by-project');
     expect(items.length).toBeGreaterThan(0);
     for (const item of items) expect(item.lines.map((line) => line.projectSlug)).toEqual([project.slug]);
   });
@@ -120,17 +120,43 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
     }
   });
 
-  it('keeps companies with no tier or no comparison last in both sort directions', () => {
+  it('keeps companies with no tier or no comparison last, and orders the rest by the direction', () => {
+    const tierRank = (tier: string | null): number => ['Platinum', 'Gold', 'Silver'].indexOf(tier ?? '');
     for (const dir of ['asc', 'desc'] as const) {
+      const sign = dir === 'asc' ? 1 : -1;
+
       const byTier = service.getPage(req, { ...base, sort: 'tier', dir }).rows;
-      const firstNonMember = byTier.findIndex((row) => !row.isMember);
-      expect(byTier.slice(firstNonMember).every((row) => !row.isMember)).toBe(true);
-      const allTime = service.getPage(req, { ...base, range: 'all', sort: 'commits_change', dir }).rows;
-      expect(allTime.length).toBeGreaterThan(0);
+      const members = byTier.filter((row) => row.isMember);
+      expect(byTier.slice(0, members.length).every((row) => row.isMember)).toBe(true);
+      expect(members.map((row) => tierRank(row.membershipTierClass))).toEqual(
+        [...members.map((row) => tierRank(row.membershipTierClass))].sort((a, b) => (a - b) * sign)
+      );
+
       const byChange = service.getPage(req, { ...base, sort: 'commits_change', dir }).rows;
-      const firstMissing = byChange.findIndex((row) => row.commitsChange === null);
-      if (firstMissing !== -1) expect(byChange.slice(firstMissing).every((row) => row.commitsChange === null)).toBe(true);
+      const present = byChange.filter((row) => row.commitsChange !== null);
+      expect(byChange.slice(0, present.length).every((row) => row.commitsChange !== null)).toBe(true);
+      expect(present.map((row) => row.commitsChange as number)).toEqual([...present.map((row) => row.commitsChange as number)].sort((a, b) => (a - b) * sign));
+      expect(byChange.length).toBeGreaterThan(present.length - 1);
+
+      // All Time has no comparison for anyone, so nothing is dropped and the order falls back to name.
+      const allTime = service.getPage(req, { ...base, range: 'all', sort: 'commits_change', dir }).rows;
+      expect(allTime.every((row) => row.commitsChange === null)).toBe(true);
+      expect(allTime.map((row) => row.name)).toEqual([...allTime.map((row) => row.name)].sort((a, b) => a.localeCompare(b)));
     }
+  });
+
+  it('caps the export at the maximum number of CSV rows for either file, and says it was cut', () => {
+    const summary = service.getExportRows(req, base, 'summary', 5);
+    expect(summary.items).toHaveLength(5);
+    expect(summary.truncated).toBe(true);
+
+    const byProject = service.getExportRows(req, base, 'by-project', 25);
+    expect(byProject.items.reduce((sum, item) => sum + item.lines.length, 0)).toBe(25);
+    expect(byProject.truncated).toBe(true);
+
+    const whole = service.getExportRows(req, base, 'by-project');
+    expect(whole.truncated).toBe(false);
+    expect(whole.items.reduce((sum, item) => sum + item.lines.length, 0)).toBeGreaterThan(25);
   });
 
   it('keeps the contributor total of a company between its busiest project and the sum of its projects', () => {

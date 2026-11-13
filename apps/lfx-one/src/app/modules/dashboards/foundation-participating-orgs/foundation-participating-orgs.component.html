@@ -309,6 +309,7 @@
                       <div class="flex min-w-0 flex-col">
                         <span
                           class="truncate text-sm font-medium text-gray-900"
+                          [attr.title]="row.name"
                           [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-name'"
                           >{{ row.name }}</span
                         >

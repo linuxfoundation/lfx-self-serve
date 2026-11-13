@@ -57,7 +57,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MenuItem } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, pairwise, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounce, distinctUntilChanged, filter, finalize, map, of, pairwise, switchMap, take, tap, timer } from 'rxjs';
 
 import { decorateFoundationOrgRow, decorateProjectLine, groupProjectOptions, splitBreakdown } from './foundation-participating-orgs.util';
 import { FoundationParticipatingOrgsService } from './services/foundation-participating-orgs.service';
@@ -132,8 +132,22 @@ export class FoundationParticipatingOrgsComponent {
     initialValue: this.filterForm.controls.range.value,
   });
   private readonly search: Signal<string> = this.initSearch();
-  protected readonly projectSlug: Signal<string | null> = toSignal(this.filterForm.controls.project.valueChanges, { initialValue: null });
-  protected readonly tier: Signal<MembershipTierClass | null> = toSignal(this.filterForm.controls.tier.valueChanges, { initialValue: null });
+  // A chosen project or tier belongs to the foundation it was chosen for, so it stops counting the moment the foundation
+  // changes, before any reset runs and without a request that mixes the new foundation with the old filter.
+  private readonly projectSelection = toSignal(this.filterForm.controls.project.valueChanges.pipe(map((value) => ({ slug: this.slug(), value }))), {
+    initialValue: { slug: '', value: null as string | null },
+  });
+  private readonly tierSelection = toSignal(this.filterForm.controls.tier.valueChanges.pipe(map((value) => ({ slug: this.slug(), value }))), {
+    initialValue: { slug: '', value: null as MembershipTierClass | null },
+  });
+  protected readonly projectSlug: Signal<string | null> = computed(() => {
+    const selection = this.projectSelection();
+    return selection.slug === this.slug() ? selection.value : null;
+  });
+  protected readonly tier: Signal<MembershipTierClass | null> = computed(() => {
+    const selection = this.tierSelection();
+    return selection.slug === this.slug() ? selection.value : null;
+  });
 
   /** Switching foundation, or any filter, tab, range or sort change, returns the table to its first page. */
   protected readonly offset = linkedSignal({
@@ -153,7 +167,11 @@ export class FoundationParticipatingOrgsComponent {
     return state.slug === this.slug() ? state.projects : [];
   });
   protected readonly projectOptions = computed(() => groupProjectOptions(this.projects()));
-  protected readonly selectedProjectName = computed(() => this.projects().find((project) => project.slug === this.projectSlug())?.name ?? null);
+  /** The scoped project's name, or its slug while the project list is unavailable, so scoped figures are never labelled as foundation totals. */
+  protected readonly selectedProjectName = computed(() => {
+    const slug = this.projectSlug();
+    return slug ? (this.projects().find((project) => project.slug === slug)?.name ?? slug) : null;
+  });
 
   private readonly summaryState: Signal<{ slug: string; summary: FoundationParticipatingOrgsSummary | null }> = this.initSummary();
   private readonly pageState: Signal<{ slug: string; page: FoundationParticipatingOrgsPage }> = this.initPage();
@@ -211,6 +229,14 @@ export class FoundationParticipatingOrgsComponent {
         this.filterForm.controls.project.setValue(null);
         this.filterForm.controls.tier.setValue(null);
       });
+
+    // One subscription serves every company's filter control (their removal and addition do not emit).
+    this.breakdownFilterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((values) => {
+      Object.entries(values).forEach(([key, value]) => {
+        const current = this.breakdowns()[key];
+        if (current && current.filter !== (value ?? '')) this.patchBreakdown(key, { filter: value ?? '' });
+      });
+    });
 
     // A tier the foundation's roster does not hold has dropped out of the picker, so it stops filtering too.
     toObservable(this.summary)
@@ -326,7 +352,8 @@ export class FoundationParticipatingOrgsComponent {
   private initSearch(): Signal<string> {
     return toSignal(
       this.filterForm.controls.search.valueChanges.pipe(
-        debounceTime(FOUNDATION_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS),
+        // Typing waits for a pause; clearing the box (Clear all, the chip's ×) applies at once.
+        debounce((value) => (value.trim() === '' ? of(0) : timer(FOUNDATION_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS))),
         map((value) => value.trim().slice(0, FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH)),
         distinctUntilChanged()
       ),
@@ -349,7 +376,9 @@ export class FoundationParticipatingOrgsComponent {
             map((response) => ({ slug, projects: response.projects })),
             catchError(() => {
               this.projectsFailed.set(true);
-              return of({ slug, projects: [] as FoundationParticipatingOrgsProject[] });
+              // A failed refresh keeps the list already shown for this foundation, so a chosen project stays resolvable.
+              const known = this.projectsState();
+              return of(known.slug === slug ? known : { slug, projects: [] as FoundationParticipatingOrgsProject[] });
             })
           )
         )
@@ -580,8 +609,8 @@ export class FoundationParticipatingOrgsComponent {
   private ensureBreakdownFilter(key: string): void {
     if (this.breakdownFilterForm.contains(key)) return;
     const control = new FormControl<string>('', { nonNullable: true });
-    this.breakdownFilterForm.addControl(key, control);
-    control.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.patchBreakdown(key, { filter: value }));
+    const form: FormGroup = this.breakdownFilterForm;
+    form.addControl(key, control, { emitEvent: false });
   }
 
   private patchBreakdown(key: string, patch: Partial<FoundationParticipatingOrgBreakdownState>): void {

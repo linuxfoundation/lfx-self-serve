@@ -216,6 +216,46 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(fixture.componentInstance['filterForm'].controls.tier.value).toBeNull();
   });
 
+  it('never sends a request that mixes the new foundation with the old foundation’s project or tier', async () => {
+    await render();
+    fixture.componentInstance['filterForm'].controls.project.setValue('project-1');
+    fixture.componentInstance['filterForm'].controls.tier.setValue('Gold');
+    await settle();
+    getSummary.mockClear();
+    getPage.mockClear();
+    selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+    await settle();
+    for (const [query] of [...getSummary.mock.calls, ...getPage.mock.calls]) {
+      if (query.foundationSlug === 'other-foundation') {
+        expect(query.projectSlug).toBeUndefined();
+        expect(query.tier).toBeUndefined();
+      }
+    }
+  });
+
+  it('Clear all applies a cleared search at once, with no intermediate request for the old search', async () => {
+    await render();
+    fixture.componentInstance['filterForm'].controls.search.setValue('acme');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await settle();
+    getPage.mockClear();
+    fixture.componentInstance['clearFilters']();
+    await settle();
+    expect(getPage.mock.calls.every(([query]) => query.search === undefined)).toBe(true);
+    expect(fixture.componentInstance['hasActiveFilters']()).toBe(false);
+  });
+
+  it('names the scoped project by its slug, not as a foundation total, when the project list fails', async () => {
+    await render();
+    fixture.componentInstance['filterForm'].controls.project.setValue('project-9');
+    await settle();
+    getProjects.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    fixture.componentInstance['filterForm'].controls.range.setValue('90d');
+    await settle();
+    expect(fixture.componentInstance['selectedProjectName']()).toBe('project-9');
+    expect(query('foundation-participating-orgs-totals-note')).toBeNull();
+  });
+
   it('says nothing about the data source until a summary arrives', async () => {
     getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
     await render();

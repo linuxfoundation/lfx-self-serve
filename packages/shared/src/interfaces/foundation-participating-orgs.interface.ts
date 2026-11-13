@@ -35,13 +35,13 @@ export interface FoundationParticipatingOrgsProjectsResponse {
   projects: FoundationParticipatingOrgsProject[];
 }
 
-/** Cards and tab counts for one foundation, range and scope (the whole foundation, or one project), narrowed by the search and tier filters. */
 /** Where the figures come from. `demo` is the fictional data set used until the warehouse model exists (#5707). */
 export type FoundationParticipatingOrgsDataSourceKind = 'demo' | 'warehouse';
 
 /** Summary request: the list filters without the tab, sorting and paging (the tab counts cover every tab). */
 export type FoundationParticipatingOrgsSummaryQuery = Pick<FoundationParticipatingOrgsQuery, 'foundationSlug' | 'range' | 'projectSlug' | 'search' | 'tier'>;
 
+/** Cards and tab counts for one foundation, range and scope (the whole foundation, or one project), narrowed by the search and tier filters. */
 export interface FoundationParticipatingOrgsSummary {
   foundationSlug: string;
   /** Marks fictional demo figures so the page never presents them as warehouse data. */
@@ -254,7 +254,6 @@ export interface FoundationParticipatingOrgsSourceFoundation {
 
 /** One company as the service reports it for a foundation, range and optional project scope. */
 export interface FoundationCompanyActivity {
-  company: FoundationParticipatingOrgsSourceCompany;
   row: FoundationParticipatingOrg;
   /** Every project the company is active in for the range, sorted by commits. */
   lines: FoundationParticipatingOrgProjectLine[];
