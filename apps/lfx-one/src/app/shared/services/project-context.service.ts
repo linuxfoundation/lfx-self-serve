@@ -200,6 +200,14 @@ export class ProjectContextService {
   public readonly menuCanWrite: Signal<boolean> = computed(() =>
     this.lensService.previewingMenuLens() ? this.menuProjectFetch()?.writer === true : this.canWrite()
   );
+  /**
+   * The full `Project` the nav menu is shaped by: the active context's record, except while the mobile drawer previews
+   * another lens — then {@link menuContext}'s. Callers should confirm its `uid` matches the context they read it for, as
+   * either record can briefly describe the previous project while a switch is in flight.
+   */
+  public readonly menuProject: Signal<Project | null> = computed(() =>
+    this.lensService.previewingMenuLens() ? (this.menuProjectFetch() ?? null) : this.activeProject()
+  );
 
   private readonly formationOverviewAllowed = signal<string | null>(null);
   /**

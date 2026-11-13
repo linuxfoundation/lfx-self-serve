@@ -167,7 +167,8 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
-            activeProject,
+            menuContext: selectedProject,
+            menuProject: activeProject,
             menuCanWrite: canWrite,
             menuProjectStage: activeProjectStage,
             menuProjectStageResolved: activeProjectStageResolved,
@@ -381,6 +382,15 @@ describe('SidebarNavService', () => {
     personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
 
     expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
+  });
+
+  it('ignores a fetched record that describes a different project (stale during a switch or a foundation preview)', () => {
+    activeLens.set('project');
+    selectedProject.set({ uid: 'child', slug: 'child' } as never);
+    activeProject.set({ uid: 'previous', parent_uid: 'f-uid' });
+    personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 
   it('shows Participating companies when only the fetched project record carries the parent foundation uid', () => {
