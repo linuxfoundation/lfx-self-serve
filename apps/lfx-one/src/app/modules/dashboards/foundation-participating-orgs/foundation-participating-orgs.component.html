@@ -75,11 +75,7 @@
             <ng-template #item let-item>
               <!-- tabindex -1 and no click handler, as the other custom menus here: the menu item owns the click, and its Enter and Space key
                    handling clicks the button inside the row, so keyboard use starts the export too. -->
-              <button
-                type="button"
-                tabindex="-1"
-                class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left"
-                [attr.data-testid]="item.id">
+              <button type="button" tabindex="-1" class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left" [attr.data-testid]="item.id">
                 <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
                 <span class="text-xs text-gray-600">{{ item.title }}</span>
               </button>

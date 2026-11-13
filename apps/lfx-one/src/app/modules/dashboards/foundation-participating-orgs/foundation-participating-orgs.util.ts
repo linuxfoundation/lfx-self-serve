@@ -20,7 +20,6 @@ import type {
   FoundationParticipatingOrgsProjectOptionGroup,
 } from '@lfx-one/shared/interfaces';
 
-
 export function decorateFoundationOrgRow(row: FoundationParticipatingOrg): FoundationParticipatingOrgRowVm {
   const tier = row.isMember ? row.membershipTierClass : null;
   return {
@@ -100,7 +99,10 @@ export function groupProjectOptions(projects: FoundationParticipatingOrgsProject
     group.items.push({ label: project.name, value: project.slug });
     groups.set(label, group);
   }
-  return [...groups.values()].map((group) => ({ ...group, label: group.label === FOUNDATION_PARTICIPATING_ORGS_NO_MATURITY_LABEL ? group.label : `${group.label} · ${group.items.length}` }));
+  return [...groups.values()].map((group) => ({
+    ...group,
+    label: group.label === FOUNDATION_PARTICIPATING_ORGS_NO_MATURITY_LABEL ? group.label : `${group.label} · ${group.items.length}`,
+  }));
 }
 
 function metric(value: number, fraction: number | null): FoundationParticipatingOrgMetricVm {
