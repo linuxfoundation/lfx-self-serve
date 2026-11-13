@@ -5,7 +5,14 @@ import { computed, signal } from '@angular/core';
 import type { Signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router } from '@angular/router';
-import { ALL_LENSES, CREATABLE_ARTIFACTS, NAVBAR_PEEK_CLOSE_DELAY_MS, NAVBAR_PEEK_RECHECK_DELAY_MS, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
+import {
+  ALL_LENSES,
+  CREATABLE_ARTIFACTS,
+  NAVBAR_PEEK_CLOSE_DELAY_MS,
+  NAVBAR_PEEK_RECHECK_DELAY_MS,
+  NAVBAR_ROLE_STYLES,
+  NAVBAR_THEME_STORAGE_KEY,
+} from '@lfx-one/shared/constants';
 import type {
   CreatableArtifactConfig,
   Lens,
@@ -21,6 +28,7 @@ import type {
 import { AccountContextService } from '@services/account-context.service';
 import { AppService } from '@services/app.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
+import { NavbarThemeService } from '@services/navbar-theme.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
@@ -1077,6 +1085,52 @@ describe('NavbarComponent', () => {
       expect(navbar.railVisible()).toBe(false);
       expect(navbar.railDocked()).toBe(false);
       expect(fixture.nativeElement.classList).not.toContain('lfxn-host--dock');
+    });
+  });
+  describe('sidebar theme', () => {
+    afterEach(() => localStorage.clear());
+
+    type ThemeView = Record<'onSidebarThemeChange', (theme: string | null) => void>;
+
+    it('restores a stored light theme on the desktop navbar once it has rendered', async () => {
+      localStorage.setItem(NAVBAR_THEME_STORAGE_KEY, 'light');
+      const fixture = await createNavbarFixture([]);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.classList).toContain('is-light');
+    });
+
+    it('switches the desktop navbar between dark and light, remembering the choice', async () => {
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as ThemeView;
+      expect(fixture.nativeElement.classList).not.toContain('is-light');
+
+      navbar.onSidebarThemeChange('light');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.classList).toContain('is-light');
+      expect(localStorage.getItem(NAVBAR_THEME_STORAGE_KEY)).toBe('light');
+
+      navbar.onSidebarThemeChange('dark');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.classList).not.toContain('is-light');
+      expect(localStorage.getItem(NAVBAR_THEME_STORAGE_KEY)).toBe('dark');
+    });
+
+    it('ignores a value that is not a theme', async () => {
+      const fixture = await createNavbarFixture([]);
+      (fixture.componentInstance as unknown as ThemeView).onSidebarThemeChange(null);
+
+      expect(TestBed.inject(NavbarThemeService).theme()).toBe('dark');
+      expect(localStorage.getItem(NAVBAR_THEME_STORAGE_KEY)).toBeNull();
+    });
+
+    it('keeps the mobile drawer dark whatever the stored theme', async () => {
+      localStorage.setItem(NAVBAR_THEME_STORAGE_KEY, 'light');
+      const fixture = await createNavbarFixture([], [], {}, { mobile: true });
+      TestBed.inject(NavbarThemeService).setTheme('light');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.classList).not.toContain('is-light');
     });
   });
 });
