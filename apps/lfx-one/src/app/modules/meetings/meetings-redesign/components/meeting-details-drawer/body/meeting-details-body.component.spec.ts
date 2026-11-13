@@ -130,6 +130,29 @@ describe('MeetingDetailsBodyComponent', () => {
       return TestBed.inject(OverlayContainer).getContainerElement();
     };
 
+    it('offers the project calendar of a public meeting where the host provides it', async () => {
+      const subscribeToCalendar = vi.fn();
+      const meeting = { ...MEETING, organizer: false, visibility: 'public', project_uid: 'project-uid' } as Meeting;
+      configure({ ...ROW, meeting }, { subscribeToCalendar });
+
+      const overlay = await openMenu();
+      (overlay.querySelector('[data-testid="meeting-details-subscribe-calendar"]') as HTMLElement).click();
+
+      expect(subscribeToCalendar).toHaveBeenCalledWith(expect.objectContaining({ id: MEETING.id, project_uid: 'project-uid' }));
+    });
+
+    it.each([
+      ['a private meeting', { visibility: 'private', project_uid: 'project-uid' }],
+      ['a public meeting with no project', { visibility: 'public' }],
+    ])('offers no project calendar for %s, even where the host provides it', async (_, fields) => {
+      configure({ ...ROW, meeting: { ...MEETING, ...fields } as Meeting }, { subscribeToCalendar: vi.fn() });
+
+      const overlay = await openMenu();
+
+      expect(overlay.querySelector('[data-testid="meeting-details-edit"]')).not.toBeNull();
+      expect(overlay.querySelector('[data-testid="meeting-details-subscribe-calendar"]')).toBeNull();
+    });
+
     it('hands a cancelled date to the host', async () => {
       const occurrence = { occurrence_id: '2524640400', start_time: ROW.startTime, duration: 30 } as MeetingOccurrence;
       const meeting = { ...MEETING, recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, occurrences: [occurrence] } as unknown as Meeting;
@@ -141,6 +164,7 @@ describe('MeetingDetailsBodyComponent', () => {
       );
 
       const overlay = await openMenu();
+      expect(overlay.querySelector('[data-testid="meeting-details-subscribe-calendar"]')).toBeNull();
       (overlay.querySelector('[data-testid="meeting-details-cancel-occurrence"]') as HTMLElement).click();
 
       expect(occurrenceCancelled).toHaveBeenCalledWith(expect.objectContaining({ id: MEETING.id }), occurrence);

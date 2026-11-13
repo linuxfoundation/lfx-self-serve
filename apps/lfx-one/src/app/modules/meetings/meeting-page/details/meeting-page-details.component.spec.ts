@@ -10,6 +10,7 @@ import { MEETING_PAGE_GUEST_FORM_STATE, MEETING_PAGE_LEGACY_STATE } from '@lfx-o
 import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,6 +51,7 @@ const UPCOMING_ROW = {
 
 describe('MeetingPageDetailsComponent', () => {
   let navigateByUrl: ReturnType<typeof vi.fn>;
+  let openDialog: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let refresh: ReturnType<typeof vi.fn>;
   let claimJoinOnLoad: ReturnType<typeof vi.fn>;
@@ -68,6 +70,7 @@ describe('MeetingPageDetailsComponent', () => {
 
   beforeEach(() => {
     navigateByUrl = vi.fn().mockResolvedValue(true);
+    openDialog = vi.fn();
     navigate = vi.fn().mockResolvedValue(true);
     refresh = vi.fn();
     claimJoinOnLoad = vi.fn().mockReturnValue(true);
@@ -92,10 +95,13 @@ describe('MeetingPageDetailsComponent', () => {
       ],
     });
     TestBed.overrideComponent(MeetingPageDetailsComponent, {
-      remove: { imports: [MeetingDetailsBodyComponent], providers: [MeetingDetailsContext] },
+      remove: { imports: [MeetingDetailsBodyComponent], providers: [MeetingDetailsContext, DialogService] },
       add: {
         schemas: [CUSTOM_ELEMENTS_SCHEMA],
-        providers: [{ provide: MeetingDetailsContext, useValue: { pastMeetingId, occurrence, shownRow: () => row() } }],
+        providers: [
+          { provide: MeetingDetailsContext, useValue: { pastMeetingId, occurrence, shownRow: () => row() } },
+          { provide: DialogService, useValue: { open: openDialog } },
+        ],
       },
     });
   });
@@ -174,6 +180,24 @@ describe('MeetingPageDetailsComponent', () => {
 
     expect(navigateByUrl).toHaveBeenCalledWith(`/meetings/123?occurrence=${Date.parse('2030-01-22T10:00:00Z')}`);
     fixture.destroy();
+  });
+
+  it('opens the project calendar feed in the subscribe dialog', () => {
+    source().subscribeToCalendar?.({ id: '123', project_uid: 'p 1', project_name: 'Parity Project' } as Meeting);
+
+    expect(openDialog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        header: 'Subscribe — Parity Project',
+        data: { feedUrl: expect.stringMatching(/\/public\/api\/projects\/p%201\/calendar\.ics$/), name: 'Parity Project' },
+      })
+    );
+  });
+
+  it('opens no dialog for a meeting with no project', () => {
+    source().subscribeToCalendar?.({ id: '123', project_uid: '', project_name: 'Parity Project' } as Meeting);
+
+    expect(openDialog).not.toHaveBeenCalled();
   });
 
   describe("the viewer's answer", () => {
