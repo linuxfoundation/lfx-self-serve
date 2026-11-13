@@ -151,6 +151,8 @@ export class FormationsPipelineComponent {
   private foundationsRequested = false;
   /** A link may name classification values this data does not have; they are dropped once, against the first rows that load. */
   private classificationChecked = false;
+  /** The viewer the last successful response named. A failed read keeps it, so a formation-team member's Draft stage survives a failed foundation-filtered load; `staff` stands in only before the first success. Declared before `response`. */
+  private lastViewer: FormationPipelineViewer = 'staff';
 
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly foundationUid: Signal<string | null> = this.initFoundationUid();
@@ -392,13 +394,14 @@ export class FormationsPipelineComponent {
             tap((response) => {
               this.viewerKnown.set(true);
               this.pruneUnknownClassification(response);
+              this.lastViewer = response.viewer;
               this.rememberFoundations(response, foundationUid);
               this.loadFoundationOptionsForDeepLink(foundationUid);
             }),
             catchError((error: unknown) => {
               console.error('[FormationsPipeline] Failed to load the pipeline', error);
               this.loadError.set(error instanceof HttpErrorResponse && error.status === 403 ? 'forbidden' : 'failed');
-              return of(empty);
+              return of({ ...empty, viewer: this.lastViewer });
             }),
             finalize(() => this.loading.set(false))
           );

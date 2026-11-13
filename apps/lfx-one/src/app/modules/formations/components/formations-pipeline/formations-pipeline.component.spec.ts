@@ -935,6 +935,24 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(vi.mocked(TestBed.inject(Router).navigate)).not.toHaveBeenCalled();
     });
 
+    it("keeps a formation-team member's Draft stage in the URL when a foundation-filtered load then fails", async () => {
+      await render(of(response(ROWS)), { stage: 'prospect' });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getFormationPipeline.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      fixture.componentInstance['filterForm'].controls.foundation.setValue('f2');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(q('formations-pipeline-error')).not.toBeNull();
+      const params = vi
+        .mocked(TestBed.inject(Router).navigate)
+        .mock.calls.map((call) => (call[1] as { queryParams: Record<string, string | null> }).queryParams);
+      expect(params.at(-1)).toMatchObject({ stage: 'prospect', foundation: 'f2' });
+      expect(params.some((p) => p['stage'] === null)).toBe(false);
+    });
+
     it('adds no write control: rows only link to the formation page', async () => {
       await render(of(response(staffRows, 'staff')));
 
