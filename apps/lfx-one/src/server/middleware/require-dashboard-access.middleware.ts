@@ -147,8 +147,9 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
 
     // Climb project -> parent -> ... until an ED-scoped project is found. Ancestor reads are metadata-only
     // (`access: false`); an unreadable ancestor (or the hidden ROOT) simply ends the climb as "not in scope".
-    let project: Project = await projectService.getProjectById(req, uid, false);
-    for (let depth = 0; depth < PROJECT_ANCESTRY_MAX_DEPTH; depth++) {
+    // Skipped when the ED has no scoped projects (e.g. a root writer): there is nothing to match against.
+    let project: Project | null = edProjects.length > 0 ? await projectService.getProjectById(req, uid, false) : null;
+    for (let depth = 0; project && depth < PROJECT_ANCESTRY_MAX_DEPTH; depth++) {
       if (edUids.has(project.uid) || edSlugs.has((project.slug ?? '').toLowerCase())) {
         next();
         return;

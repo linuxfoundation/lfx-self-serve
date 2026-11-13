@@ -359,6 +359,14 @@ describe('requireExecutiveOrLFStaff', () => {
     expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'child');
   });
 
+  it('skips the ancestry climb for an ED with no scoped projects', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f'));
+    checkProjectWriter.mockResolvedValue(true);
+    expect(verdict(await run())).toBe('allow');
+    expect(getProjectById).not.toHaveBeenCalled();
+  });
+
   it('denies a root writer without writer access on the requested project, whatever its umbrella grants', async () => {
     getPersonas.mockResolvedValue(rootWriter());
     projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-tlf'), proj('uid-tlf', 'tlf', 'uid-root'), proj('uid-root', 'ROOT'));
