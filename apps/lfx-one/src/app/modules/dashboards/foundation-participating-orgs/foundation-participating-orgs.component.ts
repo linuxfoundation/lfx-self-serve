@@ -433,7 +433,7 @@ export class FoundationParticipatingOrgsComponent {
     return Object.fromEntries(
       Object.entries(this.breakdowns()).map(([key, state]) => {
         if (!state.data) return [key, { state, total: null, lines: [], other: null, canFilter: false }];
-        const { shown, other } = splitBreakdown(state.data.projects, state.showAll, state.filter);
+        const { shown, other } = splitBreakdown(state.data.projects, state.showAll, state.filter, scope);
         return [
           key,
           {

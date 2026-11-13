@@ -53,6 +53,14 @@ describe('splitBreakdown', () => {
     expect(result.other).toEqual({ count: 2, commits: lines[10].commits + lines[11].commits, shareOfCompanyCommits: 0.1, shareLabel: '10%' });
   });
 
+  it('keeps the project the page is scoped to visible when it falls past the top 10', () => {
+    const result = splitBreakdown(lines, false, '', 'project-12');
+    expect(result.shown).toHaveLength(10);
+    expect(result.shown.map((item) => item.projectSlug)).toContain('project-12');
+    expect(result.other?.count).toBe(2);
+    expect(result.other?.commits).toBe(lines[9].commits + lines[10].commits);
+  });
+
   it('shows everything for Show all, and filters by name without folding', () => {
     expect(splitBreakdown(lines, true, '').shown).toHaveLength(12);
     const filtered = splitBreakdown(lines, false, ' project 11 ');

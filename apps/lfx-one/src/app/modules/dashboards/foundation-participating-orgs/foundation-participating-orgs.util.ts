@@ -59,16 +59,29 @@ export function decorateProjectLine(line: FoundationParticipatingOrgProjectLine)
 export function splitBreakdown(
   lines: FoundationParticipatingOrgProjectLine[],
   showAll: boolean,
-  filter: string
+  filter: string,
+  pinSlug: string | null = null
 ): { shown: FoundationParticipatingOrgProjectLine[]; other: FoundationParticipatingOrgOtherProjects | null } {
   const needle = filter.trim().toLowerCase();
   const matching = needle ? lines.filter((line) => line.name.toLowerCase().includes(needle)) : lines;
   if (showAll || needle || matching.length <= FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N) return { shown: matching, other: null };
 
-  const rest = matching.slice(FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N);
+  // A project the page is scoped to stays visible: when it falls past the top N it takes the last slot, so it is never hidden in Other.
+  const pinned = pinSlug ? matching.findIndex((line) => line.projectSlug === pinSlug) : -1;
+  const ordered =
+    pinned >= FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N
+      ? [
+          ...matching.slice(0, FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N - 1),
+          matching[pinned],
+          ...matching
+            .slice(FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N - 1)
+            .filter((_, index) => index + FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N - 1 !== pinned),
+        ]
+      : matching;
+  const rest = ordered.slice(FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N);
   const otherShare = rest.reduce((sum, line) => sum + line.shareOfCompanyCommits, 0);
   return {
-    shown: matching.slice(0, FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N),
+    shown: ordered.slice(0, FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N),
     other: {
       count: rest.length,
       commits: rest.reduce((sum, line) => sum + line.commits, 0),
