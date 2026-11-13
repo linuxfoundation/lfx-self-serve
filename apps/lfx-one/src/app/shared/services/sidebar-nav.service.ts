@@ -125,6 +125,25 @@ export class SidebarNavService {
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
 
+  /**
+   * Mirrors the BFF gate for the project Participating companies page so the entry is hidden, not a dead end: LF staff,
+   * or an executive director with a scoped project that is the active project or its direct parent. The BFF stays
+   * authoritative (it walks the full ancestry), so a deeper-nested project an ED directs is hidden here rather than shown.
+   */
+  private readonly canSeeParticipatingOrgs: Signal<boolean> = computed(() => {
+    if (this.personaService.isLFStaff()) return true;
+    if (this.personaService.currentPersona() !== 'executive-director') return false;
+    const project = this.projectContextService.selectedProject();
+    if (!project) return false;
+    const scoped = this.personaService.personaProjects()['executive-director'] ?? [];
+    return scoped.some(
+      (scope) =>
+        scope.projectUid === project.uid ||
+        (!!project.parent_uid && scope.projectUid === project.parent_uid) ||
+        scope.projectSlug.toLowerCase() === project.slug.toLowerCase()
+    );
+  });
+
   /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
   private readonly foundationAuditorProbePending = signal(false);
   /**
@@ -229,9 +248,9 @@ export class SidebarNavService {
         const writerItems = this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem, ...mentorshipItems] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
-        // Participating Organizations (#2091) is shown to executive directors and LF staff only, matching Health
-        // Metrics. This is a role check; the BFF also scopes an ED to foundations they direct and requires project `viewer`.
-        const participatingOrgsItems = this.personaService.canViewExecutiveDashboards() ? [this.projectParticipatingOrgsNavItem] : [];
+        // Participating companies (#2091) is shown only to callers the BFF will serve: LF staff, or an executive
+        // director whose scoped foundations cover the active project (see `canSeeParticipatingOrgs`).
+        const participatingOrgsItems = this.canSeeParticipatingOrgs() ? [this.projectParticipatingOrgsNavItem] : [];
         const items = [...coreItems, ...participatingOrgsItems, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
