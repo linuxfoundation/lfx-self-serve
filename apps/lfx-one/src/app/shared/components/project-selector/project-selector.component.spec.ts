@@ -18,6 +18,7 @@ import { ProjectSelectorComponent } from './project-selector.component';
 // and NavigationService dependencies, which these tests don't otherwise provide).
 const favoriteProjectsServiceStub = {
   state: signal({ data: new Set<string>(), loading: false, readOnly: false, error: null }),
+  favoritesAvailable: signal(true),
   toggleFavorite: () => undefined,
 };
 
@@ -76,6 +77,10 @@ describe('ProjectSelectorComponent ordering', () => {
     await fixture.whenStable();
   });
 
+  afterEach(() => {
+    favoriteProjectsServiceStub.favoritesAvailable.set(true);
+  });
+
   function renderedSlugs(): string[] {
     return Array.from(document.body.querySelectorAll('[data-testid^="lens-item-"]')).map((el) =>
       (el.getAttribute('data-testid') ?? '').replace('lens-item-', '')
@@ -105,6 +110,17 @@ describe('ProjectSelectorComponent ordering', () => {
     await search('cloud');
     await search('');
 
+    expect(renderedSlugs()).toEqual(['alpha-cloud', 'mid-cloud', 'zeta-cloud']);
+  });
+
+  it('hides the favorite stars while favorites are unavailable, as during impersonation', async () => {
+    const favoriteToggles = (): number => document.body.querySelectorAll('[data-testid^="favorite-toggle-"]').length;
+    expect(favoriteToggles()).toBe(items.length);
+
+    favoriteProjectsServiceStub.favoritesAvailable.set(false);
+    await fixture.whenStable();
+
+    expect(favoriteToggles()).toBe(0);
     expect(renderedSlugs()).toEqual(['alpha-cloud', 'mid-cloud', 'zeta-cloud']);
   });
 

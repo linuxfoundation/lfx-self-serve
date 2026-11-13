@@ -101,6 +101,8 @@ export class UserPreferenceService {
     const baseUrl = getUserServiceBaseUrl(operation, 'user_service');
     // Upstream $filter values are unquoted — quoting matches nothing. A failed filter returns
     // everything, so the find below (by AppName+Name, the uniqueness key) is the real guard.
+    // Read past potentially stale upstream responses so every lookup sees the current preference
+    // row for reads, updates, conflict recovery, and deletes (#5679).
     const filter = encodeURIComponent(`AppName eq ${appName} and Name eq ${name}`);
     const url = `${baseUrl}/users/${encodeURIComponent(sfid)}/preferences?$filter=${filter}`;
 
@@ -111,6 +113,7 @@ export class UserPreferenceService {
       service: 'user_service',
       errorMessage: 'Preference fetch failed',
       errorCode: 'USER_PREFERENCE_FETCH_FAILED',
+      bypassCache: true,
     });
 
     return list?.Data?.find((p) => p.Name === name && p.AppName === appName) ?? null;
