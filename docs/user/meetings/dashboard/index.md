@@ -49,7 +49,7 @@ Use the controls above the list to narrow it:
 - **All Types** limits the list to one meeting type.
 - In the Me lens, you can also filter by foundation or project.
 - In the Foundation or Project lens, you can also choose which of its projects' meetings to show:
-  - The project filter starts on the foundation or project alone, shown as, for example, **FINOS only**. Pick one or more projects to show theirs instead, such as the foundation and a few of its sub-projects, or select all of them. It appears when there are sub-projects.
+  - The project filter starts on the foundation or project alone, shown as, for example, **FINOS only**. Pick one or more projects to show theirs instead, such as the foundation and a few of its sub-projects, or select all of them. It appears when there are sub-projects. A very large foundation, with more than 100 projects, can show at most 100 projects at a time: picking more, or all of them, shows the foundation's own meetings only.
   - Your project choice is remembered for you, for each foundation or project, the next time you open its meetings. It doesn't change what other people see.
   - If the foundation or project has no meetings of its own, the page says so and offers **Show all projects**, which selects every project.
   - **All groups** limits the list to one group. A group from a sub-project shows that project's name in brackets.
