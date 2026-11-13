@@ -163,7 +163,18 @@ describe('OrgNavigationService — CLA-only organizations', () => {
       expect.objectContaining({ uid: COMPANY_B, name: 'Beta Corp', claOnly: true }),
     ]);
     expect(response).toMatchObject({ next_page_token: null, upstream_failed: false, total: 2 });
+    expect(response.cla_only_deferred).toBeUndefined();
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('answers cla_only with nothing for a caller with no Org Lens grant, whose CLA-only rows are already on the main list', async () => {
+    noGrants();
+    listClaOnlyOrgs.mockResolvedValue({ orgs: [{ uid: COMPANY_A, name: 'Acme Corp' }], failed: false });
+
+    const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true });
+
+    expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+    expect(response).toEqual({ items: [], next_page_token: null, upstream_failed: false, total: 0 });
   });
 
   describe('for a caller who also holds organizations', () => {
@@ -189,68 +200,77 @@ describe('OrgNavigationService — CLA-only organizations', () => {
       });
     }
 
-    it('lists the CLA-only companies after the held organizations, each half sorted by name', async () => {
+    it('answers the held organizations without waiting on the CLA-only lookup, and says the CLA-only rows are deferred', async () => {
       holds();
-      listClaOnlyOrgs.mockResolvedValue({
-        orgs: [
-          { uid: COMPANY_B, name: 'Beta Corp' },
-          { uid: COMPANY_A, name: 'Acme Corp' },
-        ],
-        failed: false,
-      });
+      listClaOnlyOrgs.mockReturnValue(new Promise(() => undefined));
 
       const response = await new OrgNavigationService().getOrgItems(req, {});
 
-      expect(response.items.map((item) => [item.uid, item.claOnly === true])).toEqual([
-        [HELD_Z, false],
-        [HELD_INHERITED, false],
-        [COMPANY_A, true],
-        [COMPANY_B, true],
-      ]);
-      expect(response).toMatchObject({ next_page_token: null, upstream_failed: false, total: 4 });
+      expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+      expect(response.items.map((item) => item.uid)).toEqual([HELD_Z, HELD_INHERITED]);
+      expect(response).toMatchObject({ next_page_token: null, upstream_failed: false, total: 2, cla_only_deferred: true });
     });
 
-    it('never looks up an organization the caller holds, directly or by inheritance', async () => {
+    it('defers the CLA-only rows on a search page too, filtering only the held half', async () => {
       holds();
-      listClaOnlyOrgs.mockResolvedValue({ orgs: [], failed: false });
-
-      await new OrgNavigationService().getOrgItems(req, {});
-
-      expect(listClaOnlyOrgs).toHaveBeenCalledWith(req, new Set([HELD_Z, HELD_INHERITED]));
-    });
-
-    it('filters both halves by the typed name', async () => {
-      holds();
-      listClaOnlyOrgs.mockResolvedValue({
-        orgs: [
-          { uid: COMPANY_A, name: 'Acme Corp' },
-          { uid: COMPANY_B, name: 'Zebra Labs' },
-        ],
-        failed: false,
-      });
 
       const response = await new OrgNavigationService().getOrgItems(req, { name: 'lab' });
 
-      expect(response.items.map((item) => item.uid)).toEqual([HELD_INHERITED, COMPANY_B]);
+      expect(response.items.map((item) => item.uid)).toEqual([HELD_INHERITED]);
+      expect(response.cla_only_deferred).toBe(true);
     });
 
-    it('pins a selected CLA-only company the search would otherwise hide', async () => {
-      holds();
-      listClaOnlyOrgs.mockResolvedValue({ orgs: [{ uid: COMPANY_C, name: 'Gamma Corp' }], failed: false });
+    describe('with cla_only', () => {
+      it('answers only the CLA-only companies, alphabetical and unfiltered by the name', async () => {
+        holds();
+        listClaOnlyOrgs.mockResolvedValue({
+          orgs: [
+            { uid: COMPANY_B, name: 'Beta Corp' },
+            { uid: COMPANY_A, name: 'Acme Corp' },
+          ],
+          failed: false,
+        });
 
-      const response = await new OrgNavigationService().getOrgItems(req, { name: 'zeta', selectedUid: COMPANY_C });
+        const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true, name: 'beta' });
 
-      expect(response.items.map((item) => item.uid)).toEqual([COMPANY_C, HELD_Z, HELD_INHERITED]);
-    });
+        expect(response.items.map((item) => [item.uid, item.claOnly === true])).toEqual([
+          [COMPANY_A, true],
+          [COMPANY_B, true],
+        ]);
+        expect(response).toEqual({ items: response.items, next_page_token: null, upstream_failed: false, total: 2 });
+      });
 
-    it('keeps the held organizations and reports a failed CLA-only lookup', async () => {
-      holds();
-      listClaOnlyOrgs.mockResolvedValue({ orgs: [], failed: true });
+      it('never looks up an organization the caller holds, directly or by inheritance', async () => {
+        holds();
+        listClaOnlyOrgs.mockResolvedValue({ orgs: [], failed: false });
 
-      const response = await new OrgNavigationService().getOrgItems(req, {});
+        await new OrgNavigationService().getOrgItems(req, { claOnly: true });
 
-      expect(response.items.map((item) => item.uid)).toEqual([HELD_Z, HELD_INHERITED]);
-      expect(response.upstream_failed).toBe(true);
+        expect(listClaOnlyOrgs).toHaveBeenCalledWith(req, new Set([HELD_Z, HELD_INHERITED]));
+      });
+
+      it('reports a failed lookup alongside the rows that did resolve', async () => {
+        holds();
+        listClaOnlyOrgs.mockResolvedValue({ orgs: [{ uid: COMPANY_C, name: 'Gamma Corp' }], failed: true });
+
+        const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true });
+
+        expect(response.items.map((item) => item.uid)).toEqual([COMPANY_C]);
+        expect(response.upstream_failed).toBe(true);
+      });
+
+      it.each([
+        ['the roll-up is degraded', { degraded: true }],
+        ['the staff check failed', { staffCheck: 'failed' }],
+        ['the caller is staff', { isStaff: true }],
+      ])('answers an empty list without asking when %s', async (_label, overrides) => {
+        holds(overrides);
+
+        const response = await new OrgNavigationService().getOrgItems(req, { claOnly: true });
+
+        expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+        expect(response).toEqual({ items: [], next_page_token: null, upstream_failed: false, total: 0 });
+      });
     });
 
     it.each([
@@ -263,14 +283,16 @@ describe('OrgNavigationService — CLA-only organizations', () => {
 
       expect(listClaOnlyOrgs).not.toHaveBeenCalled();
       expect(response.items.map((item) => item.uid)).toEqual([HELD_Z, HELD_INHERITED]);
+      expect(response.cla_only_deferred).toBeUndefined();
     });
 
-    it('asks nothing on a continuation page', async () => {
+    it('asks nothing and defers nothing on a continuation page', async () => {
       holds();
 
-      await new OrgNavigationService().getOrgItems(req, { pageToken: 'cursor-2' });
+      const response = await new OrgNavigationService().getOrgItems(req, { pageToken: 'cursor-2' });
 
       expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+      expect(response.cla_only_deferred).toBeUndefined();
     });
   });
 
@@ -282,12 +304,13 @@ describe('OrgNavigationService — CLA-only organizations', () => {
     expect(listClaOnlyOrgs).not.toHaveBeenCalled();
   });
 
-  it('never asks for CLA-only organizations for staff', async () => {
-    proxyRequest.mockResolvedValue(cataloguePage([], null));
+  it('never asks for or defers CLA-only organizations for staff', async () => {
+    proxyRequest.mockResolvedValue(cataloguePage(['found'], null));
 
-    await new OrgNavigationService().getOrgItems(req, { name: 'org' });
+    const response = await new OrgNavigationService().getOrgItems(req, { name: 'org' });
 
     expect(listClaOnlyOrgs).not.toHaveBeenCalled();
+    expect(response.cla_only_deferred).toBeUndefined();
   });
 
   it('reports a failed lookup alongside the rows that did resolve', async () => {

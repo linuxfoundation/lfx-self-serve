@@ -178,32 +178,16 @@ describe('OrgClaOnlyOrgsService.getRoleGrantClaManagerOrgs', () => {
     });
   });
 
-  it('answers a grant holder’s CLA-manager companies too, without one they hold', async () => {
-    expect(await service(scopesOf(COMPANY_A, COMPANY_B, COMPANY_C)).getRoleGrantClaManagerOrgs(req(), { ...grants, writers: [COMPANY_A] })).toEqual({
-      claManagerOrgs: [COMPANY_B, COMPANY_C],
-      claManagerLookup: 'ok',
-    });
-  });
-
   it.each([
     ['a writer grant', { writers: [COMPANY_C] }],
     ['an auditor grant', { auditors: [COMPANY_C] }],
     ['a cascading writer grant', { cascadingWriters: cascading }],
     ['a cascading auditor grant', { cascadingAuditors: cascading }],
-  ])('never answers a company held through %s as CLA-only', async (_label, overrides) => {
-    expect(await service(scopesOf(COMPANY_A, COMPANY_C)).getRoleGrantClaManagerOrgs(req(), { ...grants, ...overrides })).toEqual({
-      claManagerOrgs: [COMPANY_A],
-      claManagerLookup: 'ok',
-    });
-  });
+  ])('never asks user-service for a caller holding %s, whose CLA-only rows come from the switcher', async (_label, overrides) => {
+    const scopes = scopesOf(COMPANY_A, COMPANY_C);
 
-  it('marks a grant holder’s unreadable scopes as failed, keeping their grants authoritative', async () => {
-    const scopes = { getCompanySfids: vi.fn().mockRejectedValue(new Error('user-service down')) };
-
-    expect(await service(scopes).getRoleGrantClaManagerOrgs(req(), { ...grants, writers: [COMPANY_C] })).toEqual({
-      claManagerOrgs: [],
-      claManagerLookup: 'failed',
-    });
+    expect(await service(scopes).getRoleGrantClaManagerOrgs(req(), { ...grants, ...overrides })).toEqual({ claManagerOrgs: [], claManagerLookup: 'ok' });
+    expect(scopes.getCompanySfids).not.toHaveBeenCalled();
   });
 
   it.each([

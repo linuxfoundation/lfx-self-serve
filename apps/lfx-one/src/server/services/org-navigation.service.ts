@@ -11,6 +11,7 @@ import {
   QueryServiceResponse,
   ResolvedOrgRole,
 } from '@lfx-one/shared/interfaces';
+import { filterOrgItemsByName, sortOrgItemsByName } from '@lfx-one/shared/utils/org-selector.utils';
 import { Request } from 'express';
 
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -56,7 +57,17 @@ export class OrgNavigationService {
     const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
     const rosterAnswered = !access.upstreamFailed && !access.degraded && access.staffCheck !== 'failed';
 
-    if (claOnlyEntryApplies(access.isStaff, access.resolved.size, rosterAnswered)) {
+    const claOnlyEntry = claOnlyEntryApplies(access.isStaff, access.resolved.size, rosterAnswered);
+
+    if (params.claOnly) {
+      // Inline on the main list for a caller who holds nothing, so nothing is deferred to answer here.
+      if (pageToken || claOnlyEntry || !claOnlyListApplies(access.isStaff, rosterAnswered)) {
+        return { items: [], next_page_token: null, upstream_failed: false, total: 0 };
+      }
+      return this.getDeferredClaOnlyItems(req, new Set(access.resolved.keys()));
+    }
+
+    if (claOnlyEntry) {
       return this.getClaOnlyItems(req, access.upstreamFailed, params, selectedUid);
     }
 
@@ -80,22 +91,13 @@ export class OrgNavigationService {
       return { items: [], next_page_token: null, upstream_failed: access.upstreamFailed, total: 0 };
     }
 
-    const claOnly =
-      !pageToken && claOnlyListApplies(access.isStaff, rosterAnswered)
-        ? await this.claOnlyOrgs.listOrgs(req, new Set([...access.resolved.keys(), ...items.map((item) => item.uid)]))
-        : { orgs: [], failed: false };
-    const claOnlyItems = this.toClaOnlyItems(claOnly.orgs);
+    // A grant holder's CLA-only rows are not looked up here: the CLA Manager lookup must not hold up
+    // the organizations they hold. The client fetches them with `cla_only=1` and lists them after.
+    const claOnlyDeferred = !pageToken && claOnlyListApplies(access.isStaff, rosterAnswered);
 
     // The assigned population is complete on page one and never repeats on a continuation page,
     // which only exists for catalogue paging.
-    const assignedItems = pageToken
-      ? []
-      : this.applySelectedUidPin(
-          [...this.applySort(this.applySearch(items, name), name), ...this.applySort(this.applySearch(claOnlyItems, name), name)],
-          [...items, ...claOnlyItems],
-          selectedUid,
-          pageToken
-        );
+    const assignedItems = pageToken ? [] : this.applySelectedUidPin(sortOrgItemsByName(filterOrgItemsByName(items, name), name), items, selectedUid, pageToken);
 
     const catalogueResult = catalogueTerm
       ? await this.fetchCatalogueMatches(req, catalogueTerm, pageToken, items)
@@ -110,8 +112,7 @@ export class OrgNavigationService {
       discovered_count: discoveredItems.length,
       direct_count: this.countByPrefix(access.resolved, 'direct-'),
       cascading_count: this.countByPrefix(access.resolved, 'inherited-'),
-      cla_only_count: claOnlyItems.length,
-      cla_only_failed: claOnly.failed,
+      cla_only_deferred: claOnlyDeferred,
     });
 
     return {
@@ -120,10 +121,26 @@ export class OrgNavigationService {
       // A failed catalogue search is reported rather than folded into an empty result: for a staff
       // caller with nothing assigned the two are indistinguishable in the list, and "no organizations
       // found" would blame the search term for an outage.
-      upstream_failed: catalogueResult.failed || claOnly.failed,
+      upstream_failed: catalogueResult.failed,
       // No count is claimed for the catalogue — the caller sees what it has loaded so far.
       total: catalogueTerm ? null : assignedItems.length,
+      ...(claOnlyDeferred ? { cla_only_deferred: true } : {}),
     };
+  }
+
+  /**
+   * The `cla_only=1` half of a grant holder's list: their CLA-only organizations, minus any they
+   * hold, alphabetical and unfiltered — the client filters them by the search term itself, so one
+   * lookup serves every search until the next reload. A failed lookup is reported as
+   * `upstream_failed` alongside whatever rows did resolve.
+   */
+  private async getDeferredClaOnlyItems(req: Request, held: ReadonlySet<string>): Promise<OrgItemsResponse> {
+    const { orgs, failed } = await this.claOnlyOrgs.listOrgs(req, held);
+    const items = sortOrgItemsByName(this.toClaOnlyItems(orgs), undefined);
+
+    logger.debug(req, 'build_org_items', 'Built deferred CLA-only org items', { cla_only_count: items.length, cla_only_failed: failed });
+
+    return { items, next_page_token: null, upstream_failed: failed, total: items.length };
   }
 
   /**
@@ -140,7 +157,7 @@ export class OrgNavigationService {
 
     const { orgs, failed } = await this.claOnlyOrgs.listOrgs(req);
     const items = this.toClaOnlyItems(orgs);
-    const shown = this.applySelectedUidPin(this.applySort(this.applySearch(items, name), name), items, selectedUid, pageToken);
+    const shown = this.applySelectedUidPin(sortOrgItemsByName(filterOrgItemsByName(items, name), name), items, selectedUid, pageToken);
 
     logger.debug(req, 'build_org_items', 'Built CLA-only org items', { item_count: shown.length, cla_only_count: items.length, cla_only_failed: failed });
 
@@ -355,25 +372,6 @@ export class OrgNavigationService {
     }
 
     return items;
-  }
-
-  private applySearch(items: OrgItem[], name: string | undefined): OrgItem[] {
-    const trimmed = name?.trim().toLowerCase();
-    if (!trimmed) return items;
-    return items.filter((item) => item.name.toLowerCase().includes(trimmed));
-  }
-
-  /** `best_match` when searching (prefix-rank first), alphabetical otherwise. */
-  private applySort(items: OrgItem[], name: string | undefined): OrgItem[] {
-    const trimmed = name?.trim().toLowerCase();
-    if (trimmed) {
-      return [...items].sort((a, b) => {
-        const aStarts = a.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
-        const bStarts = b.name.toLowerCase().startsWith(trimmed) ? 0 : 1;
-        return aStarts - bStarts || a.name.localeCompare(b.name);
-      });
-    }
-    return [...items].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** FR-013 — pin a previously-selected row at the top when it falls outside the natural list. Skipped on continuation pages. */

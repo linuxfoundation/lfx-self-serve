@@ -96,6 +96,7 @@ describe('OrgSelectorComponent.selectItem', () => {
           useValue: {
             items: signal<OrgItem[]>([rowA, rowB]),
             loading: signal(false),
+            claOnlyPending: signal(false),
             hasMore: signal(false),
             upstreamFailed: signal(false),
             searchTerm: () => signal(''),
@@ -282,6 +283,7 @@ describe('OrgSelectorComponent navbar card', () => {
     writers?: string[];
     inheritedWriters?: string[];
     claManagerOrgs?: string[];
+    claOnlyPending?: boolean;
   }
 
   const createCard = async ({
@@ -291,6 +293,7 @@ describe('OrgSelectorComponent navbar card', () => {
     writers = [],
     inheritedWriters = [],
     claManagerOrgs = [],
+    claOnlyPending = false,
   }: CardSetup): Promise<NavbarCardView> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -324,6 +327,7 @@ describe('OrgSelectorComponent navbar card', () => {
           useValue: {
             items: signal(items),
             loading: signal(false),
+            claOnlyPending: signal(claOnlyPending),
             hasMore: signal(hasMore),
             upstreamFailed: signal(false),
             searchTerm: () => signal(''),
@@ -364,6 +368,10 @@ describe('OrgSelectorComponent navbar card', () => {
     expect((await createCard({ items: [rowA, rowB] })).isSingleOrg()).toBe(false);
     expect((await createCard({ hasMore: true })).isSingleOrg()).toBe(false);
     expect((await createCard({ isStaff: true })).isSingleOrg()).toBe(false);
+  });
+
+  it('keeps the panel while the deferred CLA-only rows are still on their way', async () => {
+    expect((await createCard({ claOnlyPending: true })).isSingleOrg()).toBe(false);
   });
 
   it('keeps the panel when the one listed organization is not the selected one', async () => {
@@ -486,6 +494,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
     familiesIncomplete?: boolean;
     /** The families answer for the current grants has not landed (or was incomplete). */
     familiesUnsettled?: boolean;
+    /** The deferred CLA-only rows are still on their way. */
+    claOnlyPending?: boolean;
   }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
@@ -527,6 +537,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
           useValue: {
             items: signal(opts.items ?? [rowA, rowB]),
             loading: signal(false),
+            claOnlyPending: signal(opts.claOnlyPending ?? false),
             loaded: signal(true),
             hasMore: signal(false),
             upstreamFailed: signal(false),
@@ -776,6 +787,11 @@ describe('OrgSelectorComponent family roll-ups', () => {
     it('ends the retry for an organization selection once the list has loaded', async () => {
       const view = await create({ families: [], familiesUnsettled: true });
       expect(await runInitialFocus(view)).toBe(false);
+    });
+
+    it('keeps the retry armed while the deferred CLA-only rows, which may hold the selection, are on their way', async () => {
+      const view = await create({ families: [], claOnlyPending: true });
+      expect(await runInitialFocus(view)).toBe(true);
     });
   });
 });

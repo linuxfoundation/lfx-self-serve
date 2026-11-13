@@ -49,7 +49,7 @@ export class OrgRoleGrantsService {
   // Spec 053 (FR-011) — the team-membership check threw; `isStaff` is a fail-closed false, not a verdict.
   private readonly staffCheckInternal: WritableSignal<OrgLensStaffCheck> = signal<OrgLensStaffCheck>('ok');
   private readonly correlationIdInternal: WritableSignal<string | null> = signal<string | null>(null);
-  // M3 — orgs reached only as a CLA Manager.
+  // M3 — orgs reached only as a CLA Manager. The server fills it only when every grant set above is empty and the caller is not staff.
   private readonly claManagerOrgSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly claManagerLookupFailedInternal: WritableSignal<boolean> = signal<boolean>(false);
   // #4225 — the caller's own employer is an LF member, so an empty Org Lens means "never granted

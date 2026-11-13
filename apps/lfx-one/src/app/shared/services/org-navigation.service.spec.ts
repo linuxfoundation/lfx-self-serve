@@ -588,6 +588,146 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
   });
 
+  // M3 (#5557): a grant holder's held page lands without waiting on the CLA Manager lookup; their
+  // CLA-only rows follow from one `cla_only=1` request per reload and are listed after the held rows.
+  describe('deferred CLA-only rows', () => {
+    const UID_C = '0014100000MgcCCCCC';
+    const isMainRequest = (req: { url: string; params: { has: (name: string) => boolean } }) => req.url === '/api/nav/org-items' && !req.params.has('cla_only');
+    const isClaOnlyRequest = (req: { url: string; params: { get: (name: string) => string | null } }) =>
+      req.url === '/api/nav/org-items' && req.params.get('cla_only') === '1';
+    const hinted = (items: OrgItem[], upstreamFailed = false): OrgItemsResponse => ({
+      items,
+      next_page_token: null,
+      upstream_failed: upstreamFailed,
+      cla_only_deferred: true,
+    });
+    const claOnlyRow = (uid: string, name: string): OrgItem => item(uid, name, { slug: null, claOnly: true });
+    const bootstrapHinted = (items: OrgItem[]): void => {
+      service.resetAndReload();
+      http.expectOne(isMainRequest).flush(hinted(items));
+    };
+    const flushClaOnly = (items: OrgItem[], upstreamFailed = false): void => {
+      http.expectOne(isClaOnlyRequest).flush({ items, next_page_token: null, upstream_failed: upstreamFailed, total: items.length });
+      TestBed.tick();
+    };
+
+    it('asks for the CLA-only rows once a hinted first page lands, and not otherwise', () => {
+      bootstrapWith([item(UID_A, 'Acme')]);
+      http.expectNone(isClaOnlyRequest);
+
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      expect(service.claOnlyPending()).toBe(true);
+      flushClaOnly([]);
+      expect(service.claOnlyPending()).toBe(false);
+    });
+
+    it('serves every later search from the one request, filtered by the term the held page was fetched with', async () => {
+      vi.useFakeTimers();
+      try {
+        bootstrapHinted([item(UID_A, 'Acme')]);
+        flushClaOnly([claOnlyRow(UID_C, 'Gamma Labs'), claOnlyRow(UID_B, 'Beta Labs')]);
+        expect(service.items().map((row) => row.uid)).toEqual([UID_A, UID_B, UID_C]);
+
+        service.setSearchTerm('gam');
+        TestBed.tick();
+        await vi.advanceTimersByTimeAsync(1000);
+        // The CLA-only rows follow the term the displayed held page answered, not the live input.
+        expect(service.items().map((row) => row.uid)).toEqual([UID_A, UID_B, UID_C]);
+        http.expectOne(isMainRequest).flush(hinted([]));
+        TestBed.tick();
+
+        http.expectNone(isClaOnlyRequest);
+        expect(service.items().map((row) => row.uid)).toEqual([UID_C]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('lists a held organization once, as held, when the CLA-only answer also names it', () => {
+      bootstrapHinted([item(UID_B, 'Beta'), item(UID_A, 'Acme')]);
+      flushClaOnly([claOnlyRow(UID_A, 'Acme'), claOnlyRow(UID_C, 'Gamma')]);
+
+      expect(service.items().map((row) => [row.uid, row.claOnly === true])).toEqual([
+        [UID_B, false],
+        [UID_A, false],
+        [UID_C, true],
+      ]);
+    });
+
+    it.each([
+      ['the CLA-only request fails', () => http.expectOne(isClaOnlyRequest).flush('down', { status: 502, statusText: 'Bad Gateway' })],
+      ['the CLA-only lookup reports a failure', () => flushClaOnly([], true)],
+    ])('reports the list incomplete when %s, keeping the held rows', (_label, fail) => {
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      expect(service.upstreamFailed()).toBe(false);
+
+      fail();
+
+      expect(service.upstreamFailed()).toBe(true);
+      expect(service.items().map((row) => row.uid)).toEqual([UID_A]);
+    });
+
+    it('drops a CLA-only answer requested before a reload', () => {
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      const stale = http.expectOne(isClaOnlyRequest);
+
+      service.resetAndReload();
+      stale.flush({ items: [claOnlyRow(UID_C, 'Gamma')], next_page_token: null, upstream_failed: true, total: 1 });
+
+      expect(service.items().map((row) => row.uid)).not.toContain(UID_C);
+      expect(service.upstreamFailed()).toBe(false);
+      http.expectOne(isMainRequest).flush(hinted([item(UID_A, 'Acme')]));
+      flushClaOnly([claOnlyRow(UID_B, 'Beta')]);
+      expect(service.items().map((row) => row.uid)).toEqual([UID_A, UID_B]);
+    });
+
+    it('waits for the CLA-only rows before deciding a restored selection the held page lacks, then keeps it', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_C, accountId: UID_C });
+
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+
+      flushClaOnly([claOnlyRow(UID_C, 'Gamma')]);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(setIndexedSlug).toHaveBeenCalledWith(null);
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_C)).toBe(true);
+      expect(pinSelection).toHaveBeenCalledWith('default');
+      expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    });
+
+    it('defaults as today when the CLA-only request fails for a restored selection the held page lacks', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_C, accountId: UID_C });
+
+      bootstrapHinted([item(UID_A, 'Acme')]);
+      http.expectOne(isClaOnlyRequest).flush('down', { status: 502, statusText: 'Bad Gateway' });
+      TestBed.tick();
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+    });
+
+    it('picks the default from the held page without waiting', () => {
+      bootstrapHinted([item(UID_A, 'Acme')]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      flushClaOnly([]);
+    });
+
+    it('waits for the CLA-only rows before treating an empty held page as no access', () => {
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+      bootstrapHinted([]);
+      expect(add).not.toHaveBeenCalled();
+      expect(clearAccount).not.toHaveBeenCalled();
+
+      flushClaOnly([claOnlyRow(UID_C, 'Gamma')]);
+
+      expect(add).not.toHaveBeenCalled();
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_C }));
+    });
+  });
+
   // Spec 053 Retry. The bootstrap's semantics on an empty or non-matching first page — clear the
   // selection, or default to the first row — are the wrong contract for "try the same thing again":
   // a Retry pressed mid-outage must leave the viewer's selection exactly where it was.

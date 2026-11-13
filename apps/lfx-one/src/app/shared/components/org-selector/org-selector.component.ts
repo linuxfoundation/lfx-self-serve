@@ -241,7 +241,10 @@ export class OrgSelectorComponent {
     // inherited grants — one org-items row, two or more organizations — would get the static card
     // and no way to open the panel the roll-up lives in (#4132).
     if (this.showRollUpRow()) return false;
-    if (this.isStaff() || this.loading() || this.hasMore() || this.listIncomplete() || items.length !== 1) return false;
+    // CLA-only rows still on their way count as loading: they can add a row to switch to.
+    if (this.isStaff() || this.loading() || this.orgNavigationService.claOnlyPending() || this.hasMore() || this.listIncomplete() || items.length !== 1) {
+      return false;
+    }
     // The one row must be the selection: a deep-linked selection outside the list still needs the
     // panel to switch back, and the not-found dead end recovers through picking the selected row.
     return items[0].uid === this.selectedAccountUid() && !this.onNotFound();
@@ -719,7 +722,8 @@ export class OrgSelectorComponent {
       const familiesAnswerOwed =
         this.accountContextService.rollUpFamiliesLoading() ||
         (this.accountContextService.rollUpFamiliesUnsettled() && !this.accountContextService.rollUpFamiliesIncomplete());
-      const selectedRowOwed = this.accountContextService.isRollUp() && familiesAnswerOwed;
+      // A selected CLA-only organization's row arrives with the deferred CLA-only rows, after the held list.
+      const selectedRowOwed = (this.accountContextService.isRollUp() && familiesAnswerOwed) || this.orgNavigationService.claOnlyPending();
       if (selectedIdx >= 0 || (this.orgNavigationService.loaded() && !selectedRowOwed)) {
         this.pendingInitialFocus = false;
       }

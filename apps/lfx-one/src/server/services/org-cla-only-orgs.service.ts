@@ -44,15 +44,6 @@ export function claOnlyListApplies(isStaff: boolean, rosterAnswered: boolean): b
   return rosterAnswered && !isStaff;
 }
 
-function heldOrgUids(grants: Pick<RoleGrantsResponse, 'writers' | 'auditors' | 'cascadingWriters' | 'cascadingAuditors'>): Set<string> {
-  return new Set([
-    ...grants.writers,
-    ...grants.auditors,
-    ...grants.cascadingWriters.map((grant) => grant.uid),
-    ...grants.cascadingAuditors.map((grant) => grant.uid),
-  ]);
-}
-
 /**
  * Lists and resolves CLA-only organizations. Which companies qualify comes from
  * `OrgClaManagerScopesService` — the caller's own `cla-manager` or `cla-manager-designee` scopes —
@@ -74,17 +65,19 @@ export class OrgClaOnlyOrgsService {
 
   /**
    * The caller's CLA-only organizations, added outside the cached grant computation so the grant
-   * cache never holds an ACS answer. An unreadable scope list is logged and answered as none with
-   * `claManagerLookup: 'failed'`, leaving the grant arrays — the authoritative part — intact, so the
-   * client shows an outage rather than "no organizations".
+   * cache never holds an ACS answer. Asked only when Org Lens granted nothing, so a grant holder's
+   * bootstrap never waits on it — their CLA-only rows come from the selector's deferred request. An
+   * unreadable scope list is logged and answered as none with `claManagerLookup: 'failed'`, leaving
+   * the grant arrays — the authoritative part — intact, so the client shows an outage rather than
+   * "no organizations".
    */
   public async getRoleGrantClaManagerOrgs(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'claManagerOrgs' | 'claManagerLookup'>> {
+    const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
     // A `partial` roster is a lower bound: zero grants there does not prove the caller holds none.
     const rosterAnswered = (grants.lookupOutcome ?? 'ok') === 'ok' && grants.staffCheck !== 'failed';
-    if (!claOnlyListApplies(grants.isStaff, rosterAnswered)) return { claManagerOrgs: [], claManagerLookup: 'ok' };
-    const held = heldOrgUids(grants);
+    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered)) return { claManagerOrgs: [], claManagerLookup: 'ok' };
     try {
-      return { claManagerOrgs: (await this.getOrgUids(req)).filter((uid) => !held.has(uid)), claManagerLookup: 'ok' };
+      return { claManagerOrgs: await this.getOrgUids(req), claManagerLookup: 'ok' };
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'CLA manager scopes lookup failed; reporting the CLA-only lookup as failed', {
         err: error instanceof Error ? error.message : String(error),

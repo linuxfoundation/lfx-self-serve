@@ -53,6 +53,12 @@ export interface OrgItemsResponse {
   upstream_failed: boolean;
   /** Optional total when upstream returns it cheaply; clients tolerate null. */
   total?: number | null;
+  /**
+   * M3 — the caller's CLA-only organizations are not on this page and should be fetched with
+   * `cla_only=1`, then listed after the held rows. Set on a first page for a non-staff caller who
+   * holds at least one grant and whose roster answered; absent otherwise.
+   */
+  cla_only_deferred?: boolean;
 }
 
 /** BFF → query-service shape built by `OrgNavigationService.buildQuery`. */
@@ -76,6 +82,8 @@ export interface GetOrgItemsParams {
   name?: string;
   /** Pin a uid at the top of the first page when it falls outside the natural results. Mutually exclusive with `pageToken`. */
   selectedUid?: string;
+  /** M3 — answer only the caller's CLA-only organizations, unfiltered and alphabetical. Mutually exclusive with `pageToken`. */
+  claOnly?: boolean;
 }
 
 /** A switcher row plus the section heading it introduces, if any. A heading is carried by the first row of its group so an empty group cannot leave a stray heading behind. */
@@ -190,8 +198,8 @@ export interface RoleGrantsResponse {
   correlationId?: string;
   /**
    * Organizations (18-char SFIDs) the caller reaches only as a CLA Manager, from their own
-   * `cla-manager` scopes. Empty when the scopes could not be read. Grants the EasyCLA tab of these
-   * orgs and nothing else.
+   * `cla-manager` scopes. Filled only when every grant array above is empty and `isStaff` is false;
+   * empty when the scopes could not be read. Grants the EasyCLA tab of these orgs and nothing else.
    * Optional for rolling deploys: absent ⇒ empty.
    */
   claManagerOrgs?: string[];
@@ -345,6 +353,10 @@ export interface OrgListPage {
   nextPageToken: string | null;
   upstreamFailed: boolean;
   reset: boolean;
+  /** The search term the page was fetched with. */
+  term?: string;
+  /** The response's `cla_only_deferred`: the caller's CLA-only rows arrive from a separate request. */
+  claOnlyDeferred?: boolean;
 }
 
 /** Carries dispatch generation so stale responses can be filtered out of the merged stream (FR-011 race-guard). */
