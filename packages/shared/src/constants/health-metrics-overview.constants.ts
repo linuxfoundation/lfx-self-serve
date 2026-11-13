@@ -43,8 +43,8 @@ export const HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP = 1000;
 /** Each card's title and its tooltip, in the PCC copy. */
 export const HEALTH_METRICS_OVERVIEW_CARDS = {
   orgs: {
-    title: 'Participating organizations',
-    info: 'Engagement scores are calculated for every participating organization, classifying them into three distinct levels: low, medium, and high engagement. These scores are derived from nine engagement areas:\n\n1. Board Meeting Attendance (Source: Attendance Record in PCC)\n2. Event Attendance (Source: Cvent)\n3. Code Contribution (Source: Insights)\n4. Mailing List Contributions (Source: Groups.io)\n5. Training and Certification (Source: Thought Industries)\n6. Event Sponsorship (Source: Salesforce)\n7. Corporate Training Purchases (Source: Salesforce)\n8. Speaking Proposal Submissions (Source: Sessionize)\n9. Satisfaction Levels (Source: NPS surveys in PCC)',
+    title: 'Participating companies',
+    info: 'Engagement scores are calculated for every participating company, classifying them into three distinct levels: low, medium, and high engagement. These scores are derived from nine engagement areas:\n\n1. Board Meeting Attendance (Source: Attendance Record in PCC)\n2. Event Attendance (Source: Cvent)\n3. Code Contribution (Source: Insights)\n4. Mailing List Contributions (Source: Groups.io)\n5. Training and Certification (Source: Thought Industries)\n6. Event Sponsorship (Source: Salesforce)\n7. Corporate Training Purchases (Source: Salesforce)\n8. Speaking Proposal Submissions (Source: Sessionize)\n9. Satisfaction Levels (Source: NPS surveys in PCC)',
   },
   nps: {
     title: 'Net Promoter Score',
@@ -76,17 +76,17 @@ export const HEALTH_METRICS_OVERVIEW_CARDS = {
   },
   board: {
     title: 'Board meeting participation',
-    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nBoard meeting participation is recorded at 100% for an organization when at least one of its eligible members attends the meeting. In this metric, only voting representatives are considered eligible. The calculation takes into account all past board meetings held within the selected time period. (Source: PCC Meeting Attendance Record)',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nBoard meeting participation is recorded at 100% for a company when at least one of its eligible members attends the meeting. In this metric, only voting representatives are considered eligible. The calculation takes into account all past board meetings held within the selected time period. (Source: PCC Meeting Attendance Record)',
   },
 } as const;
 
-/** The participating organizations card's KPI tooltips, in the PCC copy. */
+/** The participating companies card's KPI tooltips, in the PCC copy. */
 export const HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS = {
   active:
     'Total active members in SFDC at the end of the selected time period. In the case of the YTD time period, the member count reflects yesterday’s status.\n\n(Source: Salesforce)',
   new: 'Total number of members added in the selected time period based on the recorded install date. In the case of YTD time period, the new member count reflects yesterday’s status.\n\n(Source: Salesforce)',
   nonMembers:
-    'Total number of organizations with a recorded activity in the selected time period but who do not have a membership.\n\nPlease note that organizations where a parent or child has a membership to the project are excluded.\n\n(Source: Salesforce)',
+    'Total number of companies with a recorded activity in the selected time period but who do not have a membership.\n\nPlease note that companies where a parent or child has a membership to the project are excluded.\n\n(Source: Salesforce)',
   nonRenewals:
     'Members who chose not to continue their membership in the selected time period but were active members in the last period.\n\n(Source: Salesforce)',
 } as const;
@@ -96,7 +96,7 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
   orgs: {
     icon: 'fa-light fa-building',
     ytd: {
-      title: 'No organizations yet',
+      title: 'No companies yet',
       text: '',
       reasons: [
         'Members show once their membership is active',
@@ -105,10 +105,10 @@ export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
       ],
     },
     past: {
-      title: 'No organizations in {Y}',
+      title: 'No companies in {Y}',
       text: '',
       reasons: [
-        'No members or participating organizations were recorded',
+        'No members or participating companies were recorded',
         'The foundation may not have launched yet',
         'Members may have been counted under a parent foundation',
       ],
@@ -355,6 +355,9 @@ export const HEALTH_METRICS_OVERVIEW_STROKES = {
   low: lfxColors.red[400],
   track: lfxColors.gray[100],
   progress: lfxColors.blue[500],
+  /** The training arc with no goal: a gray-200 outline drawn as a white stroke over a wider one. */
+  outline: lfxColors.gray[200],
+  outlineFill: lfxColors.white,
   needle: lfxColors.gray[900],
   thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
 } as const;

@@ -22,7 +22,7 @@ export interface HealthMetricsOverviewEngagementSplit {
   lowPct: number | null;
 }
 
-/** One period of the participating organizations card. */
+/** One period of the participating companies card. */
 export interface HealthMetricsOverviewParticipatingOrgsPeriod {
   activeMembers: number | null;
   newMembers: number | null;
@@ -297,7 +297,7 @@ export interface HealthMetricsOverviewEngagementRowView {
   pctLabel: string;
 }
 
-/** One half of the participating organizations card: members or non-members. */
+/** One half of the participating companies card: members or non-members. */
 export interface HealthMetricsOverviewOrgsHalfView {
   key: 'members' | 'non-members';
   kpis: HealthMetricsOverviewKpiView[];
@@ -496,8 +496,10 @@ export interface HealthMetricsOverviewTrainingView {
   isEmpty: boolean;
   totalLabel: string;
   metricLabel: string;
-  /** `null` when the period models no goal, so the arc shows its track only. */
+  /** "No goal set" in YTD without a goal; `null` for a past year, which models no goal. */
   goalLabel: string | null;
+  /** YTD with no goal: the arc is an outlined track with no progress. */
+  noGoal: boolean;
   trackPath: string;
   progressPath: string;
   ariaLabel: string;

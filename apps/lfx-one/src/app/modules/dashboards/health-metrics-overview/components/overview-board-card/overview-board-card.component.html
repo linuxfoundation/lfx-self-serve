@@ -40,7 +40,7 @@
             Name<i class="text-[10px]" [class]="nameSortIcon()" aria-hidden="true"></i>
           </button>
         </span>
-        <span role="columnheader">Organization</span>
+        <span role="columnheader">Company</span>
         <span role="columnheader" [attr.aria-sort]="attendanceAriaSort()">
           <button
             type="button"
@@ -58,11 +58,15 @@
           role="row"
           [attr.data-testid]="'overview-board-row-' + row.key">
           <div class="flex min-w-0 items-center gap-[10px]" role="cell">
-            <span
-              class="inline-flex h-[32px] w-[32px] flex-none items-center justify-center rounded-full bg-gray-200 text-[11px] font-semibold text-gray-600"
-              aria-hidden="true"
-              >{{ row.initials }}</span
-            >
+            <lfx-ui-avatar
+              class="flex-none"
+              [size]="32"
+              [name]="row.name"
+              [initials]="row.initials"
+              [initialsSize]="11"
+              initialsWeight="semibold"
+              decorative
+              data-testid="overview-board-avatar" />
             <div class="flex min-w-0 flex-col gap-[2px]">
               <span class="text-[13px] font-semibold text-gray-900" data-testid="overview-board-name">{{ row.name }}</span>
               @if (row.title) {
