@@ -1122,7 +1122,7 @@ describe('ContributorsComponent — search (lfx-self-serve#5662)', () => {
 
     for (const term of ['', '\u200B', ' \u200B ', '\u0085']) {
       expect(await search(term)).toEqual([]);
-      expect(el().querySelector('[data-testid="org-people-contributors-empty"]')?.textContent).toContain('No contributors found for this organization');
+      expect(el().querySelector('[data-testid="org-people-contributors-empty"]')?.textContent).toContain('No contributors found for this company');
       expect(el().querySelector('[data-testid="org-people-contributors-clear-filters"]')).toBeNull();
     }
   });
