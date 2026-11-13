@@ -4,7 +4,7 @@ description: Pick the organization you are viewing in the Organization lens, swi
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, switcher, switch-organization, url, not-found, access]
-last_updated: 2026-11-06
+last_updated: 2026-11-12
 intercom_collection: Organization
 ---
 
@@ -45,12 +45,15 @@ The line under the organization's name in the switcher is your role on that orga
 | **Org Admin Editor (Inherited)**   | You can view and edit this organization through your admin access to a related organization                                             |
 | **Org Admin Viewer (Inherited)**   | You can view this organization through your access to a related organization                                                            |
 | **(Original)** after a direct role | Your role was granted directly on this organization. The label is added when some of your other access comes from related organizations |
+| **CLA Manager**                    | You are a CLA Manager or initial CLA Manager designee for this organization. Only its **EasyCLA** page opens                            |
 
 In the list of organizations, hovering over an inherited role shows **Inherited from your access to** followed by the related organization's name. If the line says **Organization** instead of a role, you have no admin role on that organization.
 
 ## Why is an organization missing from the switcher?
 
-The organization switcher lists the organizations where you have an admin or viewer role, including a role inherited from a related organization. It lists organizations where your only role is CLA Manager or initial CLA Manager designee only when you have no admin or viewer role on any organization, and each of those opens on its **EasyCLA** page. So if you are an admin or viewer on even one organization, an organization where you are only a CLA Manager or initial CLA Manager designee is missing from the switcher.
+The organization switcher lists the organizations where you have an admin or viewer role, including a role inherited from a related organization, and the organizations where your only role is CLA Manager or initial CLA Manager designee. An organization can be missing when you have none of these roles on it, when part of your list did not load, or when your CLA Manager role was added in the last 30 minutes and has not reached the Organization lens yet.
+
+Organizations where you have an admin or viewer role come first. Organizations where your only role is CLA Manager or initial CLA Manager designee follow them, labelled **CLA Manager**, and each opens on its **EasyCLA** page. An organization where you have both an admin or viewer role and a CLA Manager role is listed once, with your admin or viewer role, and opens the full lens.
 
 Messages in the switcher:
 

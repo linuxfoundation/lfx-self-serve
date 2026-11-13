@@ -88,12 +88,23 @@ export class NavigationController {
         });
       }
 
-      const result = await this.orgNavigationService.getOrgItems(req, { pageToken, name, selectedUid });
+      // M3: the CLA-only half is complete in one answer, so it has no continuation page.
+      const claOnly = getStringQueryParam(req, 'cla_only') === '1';
+      if (claOnly && pageToken) {
+        throw ServiceValidationError.forField('cla_only', 'page_token and cla_only are mutually exclusive', {
+          operation: 'get_org_items',
+          service: 'navigation_controller',
+          path: req.path,
+        });
+      }
+
+      const result = await this.orgNavigationService.getOrgItems(req, { pageToken, name, selectedUid, claOnly });
 
       logger.success(req, 'get_org_items', startTime, {
         has_search: !!name?.trim(),
         has_page_token: !!pageToken,
         has_selected_uid: !!selectedUid,
+        cla_only: claOnly,
         item_count: result.items.length,
         has_next_page: !!result.next_page_token,
         upstream_failed: result.upstream_failed,

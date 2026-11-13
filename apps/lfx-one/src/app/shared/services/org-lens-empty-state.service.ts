@@ -171,7 +171,14 @@ export class OrgLensEmptyStateService {
   private readonly selectedClaOnly: Signal<boolean> = computed(() => this.claOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid));
 
   /** FR-010 — the list is a lower bound but the page still renders: show the switcher notice, not a page state. */
-  public readonly listIncomplete: Signal<boolean> = computed(() => this.settled() && this.roleGrants.lookupOutcome() === 'partial' && this.selectedHeld());
+  public readonly listIncomplete: Signal<boolean> = computed(
+    () =>
+      this.settled() &&
+      (this.selectedHeld() || this.selectedClaOnly()) &&
+      (this.roleGrants.lookupOutcome() === 'partial' ||
+        this.claOnlyAccess.lookupFailed() ||
+        (!this.roleGrants.isStaff() && this.orgNavigation.upstreamFailed()))
+  );
 
   /** The page-level state to render, or `null` when the page itself should render. */
   public readonly pageState: Signal<OrgLensEmptyStateName | null> = computed(() => {
