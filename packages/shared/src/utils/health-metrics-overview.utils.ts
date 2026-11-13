@@ -346,6 +346,8 @@ export function buildHealthMetricsOverviewTrainingView(
   const total = (isRevenue ? period?.totals.revenueUsd : period?.totals.enrollments) ?? null;
   const goals = trainingGoal(enrollment, range, isRevenue);
   const goal = goals.goal;
+  // Goals are read for YTD only, so a past year has no goal to show rather than none set.
+  const noGoal = range === 'YTD' && !goal;
   const format = (value: number | null): string => formatTrainingValue(value, isRevenue);
   const fraction = goals.progress ?? (goal && total !== null ? total / goal : 0);
   const metricLabel = isRevenue ? 'Revenue' : 'Enrollments';
@@ -364,10 +366,11 @@ export function buildHealthMetricsOverviewTrainingView(
     isEmpty: !enrollment.measured || !period || (!period.totals.enrollments && !period.totals.revenueUsd),
     totalLabel: format(total),
     metricLabel,
-    goalLabel: goal ? `${formatShare(fraction)} of ${format(goal)} goal` : null,
+    goalLabel: trainingGoalLabel(goal, noGoal, `${formatShare(fraction)} of ${format(goal)} goal`),
+    noGoal,
     trackPath: trainingArcPath(1),
     progressPath: fraction > 0 ? trainingArcPath(Math.min(fraction, 1)) : '',
-    ariaLabel: goal ? `${metricLabel} ${format(total)} of ${format(goal)} goal` : `${metricLabel} ${format(total)}`,
+    ariaLabel: trainingAriaLabel(`${metricLabel} ${format(total)}`, goal, noGoal, format),
     items: programs.map((program) => ({
       key: program.key,
       label: program.label,
@@ -1249,6 +1252,16 @@ function trainingGoal(
   if (range !== 'YTD') return { goal: null, progress: null };
   if (isRevenue) return { goal: enrollment.goals.revenueUsd, progress: enrollment.goals.revenueUsd ? enrollment.goals.revenueProgressYtd : null };
   return { goal: enrollment.goals.enrollments, progress: enrollment.goals.enrollments ? enrollment.goals.enrollmentsProgressYtd : null };
+}
+
+function trainingGoalLabel(goal: number | null, noGoal: boolean, progressLabel: string): string | null {
+  if (goal) return progressLabel;
+  return noGoal ? 'No goal set' : null;
+}
+
+function trainingAriaLabel(base: string, goal: number | null, noGoal: boolean, format: (value: number | null) => string): string {
+  if (goal) return `${base} of ${format(goal)} goal`;
+  return noGoal ? `${base}, no goal set` : base;
 }
 
 function formatTrainingValue(value: number | null, isRevenue: boolean): string {

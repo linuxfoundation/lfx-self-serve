@@ -709,8 +709,19 @@ describe('buildHealthMetricsOverviewTrainingView', () => {
     const view = buildHealthMetricsOverviewTrainingView(enrollment, 'COMPLETED_YEAR', 'enrollments');
 
     expect(view.goalLabel).toBeNull();
+    expect(view.noGoal).toBe(false);
     expect(view.progressPath).toBe('');
     expect(view.ariaLabel).toBe('Enrollments 131.5K');
+  });
+
+  it('says no goal is set in YTD when the measure has none', () => {
+    const view = buildHealthMetricsOverviewTrainingView({ ...enrollment, goals: { ...enrollment.goals, revenueUsd: null } }, 'YTD', 'revenue');
+
+    expect(view.goalLabel).toBe('No goal set');
+    expect(view.noGoal).toBe(true);
+    expect(view.progressPath).toBe('');
+    expect(view.ariaLabel).toBe('Revenue $4.3M, no goal set');
+    expect(buildHealthMetricsOverviewTrainingView(enrollment, 'YTD', 'enrollments').noGoal).toBe(false);
   });
 
   it('is empty with neither enrollments nor revenue', () => {

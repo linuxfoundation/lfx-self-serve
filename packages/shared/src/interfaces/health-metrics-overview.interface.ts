@@ -496,8 +496,10 @@ export interface HealthMetricsOverviewTrainingView {
   isEmpty: boolean;
   totalLabel: string;
   metricLabel: string;
-  /** `null` when the period models no goal, so the arc shows its track only. */
+  /** "No goal set" in YTD without a goal; `null` for a past year, which models no goal. */
   goalLabel: string | null;
+  /** YTD with no goal: the arc is an outlined track with no progress. */
+  noGoal: boolean;
   trackPath: string;
   progressPath: string;
   ariaLabel: string;
