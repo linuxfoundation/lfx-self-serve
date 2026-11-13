@@ -44,7 +44,6 @@ describe('EventsGeographyComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
   let verdicts: boolean[];
-  let counts: (number | null)[];
 
   async function render(payload: HealthMetricsEventsGeography | Error = geography()): Promise<void> {
     getEventsGeography = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -65,7 +64,6 @@ describe('EventsGeographyComponent', () => {
       lifecycle.push('settled');
       verdicts.push(empty);
     });
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     await settle();
   }
 
@@ -93,17 +91,15 @@ describe('EventsGeographyComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
     verdicts = [];
-    counts = [];
   });
 
-  it('reads the foundation once, settles and reports the countries count', async () => {
+  it('reads the foundation once and settles', async () => {
     await render();
 
     expect(getEventsGeography).toHaveBeenCalledTimes(1);
     expect(getEventsGeography).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(counts.at(-1)).toBe(42);
     expect(query('events-geo-loading')).toBeNull();
   });
 
@@ -122,7 +118,7 @@ describe('EventsGeographyComponent', () => {
     expect(query('events-geo-top')?.textContent).not.toContain('more');
   });
 
-  it('re-projects a period change without re-reading and re-reports the count', async () => {
+  it('re-projects a period change without re-reading', async () => {
     await render();
     lifecycle = [];
 
@@ -132,10 +128,9 @@ describe('EventsGeographyComponent', () => {
     expect(lifecycle).toEqual(['settled']);
     expect(text('events-geo-countries')).toBe('1 country');
     expect(query('events-geo-headline-delta')).toBeNull();
-    expect(counts.at(-1)).toBe(1);
   });
 
-  it('settles a period without country rows empty, with no body, and clears the badge', async () => {
+  it('settles a period without country rows empty, with no body', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_2');
@@ -143,7 +138,6 @@ describe('EventsGeographyComponent', () => {
     expect(verdicts).toEqual([false, true]);
     expect(query('events-geo-headline')).toBeNull();
     expect(query('events-geo-top')).toBeNull();
-    expect(counts.at(-1)).toBeNull();
   });
 
   it('settles empty, with no body, when the read carries no period', async () => {
@@ -152,16 +146,14 @@ describe('EventsGeographyComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([true]);
     expect(query('events-geo-headline')).toBeNull();
-    expect(counts.at(-1)).toBeNull();
   });
 
-  it('shows the error state, still settles and reports no count when the read fails', async () => {
+  it('shows the error state and still settles when the read fails', async () => {
     await render(new Error('boom'));
 
     expect(query('events-geo-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(counts.at(-1)).toBeNull();
   });
 
   it('holds the skeleton without reading or settling until a foundation is selected', async () => {
@@ -171,6 +163,5 @@ describe('EventsGeographyComponent', () => {
     expect(getEventsGeography).not.toHaveBeenCalled();
     expect(query('events-geo-loading')).not.toBeNull();
     expect(lifecycle).toEqual(['reading']);
-    expect(counts.every((count) => count === null)).toBe(true);
   });
 });

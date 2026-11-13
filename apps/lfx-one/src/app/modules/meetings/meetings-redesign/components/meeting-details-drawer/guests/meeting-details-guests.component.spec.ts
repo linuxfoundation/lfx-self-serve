@@ -23,7 +23,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeEditService } from '../../../services/meetings-home-edit.service';
@@ -91,6 +91,7 @@ describe('MeetingDetailsGuestsComponent', () => {
   let occurrence: WritableSignal<MeetingOccurrence | null>;
   let hosts: WritableSignal<readonly MeetingHostCandidate[]>;
   let guestCount: WritableSignal<number | null>;
+  let listedSelfRegistrantUids: WritableSignal<readonly string[]>;
   let participantsVersion: WritableSignal<number>;
   let removedUids: WritableSignal<ReadonlySet<string>>;
   let composerOpen: ReturnType<typeof vi.fn>;
@@ -118,12 +119,14 @@ describe('MeetingDetailsGuestsComponent', () => {
     occurrence = signal(null);
     hosts = signal([]);
     guestCount = signal(null);
+    listedSelfRegistrantUids = signal([]);
     participantsVersion = signal(0);
     removedUids = signal(new Set<string>());
     removedIds = signal(new Set<string>());
     meetingService = {
       getMeetingDetail: vi.fn(() => of(current())),
       getMyMeetingRegistrants: vi.fn(() => of(registrants)),
+      clearRemovalIfReinvited: vi.fn(),
       getPastMeetingParticipants: vi.fn(() =>
         of([
           { uid: 'p-1', first_name: 'Ada', last_name: 'Lane', email: 'ada@acme.example', host: false, is_attended: false, is_invited: true },
@@ -156,6 +159,7 @@ describe('MeetingDetailsGuestsComponent', () => {
             hosts,
             guestCount,
             removedRegistrantUids: removedUids,
+            listedSelfRegistrantUids,
             pastMeetingId: signal('synthetic-past-id'),
             participantsVersion,
             refreshList,
@@ -280,12 +284,15 @@ describe('MeetingDetailsGuestsComponent', () => {
         .map((person) => person.email)
         .sort()
     ).toEqual(['bo@acme.example', 'org@acme.example']);
+    expect(listedSelfRegistrantUids()).toEqual(['r-2']);
 
     removedIds.set(new Set(['synthetic-meeting']));
     await fixture.whenStable();
     expect(guestCount()).toBe(2);
     expect(names()).not.toContain('Bo Kim (You)');
     expect(hosts().map((person) => person.email)).toEqual(['org@acme.example']);
+    expect(meetingService['clearRemovalIfReinvited']).toHaveBeenCalledWith('synthetic-meeting', ['r-2']);
+    expect(listedSelfRegistrantUids()).toEqual([]);
   });
 
   it('drops guests the drawer already removed when the tab mounts', async () => {
@@ -303,6 +310,25 @@ describe('MeetingDetailsGuestsComponent', () => {
     await fixture.whenStable();
     expect(guestCount()).toBeNull();
     expect(hosts()).toEqual([]);
+  });
+
+  it('forgets the viewer listing while another date loads and once the list is hidden', async () => {
+    current.set(meeting({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, occurrences: [OCCURRENCE] } as Partial<Meeting>));
+    await render();
+    expect(listedSelfRegistrantUids()).toEqual(['r-2']);
+
+    meetingService['getMyMeetingRegistrants'].mockReturnValueOnce(NEVER);
+    occurrence.set(OCCURRENCE);
+    await fixture.whenStable();
+    expect(listedSelfRegistrantUids()).toEqual([]);
+
+    occurrence.set(null);
+    await fixture.whenStable();
+    expect(listedSelfRegistrantUids()).toEqual(['r-2']);
+
+    canViewGuests.set(false);
+    await fixture.whenStable();
+    expect(listedSelfRegistrantUids()).toEqual([]);
   });
 
   it('shows the hidden state without fetching when the list is not shared', async () => {

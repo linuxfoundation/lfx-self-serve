@@ -312,6 +312,41 @@ describe('MeetingService removed-registration state', () => {
     service.clearRemovedRegistration('mtg-1');
     expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
   });
+
+  it('keeps a removal while only the removed registrant is listed, and lifts it for a new one', () => {
+    service.markRegistrationRemoved('mtg-1', ['reg-old']);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-old']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-old', 'reg-new']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+
+  it('keeps the uids of an earlier partial removal when a retry finishes it', () => {
+    service.rememberRemovedRegistrants('mtg-1', ['reg-a']);
+    service.markRegistrationRemoved('mtg-1', ['reg-b']);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-a', 'reg-b']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
+
+  it('remembers the first removed registrant after a re-invite and a second removal', () => {
+    service.markRegistrationRemoved('mtg-1', ['reg-a']);
+    service.clearRemovalIfReinvited('mtg-1', ['reg-b']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+
+    service.markRegistrationRemoved('mtg-1', ['reg-b']);
+    service.clearRemovalIfReinvited('mtg-1', ['reg-a']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
+
+  it('keeps a removal recorded without registrant uids', () => {
+    service.markRegistrationRemoved('mtg-1');
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-new']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
 });
 
 describe('MeetingService attachment scope overrides', () => {

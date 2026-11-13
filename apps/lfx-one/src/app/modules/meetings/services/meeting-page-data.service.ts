@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { computed, DestroyRef, inject, Injectable, makeStateKey, PLATFORM_ID, Signal, signal, TransferState } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { computed, DestroyRef, inject, Injectable, Injector, makeStateKey, PLATFORM_ID, Signal, signal, TransferState } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import {
   canJoinMeeting,
@@ -19,8 +19,9 @@ import {
 } from '@lfx-one/shared';
 import { isPastMeetingCompositeId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, map, Observable, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, EMPTY, filter, map, Observable, Subscription, switchMap, take, tap } from 'rxjs';
 
 /**
  * Loads the public meeting behind `/meetings/:id` for a meeting page, the way the legacy join page always has.
@@ -37,6 +38,7 @@ export class MeetingPageDataService {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly injector = inject(Injector);
 
   // Persists the SSR-resolved meeting so the client's first paint matches the server DOM instead
   // of tearing it down at hydration (GH-2041) — see `MeetingJoinPageState` for why the meeting
@@ -59,8 +61,12 @@ export class MeetingPageDataService {
   private readonly meetingResolvedRouteId = signal<string | null>(null);
   private readonly clockState = signal<number>(Date.now());
   private readonly refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  private reloadsRequested = 0;
+  private readonly reloadsDoneState = signal(0);
   private joinWindowChecked = false;
   private joinWindowOpenAtLoadState = false;
+  private joinOnLoadClaimed = false;
+  private pendingPageview: Subscription | null = null;
 
   public readonly project: Signal<PublicMeetingProject | null> = this.projectState.asReadonly();
   /** The meeting password, from `?password=` or else the router state the composer's toast link carries. */
@@ -88,12 +94,26 @@ export class MeetingPageDataService {
   public readonly meetingMatchesRoute: Signal<boolean> = computed(() => this.meetingRouteId() === this.meetingResolvedRouteId());
   /** Wall clock for time-gated UI; ticks only after `startClock()`, which is browser-only. */
   public readonly clock: Signal<number> = this.clockState.asReadonly();
+  /** Reloads asked for by `refresh()` or `reloadOnNextLoad()` that have since loaded; a page re-creates what it shows on it. */
+  public readonly reloadsDone: Signal<number> = this.reloadsDoneState.asReadonly();
   /** Emits now and on every `refresh()`, for streams that reload with the meeting. */
   public readonly refreshes$: Observable<void> = this.refreshTrigger$.asObservable();
 
   /** True only when the join window was already open when the meeting first loaded, the one case Zoom may open by itself. */
   public get joinWindowOpenAtLoad(): boolean {
     return this.joinWindowOpenAtLoadState;
+  }
+
+  /**
+   * Whether Zoom may open by itself now, at most once per page: the join window was open at load, and the URL has
+   * neither `?zoom_redirect=false` nor `?action=`.
+   */
+  public claimJoinOnLoad(): boolean {
+    const params = this.activatedRoute.snapshot.queryParamMap;
+    const allowed =
+      this.joinWindowOpenAtLoadState && !this.joinOnLoadClaimed && params.get('zoom_redirect')?.toLowerCase() !== 'false' && !params.has('action');
+    if (allowed) this.joinOnLoadClaimed = true;
+    return allowed;
   }
 
   /**
@@ -120,6 +140,8 @@ export class MeetingPageDataService {
         this.meetingRouteId.set(this.activatedRoute.snapshot.paramMap.get('id'));
       } else if (seed.meeting) {
         this.projectState.set(seed.meeting.project);
+        // Hydration reuses the server's meeting, so Join on load need not wait for the browser's refetch.
+        this.recordJoinWindowAtLoad(seed.meeting as Meeting);
         const seededRouteId = this.activatedRoute.snapshot.paramMap.get('id');
         this.meetingRouteId.set(seededRouteId);
         this.meetingResolvedRouteId.set(seededRouteId);
@@ -134,7 +156,13 @@ export class MeetingPageDataService {
 
   /** Refetches the meeting for the current route. */
   public refresh(): void {
+    this.reloadOnNextLoad();
     this.refreshTrigger$.next();
+  }
+
+  /** Counts the next load, such as one a navigation starts, as a reload in `reloadsDone`. */
+  public reloadOnNextLoad(): void {
+    this.reloadsRequested++;
   }
 
   /** The `?occurrence=` (start ms) date when it is an active one, else the current or next date. */
@@ -147,6 +175,39 @@ export class MeetingPageDataService {
       if (match) return match;
     }
     return getCurrentOrNextOccurrence(meeting);
+  }
+
+  /**
+   * Sends the page's pageview, which this route defers, with its foundation and project once both are known.
+   * @description `trackPage()` drops calls made before the Plausible script runs, so the one emission waits for it.
+   */
+  public trackPageview(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const plausibleService = this.injector.get(PlausibleService);
+    // The parent (foundation) arrives in the same payload as the project (LFXV2-3266).
+    const pageviewContext$ = toObservable(this.project, { injector: this.injector }).pipe(
+      filter((p): p is PublicMeetingProject => !!p?.slug),
+      map((project) => ({ project, parent: project.parent })),
+      take(1)
+    );
+    const analyticsReady$ = toObservable(plausibleService.ready, { injector: this.injector }).pipe(filter(Boolean));
+    // A newer pageview replaces one still waiting for Plausible, so a meeting left early is never counted.
+    this.pendingPageview?.unsubscribe();
+    this.pendingPageview = combineLatest([pageviewContext$, analyticsReady$])
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([{ project, parent }]) => {
+        const isTopLevel = !project.parent_uid;
+        plausibleService.trackPage(
+          PlausibleService.buildPageviewContext({
+            foundationSlug: isTopLevel ? project.slug : parent?.slug,
+            foundationName: isTopLevel ? project.name : parent?.name,
+            projectSlug: isTopLevel ? undefined : project.slug,
+            projectName: isTopLevel ? undefined : project.name,
+          })
+        );
+      });
   }
 
   // Ticks the wall-clock signal. Also on tab focus/visibility: mobile browsers freeze timers in the background, so the
@@ -182,6 +243,10 @@ export class MeetingPageDataService {
         // Only a real navigation to a different meeting clears a stale failure, not a same-route re-emission (#2046).
         if (meetingId !== previousRouteId) {
           this.meetingLoadFailedState.set(false);
+          // Another meeting's load decides its own join window, and may open Zoom once.
+          this.joinWindowChecked = false;
+          this.joinWindowOpenAtLoadState = false;
+          this.joinOnLoadClaimed = false;
           onRouteChange?.();
         }
       }),
@@ -209,6 +274,7 @@ export class MeetingPageDataService {
         // Only a settled success clears a prior failure; clearing eagerly would flash a seeded error view back to the skeleton.
         this.meetingLoadFailedState.set(false);
         this.meetingResolvedRouteId.set(this.meetingRouteId());
+        this.reloadsDoneState.set(this.reloadsRequested);
         this.recordJoinWindowAtLoad(res as Meeting);
         // Persist the resolved state during SSR so the client can hydrate to the same branch.
         // Angular defers serialization until this tracked HTTP call settles.

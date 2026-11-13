@@ -22,6 +22,7 @@ import type {
   MeetingHomeRowProject,
   MeetingHomeRowType,
   MeetingOccurrence,
+  MeetingPageCancelledLink,
   MeetingResponseFilter,
   MeetingRsvp,
   MeetingsHomeFilters,
@@ -39,6 +40,7 @@ import {
   getMeetingOrganizerDisplayName,
   getUpcomingMeetingStartTime,
   isMeetingInviteResponsesEnabled,
+  isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
   MEETING_END_BUFFER_MS,
   normalizeUsername,
@@ -94,6 +96,40 @@ export function expandMeetingOccurrences(meetings: readonly Meeting[], now: Date
   }
 
   return rows.sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+}
+
+/** One date of an upcoming meeting as a home row, as the list builds it; null when it has no valid start or is cancelled. */
+export function toUpcomingMeetingHomeRow(meeting: Meeting, occurrence: MeetingOccurrence | null): MeetingHomeRow | null {
+  return buildUpcomingRow(meeting, occurrence, true);
+}
+
+/**
+ * The cancelled date or series a meeting link names: a `?occurrence=` start that is a cancelled date, or a series whose
+ * every listed date is cancelled. Null for a running date, no `?occurrence=`, or a one-time meeting.
+ * @param requestedStartMs The `?occurrence=` value (a start in ms), or null.
+ */
+export function getMeetingPageCancelledLink(meeting: Meeting, requestedStartMs: number | null): MeetingPageCancelledLink | null {
+  const occurrences = meeting.occurrences ?? [];
+  if (!meeting.recurrence || !occurrences.length) return null;
+  if (!getActiveOccurrences(occurrences, meeting.cancelled_occurrences).length) return { kind: 'series', cancelledStart: null };
+  const requested = requestedStartMs === null ? undefined : occurrences.find((occurrence) => Date.parse(occurrence.start_time) === requestedStartMs);
+  return requested && isMeetingOccurrenceCancelled(requested, meeting.cancelled_occurrences)
+    ? { kind: 'occurrence', cancelledStart: requested.start_time }
+    : null;
+}
+
+/** A series whose every date is cancelled as one home row, with its series fields; null without a valid start. */
+export function toCancelledSeriesHomeRow(meeting: Meeting): MeetingHomeRow | null {
+  if (!meeting.start_time || Number.isNaN(Date.parse(meeting.start_time))) return null;
+  return {
+    key: meeting.id,
+    meeting,
+    occurrence: null,
+    title: meeting.title,
+    occurrenceId: null,
+    startTime: meeting.start_time,
+    durationMinutes: meeting.duration,
+  };
 }
 
 /** A past meeting as a home row, or null when it has no valid start. */

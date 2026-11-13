@@ -4,7 +4,7 @@ description: See who has access to a project or foundation in LFX Self Serve, wh
 audience: [all]
 product_area: Permissions
 tags: [permissions, access, manage, view, meeting-coordinator, maintainer, contributor, roles]
-last_updated: 2026-11-05
+last_updated: 2026-11-12
 intercom_collection: Permissions
 ---
 
@@ -57,6 +57,8 @@ These options appear only if you have **Manage** access.
 The person is added straight away; there is no invitation for them to accept.
 
 If no account matches the email, a **User Not Found** dialog asks whether to add them anyway. Select **Yes, Continue**, enter their **Full Name** (and optionally an avatar URL), then select **Add User**.
+
+If the person is already on the project, **Add User** does not change their role. A message tells you so: "This person is already on the project. To change their role, use the Actions (⋮) menu on their row and choose Edit." Change their role as described in the next section.
 
 ### Change a user's role
 

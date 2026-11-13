@@ -29,6 +29,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
   let meetingService: Record<string, ReturnType<typeof vi.fn>>;
   let toastShow: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn>;
+  const listedSelfRegistrantUids = signal<readonly string[]>([]);
 
   const settle = async (): Promise<void> => {
     await fixture.whenStable();
@@ -52,12 +53,14 @@ describe('MeetingDetailsOwnActionsComponent', () => {
   };
 
   beforeEach(() => {
+    listedSelfRegistrantUids.set([]);
     meeting = signal(MEETING);
     state = signal<MeetingDetailsState>('far');
     meetingService = {
       resendMyMeetingInvitation: vi.fn().mockReturnValue(of({ message: 'ok' })),
       removeMyMeetingRegistration: vi.fn().mockReturnValue(of({ removed_registrant_ids: ['reg-me'], remaining_registrant_ids: [] })),
       markRegistrationRemoved: vi.fn(),
+      rememberRemovedRegistrants: vi.fn(),
     };
     toastShow = vi.fn();
     refreshList = vi.fn();
@@ -69,6 +72,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
       state,
       organizer: computed(() => meeting().organizer === true),
       invited: computed(() => !!meeting().invited),
+      listedSelfRegistrantUids,
       refreshList,
     };
 
@@ -112,7 +116,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
     await click(overlay('meeting-details-remove-confirm'));
 
     expect(meetingService['removeMyMeetingRegistration']).toHaveBeenCalledWith('synthetic-meeting', 'meetings-home');
-    expect(meetingService['markRegistrationRemoved']).toHaveBeenCalledWith('synthetic-meeting');
+    expect(meetingService['markRegistrationRemoved']).toHaveBeenCalledWith('synthetic-meeting', ['reg-me']);
     expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ message: 'Removed from meeting' }));
   });
 
@@ -134,6 +138,13 @@ describe('MeetingDetailsOwnActionsComponent', () => {
   it('offers nothing to an organizer without a registration of their own', async () => {
     await render({ organizer: true, my_registrant_ids: [] });
     expect(find('meeting-details-own-actions')).toBeNull();
+  });
+
+  it('offers them to an organizer the guests list shows under a new registration', async () => {
+    listedSelfRegistrantUids.set(['reg-new']);
+    await render({ organizer: true, my_registrant_ids: [] });
+    expect(find('meeting-details-remove')).not.toBeNull();
+    expect(find('meeting-details-resend')).not.toBeNull();
   });
 
   it('offers nothing once the date has ended', async () => {

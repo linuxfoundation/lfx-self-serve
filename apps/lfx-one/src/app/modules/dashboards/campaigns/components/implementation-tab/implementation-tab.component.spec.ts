@@ -4909,6 +4909,23 @@ describe('ImplementationTabComponent google channels capability gate', () => {
     return c;
   }
 
+  it('folds a line break in generated creative copy into a space, in linear time however long the whitespace run', () => {
+    const c = fixture.componentInstance as unknown as Record<string, any>;
+    const fit = (values: unknown[]): string[] => c['fittingCreativeCopy']('demand-gen', 'headlines', values);
+
+    // Behaviour the fold has always had: a run holding a break is one space, any other run is kept as written.
+    expect(fit(['Join\nus', 'Join \r\n  now', 'a  b', 'Line\n\n\nbreaks'])).toEqual(['Join us', 'Join now', 'a  b', 'Line breaks']);
+
+    // The old `/\s*[\r\n]+\s*/g` took seconds per string at this size and quadruples with each doubling: a run of
+    // spaces with no break in it, as a peer's saved brief could hold. Kept small so a regression fails, not hangs.
+    const run = ' '.repeat(60_000);
+    const hostile = [run, `a${run}b`, `${run}\n${run}`];
+    const start = performance.now();
+    const fitted = fit(hostile);
+    expect(performance.now() - start).toBeLessThan(2_000);
+    expect(fitted).toEqual([]);
+  });
+
   /**
    * One config carries one channel, so a Performance Max / Video / Display selection paired with
    * anything else would dispatch a single campaign and silently drop the rest — and their share of
@@ -18369,7 +18386,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     ]);
     expect(lines(group('demandGenCreative')['descriptions'])).toEqual([...generated.google_display.descriptions, ...generated.google_search.descriptions]);
     expect(group('demandGenCreative')['businessName']).toBe('CNCF');
-    // Google documents no call to action for this ad, and refused "Register" live (F13).
+    // "Register" is not on this ad's list (Google refused it live, F13), so nothing is seeded.
     expect(group('demandGenCreative')['callToActionText']).toBe('');
     expect(prefilled('demand-gen')).toBe(true);
   });
@@ -18510,10 +18527,18 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('display')).toBe(true);
   });
 
-  it("seeds a listed call to action in the list's own spelling on Display, and still none on Demand Gen", () => {
+  it("seeds a listed call to action in the list's own spelling on Display and on Demand Gen", () => {
     seed(brief({ google_display: { headlines: ['Join us'], call_to_action: 'learn more' } }));
 
     expect(group('displayCreative')['callToActionText']).toBe('Learn More');
+    expect(group('demandGenCreative')['callToActionText']).toBe('Learn More');
+  });
+
+  it('seeds a call to action only on the ad whose list carries it', () => {
+    seed(brief({ google_display: { headlines: ['Join us'], call_to_action: 'Install' } }));
+
+    // Install was accepted on the responsive display ad and refused on the Demand Gen image ad.
+    expect(group('displayCreative')['callToActionText']).toBe('Install');
     expect(group('demandGenCreative')['callToActionText']).toBe('');
   });
 
@@ -18643,6 +18668,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
   it.each([
     ['displayCreative', 'callToActionText', 'Learn More'],
     ['demandGenVideoCreative', 'callToAction', 'SIGN_UP'],
+    ['demandGenCreative', 'callToActionText', 'Donate Now'],
     ['demandGenCreative', 'callToActionText', ''],
   ])('accepts a listed %s call to action, or none', (groupName, control, value) => {
     seed(brief(undefined), draftWithCreatives({ [groupName]: { [control]: value } }));

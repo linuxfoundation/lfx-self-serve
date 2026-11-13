@@ -40,6 +40,25 @@ export function stripDiacritics(value: string): string {
 }
 
 /**
+ * Folds text into a key for client-side substring search, so a query matches text that looks the same
+ * but differs at the code-point level (linuxfoundation/lfx-self-serve-ops#1472). Apply it to both the
+ * query and each searched field, then compare with `includes`.
+ *
+ * 1. `null`/`undefined` become `''`.
+ * 2. NFKC maps compatibility forms to their canonical ones: CJK compatibility ideographs (`U+F92E` -> `冷`),
+ *    full-width letters (`ＪＯＳＥ` -> `JOSE`), and the ideographic and no-break spaces to a plain space.
+ * 3. {@link stripDiacritics} drops accents (`José` -> `Jose`).
+ * 4. Lowercase.
+ * 5. Every whitespace and default-ignorable character (zero-width spaces and joiners, BOM, soft hyphen) is
+ *    removed, so `王小 冷` and `王小冷` fold to the same key.
+ */
+export function foldForSearch(value: string | null | undefined): string {
+  return stripDiacritics((value ?? '').normalize('NFKC'))
+    .toLowerCase()
+    .replace(/[\p{White_Space}\p{Default_Ignorable_Code_Point}]+/gu, '');
+}
+
+/**
  * Wraps a text string into multiple lines, breaking on word boundaries.
  * Used to produce multi-line Chart.js axis labels (which accept `string[]`).
  * @param text - The label text to wrap

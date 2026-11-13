@@ -17,6 +17,7 @@ import {
   PROJECT_LEGAL_ENTITY_TYPES,
 } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
+import { getFormationStageDisplayLabel } from '@lfx-one/shared/utils';
 import type { FormationRecordEditDrawerData, FormationRecordValues, Project, UpdateFormationRecordRequest } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
@@ -72,10 +73,12 @@ export class FormationRecordEditDrawerComponent {
 
   protected readonly stageOptions = computed(() => {
     const current = this.baseline()?.stage ?? '';
-    const options = FORMATION_RECORD_SELECTABLE_STAGES.map((value) => ({ value: value as string, disabled: false }));
+    const options = FORMATION_RECORD_SELECTABLE_STAGES.map((value) => ({ value: value as string, label: value as string, disabled: false }));
     // A stored stage outside the selectable set (Prospect, a legacy Confidential) stays visible so the form never
-    // misreports the record, but cannot be re-picked once changed away from.
-    return current && !options.some((option) => option.value === current) ? [{ value: current, disabled: true }, ...options] : options;
+    // misreports the record, but cannot be re-picked once changed away from. A stored Prospect reads "Draft" (#5619); its value is unchanged.
+    return current && !options.some((option) => option.value === current)
+      ? [{ value: current, label: getFormationStageDisplayLabel(current), disabled: true }, ...options]
+      : options;
   });
   protected readonly showDissolutionDate = computed(() => this.stage() === ProjectStage.Archived);
   protected readonly confirmationMessage = computed(() => this.buildConfirmationMessage(this.stage() ?? '', this.data.openRequiredCount));
@@ -234,8 +237,8 @@ export class FormationRecordEditDrawerComponent {
     const label = PROJECT_FORMATION_STAGE_LABELS[stage as ProjectStage] ?? stage;
     const effect =
       stage === ProjectStage.Active
-        ? 'Moving this project to Active completes its formation checklist.'
-        : `Moving this project to ${label} freezes its formation checklist, which becomes read-only.`;
+        ? 'Moving this project to Active completes its formation.'
+        : `Moving this project to ${label} freezes its formation items, which become read-only.`;
     const open = openRequired === 1 ? '1 required item is still open.' : `${openRequired} required items are still open.`;
     return openRequired > 0 ? `${effect} ${open} You can still continue.` : effect;
   }

@@ -55,8 +55,6 @@ export class EngagementNewsletterRecipientsComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The sub-nav badge: the latest newsletter's recipients; `null` while a read is pending or failed. */
-  public readonly countChange = output<number | null>();
   /** Fires once the section settles, `true` when there is no newsletter to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -159,7 +157,6 @@ export class EngagementNewsletterRecipientsComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countChange.emit(null);
           this.reading.emit();
         }),
         switchMap((query) =>
@@ -176,10 +173,7 @@ export class EngagementNewsletterRecipientsComponent {
               this.now.set(new Date());
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (!foundationSeen) return;
-
-              this.countChange.emit(this.loadFailed() || !response.newsletter ? null : response.recipients.length);
-              this.settled.emit(!this.loadFailed() && response.newsletter === null);
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.newsletter === null);
             })
           )
         )

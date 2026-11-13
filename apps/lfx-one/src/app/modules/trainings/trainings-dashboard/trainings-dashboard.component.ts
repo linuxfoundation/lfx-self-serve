@@ -5,8 +5,9 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Certification, FilterPillOption, TrainingEnrollment, UnifiedCertification } from '@lfx-one/shared/interfaces';
-import { TRAINING_PRODUCT_TYPE } from '@lfx-one/shared/constants';
+import { ActivatedRoute } from '@angular/router';
+import { Certification, TrainingEnrollment, UnifiedCertification } from '@lfx-one/shared/interfaces';
+import { DEFAULT_TRAINING_DASHBOARD_TAB_ID, TRAINING_DASHBOARD_TABS, TRAINING_PRODUCT_TYPE, VALID_TRAINING_DASHBOARD_TAB_IDS } from '@lfx-one/shared/constants';
 
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -20,12 +21,6 @@ import { UnifiedCertCardComponent } from '../components/unified-cert-card/unifie
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 const PAGE_SUBTITLE = 'Track your Linux Foundation learning journey — active certifications, enrolled courses, rewards, and resources all in one place.';
-
-const TAB_OPTIONS: FilterPillOption[] = [
-  { id: 'certifications', label: 'Certifications' },
-  { id: 'enrolled-trainings', label: 'Enrolled Trainings' },
-  { id: 'rewards', label: 'Rewards' },
-];
 
 const USEFUL_LINKS = [
   {
@@ -63,14 +58,16 @@ const USEFUL_LINKS = [
 export class TrainingsDashboardComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly trainingService = inject(TrainingService);
+  private readonly route = inject(ActivatedRoute);
 
   // ─── Configuration ─────────────────────────────────────────────────────────
   protected readonly subtitle = PAGE_SUBTITLE;
-  protected readonly tabOptions = TAB_OPTIONS;
+  protected readonly tabOptions = TRAINING_DASHBOARD_TABS;
   protected readonly usefulLinks = USEFUL_LINKS;
 
   // ─── Writable Signals ──────────────────────────────────────────────────────
-  protected readonly activeTab = signal<string>('certifications');
+  // Seeded from `?tab=` so links (e.g. old openprofile.dev Coupons) can open a tab directly.
+  protected readonly activeTab = signal<string>(this.initialTab());
 
   // ─── Data Signals ──────────────────────────────────────────────────────────
   protected readonly unifiedCerts: Signal<UnifiedCertification[] | undefined> = this.initUnifiedCerts();
@@ -96,6 +93,11 @@ export class TrainingsDashboardComponent {
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
+  private initialTab(): string {
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    return tab && VALID_TRAINING_DASHBOARD_TAB_IDS.has(tab) ? tab : DEFAULT_TRAINING_DASHBOARD_TAB_ID;
+  }
+
   private initUnifiedCerts(): Signal<UnifiedCertification[] | undefined> {
     return toSignal(this.trainingService.getUnifiedCertifications());
   }

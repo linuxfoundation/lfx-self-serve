@@ -59,9 +59,11 @@ export class MeetingDetailsContext {
   /** Where the shown date stands, re-checked as the page clock ticks. */
   public readonly state: Signal<MeetingDetailsState> = this.initState();
   public readonly organizer: Signal<boolean> = computed(() => this.meeting().organizer === true);
-  /** Invited, and not just removed from the meeting on this page. */
+  /** Invited, or listed as a guest, and not just removed from the meeting on this page. */
   public readonly invited: Signal<boolean> = computed(
-    () => (this.registered() || !!this.meeting().invited) && !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
+    () =>
+      (this.registered() || !!this.meeting().invited || this.listedSelfRegistrantUids().length > 0) &&
+      !this.meetingService.removedRegistrationMeetingIds().has(this.row().meeting.id)
   );
   /** Invited, or on a past row: the past feed lists only meetings the viewer is a member of. */
   private readonly member: Signal<boolean> = computed(() => this.invited() || isPastMeetingCalendarRow(this.row().meeting));
@@ -79,6 +81,8 @@ export class MeetingDetailsContext {
   public readonly guestCount: WritableSignal<number | null> = signal(null);
   /** Bumped when the shown date's participants change; the sections that list them reload on it. */
   public readonly participantsVersion: WritableSignal<number> = signal(0);
+  /** The viewer's registrant uids the guests section lists, newer than the meeting's after a re-invite. */
+  public readonly listedSelfRegistrantUids: WritableSignal<readonly string[]> = signal([]);
   /** Registrants removed in the drawer; every section drops them until it closes. */
   public readonly removedRegistrantUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
 

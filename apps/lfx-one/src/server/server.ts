@@ -22,6 +22,7 @@ import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
+import { resolveSsrFlags } from './helpers/ssr-flags.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
@@ -30,6 +31,7 @@ import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middl
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
+import { openprofileRedirect } from './middleware/openprofile-redirect.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import inviteRouter from './routes/invite.route';
@@ -355,6 +357,9 @@ app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
 // next(), so a Gatewaze or Valkey fault never blocks the LFX logout.
 app.use('/logout', endGatewazeSessionOnLogout);
 
+// Old openprofile.dev paths (ID-1147). Before auth so signed-out visitors are redirected, then logged in on the new URL.
+app.use(openprofileRedirect);
+
 app.use(auth(authConfig));
 
 // Public pages are optional-auth; silent login picks up any existing SSO session.
@@ -587,6 +592,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
+  // After the impersonation override, so the flag context is the identity the browser evaluates.
+  const flags = auth.authenticated ? await resolveSsrFlags(req, auth.user) : {};
+
   const runtimeConfig: RuntimeConfig = {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
     dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
@@ -610,6 +618,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const renderContext: ServerRequestContext = {
     auth,
     runtimeConfig,
+    flags,
     notFound: false,
     unavailable: false,
     providers: [

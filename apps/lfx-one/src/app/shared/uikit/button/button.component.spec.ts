@@ -108,6 +108,14 @@ describe('UiButtonComponent', () => {
     expect(el().getAttribute('type')).toBe('button');
   });
 
+  it('writes aria-current only when set, such as the current page of a pager', async () => {
+    expect(el().getAttribute('aria-current')).toBeNull();
+
+    await set('ariaCurrent', 'page');
+
+    expect(el().getAttribute('aria-current')).toBe('page');
+  });
+
   it.each([
     ['primary', 'bg-ui-accent-500'],
     ['secondary', 'bg-ui-background-100'],

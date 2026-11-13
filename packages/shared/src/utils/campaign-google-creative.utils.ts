@@ -237,8 +237,9 @@ function googleCreativeOptionsRefusal(fields: readonly GoogleCreativeFieldSpec[]
  * Why a create's Google call to action would be refused, or `null` (#1614, F13): the first creative on
  * the request whose closed-list field — every Google call to action — holds a value outside its list.
  *
- * Read on the RAW body, because campaign-service does not check the text of the Demand Gen image ad's or
- * the responsive display ad's call to action, and Google refuses an unlisted one only at
+ * Read on the RAW body, because campaign-service checks the text of the Demand Gen image ad's and the
+ * responsive display ad's call to action only from v1.0.36 (#595); earlier releases check its length,
+ * and Google refuses an unlisted one only at
  * `adGroupAds:mutate`, after the campaign and its ad group exist. Only the channel being created is
  * read, as the BFF sends only that channel's creatives: Demand Gen's image and video ads, alone, as
  * several ads, or in named ad groups; Display's single ad and named ad groups. Performance Max has no

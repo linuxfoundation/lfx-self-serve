@@ -22,10 +22,9 @@ import { EngagementOrgParticipationComponent } from './components/engagement-org
 import { EngagementRepresentativesComponent } from './components/engagement-representatives/engagement-representatives.component';
 
 import type {
-  HealthMetricsEngagementGroupCounts,
-  HealthMetricsEngagementNonMemberPeriodCounts,
-  HealthMetricsEngagementOrgCounts,
-  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementGroupNoteCounts,
+  HealthMetricsEngagementOrgNoteCounts,
+  HealthMetricsEngagementRepNoteCounts,
   HealthMetricsEngagementSubNavItem,
 } from '@lfx-one/shared/interfaces';
 
@@ -56,26 +55,17 @@ export class HealthMetricsEngagementComponent {
   protected readonly dataSections = HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_ENGAGEMENT_BLANK;
 
-  // `null` until that section reports, which renders no badge rather than a misleading zero.
-  protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);
-  protected readonly orgCounts = signal<HealthMetricsEngagementOrgCounts | null>(null);
-  protected readonly repCounts = signal<HealthMetricsEngagementRepPeriodCounts | null>(null);
-  protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberPeriodCounts | null>(null);
-  protected readonly newsletterCount = signal<number | null>(null);
-  protected readonly recipientCount = signal<number | null>(null);
+  // `null` until that section reports, which renders no note rather than a premature one.
+  protected readonly groupCounts = signal<HealthMetricsEngagementGroupNoteCounts | null>(null);
+  protected readonly orgCounts = signal<HealthMetricsEngagementOrgNoteCounts | null>(null);
+  protected readonly repCounts = signal<HealthMetricsEngagementRepNoteCounts | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
     buildHealthMetricsEngagementSubNavItems({
-      groups: this.groupCounts()?.groups ?? null,
       dormantGroups: this.groupCounts()?.dormantGroups ?? 0,
       lowAttendanceGroups: this.groupCounts()?.lowAttendanceGroups ?? 0,
-      orgs: this.orgCounts()?.orgs ?? null,
       lapsedOrgs: this.orgCounts()?.lapsedOrgs ?? 0,
-      reps: this.repCounts()?.reps ?? null,
       neverAttendedReps: this.repCounts()?.neverAttendedReps ?? 0,
-      nonMemberOrgs: this.nonMemberCounts()?.orgs ?? null,
-      newsletters: this.newsletterCount(),
-      recipients: this.recipientCount(),
     })
   );
 }

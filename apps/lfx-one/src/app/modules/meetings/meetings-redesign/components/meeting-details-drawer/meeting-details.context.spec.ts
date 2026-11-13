@@ -192,6 +192,20 @@ describe('MeetingDetailsContext', () => {
     expect(context.invited()).toBe(false);
   });
 
+  it('counts the viewer as invited once the guests list shows them under a new registration', () => {
+    const removed = signal(new Set<string>([MEETING.id]));
+    TestBed.overrideProvider(MeetingService, {
+      useValue: { getMeetingDetail: () => of(MEETING), removedRegistrationMeetingIds: removed, clearRemovedRegistration: vi.fn() },
+    });
+    const stale = { ...MEETING, organizer: true, invited: false, my_registrant_ids: [] };
+    const context = create(buildRow(stale), of(stale));
+    expect(context.invited()).toBe(false);
+
+    removed.set(new Set());
+    context.listedSelfRegistrantUids.set(['reg-new']);
+    expect(context.invited()).toBe(true);
+  });
+
   it('reloads the participants now and after 1s, and the past list behind the drawer', () => {
     vi.useFakeTimers();
     const refreshUserPastMeetings = vi.fn();

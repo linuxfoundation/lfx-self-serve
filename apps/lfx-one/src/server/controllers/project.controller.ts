@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, EDITABLE_STAFF_ROLES, EMAIL_REGEX, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
+import { ALLOWED_FILE_TYPES, DOCUMENT_DELETE_TYPES, EDITABLE_STAFF_ROLES, EMAIL_REGEX, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AddUserToProjectRequest,
   CreateProjectDocumentRequest,
   Meeting,
   PastMeeting,
+  ProjectDocumentType,
   PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
   PublicProjectSummary,
@@ -972,14 +973,14 @@ export class ProjectController {
   }
 
   /**
-   * DELETE /projects/:uid/documents/:documentId?type=folder|link
+   * DELETE /projects/:uid/documents/:documentId?type=folder|link|file
    */
   public async deleteProjectDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, documentId } = req.params;
     // Use getStringQueryParam so repeated `?type=folder&type=link` keys can't slip through
     // as an array and bypass the validation below.
     const documentType = getStringQueryParam(req, 'type');
-    const validDeleteTypes = ['link', 'folder'];
+    const validDeleteTypes: readonly string[] = DOCUMENT_DELETE_TYPES;
     const startTime = logger.startOperation(req, 'delete_project_document', {
       project_id: uid,
       document_id: documentId,
@@ -1024,7 +1025,7 @@ export class ProjectController {
         return;
       }
 
-      await this.projectService.deleteProjectDocument(req, uid, documentId, documentType);
+      await this.projectService.deleteProjectDocument(req, uid, documentId, documentType as ProjectDocumentType);
 
       logger.success(req, 'delete_project_document', startTime, {
         project_id: uid,
