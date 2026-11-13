@@ -293,7 +293,6 @@ export class OrgLensMembershipsService {
     return scope.members.map((member) => ({ accountId: member.accountId, name: member.name }));
   }
 
-  /** Cached per family, so every caller of the roll-up shares the rows; each response keeps only the organizations its caller can read. */
   private getFamilyActiveMembershipRows(scope: OrgLensRollUpScope): Promise<OrgLensMembershipSummaryRow[]> {
     return withOrgCache(
       scope.rollUpKey,
