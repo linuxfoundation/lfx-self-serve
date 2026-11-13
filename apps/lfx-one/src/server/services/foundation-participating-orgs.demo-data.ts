@@ -6,40 +6,13 @@
 // it through `FoundationParticipatingOrgsDataSource`, so a warehouse-backed source replaces this file without
 // touching the controller, the routes or the client.
 
-import type { MembershipTierClass } from '@lfx-one/shared/interfaces';
-
-export interface DemoProject {
-  slug: string;
-  name: string;
-  maturity: string;
-}
-
-export interface DemoProjectActivity {
-  projectSlug: string;
-  /** Commits and contributors in the 12 month window; other ranges scale from it. */
-  commits: number;
-  commitsChange: number | null;
-  contributors: number;
-  contributorsChange: number | null;
-}
-
-export interface DemoCompany {
-  key: string;
-  name: string;
-  tier: MembershipTierClass | null;
-  otherMemberships: string[];
-  /** Contributors across all projects, counting a person once; at most the sum of the project figures. */
-  foundationContributors: number;
-  foundationContributorsChange: number | null;
-  projects: DemoProjectActivity[];
-}
-
-export interface DemoFoundation {
-  slug: string;
-  name: string;
-  projects: DemoProject[];
-  companies: DemoCompany[];
-}
+import type {
+  FoundationParticipatingOrgsSourceCompany,
+  FoundationParticipatingOrgsSourceFoundation,
+  FoundationParticipatingOrgsSourceProject,
+  FoundationParticipatingOrgsSourceProjectActivity,
+  MembershipTierClass,
+} from '@lfx-one/shared/interfaces';
 
 const PROJECT_NAMES = [
   'Relay Protocol',
@@ -186,17 +159,12 @@ function change(rand: () => number): number | null {
   return Math.round((rand() * 1.6 - 0.45) * 100) / 100;
 }
 
-const cache = new Map<string, DemoFoundation>();
-
-/** Builds (and memoizes) the fictional foundation for a slug. */
-export function getDemoFoundation(slug: string): DemoFoundation {
-  const cached = cache.get(slug);
-  if (cached) return cached;
-
+/** Builds the fictional foundation for a slug. The PRNG is seeded by the slug, so rebuilding is deterministic and cheap, and nothing is kept per slug. */
+export function getDemoFoundation(slug: string): FoundationParticipatingOrgsSourceFoundation {
   const rand = mulberry32(hash(slug));
-  const projects: DemoProject[] = PROJECT_NAMES.map((name, index) => ({ slug: slugify(name), name, maturity: MATURITY[index] }));
+  const projects: FoundationParticipatingOrgsSourceProject[] = PROJECT_NAMES.map((name, index) => ({ slug: slugify(name), name, maturity: MATURITY[index] }));
 
-  const companies: DemoCompany[] = COMPANY_NAMES.map((name, index) => {
+  const companies: FoundationParticipatingOrgsSourceCompany[] = COMPANY_NAMES.map((name, index) => {
     const randomTier: MembershipTierClass | null = rand() < 0.2 ? 'Silver' : null;
     const tier = TIERS[index] === undefined ? randomTier : TIERS[index];
     // The first companies are the broadest contributors; later ones touch one or two projects.
@@ -205,7 +173,7 @@ export function getDemoFoundation(slug: string): DemoFoundation {
     const involved = index === 0 ? projects.length : spread;
     const picks = [...projects].sort(() => rand() - 0.5).slice(0, involved);
     const base = Math.round(Math.pow(1 - index / (COMPANY_NAMES.length + 4), 3.2) * 9000 + rand() * 400);
-    const activity: DemoProjectActivity[] = picks.map((project, order) => {
+    const activity: FoundationParticipatingOrgsSourceProjectActivity[] = picks.map((project, order) => {
       const commits = Math.max(1, Math.round((base * Math.pow(0.7, order) * (0.6 + rand() * 0.8)) / 2));
       return {
         projectSlug: project.slug,
@@ -227,7 +195,5 @@ export function getDemoFoundation(slug: string): DemoFoundation {
     };
   });
 
-  const foundation: DemoFoundation = { slug, name: `${titleCase(slug)} Foundation`, projects, companies };
-  cache.set(slug, foundation);
-  return foundation;
+  return { slug, name: `${titleCase(slug)} Foundation`, projects, companies };
 }

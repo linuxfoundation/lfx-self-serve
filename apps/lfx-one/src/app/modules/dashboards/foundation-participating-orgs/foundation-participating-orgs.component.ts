@@ -39,6 +39,8 @@ import type {
   FoundationParticipatingOrgBreakdownView,
   FoundationParticipatingOrgRowVm,
   FoundationParticipatingOrgsExportFilters,
+  FoundationParticipatingOrgsFilterChip,
+  FoundationParticipatingOrgsFilterChipId,
   FoundationParticipatingOrgsExportKind,
   FoundationParticipatingOrgsPage,
   FoundationParticipatingOrgsProject,
@@ -54,10 +56,11 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MenuItem } from 'primeng/api';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, pairwise, switchMap, take, tap } from 'rxjs';
 
-import { decorateFoundationOrgRow, decorateProjectLine, formatCommits, groupProjectOptions, splitBreakdown } from './foundation-participating-orgs.util';
+import { decorateFoundationOrgRow, decorateProjectLine, groupProjectOptions, splitBreakdown } from './foundation-participating-orgs.util';
 import { FoundationParticipatingOrgsService } from './services/foundation-participating-orgs.service';
 
 /**
@@ -72,6 +75,7 @@ import { FoundationParticipatingOrgsService } from './services/foundation-partic
     NgTemplateOutlet,
     ReactiveFormsModule,
     MenuComponent,
+    SkeletonModule,
     TooltipModule,
     ButtonComponent,
     CardComponent,
@@ -94,7 +98,6 @@ export class FoundationParticipatingOrgsComponent {
   protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
   protected readonly maxSearchLength = FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH;
   protected readonly commitShareTooltip = FOUNDATION_PARTICIPATING_ORGS_COMMIT_SHARE_TOOLTIP;
-  protected readonly formatCommits = formatCommits;
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
@@ -130,14 +133,7 @@ export class FoundationParticipatingOrgsComponent {
   protected readonly range: Signal<FoundationParticipatingOrgsRange> = toSignal(this.filterForm.controls.range.valueChanges, {
     initialValue: this.filterForm.controls.range.value,
   });
-  private readonly search: Signal<string> = toSignal(
-    this.filterForm.controls.search.valueChanges.pipe(
-      debounceTime(FOUNDATION_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS),
-      map((value) => value.trim().slice(0, FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH)),
-      distinctUntilChanged()
-    ),
-    { initialValue: '' }
-  );
+  private readonly search: Signal<string> = this.initSearch();
   protected readonly projectSlug: Signal<string | null> = toSignal(this.filterForm.controls.project.valueChanges, { initialValue: null });
   protected readonly tier: Signal<MembershipTierClass | null> = toSignal(this.filterForm.controls.tier.valueChanges, { initialValue: null });
 
@@ -159,7 +155,6 @@ export class FoundationParticipatingOrgsComponent {
     return state.slug === this.slug() ? state.projects : [];
   });
   protected readonly projectOptions = computed(() => groupProjectOptions(this.projects()));
-  protected readonly hasProjects = computed(() => this.projects().length > 0);
   protected readonly selectedProjectName = computed(() => this.projects().find((project) => project.slug === this.projectSlug())?.name ?? null);
 
   private readonly summaryState: Signal<{ slug: string; summary: FoundationParticipatingOrgsSummary | null }> = this.initSummary();
@@ -247,7 +242,7 @@ export class FoundationParticipatingOrgsComponent {
     this.filterForm.patchValue({ search: '', project: null, tier: null, range: FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE });
   }
 
-  protected removeFilter(id: 'search' | 'project' | 'tier' | 'range'): void {
+  protected removeFilter(id: FoundationParticipatingOrgsFilterChipId): void {
     switch (id) {
       case 'search':
         this.filterForm.controls.search.setValue('');
@@ -311,50 +306,15 @@ export class FoundationParticipatingOrgsComponent {
     this.patchBreakdown(key, { showAll: true });
   }
 
-  private loadBreakdown(key: string): void {
-    const slug = this.slug();
-    const range = this.range();
-    this.patchBreakdown(key, { status: 'loading', data: null });
-    this.dataService
-      .getBreakdown(slug, range, key)
-      .pipe(take(1))
-      .subscribe({
-        // A response for a foundation or range the page has since left must not land in the new scope's cache.
-        next: (data) => {
-          if (slug === this.slug() && range === this.range()) this.patchBreakdown(key, { status: 'ready', data });
-        },
-        error: () => {
-          if (slug === this.slug() && range === this.range()) this.patchBreakdown(key, { status: 'error' });
-        },
-      });
-  }
-
-  private ensureBreakdownFilter(key: string): void {
-    if (this.breakdownFilterForm.contains(key)) return;
-    const control = new FormControl<string>('', { nonNullable: true });
-    this.breakdownFilterForm.addControl(key, control);
-    control.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.patchBreakdown(key, { filter: value }));
-  }
-
-  private patchBreakdown(key: string, patch: Partial<FoundationParticipatingOrgBreakdownState>): void {
-    const initial: FoundationParticipatingOrgBreakdownState = { status: 'loading', data: null, showAll: false, filter: '' };
-    this.breakdowns.update((current) => ({ ...current, [key]: { ...initial, ...current[key], ...patch } }));
-  }
-
-  private exportFilters(): FoundationParticipatingOrgsExportFilters {
-    const search = this.search();
-    const tier = this.tier();
-    const projectSlug = this.projectSlug();
-    return {
-      foundationSlug: this.slug(),
-      range: this.range(),
-      segment: this.segment(),
-      ...(projectSlug ? { projectSlug } : {}),
-      ...(search ? { search } : {}),
-      ...(tier ? { tier } : {}),
-      sort: this.sort(),
-      dir: this.dir(),
-    };
+  private initSearch(): Signal<string> {
+    return toSignal(
+      this.filterForm.controls.search.valueChanges.pipe(
+        debounceTime(FOUNDATION_PARTICIPATING_ORGS_SEARCH_DEBOUNCE_MS),
+        map((value) => value.trim().slice(0, FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH)),
+        distinctUntilChanged()
+      ),
+      { initialValue: '' }
+    );
   }
 
   private initProjects(): Signal<{ slug: string; projects: FoundationParticipatingOrgsProject[] }> {
@@ -546,8 +506,8 @@ export class FoundationParticipatingOrgsComponent {
     ];
   }
 
-  private initActiveFilters(): { id: 'search' | 'project' | 'tier' | 'range'; label: string }[] {
-    const chips: { id: 'search' | 'project' | 'tier' | 'range'; label: string }[] = [];
+  private initActiveFilters(): FoundationParticipatingOrgsFilterChip[] {
+    const chips: FoundationParticipatingOrgsFilterChip[] = [];
     if (this.search()) chips.push({ id: 'search', label: `Search: “${this.search()}”` });
     if (this.projectSlug()) chips.push({ id: 'project', label: `Project: ${this.selectedProjectName() ?? this.projectSlug()}` });
     if (this.tier()) chips.push({ id: 'tier', label: `Tier: ${this.tier()}` });
@@ -571,6 +531,52 @@ export class FoundationParticipatingOrgsComponent {
       FoundationParticipatingOrgsSortField,
       'ascending' | 'descending' | 'none'
     >;
+  }
+
+  private loadBreakdown(key: string): void {
+    const slug = this.slug();
+    const range = this.range();
+    this.patchBreakdown(key, { status: 'loading', data: null });
+    this.dataService
+      .getBreakdown(slug, range, key)
+      .pipe(take(1))
+      .subscribe({
+        // A response for a foundation or range the page has since left must not land in the new scope's cache.
+        next: (data) => {
+          if (slug === this.slug() && range === this.range()) this.patchBreakdown(key, { status: 'ready', data });
+        },
+        error: () => {
+          if (slug === this.slug() && range === this.range()) this.patchBreakdown(key, { status: 'error' });
+        },
+      });
+  }
+
+  private ensureBreakdownFilter(key: string): void {
+    if (this.breakdownFilterForm.contains(key)) return;
+    const control = new FormControl<string>('', { nonNullable: true });
+    this.breakdownFilterForm.addControl(key, control);
+    control.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.patchBreakdown(key, { filter: value }));
+  }
+
+  private patchBreakdown(key: string, patch: Partial<FoundationParticipatingOrgBreakdownState>): void {
+    const initial: FoundationParticipatingOrgBreakdownState = { status: 'loading', data: null, showAll: false, filter: '' };
+    this.breakdowns.update((current) => ({ ...current, [key]: { ...initial, ...current[key], ...patch } }));
+  }
+
+  private exportFilters(): FoundationParticipatingOrgsExportFilters {
+    const search = this.search();
+    const tier = this.tier();
+    const projectSlug = this.projectSlug();
+    return {
+      foundationSlug: this.slug(),
+      range: this.range(),
+      segment: this.segment(),
+      ...(projectSlug ? { projectSlug } : {}),
+      ...(search ? { search } : {}),
+      ...(tier ? { tier } : {}),
+      sort: this.sort(),
+      dir: this.dir(),
+    };
   }
 }
 

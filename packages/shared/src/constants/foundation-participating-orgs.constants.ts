@@ -1,12 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Foundation Lens → Participating Companies (#5697). Ranges, sorting, paging, tier badges and change colours are the
-// project page's, so the two pages read as one product.
+// Foundation Lens → Participating Companies (#5697). Sorting, segments, tier badges and change colours reuse the project
+// page's constants; the ranges (this page adds 6 months and has no 30 days) and the paging limits are this page's own.
 
 import type { FoundationParticipatingOrgsPage, FoundationParticipatingOrgsRange } from '../interfaces/foundation-participating-orgs.interface';
 
 export const FOUNDATION_PARTICIPATING_ORGS_RANGES = ['12mo', '6mo', '90d', 'all'] as const;
+
+/** Scale from the 12 month demo figures to each range; the demo source stands in until the warehouse model exists. */
+export const FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE: Record<FoundationParticipatingOrgsRange, number> = {
+  '12mo': 1,
+  '6mo': 0.55,
+  '90d': 0.28,
+  all: 2.4,
+};
 
 export const FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE: FoundationParticipatingOrgsRange = '12mo';
 

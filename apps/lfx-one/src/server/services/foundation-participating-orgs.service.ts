@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS, MEMBERSHIP_TIER_ORDER } from '@lfx-one/shared/constants';
+import { FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE, MEMBERSHIP_TIER_ORDER } from '@lfx-one/shared/constants';
 import type {
+  FoundationCompanyActivity,
   FoundationParticipatingOrg,
   FoundationParticipatingOrgBreakdown,
   FoundationParticipatingOrgProjectLine,
@@ -12,23 +13,14 @@ import type {
   FoundationParticipatingOrgsQuery,
   FoundationParticipatingOrgsRange,
   FoundationParticipatingOrgsSummary,
+  FoundationParticipatingOrgsSourceFoundation,
   FoundationParticipatingOrgsSummaryQuery,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { getDemoFoundation } from './foundation-participating-orgs.demo-data';
 import { logger } from './logger.service';
-import { DemoCompany, DemoFoundation, getDemoFoundation } from './foundation-participating-orgs.demo-data';
-
-const RANGE_SCALE: Record<FoundationParticipatingOrgsRange, number> = { '12mo': 1, '6mo': 0.55, '90d': 0.28, all: 2.4 };
-
-/** One company as the data source reports it for a foundation, range and (optional) project scope. */
-export interface FoundationCompanyActivity {
-  company: DemoCompany;
-  row: FoundationParticipatingOrg;
-  /** Every project the company is active in for the range, sorted by commits. */
-  lines: FoundationParticipatingOrgProjectLine[];
-}
 
 /**
  * Seam between the BFF and the warehouse. Today it is backed by the fictional demo foundation (#5707); the
@@ -36,7 +28,7 @@ export interface FoundationCompanyActivity {
  * contributors de-duplicated across projects.
  */
 export interface FoundationParticipatingOrgsDataSource {
-  getFoundation(slug: string): DemoFoundation;
+  getFoundation(slug: string): FoundationParticipatingOrgsSourceFoundation;
 }
 
 const demoSource: FoundationParticipatingOrgsDataSource = { getFoundation: getDemoFoundation };
@@ -47,20 +39,16 @@ export class FoundationParticipatingOrgsService {
   public getProjects(req: Request, slug: string, range: FoundationParticipatingOrgsRange): FoundationParticipatingOrgsProject[] {
     logger.debug(req, 'get_foundation_participating_orgs_projects', 'Building project scope list', { slug, range });
     const foundation = this.source.getFoundation(slug);
-    const scale = RANGE_SCALE[range];
-    return foundation.projects
-      .map((project) => ({
-        slug: project.slug,
-        name: project.name,
-        maturity: project.maturity,
-        commits: Math.round(
-          foundation.companies
-            .flatMap((company) => company.projects)
-            .filter((p) => p.projectSlug === project.slug)
-            .reduce((sum, p) => sum + p.commits, 0) * scale
-        ),
-      }))
-      .sort((a, b) => b.commits - a.commits);
+    const scale = FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE[range];
+    const commitsOf = (projectSlug: string): number =>
+      foundation.companies
+        .flatMap((company) => company.projects)
+        .filter((p) => p.projectSlug === projectSlug)
+        .reduce((sum, p) => sum + p.commits, 0) * scale;
+    // Busiest project first; the figure itself is not part of the picker.
+    return [...foundation.projects]
+      .sort((a, b) => commitsOf(b.slug) - commitsOf(a.slug))
+      .map((project) => ({ slug: project.slug, name: project.name, maturity: project.maturity }));
   }
 
   public getSummary(req: Request, query: FoundationParticipatingOrgsSummaryQuery): FoundationParticipatingOrgsSummary | null {
@@ -125,14 +113,12 @@ export class FoundationParticipatingOrgsService {
     return { total, projects: item.lines };
   }
 
-  public getExportRows(req: Request, filters: FoundationParticipatingOrgsExportFilters): { items: FoundationCompanyActivity[]; truncated: boolean } {
+  /** Companies matching the filters, with their project lines scoped to the selected project. The row cap is applied by the caller. */
+  public getExportRows(req: Request, filters: FoundationParticipatingOrgsExportFilters): FoundationCompanyActivity[] {
     logger.debug(req, 'export_foundation_participating_orgs', 'Building export rows', { slug: filters.foundationSlug });
     const items = this.filtered(filters);
     // Under a project scope the by-project file lists that project only, matching the table and the summary file.
-    const scoped = filters.projectSlug
-      ? items.map((item) => ({ ...item, lines: item.lines.filter((line) => line.projectSlug === filters.projectSlug) }))
-      : items;
-    return { items: scoped.slice(0, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS), truncated: scoped.length > FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS };
+    return filters.projectSlug ? items.map((item) => ({ ...item, lines: item.lines.filter((line) => line.projectSlug === filters.projectSlug) })) : items;
   }
 
   private filtered(filters: FoundationParticipatingOrgsExportFilters): FoundationCompanyActivity[] {
@@ -146,7 +132,7 @@ export class FoundationParticipatingOrgsService {
     return items.sort((a, b) => compare(a.row, b.row, filters.sort) * (filters.dir === 'asc' ? 1 : -1) || a.row.name.localeCompare(b.row.name));
   }
 
-  private resolveProject(foundation: DemoFoundation, projectSlug?: string): { slug: string; name: string } | null {
+  private resolveProject(foundation: FoundationParticipatingOrgsSourceFoundation, projectSlug?: string): { slug: string; name: string } | null {
     if (!projectSlug) return null;
     const project = foundation.projects.find((candidate) => candidate.slug === projectSlug);
     if (!project) throw new ResourceNotFoundError('Project', projectSlug, { operation: 'resolve_foundation_participating_orgs_project' });
@@ -154,8 +140,12 @@ export class FoundationParticipatingOrgsService {
   }
 
   /** Foundation totals for every company with activity in the range, or that project's figures when scoped to one. */
-  private activities(foundation: DemoFoundation, range: FoundationParticipatingOrgsRange, projectSlug?: string): FoundationCompanyActivity[] {
-    const scale = RANGE_SCALE[range];
+  private activities(
+    foundation: FoundationParticipatingOrgsSourceFoundation,
+    range: FoundationParticipatingOrgsRange,
+    projectSlug?: string
+  ): FoundationCompanyActivity[] {
+    const scale = FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE[range];
     const names = new Map(foundation.projects.map((project) => [project.slug, project]));
     const items: FoundationCompanyActivity[] = [];
 

@@ -126,7 +126,7 @@ describe('FoundationParticipatingOrgsComponent', () => {
   beforeEach(() => {
     getSummary = vi.fn(() => of({ summary: summary() }));
     getPage = vi.fn(() => of({ rows: [company()], totalRecords: 1 }));
-    getProjects = vi.fn(() => of({ projects: [{ slug: 'project-1', name: 'Synthetic Project 1', maturity: 'Graduated', commits: 100 }] }));
+    getProjects = vi.fn(() => of({ projects: [{ slug: 'project-1', name: 'Synthetic Project 1', maturity: 'Graduated' }] }));
     getBreakdown = vi.fn(() => of(breakdown()));
     selectedFoundation = signal<ProjectContext | null>({ uid: 'foundation-uid', name: 'Synthetic Foundation', slug: FOUNDATION_SLUG });
   });

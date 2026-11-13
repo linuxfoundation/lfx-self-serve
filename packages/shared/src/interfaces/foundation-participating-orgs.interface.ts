@@ -28,8 +28,6 @@ export interface FoundationParticipatingOrgsProject {
   slug: string;
   name: string;
   maturity: string | null;
-  /** Commits to the project in the selected range, shown beside its name in the picker. */
-  commits: number;
 }
 
 /** `GET /api/foundation-participating-orgs/projects` */
@@ -136,6 +134,8 @@ export interface FoundationParticipatingOrgOtherProjects {
   count: number;
   commits: number;
   shareOfCompanyCommits: number;
+  /** The share as a whole percent, `24%`. */
+  shareLabel: string;
 }
 
 /**
@@ -165,6 +165,7 @@ export interface FoundationParticipatingOrgRowVm {
   name: string;
   logoUrl: string | null;
   initial: string;
+  projectsInvolved: number;
   projectsInvolvedLabel: string;
   membershipLabel: string | null;
   membershipBadgeClass: string | null;
@@ -185,7 +186,7 @@ export interface FoundationParticipatingOrgProjectLineVm extends FoundationParti
 /** A project-scope picker option group (one maturity level, or all projects when the foundation has none). */
 export interface FoundationParticipatingOrgsProjectOptionGroup {
   label: string;
-  items: { label: string; value: string; commits: number }[];
+  items: { label: string; value: string }[];
 }
 
 /** One expanded company's project breakdown while it loads, after it loads, or when it failed. */
@@ -204,4 +205,55 @@ export interface FoundationParticipatingOrgBreakdownView {
   other: FoundationParticipatingOrgOtherProjects | null;
   /** More projects than the top-N, so the panel offers a filter. */
   canFilter: boolean;
+}
+
+/** The filters shown as removable chips above the table. */
+export type FoundationParticipatingOrgsFilterChipId = 'search' | 'project' | 'tier' | 'range';
+
+export interface FoundationParticipatingOrgsFilterChip {
+  id: FoundationParticipatingOrgsFilterChipId;
+  label: string;
+}
+
+// What a data source reports for a foundation: the demo set today, a warehouse source later (#5707). Foundation totals
+// are built from these project figures; `foundationContributors` counts a person once across projects.
+export interface FoundationParticipatingOrgsSourceProject {
+  slug: string;
+  name: string;
+  maturity: string;
+}
+
+export interface FoundationParticipatingOrgsSourceProjectActivity {
+  projectSlug: string;
+  /** Commits in the 12 month window; the service scales them to the other ranges. */
+  commits: number;
+  commitsChange: number | null;
+  /** Contributors in the 12 month window (the same figure for every range). */
+  contributors: number;
+  contributorsChange: number | null;
+}
+
+export interface FoundationParticipatingOrgsSourceCompany {
+  key: string;
+  name: string;
+  tier: MembershipTierClass | null;
+  otherMemberships: string[];
+  foundationContributors: number;
+  foundationContributorsChange: number | null;
+  projects: FoundationParticipatingOrgsSourceProjectActivity[];
+}
+
+export interface FoundationParticipatingOrgsSourceFoundation {
+  slug: string;
+  name: string;
+  projects: FoundationParticipatingOrgsSourceProject[];
+  companies: FoundationParticipatingOrgsSourceCompany[];
+}
+
+/** One company as the service reports it for a foundation, range and optional project scope. */
+export interface FoundationCompanyActivity {
+  company: FoundationParticipatingOrgsSourceCompany;
+  row: FoundationParticipatingOrg;
+  /** Every project the company is active in for the range, sorted by commits. */
+  lines: FoundationParticipatingOrgProjectLine[];
 }

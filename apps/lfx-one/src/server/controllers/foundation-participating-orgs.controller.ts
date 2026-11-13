@@ -5,6 +5,7 @@ import {
   FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_HEADER,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_KINDS,
+  FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_SUMMARY_HEADER,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
   FOUNDATION_PARTICIPATING_ORGS_MAX_PAGE_SIZE,
@@ -20,6 +21,7 @@ import {
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
 import type {
+  FoundationCompanyActivity,
   FoundationParticipatingOrgsExportFilters,
   FoundationParticipatingOrgsRange,
   FoundationParticipatingOrgsSummaryQuery,
@@ -30,7 +32,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
-import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
+import { getEnumQueryParam, getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
 import { parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { FoundationParticipatingOrgsService } from '../services/foundation-participating-orgs.service';
@@ -100,7 +102,7 @@ export class FoundationParticipatingOrgsController {
     const startTime = logger.startOperation(req, operation);
     try {
       const slug = parseSlug(req, operation);
-      const companyKey = getStrictStringQueryParam(req, 'companyKey', operation);
+      const companyKey = getStrictStringQueryParam(req, 'companyKey', operation)?.trim();
       if (!companyKey || companyKey.length > 200) {
         throw ServiceValidationError.forField('companyKey', 'companyKey is required', { operation });
       }
@@ -118,47 +120,27 @@ export class FoundationParticipatingOrgsController {
     const startTime = logger.startOperation(req, operation);
     try {
       const filters = parseFilters(req, operation);
-      const kind = parseEnum(req, 'kind', FOUNDATION_PARTICIPATING_ORGS_EXPORT_KINDS, 'summary', operation);
-      const { items, truncated } = this.service.getExportRows(req, filters);
-      logger.success(req, operation, startTime, { slug: filters.foundationSlug, kind, result_count: items.length, truncated });
-      res.setHeader('Cache-Control', 'private, no-store');
+      const kind = getEnumQueryParam(req, 'kind', FOUNDATION_PARTICIPATING_ORGS_EXPORT_KINDS, 'summary', operation);
+      const items = this.service.getExportRows(req, filters);
       if (items.length === 0) {
+        logger.success(req, operation, startTime, { slug: filters.foundationSlug, kind, result_count: 0, truncated: false });
+        res.setHeader('Cache-Control', 'private, no-store');
         res.status(204).end();
         return;
       }
 
-      const rows =
-        kind === 'summary'
-          ? [
-              [...FOUNDATION_PARTICIPATING_ORGS_EXPORT_SUMMARY_HEADER],
-              ...items.map(({ row }) => [
-                row.name,
-                row.isMember ? 'Member' : 'Non-Member',
-                row.membershipTierClass ?? '',
-                row.otherMemberships.join('; '),
-                row.projectsInvolved,
-                row.commits,
-                changeLabel(row.commitsChange),
-                row.contributors,
-                changeLabel(row.contributorsChange),
-              ]),
-            ]
-          : [
-              [...FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_HEADER],
-              // Every project for every company, not just the top 10 the page shows.
-              ...items.flatMap(({ row, lines }) =>
-                lines.map((line) => [
-                  row.name,
-                  row.isMember ? 'Member' : 'Non-Member',
-                  row.membershipTierClass ?? '',
-                  line.name,
-                  line.maturity ?? '',
-                  line.commits,
-                  line.contributors,
-                  `${Math.round(line.shareOfCompanyCommits * 100)}%`,
-                ])
-              ),
-            ];
+      const header = kind === 'summary' ? FOUNDATION_PARTICIPATING_ORGS_EXPORT_SUMMARY_HEADER : FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_HEADER;
+      const dataRows = kind === 'summary' ? summaryRows(items) : byProjectRows(items);
+      // The cap counts CSV rows, so a by-project file (one row per company and project) is bounded like the summary file.
+      const truncated = dataRows.length > FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS;
+      const rows = [[...header], ...dataRows.slice(0, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS)];
+      logger.success(req, operation, startTime, {
+        slug: filters.foundationSlug,
+        kind,
+        result_count: Math.min(dataRows.length, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS),
+        truncated,
+      });
+      res.setHeader('Cache-Control', 'private, no-store');
       const date = new Date().toISOString().slice(0, 10);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader(
@@ -175,13 +157,35 @@ export class FoundationParticipatingOrgsController {
   }
 }
 
-function parseEnum<T extends string>(req: Request, name: string, allowed: readonly T[], fallback: T, operation: string): T {
-  const value = getStrictStringQueryParam(req, name, operation);
-  if (value === undefined) return fallback;
-  if (!(allowed as readonly string[]).includes(value)) {
-    throw ServiceValidationError.forField(name, `${name} must be one of: ${allowed.join(', ')}`, { operation });
-  }
-  return value as T;
+/** One row per company, with foundation totals. */
+function summaryRows(items: FoundationCompanyActivity[]): (string | number)[][] {
+  return items.map(({ row }) => [
+    row.name,
+    row.isMember ? 'Member' : 'Non-Member',
+    row.membershipTierClass ?? '',
+    row.otherMemberships.join('; '),
+    row.projectsInvolved,
+    row.commits,
+    changeLabel(row.commitsChange),
+    row.contributors,
+    changeLabel(row.contributorsChange),
+  ]);
+}
+
+/** One row per company and project: every project the company is active in, not just the top 10 the page shows. */
+function byProjectRows(items: FoundationCompanyActivity[]): (string | number)[][] {
+  return items.flatMap(({ row, lines }) =>
+    lines.map((line) => [
+      row.name,
+      row.isMember ? 'Member' : 'Non-Member',
+      row.membershipTierClass ?? '',
+      line.name,
+      line.maturity ?? '',
+      line.commits,
+      line.contributors,
+      `${Math.round(line.shareOfCompanyCommits * 100)}%`,
+    ])
+  );
 }
 
 function parseSlugParam(req: Request, name: string, operation: string): string | undefined {
@@ -205,7 +209,7 @@ function parseProjectSlug(req: Request, operation: string): string | undefined {
 }
 
 function parseRange(req: Request, operation: string): FoundationParticipatingOrgsRange {
-  return parseEnum(req, 'range', FOUNDATION_PARTICIPATING_ORGS_RANGES, FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE, operation);
+  return getEnumQueryParam(req, 'range', FOUNDATION_PARTICIPATING_ORGS_RANGES, FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE, operation);
 }
 
 /** The list filters without the tab, sorting and paging; the summary covers every tab. */
@@ -240,9 +244,9 @@ function parseFilters(req: Request, operation: string): FoundationParticipatingO
   return {
     foundationSlug: parseSlug(req, operation),
     range: parseRange(req, operation),
-    segment: parseEnum(req, 'segment', PROJECT_PARTICIPATING_ORGS_SEGMENTS, 'all', operation),
-    sort: parseEnum(req, 'sort', PROJECT_PARTICIPATING_ORGS_SORT_FIELDS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT, operation),
-    dir: parseEnum(req, 'dir', PROJECT_PARTICIPATING_ORGS_SORT_DIRECTIONS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR, operation),
+    segment: getEnumQueryParam(req, 'segment', PROJECT_PARTICIPATING_ORGS_SEGMENTS, 'all', operation),
+    sort: getEnumQueryParam(req, 'sort', PROJECT_PARTICIPATING_ORGS_SORT_FIELDS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT, operation),
+    dir: getEnumQueryParam(req, 'dir', PROJECT_PARTICIPATING_ORGS_SORT_DIRECTIONS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR, operation),
     ...(projectSlug ? { projectSlug } : {}),
     ...(search ? { search } : {}),
     ...(tier ? { tier } : {}),

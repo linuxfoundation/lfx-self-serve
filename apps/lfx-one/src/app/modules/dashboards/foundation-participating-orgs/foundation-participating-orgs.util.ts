@@ -20,7 +20,6 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 const NO_MATURITY_LABEL = 'Projects';
-const FORMATTER = new Intl.NumberFormat('en-US');
 
 export function decorateFoundationOrgRow(row: FoundationParticipatingOrg): FoundationParticipatingOrgRowVm {
   const tier = row.isMember ? row.membershipTierClass : null;
@@ -30,6 +29,7 @@ export function decorateFoundationOrgRow(row: FoundationParticipatingOrg): Found
     name: row.name,
     logoUrl: row.logoUrl,
     initial: row.name.trim().charAt(0).toUpperCase() || '?',
+    projectsInvolved: row.projectsInvolved,
     projectsInvolvedLabel: `${row.projectsInvolved} ${row.projectsInvolved === 1 ? 'project' : 'projects'} involved`,
     membershipLabel: row.isMember ? `${tier ?? ''} Member`.trim() : null,
     membershipBadgeClass: row.isMember
@@ -66,12 +66,14 @@ export function splitBreakdown(
   if (showAll || needle || matching.length <= FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N) return { shown: matching, other: null };
 
   const rest = matching.slice(FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N);
+  const otherShare = rest.reduce((sum, line) => sum + line.shareOfCompanyCommits, 0);
   return {
     shown: matching.slice(0, FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N),
     other: {
       count: rest.length,
       commits: rest.reduce((sum, line) => sum + line.commits, 0),
-      shareOfCompanyCommits: rest.reduce((sum, line) => sum + line.shareOfCompanyCommits, 0),
+      shareOfCompanyCommits: otherShare,
+      shareLabel: `${Math.round(otherShare * 100)}%`,
     },
   };
 }
@@ -82,14 +84,10 @@ export function groupProjectOptions(projects: FoundationParticipatingOrgsProject
   for (const project of projects) {
     const label = project.maturity ?? NO_MATURITY_LABEL;
     const group = groups.get(label) ?? { label, items: [] };
-    group.items.push({ label: project.name, value: project.slug, commits: project.commits });
+    group.items.push({ label: project.name, value: project.slug });
     groups.set(label, group);
   }
   return [...groups.values()].map((group) => ({ ...group, label: group.label === NO_MATURITY_LABEL ? group.label : `${group.label} · ${group.items.length}` }));
-}
-
-export function formatCommits(value: number): string {
-  return FORMATTER.format(value);
 }
 
 function metric(value: number, fraction: number | null): FoundationParticipatingOrgMetricVm {

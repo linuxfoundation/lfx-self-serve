@@ -2,15 +2,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="foundation-participating-orgs-page">
-  <div class="flex flex-col gap-1">
-    <lfx-page-header
-      data-testid="foundation-participating-orgs-header"
-      title="Participating Companies"
-      [description]="subtitle()"
-      titleTestId="foundation-participating-orgs-title"
-      descriptionTestId="foundation-participating-orgs-subtitle" />
-    <p class="text-xs text-gray-500" data-testid="foundation-participating-orgs-data-line">{{ dataLine() }}</p>
-  </div>
+  <lfx-page-header
+    data-testid="foundation-participating-orgs-header"
+    title="Participating Companies"
+    [description]="subtitle()"
+    titleTestId="foundation-participating-orgs-title"
+    descriptionTestId="foundation-participating-orgs-subtitle">
+    <span pageHeaderDescription class="text-xs" data-testid="foundation-participating-orgs-data-line">{{ dataLine() }}</span>
+  </lfx-page-header>
 
   @switch (viewState()) {
     @case ('forbidden') {
@@ -65,9 +64,11 @@
             size="small"
             [loading]="exporting()"
             [disabled]="pageLoading() || exporting() || totalRecords() === 0"
-            [tooltip]="totalRecords() === 0 ? 'No rows to export' : undefined"
             (onClick)="exportMenuRef.toggle($event)"
             data-testid="foundation-participating-orgs-export-csv" />
+          @if (totalRecords() === 0 && !pageLoading()) {
+            <span class="text-xs text-gray-500" data-testid="foundation-participating-orgs-export-hint">No rows to export</span>
+          }
           <lfx-menu #exportMenuRef [model]="exportMenu()" [popup]="true" appendTo="body" data-testid="foundation-participating-orgs-export-menu">
             <ng-template #item let-item>
               <button
@@ -143,7 +144,13 @@
             role="alert"
             data-testid="foundation-participating-orgs-projects-error">
             <span>We couldn't load the project list, so you can't scope to a project yet.</span>
-            <lfx-button label="Try again" severity="secondary" [outlined]="true" size="small" (onClick)="retryProjects()" />
+            <lfx-button
+              label="Try again"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              (onClick)="retryProjects()"
+              data-testid="foundation-participating-orgs-projects-retry" />
           </div>
         }
 
@@ -154,7 +161,13 @@
             <span>
               Showing <strong>{{ projectName }}</strong> only. Its numbers are part of the {{ foundationName() }} foundation total.
             </span>
-            <lfx-button label="Back to foundation total" severity="secondary" [outlined]="true" size="small" (onClick)="clearProject()" />
+            <lfx-button
+              label="Back to foundation total"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              (onClick)="clearProject()"
+              data-testid="foundation-participating-orgs-scope-clear" />
           </div>
         } @else {
           <p class="mx-5 mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900" data-testid="foundation-participating-orgs-totals-note">
@@ -174,7 +187,8 @@
                   type="button"
                   class="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   [attr.aria-label]="'Remove filter ' + chip.label"
-                  (click)="removeFilter(chip.id)">
+                  (click)="removeFilter(chip.id)"
+                  [attr.data-testid]="'foundation-participating-orgs-chip-' + chip.id + '-remove'">
                   <i class="fa-light fa-xmark" aria-hidden="true"></i>
                 </button>
               </span>
@@ -357,7 +371,13 @@
                         <i class="fa-light fa-magnifying-glass text-xl text-gray-400" aria-hidden="true"></i>
                         <p class="text-sm font-medium text-gray-900">No companies match your filters</p>
                         <p class="text-sm text-gray-500">Check the spelling, or try another tier, project or time range.</p>
-                        <lfx-button label="Clear search and filters" severity="secondary" [outlined]="true" size="small" (onClick)="clearFilters()" />
+                        <lfx-button
+                          label="Clear search and filters"
+                          severity="secondary"
+                          [outlined]="true"
+                          size="small"
+                          (onClick)="clearFilters()"
+                          data-testid="foundation-participating-orgs-no-match-clear" />
                       </div>
                     }
                   </td>
@@ -371,12 +391,13 @@
   }
 </div>
 
+<!-- Arbitrary 10px and 11px type sizes below are the design's exact badge and arrow sizes (the 14px root makes the standard scale undershoot). -->
 <!-- One company's project breakdown: the foundation total first, then each project it is active in (top 10 for a large company). -->
 <ng-template #breakdownPanel let-row>
   @let view = breakdownViews()[row.participantKey];
   <div class="flex flex-col gap-3" [attr.aria-busy]="view?.state?.status === 'loading'">
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-600">Projects involved ({{ row.projectsInvolvedLabel.split(' ')[0] }})</h3>
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-600">Projects involved ({{ row.projectsInvolved }})</h3>
       @if (view?.canFilter) {
         <div class="w-56">
           <label class="sr-only" [for]="'foundation-participating-orgs-filter-' + row.participantKey">Filter {{ row.name }} projects</label>
@@ -396,13 +417,19 @@
     @if (!view || view.state.status === 'loading') {
       <div class="flex flex-col gap-2" role="status" aria-label="Loading projects" data-testid="foundation-participating-orgs-breakdown-loading">
         @for (placeholder of [1, 2, 3]; track placeholder) {
-          <div class="h-6 animate-pulse rounded bg-gray-200"></div>
+          <p-skeleton height="1.5rem" />
         }
       </div>
     } @else if (view.state.status === 'error') {
       <div class="flex items-center gap-3 text-sm text-gray-700" role="alert">
         <span>We couldn't load the projects for {{ row.name }}.</span>
-        <lfx-button label="Try again" severity="secondary" [outlined]="true" size="small" (onClick)="retryBreakdown(row.participantKey)" />
+        <lfx-button
+          label="Try again"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="retryBreakdown(row.participantKey)"
+          [attr.data-testid]="'foundation-participating-orgs-breakdown-' + row.participantKey + '-retry'" />
       </div>
     } @else {
       <div class="overflow-x-auto">
@@ -460,7 +487,7 @@
                 <td class="py-2 text-right">—</td>
                 <td class="py-2 text-right">—</td>
                 <td class="py-2 text-right">—</td>
-                <td class="py-2 pl-4 text-xs tabular-nums">{{ (other.shareOfCompanyCommits * 100).toFixed(0) }}%</td>
+                <td class="py-2 pl-4 text-xs tabular-nums">{{ other.shareLabel }}</td>
               </tr>
             }
           </tbody>
@@ -473,7 +500,8 @@
             severity="secondary"
             [outlined]="true"
             size="small"
-            (onClick)="showAllProjects(row.participantKey)" />
+            (onClick)="showAllProjects(row.participantKey)"
+            [attr.data-testid]="'foundation-participating-orgs-breakdown-' + row.participantKey + '-show-all'" />
         </div>
       }
     }

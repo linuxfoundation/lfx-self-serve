@@ -63,7 +63,7 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
   });
 
   it('exports every project for each company, not only the top 10', () => {
-    const { items } = service.getExportRows(req, base);
+    const items = service.getExportRows(req, base);
     expect(items.some((item) => item.lines.length > 10)).toBe(true);
     for (const item of items) expect(item.lines.length).toBe(item.row.projectsInvolved);
   });
@@ -84,7 +84,7 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
 
   it('limits the by-project export to the selected project under a project scope', () => {
     const [project] = service.getProjects(req, SLUG, '12mo');
-    const { items } = service.getExportRows(req, { ...base, projectSlug: project.slug });
+    const items = service.getExportRows(req, { ...base, projectSlug: project.slug });
     expect(items.length).toBeGreaterThan(0);
     for (const item of items) expect(item.lines.map((line) => line.projectSlug)).toEqual([project.slug]);
   });
