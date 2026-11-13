@@ -73,6 +73,13 @@ export const FORMATION_PIPELINE_STAGE_SEVERITY: Record<FormationPipelineStage, T
 /** The live pipeline: what the formation team is actively working. The default view; Disengaged, Confidential and Archived are opt-in. */
 export const FORMATION_PIPELINE_LIVE_STAGES: readonly FormationPipelineStage[] = ['prospect', 'exploratory', 'engaged', 'on_hold'];
 
+/**
+ * Stages LF staff outside the formation team never see (#5544). `global_auditor` is withheld on exactly these two upstream
+ * (lfx-v2-project-service `global_grants.go`); the BFF drops them from rows, counts and the CSV whatever the caller can
+ * read, so a direct grant on a Draft project does not bring it into the staff view.
+ */
+export const FORMATION_PIPELINE_STAFF_HIDDEN_STAGES: readonly FormationPipelineStage[] = ['prospect', 'confidential'];
+
 /** The stage selection the page opens on. */
 export const FORMATION_PIPELINE_DEFAULT_STAGE: FormationPipelineStageFilter = 'in_pipeline';
 
@@ -199,7 +206,8 @@ export const FORMATION_PIPELINE_COPY = {
   filteredEmptyTitle: 'No projects match',
   filteredEmptySubtitle: 'Try a different stage, foundation, foundation type or search.',
   errorMessage: "Couldn't load the pipeline. Try again.",
-  forbiddenMessage: 'Only the formation team can see the pipeline.',
+  staffNote: 'Draft projects are visible to the formation team only.',
+  forbiddenMessage: 'Only the formation team and LF staff can see the pipeline.',
   retry: 'Retry',
   loading: 'Loading the pipeline…',
   noPm: 'No PM yet',

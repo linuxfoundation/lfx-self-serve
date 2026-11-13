@@ -56,6 +56,22 @@ describe('formationsQueueAuditorGuard', () => {
     expect(await runGuard()).toBe(true);
   });
 
+  // #5544: LF staff reach the Pipeline tab through this guard. Their root `global_auditor` grant is what makes `isAuditor` true
+  // (root `auditor`), and they hold no root writer grant, so the probe is the only path in.
+  it('allows root global_auditor staff: isAuditor without isRootWriter, from the fresh probe', async () => {
+    refreshEnrichedPersonas.mockReturnValue(of({ isAuditor: true, isRootWriter: false, isLFStaff: true, error: null }));
+
+    expect(await runGuard()).toBe(true);
+    expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows root global_auditor staff on the already-loaded signal when the probe short-circuits', async () => {
+    isAuditor.set(true);
+    refreshEnrichedPersonas.mockReturnValue(of(null));
+
+    expect(await runGuard()).toBe(true);
+  });
+
   it('denies a caller whose fresh probe response has neither grant', async () => {
     refreshEnrichedPersonas.mockReturnValue(of({ isAuditor: false, isRootWriter: false, error: null }));
 
