@@ -34,7 +34,11 @@ export function parseRollupProjectsPreference(raw: string | null): Record<string
   const map: Record<string, string[]> = {};
   for (const [root, uids] of Object.entries(parsed as Record<string, unknown>)) {
     if (isFilterSafeIdentifier(root) && Array.isArray(uids)) {
-      map[root] = uids.filter((uid): uid is string => typeof uid === 'string' && isFilterSafeIdentifier(uid));
+      const valid = uids.filter((uid): uid is string => typeof uid === 'string' && isFilterSafeIdentifier(uid));
+      // Only a stored empty list means "all projects"; a list left empty by dropping invalid IDs is no choice.
+      if (uids.length === 0 || valid.length > 0) {
+        map[root] = valid;
+      }
     }
   }
   return map;

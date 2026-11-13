@@ -15,6 +15,10 @@ describe('parseRollupProjectsPreference', () => {
     expect(parseRollupProjectsPreference(raw)).toEqual({});
   });
 
+  it('drops a root whose list held only invalid UIDs, instead of reading it as all projects', () => {
+    expect(parseRollupProjectsPreference(JSON.stringify({ root: ['bad:uid'], all: [] }))).toEqual({ all: [] });
+  });
+
   it('drops unsafe roots, non-list values and unsafe UIDs', () => {
     expect(parseRollupProjectsPreference(JSON.stringify({ 'bad:root': ['a'], root: ['ok', 'b*d', 3], other: 'x' }))).toEqual({ root: ['ok'] });
   });
