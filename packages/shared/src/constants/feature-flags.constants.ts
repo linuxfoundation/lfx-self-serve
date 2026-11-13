@@ -268,8 +268,8 @@ export const LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS = 3;
 
 /**
  * Dark-launch gate for the Foundation Lens Participating Companies page (#5697): the route
- * (`foundation/participating-orgs`) and its nav item. The page is backed by a fictional demo data set
- * until the foundation-level warehouse model exists (#5707), so it stays off for everyone until then.
+ * (`foundation/participating-orgs`) and its nav item. The page reads the lf-dbt participating-orgs
+ * table (#5707); the flag stays off until it is rolled out.
  * Paired with the server flag `LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED`, which is the real kill
  * switch for the BFF; the Web SDK never runs server-side.
  */

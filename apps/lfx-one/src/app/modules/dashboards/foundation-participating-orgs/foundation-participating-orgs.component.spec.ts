@@ -37,7 +37,6 @@ const KEY = 'synthetic-company';
 function summary(overrides: Partial<FoundationParticipatingOrgsSummary> = {}): FoundationParticipatingOrgsSummary {
   return {
     foundationSlug: FOUNDATION_SLUG,
-    dataSource: 'demo',
     foundationName: 'Synthetic Foundation',
     projectCount: 12,
     projectSlug: null,
@@ -154,10 +153,10 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(text(`foundation-participating-orgs-row-${KEY}-membership`)).toContain('Project member');
   });
 
-  it('says the figures are demo data rather than LFX Insights', async () => {
+  it('dates the figures and names LFX Insights as the source', async () => {
     await render();
-    expect(text('foundation-participating-orgs-data-line')).toContain('Fictional demo data');
-    expect(text('foundation-participating-orgs-data-line')).not.toContain('Source: LFX Insights');
+    expect(text('foundation-participating-orgs-data-line')).toContain('Source: LFX Insights');
+    expect(text('foundation-participating-orgs-data-line')).not.toContain('demo');
   });
 
   it('counts the tabs from the filtered, contributing companies', async () => {

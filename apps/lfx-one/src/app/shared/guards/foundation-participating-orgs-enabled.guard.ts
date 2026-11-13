@@ -12,7 +12,7 @@ import { FeatureFlagService } from '../services/feature-flag.service';
  * CanMatch guard for `foundation/participating-orgs` (#5697). Dark-launch gate behind
  * `foundation-participating-orgs-enabled`, same shape as `formationEnabledGuard`: SSR defers to the browser
  * (the flag provider never initializes server-side), and the browser run waits for provider readiness through the
- * shared `waitForReady` and fails closed on timeout, because the page runs on demo data and must not appear when the provider is slow.
+ * shared `waitForReady` and fails closed on timeout, because the page is dark-launched and must not appear when the provider is slow.
  */
 export const foundationParticipatingOrgsEnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);

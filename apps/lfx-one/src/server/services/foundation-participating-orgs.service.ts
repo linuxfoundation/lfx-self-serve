@@ -1,11 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE,
-  FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS,
-  MEMBERSHIP_TIER_ORDER,
-} from '@lfx-one/shared/constants';
+import { FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS, MEMBERSHIP_TIER_ORDER } from '@lfx-one/shared/constants';
 import type {
   FoundationCompanyActivity,
   FoundationParticipatingOrg,
@@ -18,63 +14,64 @@ import type {
   FoundationParticipatingOrgsProject,
   FoundationParticipatingOrgsQuery,
   FoundationParticipatingOrgsRange,
-  FoundationParticipatingOrgsSummary,
+  FoundationParticipatingOrgsSourceCompany,
   FoundationParticipatingOrgsSourceFoundation,
+  FoundationParticipatingOrgsSourceProjectLine,
+  FoundationParticipatingOrgsSummary,
   FoundationParticipatingOrgsSummaryQuery,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
-import { getDemoFoundation } from './foundation-participating-orgs.demo-data';
+import { FoundationParticipatingOrgsSnowflakeSource } from './foundation-participating-orgs.snowflake-source';
 import { logger } from './logger.service';
 
-const demoSource: FoundationParticipatingOrgsDataSource = {
-  kind: 'demo',
-  rangeScale: FOUNDATION_PARTICIPATING_ORGS_DEMO_RANGE_SCALE,
-  getFoundation: getDemoFoundation,
-};
-
 export class FoundationParticipatingOrgsService {
-  public constructor(private readonly source: FoundationParticipatingOrgsDataSource = demoSource) {}
+  private source: FoundationParticipatingOrgsDataSource | null;
 
-  public getProjects(req: Request, slug: string, range: FoundationParticipatingOrgsRange): FoundationParticipatingOrgsProject[] {
-    logger.debug(req, 'get_foundation_participating_orgs_projects', 'Building project scope list', { slug, range });
-    const foundation = this.source.getFoundation(slug);
-    // Each project's total is summed once, then the list is ordered busiest first; the figure itself is not part of the picker.
-    const totals = new Map<string, number>();
-    for (const company of foundation.companies) {
-      for (const project of company.projects) totals.set(project.projectSlug, (totals.get(project.projectSlug) ?? 0) + project.commits);
-    }
+  /** The warehouse source is created on first use, so building the service never opens a Snowflake connection. */
+  public constructor(source?: FoundationParticipatingOrgsDataSource) {
+    this.source = source ?? null;
+  }
+
+  public async getProjects(req: Request, slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsProject[]> {
+    logger.debug(req, 'get_foundation_participating_orgs_projects', 'Reading project scope list', { slug, range });
+    const foundation = await this.dataSource().getFoundation(slug, range);
+    if (!foundation) return [];
+    // Busiest first; the figure itself is not part of the picker.
     return [...foundation.projects]
-      .sort((a, b) => (totals.get(b.slug) ?? 0) - (totals.get(a.slug) ?? 0))
+      .sort((a, b) => b.commits - a.commits || a.name.localeCompare(b.name))
       .map((project) => ({ slug: project.slug, name: project.name, maturity: project.maturity }));
   }
 
-  public getSummary(req: Request, query: FoundationParticipatingOrgsSummaryQuery): FoundationParticipatingOrgsSummary | null {
+  public async getSummary(req: Request, query: FoundationParticipatingOrgsSummaryQuery): Promise<FoundationParticipatingOrgsSummary | null> {
     const { foundationSlug: slug, range, projectSlug } = query;
-    logger.debug(req, 'get_foundation_participating_orgs_summary', 'Building summary', { slug, range, project_slug: projectSlug });
-    const foundation = this.source.getFoundation(slug);
+    logger.debug(req, 'get_foundation_participating_orgs_summary', 'Reading summary', { slug, range, project_slug: projectSlug });
+    const foundation = await this.dataSource().getFoundation(slug, range);
+    if (!foundation) {
+      if (projectSlug) throw new ResourceNotFoundError('Project', projectSlug, { operation: 'resolve_foundation_participating_orgs_project' });
+      return null;
+    }
     const project = this.resolveProject(foundation, projectSlug);
-    const base = this.activities(foundation, range, projectSlug);
+    const base = await this.rows(foundation, range, projectSlug);
     // No activity at all in scope is the empty state; a search or tier that matches nothing still gets its zeros.
     if (base.length === 0) return null;
 
-    const matching = base.filter(({ row }) => matches(row, query));
-    const members = matching.filter((item) => item.row.isMember);
-    const commits = matching.reduce((sum, item) => sum + item.row.commits, 0);
-    const memberCommits = members.reduce((sum, item) => sum + item.row.commits, 0);
+    const matching = base.filter((row) => matches(row, query));
+    const members = matching.filter((row) => row.isMember);
+    const commits = matching.reduce((sum, row) => sum + row.commits, 0);
+    const memberCommits = members.reduce((sum, row) => sum + row.commits, 0);
     return {
       foundationSlug: slug,
-      dataSource: this.source.kind,
       foundationName: foundation.name,
       projectCount: foundation.projects.length,
       projectSlug: project?.slug ?? null,
       projectName: project?.name ?? null,
       range,
-      asOfDate: new Date().toISOString().slice(0, 10),
+      asOfDate: foundation.asOfDate ?? new Date().toISOString().slice(0, 10),
       availableTiers: MEMBERSHIP_TIER_ORDER.filter((tier) => foundation.companies.some((company) => company.tier === tier)),
       companiesCount: matching.length,
-      membersCount: foundation.companies.filter((company) => company.tier !== null && matches({ name: company.name, membershipTierClass: company.tier }, query))
+      membersCount: foundation.companies.filter((company) => company.isMember && matches({ name: company.name, membershipTierClass: company.tier }, query))
         .length,
       contributingMembersCount: members.length,
       nonMembersCount: matching.length - members.length,
@@ -82,35 +79,41 @@ export class FoundationParticipatingOrgsService {
     };
   }
 
-  public getPage(req: Request, query: FoundationParticipatingOrgsQuery): FoundationParticipatingOrgsPage {
-    logger.debug(req, 'get_foundation_participating_orgs', 'Building company page', {
+  public async getPage(req: Request, query: FoundationParticipatingOrgsQuery): Promise<FoundationParticipatingOrgsPage> {
+    logger.debug(req, 'get_foundation_participating_orgs', 'Reading company page', {
       slug: query.foundationSlug,
       segment: query.segment,
       offset: query.offset,
     });
-    const rows = this.filtered(query).map((item) => item.row);
+    const rows = await this.filtered(query);
     return { rows: rows.slice(query.offset, query.offset + query.pageSize), totalRecords: rows.length };
   }
 
   /** Every project line for one company (the client shows the top 10 and folds the rest into "Other N projects"). */
-  public getBreakdown(req: Request, slug: string, range: FoundationParticipatingOrgsRange, companyKey: string): FoundationParticipatingOrgBreakdown {
-    logger.debug(req, 'get_foundation_participating_orgs_breakdown', 'Building project breakdown', { slug, range, company_key: companyKey });
-    const foundation = this.source.getFoundation(slug);
-    const item = this.activities(foundation, range, undefined, companyKey)[0];
-    if (!item) {
+  public async getBreakdown(
+    req: Request,
+    slug: string,
+    range: FoundationParticipatingOrgsRange,
+    companyKey: string
+  ): Promise<FoundationParticipatingOrgBreakdown> {
+    logger.debug(req, 'get_foundation_participating_orgs_breakdown', 'Reading project breakdown', { slug, range, company_key: companyKey });
+    const foundation = await this.dataSource().getFoundation(slug, range);
+    const company = foundation?.companies.find((candidate) => candidate.key === companyKey);
+    if (!foundation || !company || !isActive(company)) {
       throw new ResourceNotFoundError('Company', companyKey, { operation: 'get_foundation_participating_orgs_breakdown' });
     }
+    const lines = await this.dataSource().getProjectLines(slug, range, { companyKey });
     const total: FoundationParticipatingOrgProjectLine = {
       projectSlug: slug,
       name: `${foundation.name} total`,
       maturity: null,
-      commits: item.row.commits,
-      commitsChange: item.row.commitsChange,
-      contributors: item.row.contributors,
-      contributorsChange: item.row.contributorsChange,
+      commits: company.commits,
+      commitsChange: company.commitsChange,
+      contributors: company.contributors,
+      contributorsChange: company.contributorsChange,
       shareOfCompanyCommits: 1,
     };
-    return { total, projects: item.lines };
+    return { total, projects: toProjectLines(foundation, company, lines) };
   }
 
   /**
@@ -118,47 +121,77 @@ export class FoundationParticipatingOrgsService {
    * a by-project file one row per company and project, and `truncated` says whether the cap cut anything. Under a project
    * scope the by-project lines are that project's only, matching the table and the summary file.
    */
-  public getExportRows(
+  public async getExportRows(
     req: Request,
     filters: FoundationParticipatingOrgsExportFilters,
     kind: FoundationParticipatingOrgsExportKind,
     maxRows: number = FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS
-  ): { items: FoundationCompanyActivity[]; truncated: boolean } {
-    logger.debug(req, 'export_foundation_participating_orgs', 'Building export rows', { slug: filters.foundationSlug, kind });
-    const scoped = this.filtered(filters).map((item) =>
-      filters.projectSlug ? { ...item, lines: item.lines.filter((line) => line.projectSlug === filters.projectSlug) } : item
-    );
+  ): Promise<{ items: FoundationCompanyActivity[]; truncated: boolean }> {
+    logger.debug(req, 'export_foundation_participating_orgs', 'Reading export rows', { slug: filters.foundationSlug, kind });
+    const rows = await this.filtered(filters);
     if (kind === 'summary') {
-      return { items: scoped.slice(0, maxRows), truncated: scoped.length > maxRows };
+      return { items: rows.slice(0, maxRows).map((row) => ({ row, lines: [] })), truncated: rows.length > maxRows };
     }
 
+    const foundation = await this.dataSource().getFoundation(filters.foundationSlug, filters.range);
+    if (!foundation) return { items: [], truncated: false };
+    // Only the matching companies' lines are read, as many companies as the cap can hold: the filters and the order apply first,
+    // so unrelated companies never take the row budget. One past the cap says the warehouse had more than the file can hold.
+    const companyKeys: string[] = [];
+    let budget = 0;
+    for (const row of rows) {
+      companyKeys.push(row.participantKey);
+      // A project scope has one line per company; the foundation scope has one per project the company is in.
+      budget += filters.projectSlug ? 1 : Math.max(1, row.projectsInvolved);
+      if (budget > maxRows) break;
+    }
+    const read = await this.dataSource().getProjectLines(filters.foundationSlug, filters.range, {
+      projectSlug: filters.projectSlug,
+      companyKeys,
+      limit: maxRows + 1,
+    });
+    const byCompany = new Map<string, FoundationParticipatingOrgsSourceProjectLine[]>();
+    for (const line of read) byCompany.set(line.companyKey, [...(byCompany.get(line.companyKey) ?? []), line]);
+
+    const companies = new Map(foundation.companies.map((company) => [company.key, company]));
     const items: FoundationCompanyActivity[] = [];
     let remaining = maxRows;
-    for (const item of scoped) {
+    for (const row of rows) {
+      const company = companies.get(row.participantKey);
+      const lines = company ? toProjectLines(foundation, company, byCompany.get(row.participantKey) ?? []) : [];
       if (remaining <= 0) return { items, truncated: true };
-      const lines = item.lines.slice(0, remaining);
-      items.push({ ...item, lines });
-      remaining -= lines.length;
-      if (lines.length < item.lines.length) return { items, truncated: true };
+      const kept = lines.slice(0, remaining);
+      items.push({ row, lines: kept });
+      remaining -= kept.length;
+      if (kept.length < lines.length) return { items, truncated: true };
     }
-    return { items, truncated: false };
+    return { items, truncated: read.length > maxRows };
   }
 
-  private filtered(filters: FoundationParticipatingOrgsExportFilters): FoundationCompanyActivity[] {
-    const foundation = this.source.getFoundation(filters.foundationSlug);
+  private dataSource(): FoundationParticipatingOrgsDataSource {
+    this.source ??= new FoundationParticipatingOrgsSnowflakeSource();
+    return this.source;
+  }
+
+  private async filtered(filters: FoundationParticipatingOrgsExportFilters): Promise<FoundationParticipatingOrg[]> {
+    const foundation = await this.dataSource().getFoundation(filters.foundationSlug, filters.range);
+    if (!foundation) {
+      if (filters.projectSlug) throw new ResourceNotFoundError('Project', filters.projectSlug, { operation: 'resolve_foundation_participating_orgs_project' });
+      return [];
+    }
     this.resolveProject(foundation, filters.projectSlug);
-    const items = this.activities(foundation, filters.range, filters.projectSlug).filter(({ row }) => {
+    const rows = (await this.rows(foundation, filters.range, filters.projectSlug)).filter((row) => {
       if (filters.segment === 'members' && !row.isMember) return false;
       if (filters.segment === 'non_members' && row.isMember) return false;
       return matches(row, filters);
     });
     const direction = filters.dir === 'asc' ? 1 : -1;
-    return items.sort((a, b) => {
+    return rows.sort((a, b) => {
       // A missing comparison or tier goes last in both directions; the direction only orders the values that exist.
-      const missingA = isMissing(a.row, filters.sort);
-      const missingB = isMissing(b.row, filters.sort);
+      const missingA = isMissing(a, filters.sort);
+      const missingB = isMissing(b, filters.sort);
       if (missingA !== missingB) return missingA ? 1 : -1;
-      return (missingA ? 0 : compare(a.row, b.row, filters.sort) * direction) || a.row.name.localeCompare(b.row.name);
+      return (missingA ? 0 : compare(a, b, filters.sort) * direction) || a.name.localeCompare(b.name);
     });
   }
 
@@ -169,75 +202,70 @@ export class FoundationParticipatingOrgsService {
     return project;
   }
 
-  /** Foundation totals for every company with activity in the range, or that project's figures when scoped to one. */
-  private activities(
+  /**
+   * The foundation's totals for every company with activity in the range, or that project's figures when scoped to one.
+   * Foundation totals come from the source as they are: contributors are already unique across projects, so nothing is summed.
+   */
+  private async rows(
     foundation: FoundationParticipatingOrgsSourceFoundation,
     range: FoundationParticipatingOrgsRange,
-    projectSlug?: string,
-    companyKey?: string
-  ): FoundationCompanyActivity[] {
-    const scale = this.source.rangeScale[range];
-    const names = new Map(foundation.projects.map((project) => [project.slug, project]));
-    const items: FoundationCompanyActivity[] = [];
+    projectSlug?: string
+  ): Promise<FoundationParticipatingOrg[]> {
+    if (!projectSlug) return foundation.companies.filter(isActive).map((company) => toRow(company, company));
 
-    // A breakdown names one company, so only that company is built instead of the whole roster.
-    const companies = companyKey ? foundation.companies.filter((company) => company.key === companyKey) : foundation.companies;
-    for (const company of companies) {
-      const scoped = projectSlug ? company.projects.filter((project) => project.projectSlug === projectSlug) : company.projects;
-      if (scoped.length === 0) continue;
-
-      // Each project's figure is rounded once and every total, share and change below is built from those displayed values.
-      const scaledCommits = new Map(company.projects.map((project) => [project.projectSlug, Math.max(1, Math.round(project.commits * scale))]));
-      const totalCommits = [...scaledCommits.values()].reduce((sum, value) => sum + value, 0);
-      const lines = company.projects
-        .map((project) => ({
-          projectSlug: project.projectSlug,
-          name: names.get(project.projectSlug)?.name ?? project.projectSlug,
-          maturity: names.get(project.projectSlug)?.maturity ?? null,
-          commits: scaledCommits.get(project.projectSlug) ?? 1,
-          commitsChange: range === 'all' ? null : project.commitsChange,
-          contributors: project.contributors,
-          contributorsChange: range === 'all' ? null : project.contributorsChange,
-          shareOfCompanyCommits: (scaledCommits.get(project.projectSlug) ?? 1) / totalCommits,
-        }))
-        .sort((a, b) => b.commits - a.commits);
-
-      const commits = scoped.reduce((sum, project) => sum + (scaledCommits.get(project.projectSlug) ?? 1), 0);
-      const single = projectSlug ? scoped[0] : null;
-      const foundationChange = combinedChange(
-        scoped.map((project) => ({ commits: scaledCommits.get(project.projectSlug) ?? 1, change: project.commitsChange }))
-      );
-      const commitsChange = single ? single.commitsChange : foundationChange;
-      const contributorsChange = single ? single.contributorsChange : company.foundationContributorsChange;
-      const row: FoundationParticipatingOrg = {
-        participantKey: company.key,
-        accountId: null,
-        name: company.name,
-        logoUrl: null,
-        isMember: company.tier !== null,
-        membershipTierClass: company.tier,
-        otherMemberships: company.otherMemberships,
-        projectsInvolved: company.projects.length,
-        commits,
-        commitsChange: range === 'all' ? null : commitsChange,
-        contributors: single ? single.contributors : company.foundationContributors,
-        contributorsChange: range === 'all' ? null : contributorsChange,
-      };
-      items.push({ row, lines });
-    }
-    return items;
+    const companies = new Map(foundation.companies.map((company) => [company.key, company]));
+    const lines = await this.dataSource().getProjectLines(foundation.slug, range, { projectSlug });
+    return lines.flatMap((line) => {
+      const company = companies.get(line.companyKey);
+      return company ? [toRow(company, line)] : [];
+    });
   }
 }
 
-/**
- * Growth of a sum of projects: current commits against the summed previous-period commits (each project's previous is its
- * current divided by 1 + its change). Null when any project has no comparison, so a missing figure is never read as zero growth.
- */
-function combinedChange(parts: { commits: number; change: number | null }[]): number | null {
-  if (parts.some((part) => part.change === null || part.change <= -1)) return null;
-  const current = parts.reduce((sum, part) => sum + part.commits, 0);
-  const previous = parts.reduce((sum, part) => sum + part.commits / (1 + (part.change ?? 0)), 0);
-  return previous > 0 ? Math.round((current / previous - 1) * 100) / 100 : null;
+/** A company listed on the page is one with activity in the range; members without any only count toward the roster. */
+function isActive(company: FoundationParticipatingOrgsSourceCompany): boolean {
+  return company.commits > 0 || company.contributors > 0;
+}
+
+function toRow(
+  company: FoundationParticipatingOrgsSourceCompany,
+  figures: Pick<FoundationParticipatingOrgsSourceCompany, 'commits' | 'commitsChange' | 'contributors' | 'contributorsChange'>
+): FoundationParticipatingOrg {
+  return {
+    participantKey: company.key,
+    accountId: company.accountId,
+    name: company.name,
+    logoUrl: company.logoUrl,
+    isMember: company.isMember,
+    membershipTierClass: company.tier,
+    otherMemberships: company.otherMemberships,
+    projectsInvolved: company.projectsInvolved,
+    commits: figures.commits,
+    commitsChange: figures.commitsChange,
+    contributors: figures.contributors,
+    contributorsChange: figures.contributorsChange,
+  };
+}
+
+/** A company's project lines, busiest first; the share is of the company's foundation commits, which every project's commits are part of. */
+function toProjectLines(
+  foundation: FoundationParticipatingOrgsSourceFoundation,
+  company: FoundationParticipatingOrgsSourceCompany,
+  lines: FoundationParticipatingOrgsSourceProjectLine[]
+): FoundationParticipatingOrgProjectLine[] {
+  const projects = new Map(foundation.projects.map((project) => [project.slug, project]));
+  return lines
+    .map((line) => ({
+      projectSlug: line.projectSlug,
+      name: projects.get(line.projectSlug)?.name ?? line.projectSlug,
+      maturity: projects.get(line.projectSlug)?.maturity ?? null,
+      commits: line.commits,
+      commitsChange: line.commitsChange,
+      contributors: line.contributors,
+      contributorsChange: line.contributorsChange,
+      shareOfCompanyCommits: company.commits > 0 ? Math.min(1, line.commits / company.commits) : 0,
+    }))
+    .sort((a, b) => b.commits - a.commits || a.name.localeCompare(b.name));
 }
 
 /** Search (name substring) and tier narrow every figure on the page; the tab and project scope are applied separately. */
