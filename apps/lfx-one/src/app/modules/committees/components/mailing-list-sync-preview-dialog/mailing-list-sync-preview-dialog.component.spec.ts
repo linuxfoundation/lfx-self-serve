@@ -185,42 +185,85 @@ afterEach(() => {
 });
 
 describe('MailingListSyncPreviewDialogComponent diff selection', () => {
-  it('loads the diff and selects everything by default', async () => {
+  it('loads the diff with every row unchecked by default', async () => {
     const { fixture } = await setup({});
 
-    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-1', 'add-2']);
-    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
-  });
-
-  it('excludes an add when its checkbox row is unchecked', async () => {
-    const { fixture } = await setup({});
-
-    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(false);
-
-    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-2']);
-    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
-  });
-
-  it('excludes a remove when its checkbox row is unchecked', async () => {
-    const { fixture } = await setup({});
-
-    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(false);
-
+    expect(fixture.componentInstance.selectedAdds()).toEqual([]);
     expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
   });
 
-  it('disables Apply once every row is deselected', async () => {
+  it('includes an add once its checkbox row is checked', async () => {
     const { fixture } = await setup({});
 
-    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(false);
-    fixture.componentInstance.addCheckboxForm.get('add-2')?.setValue(false);
-    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(false);
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(true);
+
+    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-1']);
+    expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
+  });
+
+  it('includes a remove once its checkbox row is checked', async () => {
+    const { fixture } = await setup({});
+
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(true);
+
+    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
+  });
+
+  it('keeps Apply disabled until a row is checked', async () => {
+    const { fixture } = await setup({});
     fixture.detectChanges();
 
     const applyBtn = fixture.nativeElement.querySelector('[data-testid="sync-preview-apply-btn"] button') as HTMLButtonElement;
     expect(applyBtn.disabled).toBe(true);
     expect(fixture.componentInstance.selectedAdds()).toEqual([]);
     expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
+  });
+
+  it('enables Apply once a row is checked, and the Add/Remove tab counts reflect the selection', async () => {
+    const { fixture } = await setup({});
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(true);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(true);
+    fixture.detectChanges();
+
+    const applyBtn = fixture.nativeElement.querySelector('[data-testid="sync-preview-apply-btn"] button') as HTMLButtonElement;
+    expect(applyBtn.disabled).toBe(false);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (1)' },
+      { id: 'removes', label: 'Remove (1)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+  });
+
+  it('clears a selection and disables Apply again when a checked row is unchecked', async () => {
+    const { fixture } = await setup({});
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(true);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(true);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedAdds().map((a) => a.member_id)).toEqual(['add-1']);
+    expect(fixture.componentInstance.selectedRemoves().map((r) => r.member_id)).toEqual(['remove-1']);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (1)' },
+      { id: 'removes', label: 'Remove (1)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+
+    fixture.componentInstance.addCheckboxForm.get('add-1')?.setValue(false);
+    fixture.componentInstance.removeCheckboxForm.get('remove-1')?.setValue(false);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.selectedAdds()).toEqual([]);
+    expect(fixture.componentInstance.selectedRemoves()).toEqual([]);
+    expect(fixture.componentInstance.tabOptions()).toEqual([
+      { id: 'adds', label: 'Add (0)' },
+      { id: 'removes', label: 'Remove (0)' },
+      { id: 'conflicts', label: 'Conflicts (0)' },
+    ]);
+
+    const applyBtn = fixture.nativeElement.querySelector('[data-testid="sync-preview-apply-btn"] button') as HTMLButtonElement;
+    expect(applyBtn.disabled).toBe(true);
   });
 });
 

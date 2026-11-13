@@ -22,6 +22,7 @@ import {
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
   PROJECT_SETTINGS_NOT_FOUND_CODE,
+  PROJECT_USER_ALREADY_ON_PROJECT_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
   getYearForRange,
@@ -824,7 +825,7 @@ export class ProjectService {
 
     // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
     if (operation === 'add' && existingUserInfo) {
-      throw new ConflictError('This person is already on the project', 'ALREADY_ON_PROJECT', {
+      throw new ConflictError('This person is already on the project', PROJECT_USER_ALREADY_ON_PROJECT_CODE, {
         operation: 'add_user_project_permissions',
         service: 'project_service',
       });
@@ -7327,8 +7328,11 @@ export class ProjectService {
    * @param foundationUid - The foundation UID to resolve descendant project UIDs for
    * @returns Array of UIDs including the foundation itself and every project discovered while
    *   walking its full descendant tree, up to the depth/node caps above
+   * @param options.onIncomplete - Called when a container's child lookup fails and its children are
+   *   left out. The cap-bounded result above is stable, but this one is transient, so a caller that
+   *   caches the UIDs uses it to avoid storing a scope that a retry would complete.
    */
-  public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
+  public async getFoundationProjectUids(req: Request, foundationUid: string, options: { onIncomplete?: () => void } = {}): Promise<string[]> {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
 
     const uids = new Set<string>([foundationUid]);
@@ -7377,6 +7381,7 @@ export class ProjectService {
         } catch (error) {
           // If one container's child lookup fails, keep the rest — a partial result across
           // a wide descendant tree is better than dropping all of them.
+          options.onIncomplete?.();
           logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve children for a container, omitting its direct children', {
             foundation_uid: foundationUid,
             container_uid: containerUid,

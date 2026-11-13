@@ -9,9 +9,9 @@ import { HealthMetricsL2SubNavComponent } from './health-metrics-l2-sub-nav.comp
 import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 const ITEMS: HealthMetricsL2SubNavItem[] = [
-  { key: 'participation', label: 'Meeting participation', count: null, note: '' },
-  { key: 'committees', label: 'Group attendance', count: 12, note: '2 dormant' },
-  { key: 'orgs', label: 'Organization participation', count: 40, note: '' },
+  { key: 'participation', label: 'Meeting participation', note: '' },
+  { key: 'committees', label: 'Group attendance', note: '2 dormant' },
+  { key: 'orgs', label: 'Organization participation', note: '' },
 ];
 
 describe('HealthMetricsL2SubNavComponent', () => {
@@ -65,15 +65,10 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(inactiveLabel.firstElementChild?.className).toContain('font-normal');
   });
 
-  it('shows a count as an outlined pill and a note as a warning icon with a tooltip, only where the item has them', () => {
-    const count = host.querySelector('[data-testid="engagement-sub-nav-committees-count"]') as HTMLElement;
+  it('shows a note as a warning icon with a tooltip, only where the item has one', () => {
     const note = host.querySelector('[data-testid="engagement-sub-nav-committees-note"]') as HTMLElement;
     const tooltip = note.querySelector('[role="tooltip"]') as HTMLElement;
 
-    expect(count.textContent?.trim()).toBe('12');
-    expect(count.className).toContain('border-gray-200');
-    // A null count is an unresolved total, not a zero — the badge is omitted entirely.
-    expect(host.querySelector('[data-testid="engagement-sub-nav-participation-count"]')).toBeNull();
     expect(note.querySelector('.fa-circle-exclamation')).not.toBeNull();
     expect(tooltip.textContent?.trim()).toBe('2 dormant');
     expect(item('committees').getAttribute('aria-describedby')).toBe(tooltip.id);

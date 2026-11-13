@@ -9,8 +9,9 @@ import { MeetingService } from '@services/meeting.service';
 import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeJoinService } from '../../../services/meetings-home-join.service';
 import { MeetingDetailsContext } from '../meeting-details.context';
@@ -71,6 +72,8 @@ describe('MeetingDetailsScheduleComponent', () => {
   let open: ReturnType<typeof vi.fn>;
   let upcomingRows: WritableSignal<MeetingHomeRow[]>;
   let meeting: WritableSignal<Meeting>;
+  let source: { -readonly [K in keyof MeetingDetailsSource]?: MeetingDetailsSource[K] };
+  let toastShow: ReturnType<typeof vi.fn>;
 
   const render = async (): Promise<ComponentFixture<MeetingDetailsScheduleComponent>> => {
     const fixture = TestBed.createComponent(MeetingDetailsScheduleComponent);
@@ -90,6 +93,8 @@ describe('MeetingDetailsScheduleComponent', () => {
     open = vi.fn(() => ({ closed: modalClosed, close: vi.fn() }));
     upcomingRows = signal<MeetingHomeRow[]>([]);
     meeting = signal(MEETING);
+    source = { upcomingRows };
+    toastShow = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         {
@@ -106,7 +111,8 @@ describe('MeetingDetailsScheduleComponent', () => {
             markRegistered,
           },
         },
-        { provide: MeetingDetailsSource, useValue: { upcomingRows } },
+        { provide: MeetingDetailsSource, useValue: source },
+        { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingsHomeJoinService, useValue: { joinLink: () => link } },
         { provide: UserService, useValue: { authenticated: signal(true), user: signal({ name: 'Ada Lovelace', email: 'ada@example.test' }) } },
         { provide: UiModalService, useValue: { open } },
@@ -204,6 +210,61 @@ describe('MeetingDetailsScheduleComponent', () => {
     fixture.detectChanges();
     expect(query(fixture, 'meeting-details-schedule-join-other-email')?.getAttribute('href')).toMatch(/\?password=fresh$/);
     expect(query(fixture, 'meeting-details-schedule-join')?.querySelector('button')?.getAttribute('aria-busy')).toBeNull();
+  });
+
+  it('on a page, joins with another email in place', async () => {
+    const joinWithOtherEmail = vi.fn();
+    source.joinWithOtherEmail = joinWithOtherEmail;
+    state.set('soon');
+    link.set({ url: null, error: 'You are not registered for this meeting', code: 'NOT_REGISTERED_FOR_MEETING' });
+    const fixture = await render();
+
+    const other = query(fixture, 'meeting-details-schedule-join-other-email');
+    expect(other?.tagName).toBe('BUTTON');
+    other?.click();
+    expect(joinWithOtherEmail).toHaveBeenCalled();
+  });
+
+  describe('opening Zoom as the page loads', () => {
+    const URL = 'https://zoom.example.test/j/1';
+    let windowOpen: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      state.set('live');
+      windowOpen = vi.spyOn(window, 'open').mockReturnValue(null);
+    });
+
+    afterEach(() => windowOpen.mockRestore());
+
+    it('opens the join link once it loads, when the page allows it', async () => {
+      source.claimJoinOnLoad = vi.fn().mockReturnValue(true);
+      const fixture = await render();
+      expect(windowOpen).not.toHaveBeenCalled();
+
+      link.set({ url: URL, error: null, code: null });
+      await fixture.whenStable();
+
+      expect(windowOpen).toHaveBeenCalledWith(URL, '_blank', 'noopener,noreferrer');
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'success', message: 'Meeting Opened' }));
+    });
+
+    it('says so when the browser blocks the window', async () => {
+      source.claimJoinOnLoad = vi.fn().mockReturnValue(true);
+      windowOpen.mockReturnValue({ closed: true } as Window);
+      link.set({ url: URL, error: null, code: null });
+      await render();
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'warning', message: 'Popup Blocked' }));
+    });
+
+    it('leaves Join to the viewer when the page does not allow it, and in the drawer', async () => {
+      link.set({ url: URL, error: null, code: null });
+      await render();
+      source.claimJoinOnLoad = vi.fn().mockReturnValue(false);
+      await render();
+
+      expect(windowOpen).not.toHaveBeenCalled();
+    });
   });
 
   it('says the meeting has ended and offers no Join', async () => {

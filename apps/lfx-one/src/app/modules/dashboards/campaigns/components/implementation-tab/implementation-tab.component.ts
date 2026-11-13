@@ -4755,7 +4755,10 @@ export class ImplementationTabComponent implements OnInit {
     });
 
     // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
-    // runs the initial load, so only later foundation switches should refetch the ad-account list.
+    // runs the initial load, so only later foundation switches should refetch the ad-account list
+    // and the targeting-profile catalogue. Both serve the same ConfigMap for every project, but each
+    // route is gated per project by requireCampaignManager, which can 403 for a foundation the
+    // caller doesn't manage.
     toObservable(this.activeFoundationSlug)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
@@ -8734,8 +8737,8 @@ export class ImplementationTabComponent implements OnInit {
    * before that holds headlines up to 40 wide, so only the ones that fit are kept; the brief's Search
    * headlines, written to the same 30, fill the slots that leaves, ahead of nothing being seeded. Descriptions are both copies' together, Demand Gen
    * first, as the headlines are. The business name is the Demand Gen copy's. The call to action is
-   * seeded only when it is on the field's list (`listedCallToAction`), and this ad's list is empty
-   * (`GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`), so it stays None.
+   * seeded only when it is on this ad's own list (`listedCallToAction`,
+   * `GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`), which is not the Display list; anything else stays None.
    *
    * Only the image ad is seeded: the video ad (#5226) needs a long headline and a YouTube video the
    * brief does not hold, and the named ad groups are the operator's own split.
@@ -8858,7 +8861,10 @@ export class ImplementationTabComponent implements OnInit {
     // the payload strips, and "\uFEFFJoin us" would seed beside "Join us" as a repeat on the wire.
     const fitting = values
       .filter((value): value is string => typeof value === 'string')
-      .map((value) => this.trimCreativeLine(value.replace(/\s*[\r\n]+\s*/g, ' ')))
+      // Each whitespace run holding a line break becomes one space. Not `/\s*[\r\n]+\s*/`: its optional
+      // prefix overlaps the break class, so it backtracks quadratically on a long run of spaces, and a
+      // stored brief's copy is unbounded.
+      .map((value) => this.trimCreativeLine(value.replace(/\s+/g, (run) => (/[\r\n]/.test(run) ? ' ' : run))))
       .filter((value) => value !== '' && (spec.width === undefined || googleCreativeFieldWidth(control, value) <= spec.width));
     // De-duplicated on campaign-service's own key ({@link creativeRepeatKey}), which REFUSES a list
     // holding two lines equal under it. The first spelling is kept, so "Join us" and "join us" seed one

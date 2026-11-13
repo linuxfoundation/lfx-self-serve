@@ -4,8 +4,9 @@
 <!-- A fixed 36px bar; the pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX. -->
 <lfx-impersonation-banner />
 
-<div class="flex min-h-screen flex-col bg-white" [class]="userService.impersonating() ? 'pt-[36px]' : ''" data-testid="meeting-page">
-  <lfx-header />
+<!-- --mp-offset is the banner's height; --md-head is where the details' tabs stick, under the top bar. Plain px: the guests tab parses it. -->
+<div class="flex min-h-screen flex-col bg-white" [class]="pageOffsets()" data-testid="meeting-page">
+  <lfx-meeting-page-top-bar [row]="row()" [past]="past()" />
 
   <main class="@container mx-auto flex w-full max-w-[1080px] flex-auto flex-col">
     @switch (view()) {
@@ -13,7 +14,7 @@
         <div class="flex flex-auto items-center justify-center px-4 py-16" role="alert" data-testid="meeting-page-error">
           <lfx-ui-empty-state
             heading="Something went wrong loading this meeting."
-            description="Please try again."
+            description="Please refresh the page to try again."
             icon="fa-light fa-triangle-exclamation"
             [headingLevel]="1">
             <lfx-ui-button empty-state-action variant="secondary" icon="fa-light fa-arrows-rotate" (click)="reload()" data-testid="meeting-page-refresh"
@@ -23,10 +24,19 @@
         </div>
       }
       @case ('details') {
-        @if (row(); as row) {
-          @for (shown of [row]; track shown.key) {
-            <lfx-meeting-page-details />
-          }
+        @if (cancelledNote(); as note) {
+          <!-- Exact [Npx] design values: the details' own 16px / 32px sides. -->
+          <lfx-ui-note
+            class="mx-[16px] mt-[20px] sm:mx-[32px] sm:mt-[32px]"
+            variant="warning"
+            icon="fa-light fa-calendar-xmark"
+            data-testid="meeting-page-cancelled"
+            >{{ note }}</lfx-ui-note
+          >
+        }
+        <!-- Re-created for another row and after a reload, so an edit or a cancel shows the meeting as it now stands. -->
+        @for (shown of detailsKey(); track shown) {
+          <lfx-meeting-page-details />
         }
       }
       @default {
@@ -39,4 +49,6 @@
       }
     }
   </main>
+
+  <lfx-meeting-page-footer />
 </div>

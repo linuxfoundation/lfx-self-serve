@@ -125,6 +125,13 @@ export interface OrgRollUpSetResponse {
   lookupOutcome: OrgLensLookupOutcome;
 }
 
+export interface OrgLensRollUpScope {
+  rollUpKey: string;
+  rootUid: string;
+  members: OrgRollUpSetOrg[];
+  complete: boolean;
+}
+
 /** Where the caller's families stand: `pending` until the roll-up set first answers, `server` once it has (successfully or not). */
 export type OrgRollUpFamiliesSource = 'pending' | 'server';
 

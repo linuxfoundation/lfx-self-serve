@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2Range, HealthMetricsNoteStyle, HealthMetricsNoteTone } from '../interfaces/health-metrics-l2.interface';
 
 /** Shape a project slug must have before it reaches a read; the server rejects anything else. */
 export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
@@ -54,4 +54,19 @@ export const HEALTH_METRICS_L2_EMPTY_COPY = {
 export const HEALTH_METRICS_L2_BLANK_PAST = {
   lead: 'No {activity} was recorded for the foundation in {Y}.',
   reasons: ['The foundation may not have launched yet', 'It may have been recorded under a parent foundation', 'A later year may have data to compare'],
+} as const;
+
+/** Each note tone's `lfx-ui-note` variant and verdict label; a caution is a plain warning note. */
+export const HEALTH_METRICS_NOTE_STYLES: Readonly<Record<HealthMetricsNoteTone, HealthMetricsNoteStyle>> = {
+  caution: { variant: 'warning', label: '' },
+  healthy: { variant: 'success', label: 'Healthy:' },
+  attention: { variant: 'warning', label: 'Needs attention:' },
+  action: { variant: 'error', label: 'Needs action:' },
+  summary: { variant: 'secondary', label: 'Summary:' },
+};
+
+/** The Provisional badge beside a section heading, and its tooltip. */
+export const HEALTH_METRICS_PROVISIONAL_BADGE = {
+  label: 'Provisional',
+  tip: 'Figures are preliminary and not yet reconciled with finance, so they may change.',
 } as const;

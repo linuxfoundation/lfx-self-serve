@@ -17,7 +17,7 @@
     }
   </lfx-page-header>
 
-  @if (showProposalsTab()) {
+  @if (showPipelineTab()) {
     <lfx-formation-page-tabs
       [options]="pageTabOptions()"
       [active]="pageTab()"
@@ -28,9 +28,9 @@
 
   <div
     class="flex flex-col gap-6"
-    [attr.role]="showProposalsTab() ? 'tabpanel' : null"
-    [attr.id]="showProposalsTab() ? 'formations-queue-page-tabs-panel-' + pageTab() : null"
-    [attr.aria-labelledby]="showProposalsTab() ? 'formations-queue-page-tabs-tab-' + pageTab() : null">
+    [attr.role]="showPipelineTab() ? 'tabpanel' : null"
+    [attr.id]="showPipelineTab() ? 'formations-queue-page-tabs-panel-' + pageTab() : null"
+    [attr.aria-labelledby]="showPipelineTab() ? 'formations-queue-page-tabs-tab-' + pageTab() : null">
     @if (pageTab() === pipelineTab) {
       <lfx-formations-pipeline data-testid="formations-queue-pipeline" />
     } @else if (pageTab() === tabs.proposals) {

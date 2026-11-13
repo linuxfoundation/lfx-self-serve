@@ -43,7 +43,6 @@ describe('EventsOrganizationsComponent', () => {
   let getEventsOrganizations: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
   let verdicts: boolean[];
 
@@ -72,7 +71,6 @@ describe('EventsOrganizationsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventsOrganizationsComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -94,7 +92,6 @@ describe('EventsOrganizationsComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
-    counts = [];
     lifecycle = [];
     verdicts = [];
   });
@@ -107,12 +104,6 @@ describe('EventsOrganizationsComponent', () => {
     expect(query('events-orgs-count')?.textContent?.trim()).toBe('1 organization');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-  });
-
-  it('emits the in-scope total for the sub-nav badge, not the filtered count', async () => {
-    await render(response({ totalRecords: 12, scopeTotal: 340 }));
-
-    expect(counts).toEqual([null, 340]);
   });
 
   it('renders untracked sponsorship and proposals as a dash, and real zeroes for the counted columns', async () => {
@@ -264,7 +255,6 @@ describe('EventsOrganizationsComponent', () => {
     expect(getEventsOrganizations).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 25 }));
     expect(getEventsOrganizations).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(counts).toEqual([null, null, 34]);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgSegment: null, orgSearch: null, orgPage: 2 } }));
   });
 
@@ -287,9 +277,8 @@ describe('EventsOrganizationsComponent', () => {
   });
 
   // A failed read must not render copy that asserts the foundation had no organizations.
-  it('separates a failed read from an empty one, settling it without a count', async () => {
+  it('separates a failed read from an empty one, settling it', async () => {
     await render();
-    counts.length = 0;
     lifecycle.length = 0;
     getEventsOrganizations.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
@@ -297,7 +286,6 @@ describe('EventsOrganizationsComponent', () => {
     await settle();
 
     expect(query('events-orgs-error')).not.toBeNull();
-    expect(counts).toEqual([null, null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false, false]);
   });
@@ -307,7 +295,6 @@ describe('EventsOrganizationsComponent', () => {
     await render();
 
     expect(getEventsOrganizations).not.toHaveBeenCalled();
-    expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(query('events-orgs-count')?.textContent?.trim()).toBe('—');
   });

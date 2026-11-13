@@ -308,7 +308,6 @@ export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
   members: {
     label: 'Explore Members',
     commands: [HEALTH_METRICS_BASE_PATH, 'members'],
-    fragment: 'list',
     queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null },
   },
   nonMembers: {

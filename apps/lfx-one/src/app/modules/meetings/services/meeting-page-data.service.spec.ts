@@ -117,6 +117,63 @@ describe('MeetingPageDataService', () => {
     expect(host.data.meetingLoadFailed()).toBe(true);
   });
 
+  it('counts a load as a reload only once one was asked for', async () => {
+    const host = await create();
+    expect(host.data.reloadsDone()).toBe(0);
+
+    host.data.refresh();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(host.data.reloadsDone()).toBe(1);
+
+    host.data.reloadOnNextLoad();
+    expect(host.data.reloadsDone()).toBe(1);
+    queryParamMap$.next(convertToParamMap({ occurrence: '1' }));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(host.data.reloadsDone()).toBe(2);
+  });
+
+  describe('claimJoinOnLoad', () => {
+    const openNow = (): void => {
+      const start = new Date(Date.now() - 5 * 60_000).toISOString();
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: { id: '123', title: 'Live', start_time: start, duration: 60 }, project, full_access: true, can_join: true })
+      );
+    };
+
+    it('allows Zoom to open once when the join window was open at load', async () => {
+      openNow();
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+
+    it.each([{ zoom_redirect: 'false' }, { action: 'leave' }])('never allows it with %o in the URL', async (params) => {
+      openNow();
+      queryParamMap$.next(convertToParamMap(params));
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+
+    it('decides again for another meeting the page moves to', async () => {
+      openNow();
+      const host = await create();
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: '456' }));
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+    });
+
+    it('never allows it when the window opened after load', async () => {
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+  });
+
   it('resolves ?occurrence= to that active date', async () => {
     queryParamMap$.next(convertToParamMap({ occurrence: String(Date.parse('2030-01-08T10:00:00Z')) }));
     const host = await create();
