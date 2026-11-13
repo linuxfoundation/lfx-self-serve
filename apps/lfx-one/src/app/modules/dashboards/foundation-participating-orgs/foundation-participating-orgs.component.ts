@@ -550,8 +550,8 @@ export class FoundationParticipatingOrgsComponent {
 
   private initExportMenu(): MenuItem[] {
     return [
-      { label: 'Company summary', title: 'One row per company · foundation totals', command: () => this.export('summary') },
-      { label: 'Companies by project', title: 'One row per company and project', command: () => this.export('by-project') },
+      { id: 'summary', label: 'Company summary', title: 'One row per company · foundation totals', command: () => this.export('summary') },
+      { id: 'by-project', label: 'Companies by project', title: 'One row per company and project', command: () => this.export('by-project') },
     ];
   }
 
