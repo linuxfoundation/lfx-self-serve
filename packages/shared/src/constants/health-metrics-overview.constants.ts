@@ -392,7 +392,20 @@ export const HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP =
 /** The narrowest span, in days, the trend's navigator lets the reader zoom to. */
 export const HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS = 7;
 
-/** The progress blue at 10%: the fill under the newsletter charts' open rate. */
+/** The newsletter rate chart's fixed top, 60%; a higher rate grows it in 10-point steps. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN = 0.6;
+
+/** A newsletter label's slot below this width collides with its neighbours, so the chart labels each month once. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX = 28;
+
+/** The room the chart popover needs beside its column before it opens on the other side: its 280px plus a 12px gap. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX = 292;
+
+/** The chart popover's widest, and the margin it keeps from the screen's edges when neither side has room. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX = 280;
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX = 8;
+
+/** The progress blue at 10%: the fill under the Engagement newsletter performance chart's open rate. */
 export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
 /** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
