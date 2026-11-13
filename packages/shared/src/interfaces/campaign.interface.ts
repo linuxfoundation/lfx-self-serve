@@ -4689,9 +4689,10 @@ export interface CampaignMonitorResponse {
   actionItems: CampaignActionItem[];
   message?: string;
   /**
-   * Campaign-service path only: true when the amounts are the project's own connected account's,
-   * unconverted, in a currency nobody named — campaign-service sets no `currency` for Google. The
-   * legacy read is the LF's own USD account and leaves it unset.
+   * Campaign-service path only: true when the amounts are those of the account that was read (the
+   * project's own connection's, or the one its recorded campaigns were created under; see
+   * `googleAccountOrigin`), unconverted, in a currency nobody named — campaign-service sets no
+   * `currency` for Google. The legacy read is the LF's own USD account and leaves it unset.
    */
   amountsInAccountCurrency?: boolean;
   /**
@@ -4700,12 +4701,15 @@ export interface CampaignMonitorResponse {
    */
   accountId?: string;
   /**
-   * Campaign-service path only: where the account came from. `connection` is the project's own
-   * Google Ads connection; `recorded_campaigns` means the project has no usable connection of its own
-   * and campaign-service read the customer its campaigns were created under, through the LF system
-   * account when needed (#5622, campaign-service #592).
+   * Campaign-service path only: where the Google account that was read came from. `connection` is
+   * the project's own Google Ads connection; `recorded_campaigns` means the project has no connection
+   * with an account bound of its own and campaign-service read the customer its campaigns were
+   * created under, through the LF system account when needed (#5622, campaign-service #592).
+   *
+   * Unrelated to the `MonitorAccountSource` request marker (`accountSource`), which says where a
+   * client's account picker got its account; that marker is never set from this field.
    */
-  accountSource?: 'connection' | 'recorded_campaigns';
+  googleAccountOrigin?: 'connection' | 'recorded_campaigns';
 }
 
 // ---------------------------------------------------------------------------

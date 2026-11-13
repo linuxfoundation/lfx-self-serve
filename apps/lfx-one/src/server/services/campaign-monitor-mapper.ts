@@ -180,7 +180,8 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
  * (`parseCampaignName`): `shortName`, `eventName`, `adFormat` and `targeting`. Google reports no
  * flight dates, so `startDate`/`endDate` are the read window, as on the legacy path, ending on the
  * day of `pulledAt`. `avgCpc` is computed from spend and clicks as the legacy path computes it.
- * The amounts are the connected account's, unconverted, and campaign-service names no currency for
+ * The amounts are those of the account that was read (the project's own connection's, or the one
+ * its recorded campaigns were created under), unconverted, and campaign-service names no currency for
  * Google, so the response says so (`amountsInAccountCurrency`) and the Monitor tab prints them
  * without a `$`, as it does a connection's Meta amounts.
  *
@@ -194,24 +195,6 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
  * could not pace (a $0 daily budget, for one), so an item's `pacingUnknown` marks a pacing figure
  * that is a placeholder, as the row's own flags do.
  */
-/**
- * `toGoogleMonitorResponse` for a read where campaign-service picked the account (#5622): it names the
- * customer it read, and an EMPTY `account_id` means the project has no campaigns recorded, so there
- * was no account to read. That case carries a message saying so rather than the generic empty state.
- */
-export function toRecordedCampaignsGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
-  const response = toGoogleMonitorResponse(payload, pulledAt);
-  const accountId = typeof payload.account_id === 'string' ? payload.account_id.trim() : '';
-  if (accountId === '') {
-    return {
-      ...response,
-      accountSource: 'recorded_campaigns',
-      message: 'This project has no Google Ads connection of its own and no campaigns recorded yet, so there is no account to read.',
-    };
-  }
-  return { ...response, accountId, accountSource: 'recorded_campaigns' };
-}
-
 export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
   const days = payload.days;
   const endDate = pulledAt.slice(0, 10);
@@ -303,6 +286,24 @@ export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, 
     actionItems,
     amountsInAccountCurrency: true,
   };
+}
+
+/**
+ * `toGoogleMonitorResponse` for a read where campaign-service picked the account (#5622): it names the
+ * customer it read, and an EMPTY `account_id` means the project has no campaigns recorded, so there
+ * was no account to read. That case carries a message saying so rather than the generic empty state.
+ */
+export function toRecordedCampaignsGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
+  const response = toGoogleMonitorResponse(payload, pulledAt);
+  const accountId = typeof payload.account_id === 'string' ? payload.account_id.trim() : '';
+  if (accountId === '') {
+    return {
+      ...response,
+      googleAccountOrigin: 'recorded_campaigns',
+      message: 'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.',
+    };
+  }
+  return { ...response, accountId, googleAccountOrigin: 'recorded_campaigns' };
 }
 
 /**
@@ -577,6 +578,9 @@ export function toGoogleMonitorConnectionError(state: Exclude<MonitorConnectionS
  * still requires it (before 1.0.36, #5622): Goa answers a missing required query parameter with a
  * 400 named `missing_field`. The controller then reports the project's connection state, exactly as
  * it did before the account became optional, rather than a 400 about an unusable connection.
+ *
+ * TODO(#5622): remove this fallback once every environment runs campaign-service 1.0.36 or later,
+ * where `account_id` is optional and this 400 can no longer happen.
  */
 export function isAccountIdRequiredByUpstream(error: unknown): boolean {
   return (

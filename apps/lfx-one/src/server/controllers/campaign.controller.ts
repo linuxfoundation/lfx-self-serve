@@ -5678,6 +5678,9 @@ export class CampaignController {
         viaCampaignService: true,
         campaigns: payload.campaigns?.length ?? 0,
         fetchFailed: (payload.campaigns ?? []).filter((c) => c.fetch_failed).length,
+        // When campaign-service picked the account (#5622), record which one it read, so "why am I
+        // seeing account X" can be answered from the log. An ad-account id, not personal data.
+        ...(opts.accountId === null ? { resolvedAccountId: payload.account_id || null } : {}),
       });
       res.json(data);
     } catch (error) {
@@ -5718,7 +5721,7 @@ export class CampaignController {
         toResponse: (payload) => ({
           ...toGoogleMonitorResponse(payload, new Date().toISOString()),
           accountId: ownAccountId,
-          accountSource: 'connection' as const,
+          googleAccountOrigin: 'connection' as const,
         }),
       });
       return;

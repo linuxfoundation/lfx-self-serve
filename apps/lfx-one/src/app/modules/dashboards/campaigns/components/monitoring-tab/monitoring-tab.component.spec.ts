@@ -392,14 +392,14 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     const accountNote = (): string | null => fixture.nativeElement.querySelector('[data-testid="google-recorded-account-note"]')?.textContent?.trim() ?? null;
 
     it('names the account campaign-service read when the project has no connection of its own (#5622)', () => {
-      setMonitor({ accountId: '8666746580', accountSource: 'recorded_campaigns' });
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'recorded_campaigns' });
       expect(accountNote()).toBe(
-        "Read from Google Ads account 8666746580, the account this project's campaigns were created under. This project has no Google Ads connection of its own."
+        "Read from Google Ads account 8666746580, the account this project's campaigns were created under. This project has no Google Ads account bound of its own."
       );
     });
 
     it("shows no account note when the account is the project's own connection", () => {
-      setMonitor({ accountId: '8666746580', accountSource: 'connection' });
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'connection' });
       expect(accountNote()).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
     });
@@ -407,13 +407,13 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
     it("shows the read's own explanation in the empty state when it gave one (#5622)", () => {
       setMonitor(
         {
-          accountSource: 'recorded_campaigns',
-          message: 'This project has no Google Ads connection of its own and no campaigns recorded yet, so there is no account to read.',
+          googleAccountOrigin: 'recorded_campaigns',
+          message: 'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.',
         },
         []
       );
       expect(fixture.nativeElement.querySelector('[data-testid="monitoring-empty-message"]')?.textContent?.trim()).toBe(
-        'This project has no Google Ads connection of its own and no campaigns recorded yet, so there is no account to read.'
+        'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.'
       );
     });
 

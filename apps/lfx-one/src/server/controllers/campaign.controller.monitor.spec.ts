@@ -327,7 +327,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
     expect(legacyGoogle).not.toHaveBeenCalled();
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body['accountId']).toBe(GOOGLE_ACCOUNT);
-    expect(body['accountSource']).toBe('recorded_campaigns');
+    expect(body['googleAccountOrigin']).toBe('recorded_campaigns');
     expect(body['message']).toBeUndefined();
   });
 
@@ -340,7 +340,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
     await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), res, vi.fn());
 
     expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number));
-    expect((vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>)['accountSource']).toBe('recorded_campaigns');
+    expect((vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>)['googleAccountOrigin']).toBe('recorded_campaigns');
   });
 
   it("names the project's own connection as the account source when it has one", async () => {
@@ -353,7 +353,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body['accountId']).toBe(GOOGLE_ACCOUNT);
-    expect(body['accountSource']).toBe('connection');
+    expect(body['googleAccountOrigin']).toBe('connection');
   });
 
   it('says there is no account to read when the project has no campaigns recorded (empty account_id)', async () => {
@@ -366,7 +366,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body['accountId']).toBeUndefined();
-    expect(body['message']).toBe('This project has no Google Ads connection of its own and no campaigns recorded yet, so there is no account to read.');
+    expect(body['message']).toBe('This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.');
   });
 
   /**
@@ -468,6 +468,32 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
     expect(error.toResponse()['error']).toBe(
       'campaign-service refused to read this Google Ads account for this project. Your account needs the campaign manager role on this project.'
     );
+  });
+
+  /**
+   * The account-less read (#5622) is authorized by campaign-service like the named-account one: a
+   * project with no connection of its own whose monitor read is refused gets the same role-naming
+   * 403, never the pre-1.0.36 missing_field fallback and never the legacy shared-account read.
+   */
+  it('words a refusal of the account-less monitor read as the role 403, with no fallback (#5622)', async () => {
+    flag(true);
+    noConnection();
+    svcGoogle.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', { message: 'openfga check failed for project:7f3e' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number));
+    const error = nextError(next) as MicroserviceError;
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe(
+      'campaign-service refused to read this Google Ads account for this project. Your account needs the campaign manager role on this project.'
+    );
+    expect(error.toResponse()['upstreamCode']).not.toBe('connection_not_found');
+    expect(JSON.stringify(error.toResponse())).not.toContain('7f3e');
+    expect(legacyGoogle).not.toHaveBeenCalled();
   });
 
   it('answers an unreadable connection as a 503 advisory, reading no monitor', async () => {
