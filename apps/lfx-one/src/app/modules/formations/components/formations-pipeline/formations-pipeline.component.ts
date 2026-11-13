@@ -197,7 +197,7 @@ export class FormationsPipelineComponent {
    */
   protected readonly classificationOptions = computed<Record<FormationPipelineClassificationKey, { label: string; value: string }[]>>(() => {
     const selection = this.classification();
-    const staged = filterPipelineRowsByStage(this.kindAndSearchRows(), this.stage());
+    const staged = filterPipelineRowsByStage(this.kindAndSearchRows(), this.selectedStage(), this.viewer());
     const entries = FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => {
       const present = getPipelineClassificationOptions(filterPipelineRowsByClassification(staged, selection, key), key);
       const listed = new Set(present.map((option) => option.value));

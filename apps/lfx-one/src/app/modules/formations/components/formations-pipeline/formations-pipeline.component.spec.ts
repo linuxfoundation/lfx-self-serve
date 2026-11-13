@@ -983,6 +983,22 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(text).toContain('Alpha');
     });
 
+    it('lists classification options for the stage staff actually see when a ?stage=prospect link names a hidden one', async () => {
+      const visible = [
+        row({ uid: 'v1', name: 'Visible One', stage: 'engaged', technical_activity_type: ['Open Source Software'] }),
+        row({ uid: 'v2', name: 'Visible Two', stage: 'exploratory', technical_activity_type: ['Open Source Software', 'Open Data'] }),
+        row({ uid: 'v3', name: 'Visible Three', stage: 'archived', technical_activity_type: ['Open Hardware'] }),
+      ];
+      await render(of(response(visible, 'staff')), { stage: 'prospect' });
+
+      // The view falls back to the default stages, so the archived project's value is not offered.
+      expect(rowIds().sort()).toEqual(['v1', 'v2']);
+      expect(fixture.componentInstance['classificationOptions']().technical_activity_type.map((o) => o.label)).toEqual([
+        'Open Data (1)',
+        'Open Source Software (2)',
+      ]);
+    });
+
     it('builds classification options, counts and CSV columns from the visible rows only', async () => {
       // The server drops Draft and Confidential before the response, so a hidden project's values never arrive.
       const visible = [

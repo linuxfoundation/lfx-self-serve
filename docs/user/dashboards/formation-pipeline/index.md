@@ -46,9 +46,9 @@ Select a project name to open it. A project opens its formation page. If the pro
 
 The pills above the list choose which stages you see:
 
-- **In pipeline** is the default. It shows the projects the team is actively working: **Draft**, **Exploratory**, **Engaged** and **On hold**. (Linux Foundation staff see the same stages without Draft; see [Linux Foundation staff](#linux-foundation-staff).)
+- **In pipeline** is the default. It shows the projects the team is actively working: **Draft**, **Exploratory**, **Engaged** and **On hold**. (Linux Foundation staff see the same stages without Draft and Confidential; see [Linux Foundation staff](#linux-foundation-staff).)
 - **All** shows every stage, including **Disengaged** and **Archived**.
-- **Draft**, **Exploratory**, **Engaged**, **On hold**, **Disengaged** and **Archived** each show one stage. The number in brackets is how many projects are in it. **Disengaged** and **Confidential** appear only when they have projects. (Linux Foundation staff see the same stages without Draft; see [Linux Foundation staff](#linux-foundation-staff).)
+- **Draft**, **Exploratory**, **Engaged**, **On hold**, **Disengaged** and **Archived** each show one stage. The number in brackets is how many projects are in it. **Disengaged** and **Confidential** appear only when they have projects. (Linux Foundation staff see the same stages without Draft and Confidential; see [Linux Foundation staff](#linux-foundation-staff).)
 
 **Draft** is the name the formation team uses for a project that has been created but not yet explored. The **Formations** tab and the formation record use the same name. The **Archived** card reads **No longer active**: many archived projects launched before they were archived.
 
