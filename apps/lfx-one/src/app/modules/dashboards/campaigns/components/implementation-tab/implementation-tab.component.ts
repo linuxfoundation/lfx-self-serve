@@ -4755,7 +4755,10 @@ export class ImplementationTabComponent implements OnInit {
     });
 
     // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
-    // runs the initial load, so only later foundation switches should refetch the ad-account list.
+    // runs the initial load, so only later foundation switches should refetch the ad-account list
+    // and the targeting-profile catalogue. Both serve the same ConfigMap for every project, but each
+    // route is gated per project by requireCampaignManager, which can 403 for a foundation the
+    // caller doesn't manage.
     toObservable(this.activeFoundationSlug)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
@@ -8734,8 +8737,8 @@ export class ImplementationTabComponent implements OnInit {
    * before that holds headlines up to 40 wide, so only the ones that fit are kept; the brief's Search
    * headlines, written to the same 30, fill the slots that leaves, ahead of nothing being seeded. Descriptions are both copies' together, Demand Gen
    * first, as the headlines are. The business name is the Demand Gen copy's. The call to action is
-   * seeded only when it is on the field's list (`listedCallToAction`), and this ad's list is empty
-   * (`GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`), so it stays None.
+   * seeded only when it is on this ad's own list (`listedCallToAction`,
+   * `GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`), which is not the Display list; anything else stays None.
    *
    * Only the image ad is seeded: the video ad (#5226) needs a long headline and a YouTube video the
    * brief does not hold, and the named ad groups are the operator's own split.

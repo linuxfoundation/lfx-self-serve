@@ -9,7 +9,10 @@ import type { UserInfo } from './project.interface';
 /** Short stage keys the pipeline API and UI use; one per non-`Active` {@link ProjectStage}. */
 export type FormationPipelineStage = 'prospect' | 'exploratory' | 'engaged' | 'on_hold' | 'disengaged' | 'confidential' | 'archived';
 
-/** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages: Draft, Exploratory, Engaged, On hold), or `all`. */
+/** Who the pipeline was built for: `formation_team` sees every stage, `staff` (LF staff outside the formation team) never sees Draft or Confidential projects. */
+export type FormationPipelineViewer = 'formation_team' | 'staff';
+
+/** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages the viewer sees: Draft, Exploratory, Engaged, On hold; staff never see Draft), or `all`. */
 export type FormationPipelineStageFilter = FormationPipelineStage | 'in_pipeline' | 'all';
 
 /** The PCC classification fields a Pipeline row carries and the three filters read (#5619 Part C). Each is a multi-value string array on the `project` index document. */
@@ -77,6 +80,8 @@ export interface FormationPipelineRow {
 export interface FormationPipelineResponse {
   rows: FormationPipelineRow[];
   counts: FormationPipelineCounts;
+  /** Which view the server built (#5544): the formation team's full pipeline, or LF staff's read-only view without Draft and Confidential projects. */
+  viewer: FormationPipelineViewer;
 }
 
 /** Query parameters of `GET /api/formations/pipeline`, after validation. */

@@ -1916,7 +1916,8 @@ export class CampaignController {
 
         // Every Google call to action held to its list (#1614): Google refuses an unlisted Demand Gen
         // image or Display call to action only at `adGroupAds:mutate`, after the campaign exists, and
-        // campaign-service checks only its length. The Implement tab holds Create on the same judge.
+        // campaign-service checks the text only from v1.0.36 (#595; earlier releases check its length).
+        // The Implement tab holds Create on the same judge.
         const callToActionRefusal = googleCallToActionRefusal(body as unknown as Record<string, unknown>, googleChannel);
         if (callToActionRefusal) {
           next(

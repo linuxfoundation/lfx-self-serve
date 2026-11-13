@@ -55,8 +55,8 @@ const ROWS: FormationPipelineRow[] = [
   }),
 ];
 
-function response(rows: FormationPipelineRow[]): FormationPipelineResponse {
-  return { rows, counts: countPipelineRows(rows) };
+function response(rows: FormationPipelineRow[], viewer: FormationPipelineResponse['viewer'] = 'formation_team'): FormationPipelineResponse {
+  return { rows, counts: countPipelineRows(rows), viewer };
 }
 
 describe('FormationsPipelineComponent (#5475)', () => {
@@ -714,7 +714,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
 
   it('shows the forbidden message for a 403 and a retryable error otherwise', async () => {
     await render(throwError(() => new HttpErrorResponse({ status: 403 })));
-    expect(q('formations-pipeline-error')?.textContent).toContain('Only the formation team can see the pipeline.');
+    expect(q('formations-pipeline-error')?.textContent).toContain('Only the formation team and LF staff can see the pipeline.');
     expect(q('formations-pipeline-retry')).toBeNull();
 
     await render(throwError(() => new HttpErrorResponse({ status: 500 })));
@@ -889,6 +889,147 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(lines[1]).toContain(`${OSS}; ${SPEC}`);
       expect(lines[1]).toContain('Quantum');
       expect(lines.filter((line) => line.startsWith('Bravo'))).toEqual([]);
+    });
+  });
+
+  // #5544: LF staff outside the formation team read the same table without Draft and Confidential projects.
+  describe('staff view (#5544)', () => {
+    const staffRows = ROWS.filter((r) => r.stage !== 'prospect' && r.stage !== 'confidential');
+    const pillLabels = (): string[] =>
+      [...fixture.nativeElement.querySelectorAll('[data-testid="formations-pipeline-pills"] button')].map((el: Element) => el.textContent?.trim() ?? '');
+    const cardLabels = (): string => q('formations-pipeline-stats')?.textContent ?? '';
+
+    it('says Draft projects are visible to the formation team only, and shows no Draft pill or card', async () => {
+      await render(of(response(staffRows, 'staff')));
+
+      expect(q('formations-pipeline-staff-note')?.textContent?.trim()).toBe('Draft projects are visible to the formation team only.');
+      expect(pillLabels().join('|')).not.toMatch(/Draft|Confidential/);
+      expect(cardLabels()).not.toContain('Draft');
+      expect(cardLabels()).toContain('Exploratory');
+    });
+
+    it('opens on Exploratory, Engaged and On hold', async () => {
+      await render(of(response(staffRows, 'staff')));
+
+      expect(rowIds().sort()).toEqual(['a', 'd']);
+      expect(pillLabels()[0]).toBe('In pipeline (2)');
+    });
+
+    it('treats a ?stage=prospect link as the default view, not an empty one', async () => {
+      await render(of(response(staffRows, 'staff')), { stage: 'prospect' });
+
+      expect(rowIds().sort()).toEqual(['a', 'd']);
+      expect(pillLabels()[0]).toBe('In pipeline (2)');
+    });
+
+    it('does not rewrite a formation-team ?stage=prospect link while loading, and keeps it through a failed load', async () => {
+      await render(of(response(ROWS)), { stage: 'prospect' });
+      expect(vi.mocked(TestBed.inject(Router).navigate)).not.toHaveBeenCalled();
+      expect(rowIds()).toEqual(['b']);
+
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await render(
+        throwError(() => new HttpErrorResponse({ status: 503 })),
+        { stage: 'prospect' }
+      );
+      expect(vi.mocked(TestBed.inject(Router).navigate)).not.toHaveBeenCalled();
+    });
+
+    it("keeps a formation-team member's Draft stage in the URL when a foundation-filtered load then fails", async () => {
+      await render(of(response(ROWS)), { stage: 'prospect' });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      getFormationPipeline.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      fixture.componentInstance['filterForm'].controls.foundation.setValue('f2');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(q('formations-pipeline-error')).not.toBeNull();
+      const params = vi
+        .mocked(TestBed.inject(Router).navigate)
+        .mock.calls.map((call) => (call[1] as { queryParams: Record<string, string | null> }).queryParams);
+      expect(params.at(-1)).toMatchObject({ stage: 'prospect', foundation: 'f2' });
+      expect(params.some((p) => p['stage'] === null)).toBe(false);
+    });
+
+    it('adds no write control: rows only link to the formation page', async () => {
+      await render(of(response(staffRows, 'staff')));
+
+      expect(
+        fixture.nativeElement.querySelectorAll(
+          '[data-testid="formations-pipeline-card"] input[type="checkbox"], [data-testid="formations-pipeline-card"] textarea'
+        ).length
+      ).toBe(0);
+    });
+
+    it("leaves the formation team's view as it was: Draft pill and card, no note", async () => {
+      await render(of(response(ROWS)));
+
+      expect(q('formations-pipeline-staff-note')).toBeNull();
+      expect(pillLabels().join('|')).toContain('Draft');
+      expect(cardLabels()).toContain('Draft');
+    });
+
+    it('exports only the rows it shows', async () => {
+      await render(of(response(staffRows, 'staff')));
+      let captured: Blob | null = null;
+      const create = vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => ((captured = blob as Blob), 'blob:x'));
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+      fixture.componentInstance['exportCsv']();
+      expect(create).toHaveBeenCalled();
+      const text = await (captured as unknown as Blob).text();
+      expect(text).not.toContain('Bravo');
+      expect(text).toContain('Alpha');
+    });
+
+    it('lists classification options for the stage staff actually see when a ?stage=prospect link names a hidden one', async () => {
+      const visible = [
+        row({ uid: 'v1', name: 'Visible One', stage: 'engaged', technical_activity_type: ['Open Source Software'] }),
+        row({ uid: 'v2', name: 'Visible Two', stage: 'exploratory', technical_activity_type: ['Open Source Software', 'Open Data'] }),
+        row({ uid: 'v3', name: 'Visible Three', stage: 'archived', technical_activity_type: ['Open Hardware'] }),
+      ];
+      await render(of(response(visible, 'staff')), { stage: 'prospect' });
+
+      // The view falls back to the default stages, so the archived project's value is not offered.
+      expect(rowIds().sort()).toEqual(['v1', 'v2']);
+      expect(fixture.componentInstance['classificationOptions']().technical_activity_type.map((o) => o.label)).toEqual([
+        'Open Data (1)',
+        'Open Source Software (2)',
+      ]);
+    });
+
+    it('builds classification options, counts and CSV columns from the visible rows only', async () => {
+      // The server drops Draft and Confidential before the response, so a hidden project's values never arrive.
+      const visible = [
+        row({
+          uid: 'v1',
+          name: 'Visible One',
+          stage: 'engaged',
+          technical_activity_type: ['Open Source Software'],
+          technology: ['Quantum'],
+          industry: ['Finance'],
+        }),
+        row({ uid: 'v2', name: 'Visible Two', stage: 'exploratory', technical_activity_type: ['Open Source Software', 'Open Data'], technology: ['Quantum'] }),
+      ];
+      await render(of(response(visible, 'staff')));
+
+      const options = fixture.componentInstance['classificationOptions']();
+      expect(options.technical_activity_type.map((o) => o.label)).toEqual(['Open Data (1)', 'Open Source Software (2)']);
+      expect(options.technology.map((o) => o.label)).toEqual(['Quantum (2)']);
+      expect(options.industry.map((o) => o.label)).toEqual(['Finance (1)']);
+
+      let captured: Blob | null = null;
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => ((captured = blob as Blob), 'blob:x'));
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      fixture.componentInstance['exportCsv']();
+
+      const lines = (await (captured as unknown as Blob).text()).split('\r\n').filter(Boolean);
+      expect(lines[0]).toContain('Technical activity type,Technology,Industry');
+      expect(lines).toHaveLength(3);
+      expect(lines.join('\n')).toContain('Open Source Software; Open Data');
+      expect(lines.some((line) => line.includes('Finance'))).toBe(true);
     });
   });
 });

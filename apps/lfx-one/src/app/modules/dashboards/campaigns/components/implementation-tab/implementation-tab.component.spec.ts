@@ -18386,7 +18386,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     ]);
     expect(lines(group('demandGenCreative')['descriptions'])).toEqual([...generated.google_display.descriptions, ...generated.google_search.descriptions]);
     expect(group('demandGenCreative')['businessName']).toBe('CNCF');
-    // Google documents no call to action for this ad, and refused "Register" live (F13).
+    // "Register" is not on this ad's list (Google refused it live, F13), so nothing is seeded.
     expect(group('demandGenCreative')['callToActionText']).toBe('');
     expect(prefilled('demand-gen')).toBe(true);
   });
@@ -18527,10 +18527,18 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
     expect(prefilled('display')).toBe(true);
   });
 
-  it("seeds a listed call to action in the list's own spelling on Display, and still none on Demand Gen", () => {
+  it("seeds a listed call to action in the list's own spelling on Display and on Demand Gen", () => {
     seed(brief({ google_display: { headlines: ['Join us'], call_to_action: 'learn more' } }));
 
     expect(group('displayCreative')['callToActionText']).toBe('Learn More');
+    expect(group('demandGenCreative')['callToActionText']).toBe('Learn More');
+  });
+
+  it('seeds a call to action only on the ad whose list carries it', () => {
+    seed(brief({ google_display: { headlines: ['Join us'], call_to_action: 'Install' } }));
+
+    // Install was accepted on the responsive display ad and refused on the Demand Gen image ad.
+    expect(group('displayCreative')['callToActionText']).toBe('Install');
     expect(group('demandGenCreative')['callToActionText']).toBe('');
   });
 
@@ -18660,6 +18668,7 @@ describe('ImplementationTabComponent Demand Gen and Display prefill', () => {
   it.each([
     ['displayCreative', 'callToActionText', 'Learn More'],
     ['demandGenVideoCreative', 'callToAction', 'SIGN_UP'],
+    ['demandGenCreative', 'callToActionText', 'Donate Now'],
     ['demandGenCreative', 'callToActionText', ''],
   ])('accepts a listed %s call to action, or none', (groupName, control, value) => {
     seed(brief(undefined), draftWithCreatives({ [groupName]: { [control]: value } }));

@@ -8,11 +8,15 @@ last_updated: 2026-11-12
 intercom_collection: Dashboards
 ---
 
-The **Pipeline** tab lists every project the formation team is bringing into The Linux Foundation, one row per project, by stage. It is for formation team members only.
+The **Pipeline** tab lists every project the formation team is bringing into The Linux Foundation, one row per project, by stage. Formation team members see all of it; Linux Foundation staff see a read-only version without Draft and Confidential projects.
 
 ## Who can see it
 
-Formation team members see the **Pipeline** tab on the **Formations** page when The Linux Foundation is the selected foundation. It is the first tab and the one that opens by default. Everyone else sees the Formations page without it, and the page behind it refuses the request. The Formations feature must also be enabled for your account.
+Formation team members see the **Pipeline** tab on the **Formations** page when The Linux Foundation is the selected foundation. It is the first tab and the one that opens by default. Linux Foundation staff outside the formation team see a read-only version (below). Everyone else sees the Formations page without it, and the page behind it refuses the request. The Formations feature must also be enabled for your account.
+
+### Linux Foundation staff
+
+Linux Foundation staff who are not on the formation team also see the **Pipeline** tab, with the **Formations** tab beside it. They do not see the **Project proposals** tab. Their view is read-only and leaves out **Draft** and **Confidential** projects entirely: those projects do not appear in the rows, the stage pills, the stat cards or the CSV export, and a line above the table says "Draft projects are visible to the formation team only." The view opens on Exploratory, Engaged and On hold. Contractors are not Linux Foundation staff and do not see the tab.
 
 To go back to the original list, select the **Formations** tab. Select **Pipeline** again to return.
 
@@ -42,9 +46,9 @@ Select a project name to open it. A project opens its formation page. If the pro
 
 The pills above the list choose which stages you see:
 
-- **In pipeline** is the default. It shows the projects the team is actively working: **Draft**, **Exploratory**, **Engaged** and **On hold**.
+- **In pipeline** is the default. It shows the projects the team is actively working: **Draft**, **Exploratory**, **Engaged** and **On hold**. (Linux Foundation staff see the same stages without Draft and Confidential; see [Linux Foundation staff](#linux-foundation-staff).)
 - **All** shows every stage, including **Disengaged** and **Archived**.
-- **Draft**, **Exploratory**, **Engaged**, **On hold**, **Disengaged** and **Archived** each show one stage. The number in brackets is how many projects are in it. **Disengaged** and **Confidential** appear only when they have projects.
+- **Draft**, **Exploratory**, **Engaged**, **On hold**, **Disengaged** and **Archived** each show one stage. The number in brackets is how many projects are in it. **Disengaged** and **Confidential** appear only when they have projects. (Linux Foundation staff see the same stages without Draft and Confidential; see [Linux Foundation staff](#linux-foundation-staff).)
 
 **Draft** is the name the formation team uses for a project that has been created but not yet explored. The **Formations** tab and the formation record use the same name. The **Archived** card reads **No longer active**: many archived projects launched before they were archived.
 

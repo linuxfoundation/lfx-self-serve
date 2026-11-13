@@ -10,6 +10,7 @@ import type {
   Project,
   ProjectApplication,
   ProjectApplicationAccess,
+  ProjectApplicationAccessState,
   ProjectApplicationAnswers,
   ProjectApplicationWriteResult,
   ProjectApplicationViewMode,
@@ -137,13 +138,16 @@ export class ProjectApplicationService {
     );
   }
 
-  /** Whether the caller is on the formation team. Fails closed to `false` on any error. */
-  public getAccess(): Observable<boolean> {
+  /**
+   * Both access answers from one read (#5544): formation-team membership and LF-staff membership (the read-only Pipeline
+   * view). Each fails closed to `false`, and an error answers `false` for both.
+   */
+  public getAccessState(): Observable<ProjectApplicationAccessState> {
     return this.http.get<ProjectApplicationAccess>(`${PROJECT_APPLICATION_API_BASE_PATH}/access`).pipe(
-      map((access) => access?.is_formation_team === true),
+      map((access) => ({ isFormationTeam: access?.is_formation_team === true, isLfStaff: access?.is_lf_staff === true })),
       catchError((error: unknown) => {
         console.error('[ProjectApplicationService] Failed to load project-application access', error);
-        return of(false);
+        return of({ isFormationTeam: false, isLfStaff: false });
       })
     );
   }

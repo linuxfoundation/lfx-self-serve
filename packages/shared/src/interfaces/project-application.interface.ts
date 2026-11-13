@@ -141,9 +141,17 @@ export interface ProjectApplicationWriteResult {
   etag: string | null;
 }
 
-/** BFF `GET /api/project-applications/access` — whether the caller may see the review queue. */
+/** BFF `GET /api/project-applications/access` — whether the caller may see the review queue, and whether they are LF staff (#5544, the read-only Pipeline). */
 export interface ProjectApplicationAccess {
   is_formation_team: boolean;
+  /** Member of `team:lf-staff`, whether or not also on the formation team. Absent from an older response; read as `false`. */
+  is_lf_staff?: boolean;
+}
+
+/** What the UI reads from {@link ProjectApplicationAccess}: both answers, each failing closed to `false`. */
+export interface ProjectApplicationAccessState {
+  isFormationTeam: boolean;
+  isLfStaff: boolean;
 }
 
 /** Display metadata for one application state. */

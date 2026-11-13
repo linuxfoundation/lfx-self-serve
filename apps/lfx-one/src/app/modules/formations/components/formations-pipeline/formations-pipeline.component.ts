@@ -42,6 +42,7 @@ import type {
   FormationPipelineSortKey,
   FormationPipelineStageFilter,
   FormationPipelineTableRow,
+  FormationPipelineViewer,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -61,6 +62,7 @@ import {
   pruneUnknownPipelineClassification,
   filterPipelineRowsByStage,
   getPipelineCsvFilename,
+  isPipelineStageVisible,
   parsePipelineUrlState,
   matchesPipelineSearch,
   normalizePipelineSearch,
@@ -86,7 +88,7 @@ import {
 } from 'rxjs';
 
 /**
- * The Pipeline tab of the LF-root Formations page (#5475): every non-Active project by stage for the formation team,
+ * The Pipeline tab of the LF-root Formations page (#5475): every non-Active project by stage for the formation team (LF staff get a read-only view without Draft and Confidential),
  * with stage stat cards and pills, a foundation filter, name search, sortable columns and a CSV export. The stage
  * selection, name search, sort and pagination are client-side over the one response; only the foundation goes to the
  * BFF (a change switches to the new read, cancelling any one in flight).
@@ -139,8 +141,9 @@ export class FormationsPipelineComponent {
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   protected readonly loading = signal(true);
-  /** `forbidden` is the BFF's 403 (not on the formation team); `failed` is anything else. */
+  /** `forbidden` is the BFF's 403 (neither on the formation team nor LF staff); `failed` is anything else. */
   protected readonly loadError = signal<'forbidden' | 'failed' | null>(null);
+  /** The stage the user picked (or the URL carried); see `selectedStage` for the one the view uses. */
   protected readonly stage = signal<FormationPipelineStageFilter>(this.initialState.stage);
   protected readonly sort = signal<FormationPipelineSort>(this.initialState.sort);
   private readonly knownFoundations = signal<ReadonlyMap<string, string>>(new Map());
@@ -148,18 +151,31 @@ export class FormationsPipelineComponent {
   private foundationsRequested = false;
   /** A link may name classification values this data does not have; they are dropped once, against the first rows that load. */
   private classificationChecked = false;
+  /** The viewer the last successful response named. A failed read keeps it, so a formation-team member's Draft stage survives a failed foundation-filtered load; `staff` stands in only before the first success. Declared before `response`. */
+  private lastViewer: FormationPipelineViewer = 'staff';
 
+  /** True once a response has said who the viewer is. Until then the narrower default only shapes what renders; it never rewrites the URL (a formation-team deep link to a Draft stage keeps its `stage` through loading, and through a failed load). */
+  private readonly viewerKnown = signal(false);
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly foundationUid: Signal<string | null> = this.initFoundationUid();
   private readonly foundationKind: Signal<FormationPipelineFoundationKindFilter> = this.initFoundationKind();
   /** The three classification multi-selects' values (#5619 Part C). */
   private readonly classification: Signal<FormationPipelineClassificationSelection> = this.initClassification();
   private readonly response: Signal<FormationPipelineResponse> = this.initResponse();
+  /** Who the server built this for (#5544). Until a response arrives it is the narrower `staff` view, so nothing a staff viewer must not see ever flashes. */
+  protected readonly viewer: Signal<FormationPipelineViewer> = computed(() => this.response().viewer);
+  protected readonly isStaffView = computed(() => this.viewer() === 'staff');
+  /** A stage the viewer cannot see (a `?stage=prospect` link opened by staff) is the default view, never an empty one. */
+  protected readonly selectedStage = computed<FormationPipelineStageFilter>(() => {
+    const stage = this.stage();
+    const hidden = stage !== 'all' && stage !== 'in_pipeline' && !isPipelineStageVisible(stage, this.viewer());
+    return hidden ? FORMATION_PIPELINE_DEFAULT_STAGE : stage;
+  });
 
   /** The query params for the current filters and sort; the search is the debounced term. */
   private readonly urlParams = computed(() =>
     buildPipelineUrlParams({
-      stage: this.stage(),
+      stage: this.viewerKnown() ? this.selectedStage() : this.stage(),
       foundationUid: this.foundationUid(),
       foundationKind: this.foundationKind(),
       search: this.searchTerm(),
@@ -181,7 +197,7 @@ export class FormationsPipelineComponent {
    */
   protected readonly classificationOptions = computed<Record<FormationPipelineClassificationKey, { label: string; value: string }[]>>(() => {
     const selection = this.classification();
-    const staged = filterPipelineRowsByStage(this.kindAndSearchRows(), this.stage());
+    const staged = filterPipelineRowsByStage(this.kindAndSearchRows(), this.selectedStage(), this.viewer());
     const entries = FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => {
       const present = getPipelineClassificationOptions(filterPipelineRowsByClassification(staged, selection, key), key);
       const listed = new Set(present.map((option) => option.value));
@@ -195,7 +211,7 @@ export class FormationsPipelineComponent {
   protected readonly counts = computed(() => countPipelineRows(this.searchedRows()));
   protected readonly isFiltered = computed(
     () =>
-      this.stage() !== FORMATION_PIPELINE_DEFAULT_STAGE ||
+      this.selectedStage() !== FORMATION_PIPELINE_DEFAULT_STAGE ||
       !!this.searchTerm().trim() ||
       !!this.foundationUid() ||
       this.foundationKind() !== FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND ||
@@ -209,11 +225,17 @@ export class FormationsPipelineComponent {
     { label: this.copy.allFoundations, value: null },
     ...[...this.knownFoundations()].map(([value, label]) => ({ label, value })).sort((a, b) => comparePipelineText(a.label, b.label)),
   ]);
-  protected readonly pillOptions: Signal<FilterPillOption[]> = computed(() => buildPipelinePillOptions(this.counts()));
-  protected readonly statCards: Signal<StatCardItem[]> = computed(() => buildPipelineStatCards(this.counts(), this.searchedRows(), this.stage()));
+  protected readonly pillOptions: Signal<FilterPillOption[]> = computed(() => buildPipelinePillOptions(this.counts(), this.viewer()));
+  protected readonly statCards: Signal<StatCardItem[]> = computed(() =>
+    buildPipelineStatCards(this.counts(), this.searchedRows(), this.selectedStage(), new Date(), this.viewer())
+  );
+  /** One column per card: five for the formation team, four for staff. */
+  protected readonly statColumns = computed<4 | 5>(() => (this.statCards().length >= 5 ? 5 : 4));
   protected readonly displayRows: Signal<FormationPipelineTableRow[]> = computed(() => {
     const now = new Date();
-    return sortPipelineRows(filterPipelineRowsByStage(this.searchedRows(), this.stage()), this.sort()).map((row) => toPipelineTableRow(row, now));
+    return sortPipelineRows(filterPipelineRowsByStage(this.searchedRows(), this.selectedStage(), this.viewer()), this.sort()).map((row) =>
+      toPipelineTableRow(row, now)
+    );
   });
   /** Paginator offset; any change to the displayed list returns to page one. */
   protected readonly first = linkedSignal({ source: this.displayRows, computation: () => 0 });
@@ -257,7 +279,7 @@ export class FormationsPipelineComponent {
   /** A stat card filters to its stage; selecting the active card again returns to the default view. */
   protected onStatAction(action: string): void {
     const next = this.toStageFilter(action);
-    this.stage.set(this.stage() === next ? FORMATION_PIPELINE_DEFAULT_STAGE : next);
+    this.stage.set(this.selectedStage() === next ? FORMATION_PIPELINE_DEFAULT_STAGE : next);
   }
 
   protected onHeaderClick(key: FormationPipelineSortKey): void {
@@ -362,7 +384,7 @@ export class FormationsPipelineComponent {
   }
 
   private initResponse(): Signal<FormationPipelineResponse> {
-    const empty: FormationPipelineResponse = { rows: [], counts: emptyPipelineCounts() };
+    const empty: FormationPipelineResponse = { rows: [], counts: emptyPipelineCounts(), viewer: 'staff' };
     return toSignal(
       combineLatest([this.refresh$, toObservable(this.foundationUid)]).pipe(
         switchMap(([, foundationUid]) => {
@@ -370,14 +392,16 @@ export class FormationsPipelineComponent {
           this.loading.set(true);
           return this.formationService.getFormationPipeline(foundationUid).pipe(
             tap((response) => {
+              this.viewerKnown.set(true);
               this.pruneUnknownClassification(response);
+              this.lastViewer = response.viewer;
               this.rememberFoundations(response, foundationUid);
               this.loadFoundationOptionsForDeepLink(foundationUid);
             }),
             catchError((error: unknown) => {
               console.error('[FormationsPipeline] Failed to load the pipeline', error);
               this.loadError.set(error instanceof HttpErrorResponse && error.status === 403 ? 'forbidden' : 'failed');
-              return of(empty);
+              return of({ ...empty, viewer: this.lastViewer });
             }),
             finalize(() => this.loading.set(false))
           );

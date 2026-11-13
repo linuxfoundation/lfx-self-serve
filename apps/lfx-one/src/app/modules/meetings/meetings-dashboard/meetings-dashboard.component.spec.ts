@@ -865,7 +865,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     component.loadMore();
     expect(ids(component)).toEqual(['scoped-first', 'scoped-second']);
     expect(component.hasMore()).toBe(false);
-    expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, 'next', undefined, undefined);
+    expect(meetings.getMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, 'next', undefined, undefined, { includeSubProjects: true });
     component.viewMode.set('calendar');
     flush();
     expect(component.isCalendarView()).toBe(true);
@@ -879,7 +879,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.mocked(meetings.getPastMeetingsByProjectPaginated).mockReturnValue(of({ data: [past] }));
     select(component, 'past');
     expect(ids(component)).toEqual(['past-other']);
-    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, true);
+    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, true, { includeSubProjects: true });
     lens.set('me');
     flush();
     http.expectOne('/api/user/past-meetings').flush([past]);
