@@ -1442,6 +1442,303 @@
   }
 }
 
+// ---------- Light sidebar theme (desktop only) ----------
+// Picked in the account menu (NavbarThemeService); the host gets `.is-light`, never on the mobile drawer. Every rule is
+// an override scoped here, so the dark sidebar above stays exactly as it is. Colours are design-system `--ui-*` tokens
+// (pinned to their light values: the sidebar is light whatever the page theme), except the LF logo's two brand blues,
+// which match the brand menu's coloured logo.
+.lfxn-host.is-light {
+  .lfxn {
+    // The dark sheet's slate re-map, pointed at the light neutrals (section labels, rules, trailing meta).
+    --color-slate-slate-400: var(--ui-neutral-400);
+    --color-slate-slate-600: var(--ui-neutral-500);
+
+    background: var(--ui-neutral-100);
+    box-shadow: inset 0 0 0 1px var(--ui-neutral-alpha-200);
+  }
+
+  // Logo: the coloured LF mark.
+  .lfxn__brand-symbol path {
+    fill: rgb(0, 52, 123);
+
+    & + path {
+      fill: rgb(0, 149, 255);
+    }
+  }
+
+  .lfxn__brand-menu {
+    color: var(--ui-neutral-500);
+  }
+
+  .lfxn__brand,
+  .lfxn__user {
+    &:hover,
+    &.is-open {
+      background: var(--ui-neutral-alpha-100);
+    }
+  }
+
+  // Neutral icon buttons: collapse, search, and the footer's impersonation / What's New / Documentation.
+  .lfxn__icon-btn,
+  .lfxn__icon-btn--toggle,
+  .lfxn__foot-actions .lfxn__icon-btn {
+    color: var(--ui-neutral-500);
+
+    &:hover,
+    &:focus-visible {
+      background: var(--ui-neutral-alpha-100);
+      color: var(--ui-neutral-500);
+    }
+  }
+
+  .lfxn__icon-btn--accent {
+    background: var(--ui-accent-800);
+    color: var(--ui-white);
+
+    &:hover,
+    &:focus-visible {
+      background: var(--ui-accent-900);
+      color: var(--ui-white);
+    }
+  }
+
+  .lfxn__collapse-sep {
+    border-top-color: var(--ui-neutral-300);
+  }
+
+  // Lens switch: the sidebar's own neutral as its track, an outer hairline, the white pill.
+  .lfxn__tabs {
+    background: var(--ui-neutral-100);
+    box-shadow: 0 0 0 1px var(--ui-neutral-alpha-200);
+  }
+
+  .lfxn__tab {
+    color: var(--ui-neutral-700);
+
+    i {
+      color: var(--ui-neutral-700);
+    }
+
+    &:hover {
+      color: var(--ui-neutral-900);
+    }
+
+    &.is-active {
+      color: var(--ui-neutral-900);
+
+      i {
+        color: var(--ui-accent-500);
+      }
+    }
+  }
+
+  .lfxn__tab-rule {
+    background: var(--ui-neutral-alpha-200);
+  }
+
+  // Context cards: white, with a border subtler than the design system's small shadow.
+  .lfxn__context,
+  .lfxn__context--static:hover,
+  .lfxn__context--me,
+  .lfxn__context--me:hover {
+    background: var(--ui-background-100);
+    box-shadow:
+      0 0 0 1px var(--ui-neutral-alpha-100),
+      0 1px 2px var(--ui-neutral-alpha-50);
+  }
+
+  // Projects / Company cards lift on hover; the Home card (and a card with nothing to switch to) stays put.
+  .lfxn__context:not(.lfxn__context--me, .lfxn__context--static, .lfxn__context--loading):hover {
+    background: var(--ui-neutral-50);
+    box-shadow:
+      0 0 0 1px var(--ui-neutral-alpha-200),
+      0 1px 2px var(--ui-neutral-alpha-50);
+  }
+
+  .lfxn__context-name {
+    color: var(--ui-neutral-900);
+  }
+
+  .lfxn__context-meta,
+  .lfxn__org-role {
+    color: var(--ui-neutral-500);
+  }
+
+  .lfxn__context-chevron {
+    background-color: var(--ui-neutral-500);
+  }
+
+  .lfxn__tile {
+    background: var(--ui-neutral-100);
+    box-shadow: 0 0 0 1px var(--ui-neutral-alpha-200);
+    color: var(--ui-neutral-500);
+  }
+
+  .lfxn__tile--logo {
+    background: var(--ui-background-100);
+  }
+
+  .lfxn__tile--photo {
+    box-shadow: none;
+  }
+
+  .lfxn__tile-initials,
+  .lfxn__avatar-initials {
+    color: var(--ui-neutral-700);
+  }
+
+  .lfxn__avatar {
+    background: var(--ui-neutral-200);
+  }
+
+  // Role marks (Home card circles, Projects card pill): the role's light ink on its tinted fill, ringed in white.
+  .lfxn__me-role {
+    border-color: var(--lfxn-role-ink-light);
+    background: var(--lfxn-role-fill-light);
+    color: var(--lfxn-role-ink-light);
+    box-shadow: 0 0 0 2px var(--ui-background-100);
+  }
+
+  .lfxn__role {
+    border-color: var(--lfxn-role-ink-light);
+    background: var(--lfxn-role-fill-light);
+    color: var(--lfxn-role-ink-light);
+  }
+
+  // Home card action strip.
+  .lfxn__me-actions {
+    border-top-color: var(--ui-neutral-alpha-100);
+  }
+
+  .lfxn__me-action {
+    color: var(--ui-neutral-700);
+
+    & + & {
+      box-shadow: -1px 0 0 var(--ui-neutral-alpha-200);
+    }
+
+    &:hover,
+    &.is-active {
+      color: var(--ui-neutral-900);
+    }
+
+    &:hover {
+      background: var(--ui-neutral-alpha-50);
+    }
+  }
+
+  // Navigation menu. Section labels are neutral-500, a design choice: stronger than the spec's neutral-400.
+  .lfxn__section-label {
+    color: var(--ui-neutral-500);
+  }
+
+  .lfxn__section-rule,
+  .lfxn__rule {
+    background-image: repeating-linear-gradient(to right, var(--ui-neutral-300) 0 1px, transparent 1px 5px);
+  }
+
+  .lfxn__item {
+    color: var(--ui-neutral-900);
+
+    .lfxn__item-icon {
+      color: var(--ui-neutral-800);
+    }
+
+    &:hover {
+      background: var(--ui-neutral-alpha-50);
+      color: var(--ui-neutral-900);
+
+      .lfxn__item-icon {
+        color: var(--ui-neutral-800);
+      }
+    }
+
+    &.is-active {
+      background: var(--ui-neutral-alpha-100);
+      color: var(--ui-neutral-900);
+      box-shadow: none;
+
+      .lfxn__item-icon {
+        color: var(--ui-neutral-900);
+      }
+    }
+  }
+
+  .lfxn__item-trail {
+    color: var(--ui-neutral-500);
+  }
+
+  // Empty states, notices and skeletons.
+  .lfxn__empty {
+    border: 1px solid var(--ui-neutral-alpha-200);
+    background: var(--ui-background-100);
+    box-shadow: 0 10px 18px -10px var(--ui-neutral-alpha-200);
+  }
+
+  .lfxn__empty-icon {
+    background: var(--ui-neutral-100);
+    color: var(--ui-neutral-500);
+  }
+
+  .lfxn__empty-title {
+    color: var(--ui-neutral-900);
+  }
+
+  .lfxn__empty-body,
+  .lfxn__lookup-notice {
+    color: var(--ui-neutral-500);
+  }
+
+  // The notice sits on the neutral-100 panel itself, not a white card: neutral-600 keeps its text at WCAG AA.
+  .lfxn__lookup-notice {
+    border-color: var(--ui-neutral-alpha-200);
+    color: var(--ui-neutral-600);
+  }
+
+  .lfxn__empty-action,
+  .lfxn__empty-action:disabled {
+    border-color: var(--ui-neutral-alpha-200);
+    color: var(--ui-neutral-700);
+  }
+
+  .lfxn__empty-action:hover:not(:disabled) {
+    background: var(--ui-neutral-alpha-50);
+    color: var(--ui-neutral-900);
+  }
+
+  .lfxn__skeleton {
+    background: var(--ui-neutral-alpha-100);
+  }
+
+  // Footer.
+  .lfxn__foot {
+    border-top-color: var(--ui-neutral-alpha-200);
+  }
+
+  .lfxn__user-name {
+    color: var(--ui-neutral-900);
+  }
+
+  .lfxn__user > i {
+    color: var(--ui-neutral-500);
+  }
+
+  &.is-collapsed .lfxn__foot {
+    border-top-color: transparent;
+  }
+
+  &.is-overlay .lfxn {
+    box-shadow:
+      inset 0 0 0 1px var(--ui-neutral-alpha-200),
+      0 24px 48px -12px theme('colors.gray.900 / 38%'),
+      0 4px 12px theme('colors.gray.900 / 14%');
+  }
+
+  &.is-overlay.is-collapsed .lfxn {
+    box-shadow: inset 0 0 0 1px var(--ui-neutral-alpha-200);
+  }
+}
+
 // ---------- Body-level surfaces (popovers, tooltips) ----------
 // ---------- Popovers (appended to <body>) ----------
 .lfxn-menu-popover.p-popover,
@@ -1741,6 +2038,25 @@
     outline: 2px solid theme('colors.blue.500');
     outline-offset: -2px;
   }
+}
+
+// A row that holds its own control (the sidebar theme switch): no hover or pointer of its own.
+.lfxn-account-menu__row--static {
+  cursor: default;
+
+  &:hover {
+    background: none;
+    color: theme('colors.gray.700');
+  }
+}
+
+.lfxn-account-menu__row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lfxn-account-menu__row-trail {
+  flex: 0 0 auto;
 }
 
 // The Font Awesome kit picks its style by font-weight, but its fa-regular / fa-light classes don't pin
