@@ -29,6 +29,8 @@ export interface ClaOnlyOrgList {
 }
 
 /**
+ * Whether the caller holds no Org Lens grant at all, so CLA-only organizations are their whole list.
+ *
  * `rosterAnswered` is false when the roster never loaded or the staff check failed. Either leaves
  * "no grant, not staff" unproven, so the caller keeps the normal outage handling instead of being
  * classified CLA-only.
@@ -37,6 +39,7 @@ export function claOnlyEntryApplies(isStaff: boolean, grantedOrgCount: number, r
   return claOnlyListApplies(isStaff, rosterAnswered) && grantedOrgCount === 0;
 }
 
+/** Whether CLA-only organizations are listed at all: for any non-staff caller whose roster answered, after the organizations they hold. */
 export function claOnlyListApplies(isStaff: boolean, rosterAnswered: boolean): boolean {
   return rosterAnswered && !isStaff;
 }

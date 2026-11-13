@@ -242,9 +242,27 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.listIncomplete()).toBe(false);
   });
 
-  it('raises no switcher notice on a CLA-only selection, whose list is the CLA-only list itself', () => {
+  // A grant holder who switched to a CLA-only company can still be missing another one, so the notice and its Retry stay.
+  it.each([
+    ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
+    ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],
+  ])('raises the switcher notice on a CLA-only selection when %s', (_label, fail) => {
     h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
     h.claOnlyUids.set(new Set([OTHER]));
+    expect(h.service.listIncomplete()).toBe(false);
+
+    fail(h);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('raises no switcher notice on a selection that is neither held nor CLA-only', () => {
+    h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
     h.claLookupFailed.set(true);
 
     expect(h.service.listIncomplete()).toBe(false);

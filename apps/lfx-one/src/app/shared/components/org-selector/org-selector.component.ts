@@ -35,6 +35,7 @@ import { orgRollUpAccount, resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
 import { LensService } from '@services/lens.service';
+import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -60,6 +61,7 @@ export class OrgSelectorComponent {
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
@@ -492,6 +494,9 @@ export class OrgSelectorComponent {
       // Spec 050: URL identity for `/org/{segment}/…` — from the indexed doc, never derived here.
       slug: item.slug ?? null,
     };
+    // M3: the path guard skips the resolver for the organization already selected, so this pick is the
+    // only place the row's CLA-only answer can reach the CLA-only shell before the switch navigates.
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
     // applied the optimistic update; the canonical fetch patches the snapshot in-place when it

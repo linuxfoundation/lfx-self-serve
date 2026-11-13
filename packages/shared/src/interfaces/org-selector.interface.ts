@@ -190,8 +190,8 @@ export interface RoleGrantsResponse {
   correlationId?: string;
   /**
    * Organizations (18-char SFIDs) the caller reaches only as a CLA Manager, from their own
-   * `cla-manager` scopes. Filled only when every grant array above is empty and `isStaff` is false;
-   * empty when the scopes could not be read. Grants the EasyCLA tab of these orgs and nothing else.
+   * `cla-manager` scopes. Empty when the scopes could not be read. Grants the EasyCLA tab of these
+   * orgs and nothing else.
    * Optional for rolling deploys: absent ⇒ empty.
    */
   claManagerOrgs?: string[];

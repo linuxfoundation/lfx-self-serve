@@ -51,7 +51,7 @@ In the list of organizations, hovering over an inherited role shows **Inherited 
 
 ## Why is an organization missing from the switcher?
 
-The organization switcher lists every organization where you have an admin or viewer role, including a role inherited from a related organization, and every organization where your only role is CLA Manager or initial CLA Manager designee. An organization is missing when you have none of these roles on it, when part of your list did not load, or when your CLA Manager role was added in the last 30 minutes and has not reached the Organization lens yet.
+The organization switcher lists the organizations where you have an admin or viewer role, including a role inherited from a related organization, and the organizations where your only role is CLA Manager or initial CLA Manager designee. An organization can be missing when you have none of these roles on it, when part of your list did not load, or when your CLA Manager role was added in the last 30 minutes and has not reached the Organization lens yet.
 
 Organizations where you have an admin or viewer role come first. Organizations where your only role is CLA Manager or initial CLA Manager designee follow them, labelled **CLA Manager**, and each opens on its **EasyCLA** page. An organization where you have both an admin or viewer role and a CLA Manager role is listed once, with your admin or viewer role, and opens the full lens.
 

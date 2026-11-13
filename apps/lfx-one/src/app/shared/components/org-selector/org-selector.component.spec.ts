@@ -9,6 +9,7 @@ import { Account, DisplayOrgItem, OrgItem, OrgRollUpFamily } from '@lfx-one/shar
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
+import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -41,6 +42,7 @@ describe('OrgSelectorComponent.selectItem', () => {
   let resetAndReload: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn>;
   let previewingMenuLens: WritableSignal<boolean>;
+  let noteAddressed: ReturnType<typeof vi.fn>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
 
@@ -56,12 +58,14 @@ describe('OrgSelectorComponent.selectItem', () => {
     resetAndReload = vi.fn();
     refreshList = vi.fn();
     previewingMenuLens = signal(false);
+    noteAddressed = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
         {
           provide: AccountContextService,
           useValue: {
@@ -142,6 +146,20 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
     expect(selected).toHaveBeenCalledWith(rowB);
+  });
+
+  // M3: the path guard skips the resolver for the selection it already holds, so the pick carries the row's answer.
+  it('records a CLA-only row as CLA-only before the switch navigates', () => {
+    pick({ ...rowB, slug: null, claOnly: true });
+
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  it('clears any CLA-only note when the picked row is not CLA-only', () => {
+    pick(rowB);
+
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false);
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on. The pick is still
@@ -358,11 +376,19 @@ describe('OrgSelectorComponent navbar card', () => {
     });
 
     it('labels the card when the selection is a CLA-only organization', async () => {
-      const card = await createCard({ items: [{ ...rowA, claOnly: true }] });
+      const card = await createCard({ items: [rowB, { ...rowA, claOnly: true }] });
 
       expect(card.selectedRoleLabel()).toBe('CLA Manager');
       expect(card.selectedRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
       expect(card.navbarRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
+    });
+
+    it('leaves the card unlabelled when only another row is CLA-only', async () => {
+      const card = await createCard({ items: [rowA, claOnlyB] });
+
+      expect(card.selectedRoleLabel()).not.toBe('CLA Manager');
+      expect(card.selectedRoleTooltip()).not.toBe(CLA_ONLY_TOOLTIP);
+      expect(card.navbarRoleTooltip()).not.toBe(CLA_ONLY_TOOLTIP);
     });
 
     it('lets a held grant win over a CLA-only flag on the same row', async () => {
