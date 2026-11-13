@@ -1307,11 +1307,14 @@ export class MeetingsDashboardComponent {
   /** Groups of the selected projects: the root's own by default, every project's when all are selected. */
   private initScopedGroups(): Signal<MeetingRollupGroupOption[]> {
     return computed(() => {
-      const groups = this.rollupFilterOptions().groups;
+      const { groups, projects } = this.rollupFilterOptions();
       const mode = this.rollupProjectsMode();
-      if (mode === 'all') return groups;
-      // The default shows only the root's own meetings, so only its own groups can match.
-      const selected = new Set(mode === 'default' ? [this.project()?.uid] : this.rollupProjectsFilter());
+      // More projects than one query takes fall back to the root's own meetings (here and on the server),
+      // so, like the default, only the root's own groups can match.
+      const selectedCount = mode === 'all' ? projects.length : this.rollupProjectsFilter().length;
+      const rootOnly = mode === 'default' || selectedCount > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE;
+      if (mode === 'all' && !rootOnly) return groups;
+      const selected = new Set(rootOnly ? [this.project()?.uid] : this.rollupProjectsFilter());
       return groups.filter((group) => selected.has(group.project_uid));
     });
   }

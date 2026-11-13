@@ -1186,7 +1186,10 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
           of({
             projects: [{ uid: 'scope', name: 'Synthetic scope', slug: 'scope' }, ...many.map((uid) => ({ uid, name: uid, slug: uid }))],
-            groups: [],
+            groups: [
+              { uid: 'board', name: 'Board', category: 'Board', project_uid: 'scope' },
+              { uid: 'wg', name: 'Working group', category: 'Working Group', project_uid: 'p1' },
+            ],
             complete: true,
           })
         );
@@ -1195,6 +1198,9 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
 
         expect(component.rollupProjectsFilter()).toHaveLength(101);
         expect(lastOptions()).toEqual({ includeSubProjects: true, rootOnly: true, pageSize: 1000 });
+        // The groups follow the root-only fallback, so every offered group can match.
+        expect(component['groupOptions']().map((option: { value: string }) => option.value)).toEqual(['board']);
+        expect(component['groupTypeOptions']().map((option: { value: string }) => option.value)).toEqual(['Board']);
       });
 
       it('lets a link with projects win over the saved choice', () => {
