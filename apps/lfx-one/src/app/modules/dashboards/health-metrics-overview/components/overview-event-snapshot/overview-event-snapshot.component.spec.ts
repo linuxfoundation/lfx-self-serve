@@ -43,7 +43,7 @@ describe('OverviewEventSnapshotComponent', () => {
   let fixture: ComponentFixture<OverviewEventSnapshotComponent>;
   let read: ReturnType<typeof vi.fn>;
 
-  async function render(response: HealthMetricsEventsSnapshot | Error = SNAPSHOT): Promise<void> {
+  async function render(response: HealthMetricsEventsSnapshot | Error = SNAPSHOT, compact = false): Promise<void> {
     read = vi.fn().mockReturnValue(response instanceof Error ? throwError(() => response) : of(response));
     await TestBed.configureTestingModule({
       imports: [OverviewEventSnapshotComponent],
@@ -54,6 +54,7 @@ describe('OverviewEventSnapshotComponent', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(OverviewEventSnapshotComponent);
     fixture.componentRef.setInput('eventId', 'e1');
+    fixture.componentRef.setInput('compact', compact);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -76,6 +77,23 @@ describe('OverviewEventSnapshotComponent', () => {
     expect(query('overview-snapshot-end', registration)?.textContent?.trim()).toBe('Nov 4, 2026 (today)');
     expect(cells('overview-snapshot-row-registrations')).toEqual(['Registrations', '5,759', '6,969', '+1,210 (21%)']);
     expect(query('overview-snapshot-change-registrations')?.className).toContain('text-ui-success-700');
+  });
+
+  it('fits a phone in three columns, with short dates and the change as coloured text under today\u2019s value', async () => {
+    await render(SNAPSHOT, true);
+
+    const registration = query('overview-snapshot-registration')!;
+    expect(query('overview-snapshot-start', registration)?.textContent?.trim()).toBe('Oct 25, 26');
+    expect(query('overview-snapshot-end', registration)?.textContent?.trim()).toBe('Nov 4, 26 (today)');
+    expect(query('overview-snapshot-header', registration)?.className).toContain('grid-cols-[minmax(0,1fr)_76px_128px]');
+    expect(registration.querySelectorAll('[data-testid="overview-snapshot-header"] [role="columnheader"]')).toHaveLength(3);
+    // The change moves into today's cell, so the row has no fourth column.
+    expect(cells('overview-snapshot-row-registrations')).toEqual(['Registrations', '5,759', '6,969 +1,210 (21%)']);
+    const change = query('overview-snapshot-change-registrations');
+    expect(change?.className).toContain('text-emerald-600');
+    expect(change?.querySelector('i')).toBeNull();
+    expect(query('overview-snapshot-title', registration)?.className).toContain('text-[14px]');
+    expect(query('overview-snapshot-label', registration)?.className).toContain('block');
   });
 
   it('switches every table to the chosen period', async () => {

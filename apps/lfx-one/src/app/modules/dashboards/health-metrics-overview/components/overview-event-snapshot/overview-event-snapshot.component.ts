@@ -36,11 +36,45 @@ export class OverviewEventSnapshotComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   public readonly eventId = input.required<string>();
+  /** The phone layout: three columns that never scroll sideways, the change under today's value and short dates. */
+  public readonly compact = input<boolean>(false);
   /** Read by the dialog, which offers Download PNG only once the tables are in. */
   public readonly status = signal<HealthMetricsOverviewCardStatus>('loading');
 
   protected readonly periods = HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS;
   protected readonly period = signal<HealthMetricsEventsSnapshotPeriod>('7d');
+  // Exact px from the design, which tightens every size on a phone.
+  protected readonly desktopClasses = {
+    stack: 'gap-[24px]',
+    section: 'gap-[16px]',
+    title: 'text-[16px] leading-[24px]',
+    table: 'min-w-[674px]',
+    grid: 'grid-cols-[minmax(180px,1.6fr)_minmax(130px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)] gap-[16px] px-[8px]',
+    header: 'min-h-[44px] text-[12px] leading-[16px]',
+    headerDate: 'items-center',
+    headerToday: 'px-[12px]',
+    row: 'text-[14px] leading-[20px]',
+    label: 'flex items-center gap-[6px] py-[12px]',
+    tip: '',
+    cell: 'items-center py-[12px]',
+    today: 'items-center justify-end p-[12px]',
+  };
+  protected readonly compactClasses = {
+    stack: 'gap-[16px]',
+    section: 'gap-[14px]',
+    title: 'text-[14px] leading-[20px]',
+    table: '',
+    grid: 'grid-cols-[minmax(0,1fr)_76px_128px] gap-[8px]',
+    header: 'min-h-[32px] text-[11px] leading-[14px]',
+    headerDate: 'items-center py-[6px]',
+    headerToday: 'px-[8px]',
+    row: 'text-[13px] leading-[18px]',
+    label: 'block self-stretch py-[7px] text-[12px] leading-[18px]',
+    tip: 'ml-[4px] inline-flex align-[-1px]',
+    cell: 'items-start py-[7px]',
+    today: 'flex-col items-end justify-start px-[8px] py-[7px]',
+  };
+  protected readonly classes = computed(() => (this.compact() ? this.compactClasses : this.desktopClasses));
   private readonly snapshot = this.initSnapshot();
   protected readonly sections = computed<HealthMetricsOverviewSnapshotSectionView[]>(() => {
     const snapshot = this.snapshot();

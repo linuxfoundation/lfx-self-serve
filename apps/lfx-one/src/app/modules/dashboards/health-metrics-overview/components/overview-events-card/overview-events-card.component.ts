@@ -117,7 +117,9 @@ export class OverviewEventsCardComponent {
       position: 'top',
       // The design's inset from the top, and a height that leaves the same below.
       style: { marginTop: 'min(48px, 6vh)', maxHeight: 'calc(100vh - 2 * min(48px, 6vh))' },
-      contentStyle: { padding: '22px' },
+      // The phone inset lives on this class in the global styles; the content is a column the dialog body scrolls inside.
+      styleClass: 'hm-event-dialog',
+      contentStyle: { display: 'flex', flexDirection: 'column', flex: '1 1 auto', minHeight: '0', padding: '0', overflow: 'hidden' },
       modal: true,
       draggable: false,
       resizable: false,

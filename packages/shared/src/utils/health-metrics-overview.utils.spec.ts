@@ -22,6 +22,7 @@ import {
   buildHealthMetricsOverviewChurnView,
   buildHealthMetricsOverviewCodeView,
   buildHealthMetricsOverviewNewsletterView,
+  buildHealthMetricsOverviewScrollFadeMask,
   buildHealthMetricsOverviewEmptyCopy,
   buildHealthMetricsOverviewEventDialogBadges,
   buildHealthMetricsOverviewEventMeta,
@@ -1328,6 +1329,8 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
     const [registration] = buildHealthMetricsOverviewSnapshotView(snapshot, '7d');
 
     expect([registration.startHeader, registration.endHeader]).toEqual(['Oct 25, 2026', 'Nov 4, 2026 (today)']);
+    // Phones shorten the year.
+    expect([registration.startHeaderShort, registration.endHeaderShort]).toEqual(['Oct 25, 26', 'Nov 4, 26 (today)']);
     expect(rowsOf(registration)).toEqual([
       ['Registrations', '5,759', '6,969', '+1,210 (21%)'],
       ['Registration revenue', '$575,900', '$696,900', '+$121,000 (21%)'],
@@ -1346,6 +1349,7 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
     const [, sponsorship] = buildHealthMetricsOverviewSnapshotView(snapshot, '30d');
 
     expect([sponsorship.startHeader, sponsorship.endHeader, sponsorship.emptyCopy]).toEqual(['Oct 6, 2026', 'Nov 4, 2026 (today)', null]);
+    expect(sponsorship.startHeaderShort).toBe('Oct 6, 26');
     expect(rowsOf(sponsorship)).toEqual([
       ['Diamond', '10', '10', 'No change'],
       ['Gold', '35', '37', '+2 (6%)'],
@@ -1353,8 +1357,8 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
       ['Sponsorship revenue', '$4,920,534', '$5,080,534', '+$160,000 (3%)'],
     ]);
     expect(sponsorship.rows.map((row) => row.totals)).toEqual([false, false, true, false]);
-    expect(sponsorship.rows[0].change).toEqual({ label: 'No change', tone: 'neutral', icon: null });
-    expect(sponsorship.rows[1].change).toMatchObject({ tone: 'success', icon: 'fa-solid fa-circle-arrow-up' });
+    expect(sponsorship.rows[0].change).toEqual({ label: 'No change', tone: 'neutral', icon: null, inkClass: 'text-gray-500' });
+    expect(sponsorship.rows[1].change).toMatchObject({ tone: 'success', icon: 'fa-solid fa-circle-arrow-up', inkClass: 'text-emerald-600' });
   });
 
   it('says no package has sold, keeps the revenue row, and drops the share of a change from zero', () => {
@@ -1379,6 +1383,17 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
       '7d'
     );
 
-    expect(registration.rows[0].change).toEqual({ label: '−20 (17%)', tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' });
+    expect(registration.rows[0].change).toEqual({ label: '−20 (17%)', tone: 'danger', icon: 'fa-solid fa-circle-arrow-down', inkClass: 'text-red-600' });
+  });
+});
+
+describe('buildHealthMetricsOverviewScrollFadeMask', () => {
+  it('fades 32px at each edge with more to scroll, and leaves a flush edge sharp', () => {
+    expect(buildHealthMetricsOverviewScrollFadeMask(true, true)).toBe(
+      'linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 32px), transparent 100%)'
+    );
+    expect(buildHealthMetricsOverviewScrollFadeMask(false, true)).toBe(
+      'linear-gradient(to bottom, transparent 0, black 0px, black calc(100% - 32px), transparent 100%)'
+    );
   });
 });

@@ -2,17 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-[18px]" data-testid="overview-trend">
-  @if (formatOptions().length > 0) {
-    <lfx-filter-pills
-      variant="track"
-      ariaLabel="Registration format"
-      [options]="formatOptions()"
-      [selectedFilter]="format() ?? ''"
-      (filterChange)="format.set($event)"
-      data-testid="overview-trend-format" />
-  }
-
+<div class="flex min-h-0 flex-auto flex-col gap-[16px]" data-testid="overview-trend">
   @switch (status()) {
     @case ('loading') {
       <p-skeleton height="300px" borderRadius="8px" aria-hidden="true" data-testid="overview-trend-loading" />
@@ -21,23 +11,30 @@
       <p class="m-0 text-[13px] text-gray-500" data-testid="overview-trend-error">The registration trend could not be loaded. Close this and try again.</p>
     }
     @default {
-      <!-- The design's metrics row: Current, Same point last year, and Predicted with its likely range. -->
-      <div class="flex flex-wrap border-y border-gray-200" data-testid="overview-trend-kpis">
-        @for (kpi of view().kpis; track kpi.key; let first = $first) {
-          <div
-            class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[32px]"
-            [class]="first ? 'pl-0' : 'border-l border-gray-200 pl-[32px]'"
-            [attr.data-testid]="'overview-trend-kpi-' + kpi.key">
-            <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
+      <!-- The design's metrics row: Current, Same point last year, and Predicted with its likely range; two columns on a phone. -->
+      <div
+        class="flex flex-none flex-wrap border-y border-gray-200 max-[640px]:grid max-[640px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[640px]:grid-rows-[auto_auto]"
+        data-testid="overview-trend-kpis">
+        @for (kpi of view().kpis; track kpi.key; let index = $index) {
+          <div class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[32px]" [class]="kpiItemClasses[index]" [attr.data-testid]="'overview-trend-kpi-' + kpi.key">
+            <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500 max-[640px]:text-[11px] max-[640px]:leading-[14px]"
               >{{ kpi.label }}
               @if (kpi.tip; as tip) {
                 <lfx-health-metrics-info-tip [text]="tip" [testId]="'overview-trend-kpi-' + kpi.key + '-tip'" />
               }
             </span>
-            <div class="flex items-center gap-[12px]">
-              <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900">{{ kpi.value }}</span>
+            <div class="flex items-center gap-[12px] max-[640px]:flex-wrap max-[640px]:gap-x-[8px] max-[640px]:gap-y-[2px]">
+              <span
+                class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900"
+                [class]="kpiValueClasses[index]"
+                [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-value'"
+                >{{ kpi.value }}</span
+              >
               @if (kpi.range; as range) {
-                <div class="flex flex-col gap-[2px] text-[12px] leading-[16px]" [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-range'">
+                <!-- Phones drop the likely range. -->
+                <div
+                  class="flex flex-col gap-[2px] text-[12px] leading-[16px] max-[640px]:hidden"
+                  [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-range'">
                   <span class="inline-flex items-center gap-[6px] text-gray-600"
                     ><span class="h-[6px] w-[6px] rounded-full bg-emerald-500" aria-hidden="true"></span>High:
                     <b class="font-medium text-gray-900">{{ range.high }}</b></span
@@ -54,13 +51,13 @@
       </div>
 
       @if (hasCurve()) {
-        <div class="flex min-w-0 flex-col gap-[16px]">
-          <!-- The chart's height follows the window, so the dialog never needs to scroll on a normal screen. -->
-          <div class="mt-[20px] grid grid-cols-[18px_44px_1fr] grid-rows-[clamp(160px,calc(100vh-470px),320px)_auto_auto] gap-x-[6px]">
-            <div class="flex items-center justify-center" aria-hidden="true">
-              <span class="-rotate-90 whitespace-nowrap text-[11px] font-medium text-gray-500">Registration count</span>
-            </div>
-            <div class="relative" aria-hidden="true" data-testid="overview-trend-y-ticks">
+        <div class="flex min-h-0 min-w-0 flex-auto flex-col gap-[16px]">
+          <!-- The chart's height follows the window, so the dialog never scrolls; on a phone it fills what the metrics leave,
+               and the y numbers' column closes. -->
+          <div
+            class="mt-[20px] grid grid-cols-[44px_1fr] grid-rows-[clamp(120px,calc(100vh-560px),320px)_auto_auto] gap-x-[6px] max-[640px]:mt-[12px] max-[640px]:min-h-0 max-[640px]:flex-auto max-[640px]:grid-cols-[0_1fr] max-[640px]:grid-rows-[minmax(100px,1fr)_auto_auto] max-[640px]:gap-x-0"
+            data-testid="overview-trend-grid">
+            <div class="relative max-[640px]:invisible" aria-hidden="true" data-testid="overview-trend-y-ticks">
               @for (tick of view().yTicks; track tick.pct) {
                 <span class="absolute right-0 -translate-y-1/2 text-[11px] text-gray-500" [style.top.%]="tick.pct">{{ tick.label }}</span>
               }
@@ -162,20 +159,20 @@
                 >
               }
             </div>
-            <div class="relative col-start-3 h-[22px]" aria-hidden="true" data-testid="overview-trend-x-ticks">
+            <div class="relative col-start-2 h-[22px]" aria-hidden="true" data-testid="overview-trend-x-ticks">
               @for (tick of view().xTicks; track tick.pct) {
                 <span class="absolute top-[6px] -translate-x-1/2 text-[11px] text-gray-500" [style.left.%]="tick.pct">{{ tick.label }}</span>
               }
             </div>
-            <div class="col-start-3 pt-[4px] text-center text-[11px] font-medium text-gray-500" aria-hidden="true">Days to event</div>
+            <div class="col-start-2 pt-[4px] text-center text-[11px] font-medium text-gray-500" aria-hidden="true">Days to event</div>
           </div>
 
           <!-- The navigator: the whole 180 days on their own scale, with the visible span to drag or resize, also by arrow keys. -->
-          <div class="grid grid-cols-[18px_44px_1fr] gap-x-[6px]">
-            <div class="col-start-3 flex min-w-0 flex-col gap-[4px]">
+          <div class="grid flex-none grid-cols-[44px_1fr] gap-x-[6px] max-[640px]:grid-cols-[0_1fr] max-[640px]:gap-x-0">
+            <div class="col-start-2 flex min-w-0 flex-col gap-[4px]">
               <div
                 #navigator
-                class="relative h-[44px] touch-none select-none rounded-[8px] bg-gray-50 shadow-[inset_0_0_0_1px_var(--ui-neutral-alpha-200)]"
+                class="relative h-[44px] touch-none max-[640px]:h-[28px] select-none rounded-[8px] bg-gray-50 shadow-[inset_0_0_0_1px_var(--ui-neutral-alpha-200)]"
                 data-testid="overview-trend-navigator"
                 (pointermove)="moveDrag($event)"
                 (pointerup)="endDrag()"
@@ -230,7 +227,7 @@
                   (keydown.arrowright)="panBy(5, $event)"></div>
                 <!-- The handles sit beside the span, not in it, so each is its own slider that resizes from one side. -->
                 <span
-                  class="absolute top-1/2 -ml-[6px] -mt-[13px] flex h-[26px] w-[11px] cursor-ew-resize items-center justify-center gap-[2px] rounded-[5px] bg-white shadow-[0_0_0_1.5px_theme(colors.blue.900),0_1px_3px_theme(colors.blue.900/20%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                  class="absolute top-1/2 -ml-[6px] -mt-[13px] flex h-[26px] w-[11px] cursor-ew-resize max-[640px]:-mt-[9px] max-[640px]:h-[18px] items-center justify-center gap-[2px] rounded-[5px] bg-white shadow-[0_0_0_1.5px_theme(colors.blue.900),0_1px_3px_theme(colors.blue.900/20%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                   role="slider"
                   tabindex="0"
                   aria-label="Start of visible range"
@@ -246,7 +243,7 @@
                   ><span class="h-[10px] w-px bg-blue-900"></span><span class="h-[10px] w-px bg-blue-900"></span
                 ></span>
                 <span
-                  class="absolute top-1/2 -mr-[6px] -mt-[13px] flex h-[26px] w-[11px] cursor-ew-resize items-center justify-center gap-[2px] rounded-[5px] bg-white shadow-[0_0_0_1.5px_theme(colors.blue.900),0_1px_3px_theme(colors.blue.900/20%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                  class="absolute top-1/2 -mr-[6px] -mt-[13px] flex h-[26px] w-[11px] cursor-ew-resize max-[640px]:-mt-[9px] max-[640px]:h-[18px] items-center justify-center gap-[2px] rounded-[5px] bg-white shadow-[0_0_0_1.5px_theme(colors.blue.900),0_1px_3px_theme(colors.blue.900/20%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
                   role="slider"
                   tabindex="0"
                   aria-label="End of visible range"
@@ -270,32 +267,41 @@
             </div>
           </div>
 
-          <div class="relative mt-[4px] flex flex-wrap items-center justify-center gap-x-[16px] gap-y-[10px] px-[96px]">
-            <div class="flex min-w-0 flex-wrap items-center justify-center gap-x-[16px] gap-y-[6px]" aria-hidden="true" data-testid="overview-trend-legend">
-              <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-                ><span class="h-[3px] w-[14px] rounded-full bg-blue-500"></span>This year</span
+          <!-- On a phone the legend keeps to one line from the left, with Reset in the row rather than over it. -->
+          <div
+            class="relative mt-[4px] flex flex-none flex-wrap items-center justify-center gap-x-[16px] gap-y-[10px] px-[96px] max-[640px]:flex-nowrap max-[640px]:justify-between max-[640px]:gap-[8px] max-[640px]:px-0">
+            <div
+              class="flex min-w-0 flex-wrap items-center justify-center gap-x-[16px] gap-y-[6px] max-[640px]:flex-nowrap max-[640px]:justify-start max-[640px]:gap-x-[8px] max-[640px]:gap-y-[4px]"
+              aria-hidden="true"
+              data-testid="overview-trend-legend">
+              <span
+                class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                ><span class="h-[3px] w-[14px] rounded-full bg-blue-500 max-[640px]:w-[8px]"></span>This year</span
               >
-              <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-                ><span class="h-[3px] w-[14px] rounded-full bg-gray-400"></span>Last year</span
+              <span
+                class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                ><span class="h-[3px] w-[14px] rounded-full bg-gray-400 max-[640px]:w-[8px]"></span>Last year</span
               >
               @if (!isPast()) {
-                <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-                  ><span class="h-0 w-[14px] border-t-2 border-dashed border-blue-500"></span>Predicted</span
+                <span
+                  class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                  ><span class="h-0 w-[14px] border-t-2 border-dashed border-blue-500 max-[640px]:w-[8px]"></span>Predicted</span
                 >
-                <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-                  ><span class="h-[8px] w-[14px] rounded-[2px] bg-blue-500/20"></span>Predicted range</span
+                <span
+                  class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                  ><span class="h-[8px] w-[14px] rounded-[2px] bg-blue-500/20 max-[640px]:w-[8px]"></span>Predicted range</span
                 >
               }
             </div>
             @if (custom()) {
               <lfx-ui-button
-                class="absolute right-0 top-1/2 -translate-y-1/2"
+                class="absolute right-0 top-1/2 -translate-y-1/2 max-[640px]:static max-[640px]:flex-none max-[640px]:translate-y-0"
                 variant="tertiary-accent"
                 size="small"
                 icon="fa-light fa-arrow-rotate-left"
                 (click)="resetZoom()"
                 data-testid="overview-trend-reset"
-                >Reset view</lfx-ui-button
+                ><span class="max-[640px]:hidden">Reset view</span><span class="hidden max-[640px]:inline">Reset</span></lfx-ui-button
               >
             }
           </div>

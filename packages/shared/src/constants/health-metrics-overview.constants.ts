@@ -458,6 +458,12 @@ export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_TABS = [
   { value: 'snapshot', label: 'Snapshot', icon: 'fa-light fa-table-list' },
 ] as const;
 
+/** The event dialog's phone layout, which the design starts at 640px, that width included. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_PHONE_QUERY = '(max-width: 640px)';
+
+/** How far the event dialog's body fades out at an edge with more to scroll. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX = 32;
+
 /** The Snapshot tab's row tips and empty copy, from the design. */
 export const HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY = {
   registrationRevenueTip:

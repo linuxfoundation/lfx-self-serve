@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED } from '@lfx-one/shared/constants';
@@ -53,7 +54,7 @@ describe('OverviewEventDialogComponent', () => {
   const downloadCardAsImage = vi.fn();
 
   async function render(
-    options: { event?: HealthMetricsOverviewEvent; isPast?: boolean; tab?: HealthMetricsOverviewEventDialogTab; trendFails?: boolean } = {}
+    options: { event?: HealthMetricsOverviewEvent; isPast?: boolean; tab?: HealthMetricsOverviewEventDialogTab; trendFails?: boolean; phone?: boolean } = {}
   ): Promise<void> {
     close = vi.fn();
     history = vi.fn().mockReturnValue(options.trendFails ? throwError(() => new Error('down')) : of(CURVE));
@@ -73,6 +74,7 @@ describe('OverviewEventDialogComponent', () => {
         },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
         { provide: UiToastService, useValue: toast },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: options.phone ?? false, breakpoints: {} }) } },
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: { data: { event: options.event ?? EVENT, isPast: options.isPast ?? false, tab: options.tab ?? 'trend' } } },
       ],
@@ -182,6 +184,64 @@ describe('OverviewEventDialogComponent', () => {
     await fixture.whenStable();
 
     expect(downloadCardAsImage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the header and tabs fixed over a body that alone scrolls, and the trend never scrolls', async () => {
+    await render();
+    const body = query('overview-event-dialog-body') as HTMLElement;
+
+    expect(body.className).toContain('overflow-hidden');
+    expect(fixture.componentInstance['bodyMask']()).toBeNull();
+    expect(query('overview-event-dialog-close')?.className).toContain('absolute');
+
+    query('overview-event-dialog-tabs')?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[1]?.click();
+    fixture.detectChanges();
+    expect(body.className).toContain('overflow-y-auto');
+  });
+
+  it('fades the Snapshot body at an edge only while there is more to scroll past it', async () => {
+    await render({ tab: 'snapshot' });
+    const body = query('overview-event-dialog-body') as HTMLElement;
+    // jsdom drops `mask-image`, so the binding's value stands in for the style.
+    const mask = (): string | null => fixture.componentInstance['bodyMask']();
+    const scroll = (scrollTop: number) => {
+      Object.defineProperties(body, {
+        scrollTop: { configurable: true, value: scrollTop },
+        clientHeight: { configurable: true, value: 300 },
+        scrollHeight: { configurable: true, value: 600 },
+      });
+      body.dispatchEvent(new Event('scroll'));
+      fixture.detectChanges();
+    };
+
+    scroll(0);
+    expect(mask()).toContain('black 0px, black calc(100% - 32px)');
+    scroll(150);
+    expect(mask()).toContain('black 32px, black calc(100% - 32px)');
+    scroll(300);
+    expect(mask()).toContain('black 32px, black calc(100% - 0px)');
+  });
+
+  it('on a phone, shows small badges, an icon-only Download PNG and the compact Snapshot, but captures it at desktop width', async () => {
+    let compactAtCapture: boolean | undefined;
+    downloadCardAsImage.mockImplementation(async (element: HTMLElement) => {
+      compactAtCapture = !!element.querySelector('[data-testid="overview-snapshot-header"]')?.className.includes('76px');
+      return true;
+    });
+    await render({ tab: 'snapshot', phone: true });
+
+    expect(query('overview-event-dialog-goal')?.className).toContain('h-[20px]');
+    const png = query('overview-event-dialog-png')?.querySelector('button');
+    expect(png?.getAttribute('aria-label')).toBe('Download PNG');
+    expect(png?.textContent?.trim()).toBe('');
+    expect(query('overview-snapshot-header')?.className).toContain('76px');
+
+    png?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(compactAtCapture).toBe(false);
+    expect(query('overview-snapshot-header')?.className).toContain('76px');
   });
 
   it('closes the dialog from its close button', async () => {
