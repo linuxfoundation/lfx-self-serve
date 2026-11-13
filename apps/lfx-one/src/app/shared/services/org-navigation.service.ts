@@ -30,6 +30,7 @@ import {
 } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { LensService } from './lens.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -47,6 +48,7 @@ export class OrgNavigationService {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly injector = inject(Injector);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
@@ -380,6 +382,9 @@ export class OrgNavigationService {
         if (heldSlug !== indexedSlug) {
           this.accountContextService.setIndexedSlug(indexedSlug);
         }
+        // M3: with the slug known the path guard skips the resolver, so the row is the only answer
+        // the CLA-only shell gets for a restored selection when the role-grants lookup failed.
+        this.claOnlyAccess.noteAddressed(match.uid, match.claOnly === true);
         // Pinned before the address is written (lfx-self-serve#2570): the persona refresh can land
         // between here and the page's render, and for a grant-only (staff) viewer it carries no
         // seeds — unpinned, that resets the selection to the placeholder under the address just
@@ -478,6 +483,8 @@ export class OrgNavigationService {
 
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
+    // M3: recorded before the address is written, for the same path-guard reason as a restored selection.
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     this.accountContextService.setAccount(account);
     // The default is what the address is written from next, so it is pinned like an adopted one
     // (lfx-self-serve#2570): the persona refresh that lands after this — with no seeds at all for a

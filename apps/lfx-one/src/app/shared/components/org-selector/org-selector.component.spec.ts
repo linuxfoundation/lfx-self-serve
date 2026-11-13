@@ -65,7 +65,7 @@ describe('OrgSelectorComponent.selectItem', () => {
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
+        { provide: OrgClaOnlyAccessService, useValue: { noteAddressed, isClaOnly: () => false } },
         {
           provide: AccountContextService,
           useValue: {
@@ -160,6 +160,15 @@ describe('OrgSelectorComponent.selectItem', () => {
     pick(rowB);
 
     expect(noteAddressed).toHaveBeenCalledWith(UID_B, false);
+  });
+
+  // The same-organization pick returns before switching, and the path guard will not resolve it either.
+  it('records a re-pick of the selected CLA-only row without re-selecting it', () => {
+    pick({ ...rowA, slug: null, claOnly: true });
+
+    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true);
+    expect(setAccount).not.toHaveBeenCalled();
+    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on. The pick is still
@@ -272,9 +281,17 @@ describe('OrgSelectorComponent navbar card', () => {
     hasMore?: boolean;
     writers?: string[];
     inheritedWriters?: string[];
+    claManagerOrgs?: string[];
   }
 
-  const createCard = async ({ items = [rowA], isStaff = false, hasMore = false, writers = [], inheritedWriters = [] }: CardSetup): Promise<NavbarCardView> => {
+  const createCard = async ({
+    items = [rowA],
+    isStaff = false,
+    hasMore = false,
+    writers = [],
+    inheritedWriters = [],
+    claManagerOrgs = [],
+  }: CardSetup): Promise<NavbarCardView> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgSelectorComponent],
@@ -324,6 +341,8 @@ describe('OrgSelectorComponent navbar card', () => {
             inheritedWriterSet: signal(new Set(inheritedWriters)),
             inheritedAuditorSet: signal(new Set<string>()),
             parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
+            claManagerOrgSet: signal(new Set(claManagerOrgs)),
+            claManagerLookupFailed: signal(false),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
@@ -376,15 +395,30 @@ describe('OrgSelectorComponent navbar card', () => {
     });
 
     it('labels the card when the selection is a CLA-only organization', async () => {
-      const card = await createCard({ items: [rowB, { ...rowA, claOnly: true }] });
+      const card = await createCard({ items: [rowB, { ...rowA, claOnly: true }], claManagerOrgs: [UID_A] });
 
       expect(card.selectedRoleLabel()).toBe('CLA Manager');
       expect(card.selectedRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
       expect(card.navbarRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
     });
 
+    // A search sends no selected_uid, so the selected row is absent from the filtered list.
+    it('keeps the CLA-only label while a search excludes the selected organization', async () => {
+      const card = await createCard({ items: [rowB], claManagerOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('CLA Manager');
+      expect(card.navbarRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
+    });
+
+    it('labels a selection recorded as CLA-only when the role-grants lookup did not list it', async () => {
+      const card = await createCard({ items: [rowB] });
+      TestBed.inject(OrgClaOnlyAccessService).noteAddressed(UID_A, true);
+
+      expect(card.selectedRoleLabel()).toBe('CLA Manager');
+    });
+
     it('leaves the card unlabelled when only another row is CLA-only', async () => {
-      const card = await createCard({ items: [rowA, claOnlyB] });
+      const card = await createCard({ items: [rowA, claOnlyB], claManagerOrgs: [UID_B] });
 
       expect(card.selectedRoleLabel()).not.toBe('CLA Manager');
       expect(card.selectedRoleTooltip()).not.toBe(CLA_ONLY_TOOLTIP);
@@ -392,7 +426,7 @@ describe('OrgSelectorComponent navbar card', () => {
     });
 
     it('lets a held grant win over a CLA-only flag on the same row', async () => {
-      const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A] });
+      const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A], claManagerOrgs: [UID_A] });
 
       expect(card.selectedRoleLabel()).toBe('Org Admin Editor');
       expect(card.displayedItems()[0].roleLabel).toBe('Org Admin Editor');

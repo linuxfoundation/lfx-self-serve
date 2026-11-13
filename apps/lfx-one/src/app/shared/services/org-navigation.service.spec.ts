@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { LensService } from './lens.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -51,6 +52,8 @@ describe('OrgNavigationService default selection', () => {
   let inheritedAuditorSet: WritableSignal<Set<string>>;
   let grantsLoaded: WritableSignal<boolean>;
   let grantsError: WritableSignal<string | null>;
+  let claManagerOrgSet: WritableSignal<Set<string>>;
+  let claManagerLookupFailed: WritableSignal<boolean>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnAddressedPage: ReturnType<typeof vi.fn>;
   let isRollUp: ReturnType<typeof vi.fn>;
@@ -72,6 +75,8 @@ describe('OrgNavigationService default selection', () => {
     inheritedAuditorSet = signal(new Set<string>());
     grantsLoaded = signal(true);
     grantsError = signal<string | null>(null);
+    claManagerOrgSet = signal(new Set<string>());
+    claManagerLookupFailed = signal(false);
     navigateToSelectedOrg = vi.fn();
     isOnAddressedPage = vi.fn(() => false);
     isRollUp = vi.fn(() => false);
@@ -95,6 +100,8 @@ describe('OrgNavigationService default selection', () => {
             inheritedAuditorSet,
             loaded: grantsLoaded,
             error: grantsError,
+            claManagerOrgSet,
+            claManagerLookupFailed,
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },
@@ -523,6 +530,50 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).not.toHaveBeenCalled();
     expect(setIndexedSlug).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+  });
+
+  // M3: a restored CLA-only selection skips the path guard's resolver once its slug is known, so the
+  // listed row is what the CLA-only shell reads when the role-grants lookup disagrees with org-items.
+  describe('a restored CLA-only selection (#5557)', () => {
+    const claOnlyB = (): OrgItem => item(UID_B, 'Beta', { slug: null, claOnly: true });
+    const restoreB = (): void => selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
+
+    it('records the row as CLA-only when the role-grants lookup failed to list it', () => {
+      claManagerLookupFailed.set(true);
+      restoreB();
+
+      bootstrapWith([item(UID_A, 'Acme'), claOnlyB()]);
+
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_B)).toBe(true);
+    });
+
+    it('clears an earlier CLA-only note when the listed row is not CLA-only', () => {
+      const access = TestBed.inject(OrgClaOnlyAccessService);
+      access.noteAddressed(UID_B, true);
+      restoreB();
+
+      bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+      expect(access.isClaOnly(UID_B)).toBe(false);
+    });
+
+    it('lets a held grant win over the CLA-only row', () => {
+      writerSet.set(new Set([UID_B]));
+      restoreB();
+
+      bootstrapWith([item(UID_A, 'Acme'), claOnlyB()]);
+
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_B)).toBe(false);
+    });
+
+    it('records a CLA-only row chosen as the default', () => {
+      claManagerLookupFailed.set(true);
+
+      bootstrapWith([claOnlyB()]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_B)).toBe(true);
+    });
   });
 
   // A pre-spec-002 selection keyed by accountId rather than uid still finds its own row; that is a

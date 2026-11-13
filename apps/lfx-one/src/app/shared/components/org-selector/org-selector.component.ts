@@ -202,9 +202,10 @@ export class OrgSelectorComponent {
       this.orgRoleGrantsService.inheritedAuditorSet()
     );
   });
+  // Read from the access service, not `items()`: a search drops the selected row from the list.
   private readonly selectedClaOnly: Signal<boolean> = computed(() => {
     const uid = this.selectedAccountUid();
-    return !!uid && !this.selectedRolePersona() && this.items().some((item) => item.uid === uid && item.claOnly === true);
+    return !!uid && !this.selectedRolePersona() && this.claOnlyAccess.isClaOnly(uid);
   });
   protected readonly selectedRoleLabel: Signal<string> = computed(() =>
     this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.label : this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation())
@@ -464,6 +465,10 @@ export class OrgSelectorComponent {
   }
 
   protected selectItem(item: OrgItem): void {
+    // M3: the path guard skips the resolver for the organization already selected, so this pick is the
+    // only place the row's CLA-only answer can reach the CLA-only shell. Recorded for a re-pick of the
+    // selection too, which returns below without navigating.
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
     // one exception is the not-found dead end, where the selection is the cookie's or a default that
@@ -494,9 +499,6 @@ export class OrgSelectorComponent {
       // Spec 050: URL identity for `/org/{segment}/…` — from the indexed doc, never derived here.
       slug: item.slug ?? null,
     };
-    // M3: the path guard skips the resolver for the organization already selected, so this pick is the
-    // only place the row's CLA-only answer can reach the CLA-only shell before the switch navigates.
-    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
     // applied the optimistic update; the canonical fetch patches the snapshot in-place when it
