@@ -231,6 +231,14 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(getProjectLines.mock.calls[0][2].limit).toBeGreaterThan(0);
     });
 
+    it('reads only the matching companies lines, so filtered-out companies never use the row budget', async () => {
+      await service.getExportRows(req, { ...base, search: 'gamma' }, 'by-project');
+      expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['gamma']);
+      getProjectLines.mockClear();
+      await service.getExportRows(req, { ...base, segment: 'members' }, 'by-project');
+      expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['alpha', 'beta']);
+    });
+
     it('limits the by-project file to the selected project under a project scope', async () => {
       const { items } = await service.getExportRows(req, { ...base, projectSlug: 'quiet' }, 'by-project');
       expect(items.map((item) => item.row.name)).toEqual(['Alpha Inc', 'Gamma']);

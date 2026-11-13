@@ -52,7 +52,7 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     filter: FoundationParticipatingOrgsSourceLineFilter
   ): Promise<FoundationParticipatingOrgsSourceProjectLine[]> {
     // The export reads everything and is never cached; a project or a company is a small set worth sharing.
-    if (!filter.projectSlug && !filter.companyKey) return this.fetchLines(slug, range, filter);
+    if (filter.companyKeys || (!filter.projectSlug && !filter.companyKey)) return this.fetchLines(slug, range, filter);
     const entry = await withProjectParticipatingOrgsCache(
       slug,
       'foundation-lens-lines',
@@ -61,6 +61,11 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
       isLinesEntry
     );
     return entry.lines;
+  }
+
+  /** A missing table or revoked grant is an expected, alertable condition, not a failure for the shared Snowflake breaker. */
+  private execute<T>(sql: string, binds: string[]) {
+    return this.snowflakeService.execute<T>(sql, binds, { expectMissingObject: true });
   }
 
   private async fetchFoundation(slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null> {
@@ -88,19 +93,26 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
       FROM foundation f
       LEFT JOIN involved i ON i.participant_key = f.participant_key
     `;
+    // A project is known by its all-time activity, so a project quiet in this range is still a valid scope (it shows the empty
+    // state); the range's commits only order the picker.
     const projectsSql = `
-      SELECT project_slug, MAX(project_name) AS project_name, SUM(commits) AS commits
-      FROM ${table}
-      WHERE foundation_slug = ?
-        AND time_range = ?
-        AND project_id <> foundation_id
-        AND (commits > 0 OR contributors > 0)
-      GROUP BY project_slug
+      SELECT a.project_slug, MAX(a.project_name) AS project_name, COALESCE(SUM(r.commits), 0) AS commits
+      FROM ${table} a
+      LEFT JOIN ${table} r
+        ON r.foundation_slug = a.foundation_slug
+        AND r.project_id = a.project_id
+        AND r.participant_key = a.participant_key
+        AND r.time_range = ?
+      WHERE a.foundation_slug = ?
+        AND a.time_range = 'all'
+        AND a.project_id <> a.foundation_id
+        AND (a.commits > 0 OR a.contributors > 0)
+      GROUP BY a.project_slug
     `;
 
     const [companies, projects] = await Promise.all([
-      this.snowflakeService.execute<FoundationParticipatingOrgsCompanyRow>(companiesSql, [slug, range, slug, range]),
-      this.snowflakeService.execute<FoundationParticipatingOrgsProjectRow>(projectsSql, [slug, range]),
+      this.execute<FoundationParticipatingOrgsCompanyRow>(companiesSql, [slug, range, slug, range]),
+      this.execute<FoundationParticipatingOrgsProjectRow>(projectsSql, [range, slug]),
     ]);
     if (companies.rows.length === 0 && projects.rows.length === 0) return null;
 
@@ -126,7 +138,7 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     range: FoundationParticipatingOrgsRange,
     filter: FoundationParticipatingOrgsSourceLineFilter
   ): Promise<FoundationParticipatingOrgsSourceProjectLine[]> {
-    const binds = [slug, range];
+    const binds: string[] = [slug, range];
     const predicates: string[] = [];
     if (filter.projectSlug) {
       predicates.push('AND project_slug = ?');
@@ -135,6 +147,11 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     if (filter.companyKey) {
       predicates.push('AND participant_key = ?');
       binds.push(filter.companyKey);
+    }
+    if (filter.companyKeys) {
+      // One JSON bind, however many companies, matched through FLATTEN.
+      predicates.push('AND participant_key IN (SELECT value::varchar FROM TABLE(FLATTEN(input => PARSE_JSON(?))))');
+      binds.push(JSON.stringify(filter.companyKeys));
     }
     // Inlined, not bound: clamped to a positive integer first.
     const limit = filter.limit ? `LIMIT ${Math.max(1, Math.min(Math.floor(filter.limit), FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1))}` : '';
@@ -150,7 +167,7 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
       ORDER BY participant_key ASC, project_slug ASC
       ${limit}
     `;
-    const result = await this.snowflakeService.execute<FoundationParticipatingOrgsLineRow>(sql, binds);
+    const result = await this.execute<FoundationParticipatingOrgsLineRow>(sql, binds);
     return result.rows
       .filter((row) => !!row.PARTICIPANT_KEY && !!row.PROJECT_SLUG)
       .map((row) => ({

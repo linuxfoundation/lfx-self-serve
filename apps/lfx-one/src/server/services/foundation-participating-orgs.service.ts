@@ -135,8 +135,20 @@ export class FoundationParticipatingOrgsService {
 
     const foundation = await this.dataSource().getFoundation(filters.foundationSlug, filters.range);
     if (!foundation) return { items: [], truncated: false };
-    // One bounded read of every line; one past the cap says the warehouse had more than the file can hold.
-    const read = await this.dataSource().getProjectLines(filters.foundationSlug, filters.range, { projectSlug: filters.projectSlug, limit: maxRows + 1 });
+    // Only the matching companies' lines are read, as many companies as the cap can hold: the filters and the order apply first,
+    // so unrelated companies never take the row budget. One past the cap says the warehouse had more than the file can hold.
+    const companyKeys: string[] = [];
+    let budget = 0;
+    for (const row of rows) {
+      companyKeys.push(row.participantKey);
+      budget += Math.max(1, row.projectsInvolved);
+      if (budget > maxRows) break;
+    }
+    const read = await this.dataSource().getProjectLines(filters.foundationSlug, filters.range, {
+      projectSlug: filters.projectSlug,
+      companyKeys,
+      limit: maxRows + 1,
+    });
     const byCompany = new Map<string, FoundationParticipatingOrgsSourceProjectLine[]>();
     for (const line of read) byCompany.set(line.companyKey, [...(byCompany.get(line.companyKey) ?? []), line]);
 

@@ -66,9 +66,13 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       expect(companiesSql).toContain('project_id = foundation_id');
       expect(companiesSql).toContain('PROJECT_PARTICIPATING_ORGS');
       const [projectsSql, projectsBinds] = execute.mock.calls[1];
-      expect(projectsBinds).toEqual(['synthetic-foundation', '90d']);
+      expect(projectsBinds).toEqual(['90d', 'synthetic-foundation']);
       expect(placeholders(projectsSql)).toBe(2);
-      expect(projectsSql).toContain('project_id <> foundation_id');
+      expect(projectsSql).toContain('project_id <> a.foundation_id');
+      // Project identity comes from all-time activity, so a project quiet in the range is still a valid scope.
+      expect(projectsSql).toContain("a.time_range = 'all'");
+      expect(execute.mock.calls[0][2]).toEqual({ expectMissingObject: true });
+      expect(execute.mock.calls[1][2]).toEqual({ expectMissingObject: true });
 
       expect(withCache).toHaveBeenCalledWith('synthetic-foundation', 'foundation-lens', ['90d'], expect.any(Function), expect.any(Function));
       expect(foundation).toEqual({
@@ -159,6 +163,16 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       expect(sql).toContain('LIMIT 51');
       expect(withCache).not.toHaveBeenCalled();
       expect(lines).toHaveLength(1);
+    });
+
+    it('reads only the given companies through one JSON bind, uncached', async () => {
+      execute.mockResolvedValueOnce({ rows: [lineRow()] });
+      await source.getProjectLines('synthetic-foundation', '12mo', { projectSlug: 'busy', companyKeys: ['a', 'b'], limit: 9 });
+      const [sql, binds, options] = execute.mock.calls[0];
+      expect(binds).toEqual(['synthetic-foundation', '12mo', 'busy', '["a","b"]']);
+      expect(placeholders(sql)).toBe(4);
+      expect(options).toEqual({ expectMissingObject: true });
+      expect(withCache).not.toHaveBeenCalled();
     });
 
     it('clamps a limit to the export cap plus one', async () => {

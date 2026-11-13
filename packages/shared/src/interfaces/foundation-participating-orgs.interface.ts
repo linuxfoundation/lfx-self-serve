@@ -266,6 +266,8 @@ export interface FoundationParticipatingOrgsSourceProjectLine {
 export interface FoundationParticipatingOrgsSourceLineFilter {
   projectSlug?: string;
   companyKey?: string;
+  /** Reads only these companies' lines (the by-project export's matching companies). */
+  companyKeys?: string[];
   /** Reads at most this many lines, so the by-project export is bounded. */
   limit?: number;
 }
