@@ -40,3 +40,7 @@ apps/lfx-one/scripts/ui-tokens/tokens.json
 
 # The brand-kit agent's own report v2 fixture, kept as the agent lane committed it, except one synthetic identifier (upstream sha256 in the .fixture.ts beside it)
 packages/shared/src/utils/__fixtures__/brand-kit-report-v2.envelope.json
+
+# Worktree-root review/resolution audit artifacts must retain their original bytes.
+/*-findings.md
+/*-findings-[0-9][0-9].md

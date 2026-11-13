@@ -567,6 +567,7 @@ export class VoteManageComponent {
       close_time: formValue.close_time,
       timezone: formValue.timezone,
       allow_abstain: formValue.allow_abstain,
+      allow_vote_change: formValue.allow_vote_change,
     });
 
     // Rebuild questions FormArray (Step 2)
@@ -620,6 +621,7 @@ export class VoteManageComponent {
         // optional for legacy votes); combineDateTime also needs a zone to build a meaningful end_time.
         timezone: new FormControl<string>(getUserTimezone(), { nonNullable: true, validators: [Validators.required] }),
         allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
+        allow_vote_change: new FormControl<boolean>(true, { nonNullable: true }),
 
         // Step 2: Vote Questions (array of questions)
         questions: new FormArray([this.createQuestionFormGroup()], [Validators.minLength(1)]),

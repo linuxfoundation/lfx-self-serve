@@ -9,6 +9,7 @@ import {
   EnableVoteRequest,
   ExtendVoteRequest,
   SendVoteReminderRequest,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
 } from '@lfx-one/shared/interfaces';
 import { VOTE_COMMENT_PROMPT_MAX_COUNT, VOTE_COMMENT_PROMPT_MAX_LENGTH, VOTE_CREATE_COMPLETED_AT_HEADER } from '@lfx-one/shared/constants';
@@ -507,7 +508,54 @@ export class VoteController {
     }
   }
 
-  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for read-only review and "Your ballot" (#4331). */
+  /**
+   * PUT /votes/:uid/my-response — changes the caller's own submitted ballot (#4723).
+   * @description Validated like `createVoteResponse`; the ballot is resolved server-side from the caller's own row, so the
+   * body never names a response uid. `comment_responses` is forwarded as sent, so an empty array clears stored comments.
+   */
+  public async updateMyVoteResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const payload: UpdateMyVoteResponseRequest = req.body;
+    const startTime = logger.startOperation(req, 'update_my_vote_response', { vote_uid: uid, abstain: payload?.abstain });
+
+    try {
+      const validationContext = { operation: 'update_my_vote_response', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(uid, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequestBody(payload, req, next, validationContext)) {
+        return;
+      }
+
+      if (typeof payload.abstain !== 'boolean') {
+        throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
+      }
+
+      // Rebuilt from allowlisted fields so unexpected client properties never cross the BFF boundary.
+      const validatedCommentResponses: CommentResponseInput[] | undefined =
+        payload.comment_responses === undefined ? undefined : buildValidatedCommentResponses(payload.comment_responses, validationContext);
+
+      const upstreamPayload: UpdateMyVoteResponseRequest = payload.abstain
+        ? { abstain: true, comment_responses: validatedCommentResponses }
+        : {
+            abstain: false,
+            user_vote_content: buildValidatedVoteAnswers(payload.user_vote_content, validationContext),
+            comment_responses: validatedCommentResponses,
+          };
+
+      await this.voteService.updateMyVoteResponse(req, uid, upstreamPayload);
+
+      logger.success(req, 'update_my_vote_response', startTime, { vote_uid: uid, abstain: upstreamPayload.abstain, status_code: 204 });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for Me-lens Review (editable when allowed) and "Your ballot" (#4331, #4723). */
   public async getMyVoteBallot(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = logger.startOperation(req, 'get_my_vote_ballot', { vote_uid: uid });

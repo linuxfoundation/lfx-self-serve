@@ -18,6 +18,7 @@ const {
   myBallot,
   updateVote,
   submitBallot,
+  changeBallot,
   endVote,
   voteWriteRateLimiter,
 } = vi.hoisted(() => ({
@@ -38,6 +39,7 @@ const {
   myBallot: vi.fn((_req: unknown, res: Response) => res.json({ vote_response_uid: 'vr-1' })),
   updateVote: vi.fn(),
   submitBallot: vi.fn((_req: unknown, res: Response) => res.status(204).send()),
+  changeBallot: vi.fn((_req: unknown, res: Response) => res.status(204).send()),
   endVote: vi.fn((_req: unknown, res: Response) => res.json({ uid: 'vote-1', status: 'ended' })),
   voteWriteRateLimiter: vi.fn((_req: unknown, _res: unknown, next: NextFunction) => next()),
 }));
@@ -54,6 +56,7 @@ vi.mock('../controllers/vote.controller', () => ({
     public getMyVoteBallot = myBallot;
     public updateVote = updateVote;
     public createVoteResponse = submitBallot;
+    public updateMyVoteResponse = changeBallot;
     public endVote = endVote;
   },
 }));
@@ -213,6 +216,23 @@ describe('ballot writes during impersonation (#4331)', () => {
     const response = await fetch(`${baseUrl}/api/votes/responses`, { method: 'POST' });
     expect(response.status).toBe(204);
     expect(submitBallot).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a ballot change before its controller runs (#4723)', async () => {
+    changeBallot.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/my-response`, { method: 'PUT', headers: { 'x-test-impersonating': 'true' } });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ code: 'IMPERSONATION_READ_ONLY' });
+    expect(changeBallot).not.toHaveBeenCalled();
+  });
+
+  it('dispatches an ordinary ballot change to its handler, not the vote UID handler (#4723)', async () => {
+    changeBallot.mockClear();
+    byId.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/my-response`, { method: 'PUT' });
+    expect(response.status).toBe(204);
+    expect(changeBallot).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
   });
 });
 

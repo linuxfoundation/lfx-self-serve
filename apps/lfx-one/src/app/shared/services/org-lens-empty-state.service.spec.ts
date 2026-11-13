@@ -49,6 +49,7 @@ interface Harness {
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
   listUpstreamFailed: WritableSignal<boolean>;
+  selectionUndecided: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
   /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
@@ -88,6 +89,7 @@ function setup(): Harness {
   const listLoaded = signal(false);
   const listLoading = signal(false);
   const listUpstreamFailed = signal(false);
+  const selectionUndecided = signal(false);
   const listGeneration = signal(0);
   const startListFetch = (): number => {
     listGeneration.update((g) => g + 1);
@@ -147,6 +149,7 @@ function setup(): Harness {
           loaded: listLoaded,
           loading: listLoading,
           upstreamFailed: listUpstreamFailed,
+          selectionUndecided,
           generation: listGeneration,
           firstPageLandedGeneration: firstPageLanded,
           refreshList,
@@ -178,6 +181,7 @@ function setup(): Harness {
     listLoaded,
     listLoading,
     listUpstreamFailed,
+    selectionUndecided,
     grantsLoading,
     refreshList,
     startListFetch,
@@ -834,5 +838,83 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     h.lookupOutcome.set('ok');
     h.staffCheck.set('failed');
     expect(h.service.pageState()).toBe('staff-check-failed');
+  });
+});
+
+describe('OrgLensEmptyStateService — a selection the CLA-only rows have not classified yet', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = setup();
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.listLoaded.set(true);
+    h.selectionUndecided.set(true);
+    h.selectedAccount.set(account(OTHER));
+  });
+
+  it('holds the page until the rows mark the selection CLA-only, then renders it', () => {
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageReady()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('holds the page until the rows answer when the selection turns out not to be CLA-only', () => {
+    expect(h.service.pageReady()).toBe(false);
+
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('never holds a selection the caller already holds', () => {
+    h.selectedAccount.set(account(HELD));
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('shows a contractor no refusal, and asks the read gate nothing, for a company the rows then mark CLA-only', () => {
+    h.isContractor.set(true);
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectionUndecided.set(false);
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('asks the read gate only once the rows have answered without the selection', () => {
+    h.isContractor.set(true);
+    TestBed.tick();
+    expect(h.readCheck).not.toHaveBeenCalled();
+
+    h.selectionUndecided.set(false);
+    TestBed.tick();
+
+    expect(h.readCheck).toHaveBeenCalledWith(OTHER);
+    h.readAnswers[0].next(false);
+    expect(h.service.pageState()).toBe('contractor-no-grant');
+  });
+
+  it('holds a contractor on the skeleton before the first list page lands, and asks the read gate nothing', () => {
+    h.listLoaded.set(false);
+    h.isContractor.set(true);
+    TestBed.tick();
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
   });
 });
