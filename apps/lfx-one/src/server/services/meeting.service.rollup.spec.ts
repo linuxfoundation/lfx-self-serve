@@ -215,8 +215,10 @@ describe('MeetingService roll-up scope', () => {
 
       await service.getMeetingsCount(req, { root_project_uid: ROOT, group_type: 'Board' }, 'v1_meeting');
 
-      expect(withPerUserCache.mock.calls.map((call) => call[0])).toEqual(['meeting-rollup-scope:v1', 'meeting-rollup-groups:v1', 'meeting-rollup-scope:v1']);
-      expect(storeDecisions).toEqual([false, false, false]);
+      // One tree walk feeds both caches; neither stores what came from an incomplete walk.
+      expect(withPerUserCache.mock.calls.map((call) => call[0])).toEqual(['meeting-rollup-scope:v1', 'meeting-rollup-groups:v1']);
+      expect(storeDecisions).toEqual([false, false]);
+      expect(getFoundationProjectUids).toHaveBeenCalledTimes(1);
     });
 
     it('answers empty when the selected group is not of the selected type', async () => {
