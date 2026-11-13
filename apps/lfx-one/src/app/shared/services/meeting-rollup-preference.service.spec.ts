@@ -63,4 +63,15 @@ describe('MeetingRollupPreferenceService', () => {
     saves[0].done.complete();
     expect(saves.map((s) => s.projectUids)).toEqual([['1'], ['2']]);
   });
+
+  it('remembers the latest choice per root for the session, before and after it is saved', () => {
+    expect(service.latestChoice('a')).toBeUndefined();
+
+    service.save('a', ['1']);
+    expect(service.latestChoice('a')).toEqual(['1']);
+
+    vi.advanceTimersByTime(600);
+    saves[0].done.complete();
+    expect(service.latestChoice('a')).toEqual(['1']);
+  });
 });

@@ -1035,6 +1035,21 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
       });
 
+      it('keeps a choice made earlier this session when returning to its root before the save lands', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(null));
+        const component = mount();
+        openScope(component);
+        component.onRollupProjectsFilterChange(['child']);
+
+        context.set({ uid: 'other', name: 'Other scope' } as ProjectContext);
+        flush();
+        context.set({ uid: 'scope', name: 'Synthetic scope' } as ProjectContext);
+        flush();
+
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+        expect(meetings.getRollupProjectsPreference).not.toHaveBeenLastCalledWith('scope');
+      });
+
       it('lets a link with projects win over the saved choice', () => {
         route.snapshot.queryParamMap = convertToParamMap({ projects: 'child' });
         vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of([]));

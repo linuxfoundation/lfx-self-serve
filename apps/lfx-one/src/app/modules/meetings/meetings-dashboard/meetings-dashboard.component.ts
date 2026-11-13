@@ -1425,7 +1425,10 @@ export class MeetingsDashboardComponent {
               this.rollupProjectsFilter.set([]);
             }
           }
-          const choice$ = fromLink ? of<string[] | null>(fromLink) : this.meetingService.getRollupProjectsPreference(rootUid);
+          // A link wins; then a choice made earlier this session (its save may still be pending); then the stored one.
+          const sessionChoice = fromLink ? undefined : this.rollupPreference.latestChoice(rootUid);
+          const choice$ =
+            fromLink || sessionChoice ? of<string[] | null>(fromLink ?? sessionChoice ?? null) : this.meetingService.getRollupProjectsPreference(rootUid);
           const rootOptions$ = options$.pipe(
             filter((options) => options.projects.some((p) => p.uid === rootUid)),
             take(1)
