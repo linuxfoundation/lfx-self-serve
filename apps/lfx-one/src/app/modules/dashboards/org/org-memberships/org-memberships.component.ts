@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormGroup, FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, of, startWith, switchMap, take, tap } from 'rxjs';
 import { TooltipModule } from 'primeng/tooltip';
 import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
@@ -17,6 +18,7 @@ import { OrgLensMembershipsService } from '@services/org-lens-memberships.servic
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { CardComponent } from '@components/card/card.component';
+import { SelectComponent } from '@components/select/select.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { TableComponent } from '@components/table/table.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -29,6 +31,8 @@ import type {
   OrgMembershipsPageState,
   OrgMembershipTab,
   OrgDropdownOption,
+  OrgActiveMembership,
+  OrgLensRowOrganization,
   ActiveMembershipRow,
   ExpiredMembershipRow,
   DiscoverOpportunityRow,
@@ -37,19 +41,18 @@ import { foundationInitials, foundationLogoSquareClasses } from '../components/o
 import { environment } from '@environments/environment';
 import { MembershipProjectsDrawerComponent } from './components/membership-projects-drawer/membership-projects-drawer.component';
 
-/** Active-membership row plus its detail-page router commands (`null` when the row carries no foundation slug). */
-type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[] | null };
-
 @Component({
   selector: 'lfx-org-memberships',
   standalone: true,
   imports: [
     PageHeaderComponent,
     FormsModule,
+    NgTemplateOutlet,
     RouterLink,
     TableComponent,
     TooltipModule,
     SelectModule,
+    SelectComponent,
     InputTextModule,
     SkeletonModule,
     CardComponent,
@@ -76,11 +79,13 @@ export class OrgMembershipsComponent {
   protected readonly activeTab = signal<OrgMembershipTab>('active');
   protected readonly retryTrigger = signal(0);
 
-  protected readonly tabs = [
+  private readonly allTabs = [
     { id: 'active' as const, label: 'Active', icon: 'fa-light fa-circle-check' },
     { id: 'expired' as const, label: 'Expired', icon: 'fa-light fa-clock-rotate-left' },
     { id: 'discover' as const, label: 'Discover', icon: 'fa-light fa-magnifying-glass' },
   ];
+
+  protected readonly tabs = computed(() => (this.isRollUp() ? this.allTabs.filter((tab) => tab.id !== 'discover') : this.allTabs));
 
   private readonly allTiers = signal<string[]>([]);
 
@@ -96,9 +101,16 @@ export class OrgMembershipsComponent {
 
   protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
 
+  protected readonly isRollUp = this.accountContext.isRollUp;
+
+  protected readonly companyFilterForm = new FormGroup({
+    company: new FormControl('', { nonNullable: true }),
+    expiredCompany: new FormControl('', { nonNullable: true }),
+  });
+
   /** Org Projects side panel: the row whose count was clicked, and the panel's open state. */
   protected readonly projectsDrawerVisible = signal(false);
-  protected readonly activeProjectsRow = signal<ActiveMembershipLinkedRow | null>(null);
+  protected readonly activeProjectsRow = signal<ActiveMembershipRow | null>(null);
 
   protected readonly searchTerm = signal('');
   protected readonly selectedTier = signal('');
@@ -113,6 +125,7 @@ export class OrgMembershipsComponent {
   private readonly searchTerm$ = toObservable(this.searchTerm).pipe(debounceTime(300), distinctUntilChanged());
   private readonly selectedTier$ = toObservable(this.selectedTier).pipe(distinctUntilChanged());
   private readonly selectedRenewal$ = toObservable(this.selectedRenewal).pipe(distinctUntilChanged());
+  private readonly selectedCompany$ = this.companyFilterForm.controls.company.valueChanges.pipe(startWith(''), distinctUntilChanged());
   private readonly retryTrigger$ = toObservable(this.retryTrigger);
 
   private readonly activeResponse$ = combineLatest([
@@ -120,20 +133,28 @@ export class OrgMembershipsComponent {
     this.searchTerm$,
     this.selectedTier$,
     this.selectedRenewal$,
+    this.selectedCompany$,
     this.retryTrigger$,
   ]).pipe(
     tap(() => {
       this.fetchLoading.set(true);
       this.fetchError.set(false);
     }),
-    switchMap(([id, search, tier, renewal]) =>
-      this.membershipsService.getActiveMemberships(id, { search: search || undefined, tier: tier || undefined, renewal: renewal || undefined }).pipe(
-        catchError(() => {
-          this.fetchError.set(true);
-          this.fetchLoading.set(false);
-          return of(null);
+    switchMap(([id, search, tier, renewal, company]) =>
+      this.membershipsService
+        .getActiveMemberships(id, {
+          search: search || undefined,
+          tier: tier || undefined,
+          renewal: renewal || undefined,
+          company: (this.isRollUp() && company) || undefined,
         })
-      )
+        .pipe(
+          catchError(() => {
+            this.fetchError.set(true);
+            this.fetchLoading.set(false);
+            return of(null);
+          })
+        )
     ),
     tap((response) => {
       this.fetchLoading.set(false);
@@ -146,7 +167,8 @@ export class OrgMembershipsComponent {
 
   protected readonly activeData = toSignal<OrgActiveMembershipsResponse | null>(this.activeResponse$, { initialValue: null });
   protected readonly summary = computed(() => this.activeData()?.summary);
-  protected readonly memberships: Signal<ActiveMembershipLinkedRow[]> = computed(() => this.initMemberships());
+  protected readonly memberships: Signal<ActiveMembershipRow[]> = computed(() => this.initMemberships());
+  protected readonly companyOptions: Signal<OrgDropdownOption[]> = computed(() => this.initCompanyOptions(this.activeData()?.organizations));
 
   protected readonly activeState: Signal<OrgMembershipsPageState> = computed(() => this.initActiveState());
 
@@ -155,6 +177,7 @@ export class OrgMembershipsComponent {
   private readonly expiredData = signal<OrgExpiredMembershipsResponse | null>(null);
 
   protected readonly expiredMemberships: Signal<ExpiredMembershipRow[]> = computed(() => this.initExpiredMemberships());
+  protected readonly expiredCompanyOptions: Signal<OrgDropdownOption[]> = computed(() => this.initCompanyOptions(this.expiredData()?.organizations));
 
   protected readonly expiredState: Signal<OrgMembershipsPageState> = computed(() => this.initExpiredState());
 
@@ -177,6 +200,8 @@ export class OrgMembershipsComponent {
         if (this.lastOrgUid && this.lastOrgUid !== orgUid) {
           this.expiredData.set(null);
           this.discoverData.set(null);
+          this.companyFilterForm.controls.company.setValue('');
+          this.companyFilterForm.controls.expiredCompany.setValue('', { emitEvent: false });
           // The Org Projects panel holds a row captured on click, while its orgUid input tracks the
           // live selection — leaving it open across a switch would refetch the new org's projects
           // under the previous org's foundation name and count (foundation ids are shared).
@@ -184,9 +209,18 @@ export class OrgMembershipsComponent {
           this.activeProjectsRow.set(null);
         }
         this.lastOrgUid = orgUid;
+        if (tab === 'discover' && this.isRollUp()) {
+          this.activeTab.set('active');
+          return;
+        }
         if (tab === 'expired' && !this.expiredData()) this.fetchExpired(orgUid);
         if (tab === 'discover' && !this.discoverData()) this.fetchDiscover(orgUid);
       });
+
+    this.companyFilterForm.controls.expiredCompany.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      const orgUid = this.accountContext.selectedAccount()?.uid;
+      if (orgUid) this.fetchExpired(orgUid);
+    });
   }
 
   protected switchTab(tab: OrgMembershipTab): void {
@@ -194,7 +228,7 @@ export class OrgMembershipsComponent {
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
-    const ids = this.tabs.map((t) => t.id);
+    const ids = this.tabs().map((t) => t.id);
     const idx = ids.indexOf(this.activeTab());
     let next: number | null = null;
     if (event.key === 'ArrowRight') next = (idx + 1) % ids.length;
@@ -210,7 +244,7 @@ export class OrgMembershipsComponent {
     }
   }
 
-  protected openProjectsDrawer(membership: ActiveMembershipLinkedRow): void {
+  protected openProjectsDrawer(membership: ActiveMembershipRow): void {
     this.activeProjectsRow.set(membership);
     this.projectsDrawerVisible.set(true);
   }
@@ -243,11 +277,30 @@ export class OrgMembershipsComponent {
     return 'ready';
   }
 
-  private initMemberships(): ActiveMembershipLinkedRow[] {
-    return (this.activeData()?.memberships ?? []).map((m) => ({
+  private initCompanyOptions(organizations: OrgLensRowOrganization[] | undefined): OrgDropdownOption[] {
+    return [
+      { label: 'All Companies', value: '' },
+      ...(organizations ?? []).map((organization) => ({ label: organization.name, value: organization.accountId })),
+    ];
+  }
+
+  private membershipLink(membership: OrgActiveMembership): string[] | null {
+    if (!membership.foundationSlug) return null;
+    if (membership.organization) return ['/org', membership.organization.accountId, 'memberships', membership.foundationSlug];
+    return this.orgLens.orgLensLink('memberships', membership.foundationSlug);
+  }
+
+  private initMemberships(): ActiveMembershipRow[] {
+    const memberships = this.activeData()?.memberships ?? [];
+    const ordered = this.isRollUp()
+      ? [...memberships].sort((a, b) => a.foundationName.localeCompare(b.foundationName) || a.foundationId.localeCompare(b.foundationId))
+      : memberships;
+    return ordered.map((m, index) => ({
       ...m,
       // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
-      membershipLink: m.foundationSlug ? this.orgLens.orgLensLink('memberships', m.foundationSlug) : null,
+      membershipLink: this.membershipLink(m),
+      groupStart: index === 0 || ordered[index - 1].foundationId !== m.foundationId,
+      companyLinkLabel: m.organization ? `${m.organization.name} membership in ${m.foundationName}` : null,
       initials: foundationInitials(m.foundationName),
       tierRange: `${this.formatDateShort(m.tierStartDate)} – ${this.formatDateShort(m.tierEndDate)}`,
       memberSinceFormatted: this.formatDateShort(m.memberSince),
@@ -323,20 +376,26 @@ export class OrgMembershipsComponent {
 
   // --- Private fetch methods ---
 
+  private expiredCompanyFilter(): string | undefined {
+    return (this.isRollUp() && this.companyFilterForm.controls.expiredCompany.value) || undefined;
+  }
+
   private fetchExpired(orgUid: string): void {
     this.expiredLoading.set(true);
     this.expiredError.set(false);
+    const company = this.expiredCompanyFilter();
+    const superseded = (): boolean => this.accountContext.selectedAccount()?.uid !== orgUid || this.expiredCompanyFilter() !== company;
     this.membershipsService
-      .getExpiredMemberships(orgUid)
+      .getExpiredMemberships(orgUid, undefined, company)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
-          if (this.accountContext.selectedAccount()?.uid !== orgUid) return;
+          if (superseded()) return;
           this.expiredData.set(data);
           this.expiredLoading.set(false);
         },
         error: () => {
-          if (this.accountContext.selectedAccount()?.uid !== orgUid) return;
+          if (superseded()) return;
           this.expiredError.set(true);
           this.expiredLoading.set(false);
         },

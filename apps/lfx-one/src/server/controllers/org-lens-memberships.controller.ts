@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { FOUNDATION_ID_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgActiveMembershipsResponse, OrgExpiredMembershipsResponse, OrgLensRollUpScope } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { resolveOrgLensRollUp } from '../helpers/org-lens-roll-up.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -26,13 +29,19 @@ export class OrgLensMembershipsController {
     });
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_memberships_active');
-
       const search = getStringQueryParam(req, 'search');
       const tier = getStringQueryParam(req, 'tier');
       const renewal = getStringQueryParam(req, 'renewal');
 
-      const response = await this.service.getActiveMemberships(orgUid, search, tier, renewal);
+      let response: OrgActiveMembershipsResponse;
+      if (isOrgRollUpSegment(orgUid)) {
+        const scope = await resolveOrgLensRollUp(req, orgUid, 'get_org_lens_memberships_active');
+        const company = this.rollUpCompany(req, scope, 'get_org_lens_memberships_active');
+        response = await this.service.getFamilyActiveMemberships(scope, { search, tier, renewal, company });
+      } else {
+        assertOrgUid(orgUid, 'get_org_lens_memberships_active');
+        response = await this.service.getActiveMemberships(orgUid, search, tier, renewal);
+      }
 
       logger.success(req, 'get_org_lens_memberships_active', startTime, {
         org_uid: orgUid,
@@ -54,11 +63,17 @@ export class OrgLensMembershipsController {
     });
 
     try {
-      assertOrgUid(orgUid, 'get_org_lens_memberships_expired');
-
       const search = getStringQueryParam(req, 'search');
 
-      const response = await this.service.getExpiredMemberships(orgUid, search);
+      let response: OrgExpiredMembershipsResponse;
+      if (isOrgRollUpSegment(orgUid)) {
+        const scope = await resolveOrgLensRollUp(req, orgUid, 'get_org_lens_memberships_expired');
+        const company = this.rollUpCompany(req, scope, 'get_org_lens_memberships_expired');
+        response = await this.service.getFamilyExpiredMemberships(scope, search, company);
+      } else {
+        assertOrgUid(orgUid, 'get_org_lens_memberships_expired');
+        response = await this.service.getExpiredMemberships(orgUid, search);
+      }
 
       logger.success(req, 'get_org_lens_memberships_expired', startTime, {
         org_uid: orgUid,
@@ -152,6 +167,15 @@ export class OrgLensMembershipsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  private rollUpCompany(req: Request, scope: OrgLensRollUpScope, operation: string): string | undefined {
+    const company = getStringQueryParam(req, 'company');
+    if (company === undefined || company === '') return undefined;
+    if (!scope.members.some((member) => member.accountId === company)) {
+      throw ServiceValidationError.forField('company', 'company must be an organization in this roll-up', { operation });
+    }
+    return company;
   }
 
   // FOUNDATION_ID_PATTERN is the general SSR path-param validator (`[A-Za-z0-9-]{1,64}`); it also

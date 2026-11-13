@@ -14,7 +14,7 @@
     <div class="flex flex-col gap-6" data-testid="memberships-skeleton">
       <p-skeleton width="16rem" height="2rem" />
       <div class="flex items-center gap-4 border-b border-gray-200 pb-2">
-        @for (tab of tabs; track tab.id) {
+        @for (tab of tabs(); track tab.id) {
           <p-skeleton width="8rem" height="1.25rem" />
         }
       </div>
@@ -50,7 +50,7 @@
       class="flex items-center gap-1 border-b border-gray-200"
       data-testid="memberships-tab-bar"
       (keydown)="onTabKeydown($event)">
-      @for (tab of tabs; track tab.id) {
+      @for (tab of tabs(); track tab.id) {
         <button
           type="button"
           role="tab"
@@ -86,7 +86,9 @@
                 } @else {
                   <p class="text-xl font-medium text-gray-900">{{ summary()?.activeMemberships ?? 0 }}</p>
                 }
-                <p class="text-sm font-normal text-gray-900">Active Memberships</p>
+                <p class="text-sm font-normal text-gray-900" data-testid="memberships-stat-active-label">
+                  {{ isRollUp() ? 'Foundations with Membership' : 'Active Memberships' }}
+                </p>
               </div>
             </div>
             <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-renewing">
@@ -99,7 +101,9 @@
                 } @else {
                   <p class="text-xl font-medium text-gray-900">{{ summary()?.renewingWithin90Days ?? 0 }}</p>
                 }
-                <p class="text-sm font-normal text-gray-900">Renewing Within 90 Days</p>
+                <p class="text-sm font-normal text-gray-900" data-testid="memberships-stat-renewing-label">
+                  {{ isRollUp() ? 'Memberships Renewing Within 90 Days' : 'Renewing Within 90 Days' }}
+                </p>
               </div>
             </div>
             <div class="flex items-center gap-3 p-4" data-testid="memberships-stat-governance">
@@ -160,6 +164,17 @@
                   optionValue="value"
                   styleClass="w-full" />
               </div>
+              @if (isRollUp()) {
+                <div class="w-full sm:w-48" data-testid="memberships-company-filter">
+                  <lfx-select
+                    [form]="companyFilterForm"
+                    control="company"
+                    [options]="companyOptions()"
+                    styleClass="w-full"
+                    ariaLabel="Filter by company"
+                    dataTest="memberships-company-filter-select" />
+                </div>
+              }
             </div>
           </div>
 
@@ -187,13 +202,17 @@
               <lfx-table
                 [value]="memberships()"
                 [loading]="activeState() === 'loading'"
-                sortField="foundationName"
+                [sortField]="isRollUp() ? undefined : 'foundationName'"
                 [sortOrder]="1"
                 [skeletonColumns]="6"
                 data-testid="memberships-active-table">
                 <ng-template #header>
                   <tr>
-                    <th>Name</th>
+                    @if (isRollUp()) {
+                      <th data-testid="memberships-active-company-header">Company</th>
+                    } @else {
+                      <th>Name</th>
+                    }
                     <th>Membership Tier</th>
                     <th>Member Since</th>
                     <th>Board Members</th>
@@ -202,46 +221,43 @@
                   </tr>
                 </ng-template>
                 <ng-template #body let-membership>
+                  @if (isRollUp() && membership.groupStart) {
+                    <tr class="bg-gray-50" [attr.data-testid]="'memberships-active-group-' + membership.foundationId">
+                      <th scope="rowgroup" colspan="6" class="text-left font-normal">
+                        <ng-container *ngTemplateOutlet="foundationIdentity; context: { $implicit: membership }" />
+                      </th>
+                    </tr>
+                  }
                   <tr>
                     <td>
-                      @if (membership.membershipLink) {
+                      @if (isRollUp()) {
+                        <div
+                          class="text-sm"
+                          [attr.data-testid]="'memberships-active-company-' + membership.foundationId + '-' + membership.organization?.accountId">
+                          @if (membership.membershipLink) {
+                            <a
+                              [routerLink]="membership.membershipLink"
+                              [attr.data-testid]="'memberships-active-row-link-' + membership.foundationSlug"
+                              [attr.aria-label]="membership.companyLinkLabel"
+                              class="font-medium text-blue-600 hover:underline">
+                              {{ membership.organization?.name }}
+                            </a>
+                          } @else {
+                            <span class="font-medium text-gray-900">{{ membership.organization?.name }}</span>
+                          }
+                        </div>
+                      } @else if (membership.membershipLink) {
                         <a
                           [routerLink]="membership.membershipLink"
                           [attr.data-testid]="'memberships-active-row-link-' + membership.foundationSlug"
                           class="flex items-center gap-3 -mx-2 -my-1.5 px-2 py-1.5 rounded-md hover:bg-gray-50 transition-colors no-underline">
-                          @if (membership.foundationLogo) {
-                            <img
-                              [src]="membership.foundationLogo"
-                              [alt]="membership.foundationName"
-                              class="w-10 h-10 rounded-lg object-contain flex-shrink-0" />
-                          } @else {
-                            <div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600 flex-shrink-0">
-                              {{ membership.initials }}
-                            </div>
-                          }
-                          <div class="flex flex-col">
-                            <span class="font-medium text-gray-900">{{ membership.foundationName }}</span>
-                            <span class="text-xs text-gray-500">{{ membership.projectCount }} projects · {{ membership.memberCount }} members</span>
-                          </div>
+                          <ng-container *ngTemplateOutlet="foundationIdentity; context: { $implicit: membership }" />
                         </a>
                       } @else {
                         <div
                           [attr.data-testid]="'memberships-active-row-link-' + membership.foundationId"
                           class="flex items-center gap-3 -mx-2 -my-1.5 px-2 py-1.5 rounded-md">
-                          @if (membership.foundationLogo) {
-                            <img
-                              [src]="membership.foundationLogo"
-                              [alt]="membership.foundationName"
-                              class="w-10 h-10 rounded-lg object-contain flex-shrink-0" />
-                          } @else {
-                            <div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600 flex-shrink-0">
-                              {{ membership.initials }}
-                            </div>
-                          }
-                          <div class="flex flex-col">
-                            <span class="font-medium text-gray-900">{{ membership.foundationName }}</span>
-                            <span class="text-xs text-gray-500">{{ membership.projectCount }} projects · {{ membership.memberCount }} members</span>
-                          </div>
+                          <ng-container *ngTemplateOutlet="foundationIdentity; context: { $implicit: membership }" />
                         </div>
                       }
                     </td>
@@ -277,13 +293,28 @@
                   </tr>
                 </ng-template>
               </lfx-table>
+              <ng-template #foundationIdentity let-membership>
+                <div class="flex items-center gap-3">
+                  @if (membership.foundationLogo) {
+                    <img [src]="membership.foundationLogo" [alt]="membership.foundationName" class="w-10 h-10 rounded-lg object-contain flex-shrink-0" />
+                  } @else {
+                    <div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-sm font-semibold text-gray-600 flex-shrink-0">
+                      {{ membership.initials }}
+                    </div>
+                  }
+                  <div class="flex flex-col">
+                    <span class="font-medium text-gray-900">{{ membership.foundationName }}</span>
+                    <span class="text-xs text-gray-500">{{ membership.projectCount }} projects · {{ membership.memberCount }} members</span>
+                  </div>
+                </div>
+              </ng-template>
             }
           </div>
         </lfx-card>
 
         <lfx-membership-projects-drawer
           [(visible)]="projectsDrawerVisible"
-          [orgUid]="orgUid()"
+          [orgUid]="activeProjectsRow()?.organization?.accountId ?? orgUid()"
           [foundationId]="activeProjectsRow()?.foundationId ?? ''"
           [foundationName]="activeProjectsRow()?.foundationName ?? ''"
           [count]="activeProjectsRow()?.orgProjects ?? 0" />
@@ -313,6 +344,17 @@
                     (ngModelChange)="expiredSearchTerm.set($event)" />
                 </div>
               </div>
+              @if (isRollUp()) {
+                <div class="w-full sm:w-48" data-testid="memberships-expired-company-filter">
+                  <lfx-select
+                    [form]="companyFilterForm"
+                    control="expiredCompany"
+                    [options]="expiredCompanyOptions()"
+                    styleClass="w-full"
+                    ariaLabel="Filter by company"
+                    dataTest="memberships-expired-company-filter-select" />
+                </div>
+              }
             </div>
           </div>
 
@@ -341,11 +383,14 @@
                 [loading]="expiredState() === 'loading'"
                 sortField="foundationName"
                 [sortOrder]="1"
-                [skeletonColumns]="4"
+                [skeletonColumns]="isRollUp() ? 5 : 4"
                 data-testid="memberships-expired-table">
                 <ng-template #header>
                   <tr>
                     <th>Name</th>
+                    @if (isRollUp()) {
+                      <th data-testid="memberships-expired-company-header">Company</th>
+                    }
                     <th>Membership Tier</th>
                     <th>Expiration Date</th>
                     <th>Actions</th>
@@ -370,6 +415,13 @@
                         </div>
                       </div>
                     </td>
+                    @if (isRollUp()) {
+                      <td
+                        class="text-sm text-gray-700"
+                        [attr.data-testid]="'memberships-expired-company-' + membership.foundationId + '-' + membership.organization?.accountId">
+                        {{ membership.organization?.name }}
+                      </td>
+                    }
                     <td>
                       <div class="flex flex-col">
                         <span class="text-sm text-gray-900">{{ membership.membershipTier }}</span>
@@ -405,7 +457,7 @@
       </div>
     }
 
-    @if (activeTab() === 'discover') {
+    @if (activeTab() === 'discover' && !isRollUp()) {
       <div role="tabpanel" id="memberships-tab-panel-discover" [attr.aria-labelledby]="'memberships-tab-trigger-discover'">
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
           <div class="px-5 pt-4 pb-3" data-testid="discover-opportunities-title">

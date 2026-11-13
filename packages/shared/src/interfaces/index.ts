@@ -331,6 +331,7 @@ export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
+export * from './org-memberships.internal.interface';
 
 // Newsletter interfaces
 export * from './newsletter.interface';
