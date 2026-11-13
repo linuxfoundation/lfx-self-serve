@@ -8,7 +8,12 @@ import { HttpErrorResponse, HttpHeaders, provideHttpClient } from '@angular/comm
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MEMBER_IMPORT_BULK_CHUNK_SIZE, MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS } from '@lfx-one/shared/constants';
+import {
+  MEMBER_IMPORT_BULK_CHUNK_SIZE,
+  MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS,
+  MEMBER_IMPORT_PROGRESS_MAX_ROW_MS,
+  MEMBER_IMPORT_PROGRESS_MIN_ROW_MS,
+} from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeInvite,
@@ -790,7 +795,7 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.batchSettled()).toBe(25);
       expect(component.progressValue()).toBe(25);
 
-      // The next chunk's estimate survives the previous chunk's teardown and moves at the learned pace.
+      // The next chunk starts its own estimate at the pace learned from the first response.
       const learnedRowMs = (MEMBER_IMPORT_PROGRESS_DEFAULT_ROW_MS * 103) / 25;
       vi.advanceTimersByTime(learnedRowMs * 2);
       expect(component.estimatedRows()).toBe(2);
@@ -800,6 +805,27 @@ describe('ImportMembersDialogComponent', () => {
       expect(component.phase()).toBe('results');
       expect(component.estimatedRows()).toBe(0);
       expect(component.addedCount()).toBe(30);
+    });
+
+    it('bounds the learned pace so an instant or very slow response cannot race or freeze the next estimate', async () => {
+      await upload(`email\n${emails(60)}`);
+      vi.useFakeTimers();
+      component.startImport();
+
+      // An instant response learns no faster than the minimum pace.
+      respond(0);
+      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_MIN_ROW_MS - 1);
+      expect(component.estimatedRows()).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(component.estimatedRows()).toBe(1);
+
+      // A response slower than the maximum pace per row learns no slower than the maximum.
+      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_MAX_ROW_MS * MEMBER_IMPORT_BULK_CHUNK_SIZE * 2);
+      respond(1);
+      vi.advanceTimersByTime(MEMBER_IMPORT_PROGRESS_MAX_ROW_MS - 1);
+      expect(component.estimatedRows()).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(component.estimatedRows()).toBe(1);
     });
 
     it('drops the estimate back to confirmed rows when a chunk fails', async () => {

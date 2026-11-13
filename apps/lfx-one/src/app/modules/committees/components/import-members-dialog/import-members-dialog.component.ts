@@ -752,7 +752,7 @@ export class ImportMembersDialogComponent {
     return estimate;
   }
 
-  /** Ignores an estimate that is no longer current: a settled chunk's teardown can run after the next chunk starts. */
+  /** Resets the bar only for the current estimate, so `finalize` repeating the response `tap`'s stop is a no-op. */
   private stopProgressEstimate(estimate: Subscription): void {
     estimate.unsubscribe();
     if (this.progressEstimate === estimate) {
