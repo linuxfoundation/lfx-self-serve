@@ -7001,8 +7001,7 @@ describe('CampaignController.createCampaign cutover', () => {
       expect(refusalFrom()).toMatchObject({ field: 'demandGenVideoCreative', message: expect.stringContaining('not both') });
     });
 
-    // #1614 (F13): Google refused "Register" at adGroupAds:mutate, after the campaign existed, and
-    // The BFF holds each ad's call to action to the list Google accepted for that ad (13 Nov probe), so
+    // #1614 (F13): Google refused "Register" at adGroupAds:mutate, after the campaign existed. The BFF holds each ad's call to action to the list Google accepted for that ad (13 Nov probe), so
     // an unaccepted one is refused before campaign-service creates anything.
     it.each([
       [

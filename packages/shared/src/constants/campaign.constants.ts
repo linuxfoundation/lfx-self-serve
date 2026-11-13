@@ -5237,9 +5237,9 @@ export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/
  * campaign, ad group and image assets exist. "Register" failed exactly there on 7 and 9 November 2026.
  *
  * Spelled as probed. Google's matching is not plain case-insensitive: "Try Now" was REFUSED where
- * "Try now" was accepted, so that one value keeps Google's lower-case spelling. campaign-service
- * (#595, `displayCallToActions`) now checks the same set before any write and sends its own probed
- * spelling. Refused on this ad: Register, Get Started, Watch Now, Buy Tickets, Join Now, Donate Now.
+ * "Try now" was accepted, so that one value keeps Google's lower-case spelling. From v1.0.36,
+ * campaign-service (#595, `displayCallToActions`) checks the same set before any write and sends its own
+ * probed spelling; until then the BFF's check is the only one. Refused on this ad: Register, Get Started, Watch Now, Buy Tickets, Join Now, Donate Now.
  * Leaving it empty sends none, and Google chooses the button (the UI's "Automated").
  */
 export const GOOGLE_DISPLAY_CALLS_TO_ACTION = [
@@ -5267,8 +5267,8 @@ export const GOOGLE_DISPLAY_CALLS_TO_ACTION = [
  * The call-to-action texts the Demand Gen IMAGE (multi-asset) ad accepts (#1614, F13), each one
  * accepted by the same validateOnly probe on 13 November 2026 against `DemandGenMultiAssetAdInfo`.
  * It is NOT the Display set: Demand Gen refused Install, Order Now, Try Now, Read More and Explore, and
- * accepted Donate Now, which Display refused. campaign-service (#595, `demandGenCallToActions`) checks
- * the same set before any write. Refused on this ad as well: Register, Get Started, Watch Now, Buy
+ * accepted Donate Now, which Display refused. From v1.0.36, campaign-service (#595,
+ * `demandGenCallToActions`) checks the same set before any write. Refused on this ad as well: Register, Get Started, Watch Now, Buy
  * Tickets, Join Now. Leaving it empty sends none, and Google chooses the button.
  */
 export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = [
