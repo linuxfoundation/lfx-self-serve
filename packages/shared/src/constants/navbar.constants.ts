@@ -3,7 +3,7 @@
 
 import { lfxColors } from './colors.constants';
 import { COMMITTEE_LABEL } from './committees.constants';
-import type { Lens, LensOption, NavbarGhostItem, NavbarRoleStyle, OrgRolePersona, PersonaType } from '../interfaces';
+import type { Lens, LensOption, NavbarGhostItem, NavbarRoleStyle, NavbarThemeOption, OrgRolePersona, PersonaType } from '../interfaces';
 
 /**
  * Navbar-only label/icon overrides for the lens tabs. The navbar presents the Me lens as "Home"
@@ -13,12 +13,25 @@ export const NAVBAR_LENS_OVERRIDES: Readonly<Partial<Record<Lens, Pick<LensOptio
   me: { label: 'Home', icon: 'fa-light fa-house', activeIcon: 'fa-solid fa-house' },
 };
 
-/** Role glyph and ink on the navbar's dark surface, per persona. */
+/**
+ * Role glyph and ink per persona: `ink` on the dark sidebar, `inkLight` / `fillLight` (design-system tokens) on the light
+ * sidebar theme.
+ */
 export const NAVBAR_ROLE_STYLES: Readonly<Record<PersonaType, NavbarRoleStyle>> = {
-  'executive-director': { icon: 'fa-solid fa-star', ink: lfxColors.amber[300] },
-  'board-member': { icon: 'fa-solid fa-chair-office', ink: lfxColors.violet[300] },
-  maintainer: { icon: 'fa-solid fa-shield-halved', ink: lfxColors.blue[400] },
-  contributor: { icon: 'fa-solid fa-code', ink: lfxColors.gray[200] },
+  'executive-director': {
+    icon: 'fa-solid fa-star',
+    ink: lfxColors.amber[300],
+    inkLight: 'var(--ui-warning-600)',
+    fillLight: 'var(--ui-warning-50)',
+  },
+  'board-member': {
+    icon: 'fa-solid fa-chair-office',
+    ink: lfxColors.violet[300],
+    inkLight: 'var(--ui-feature-600)',
+    fillLight: 'var(--ui-feature-50)',
+  },
+  maintainer: { icon: 'fa-solid fa-shield-halved', ink: lfxColors.blue[400], inkLight: 'var(--ui-accent-600)', fillLight: 'var(--ui-accent-50)' },
+  contributor: { icon: 'fa-solid fa-code', ink: lfxColors.gray[200], inkLight: 'var(--ui-neutral-700)', fillLight: 'var(--ui-neutral-50)' },
 };
 
 /** How each role reads in front of its project list in the role tooltip ("Maintainer of", "Contributor to"). */
@@ -30,7 +43,12 @@ export const NAVBAR_ROLE_PREPOSITIONS: Readonly<Record<PersonaType, string>> = {
 };
 
 /** Ink for a context role pill when the user holds no detected role on the selected project. */
-export const NAVBAR_DEFAULT_ROLE_STYLE: NavbarRoleStyle = { icon: 'fa-solid fa-user', ink: lfxColors.gray[200] };
+export const NAVBAR_DEFAULT_ROLE_STYLE: NavbarRoleStyle = {
+  icon: 'fa-solid fa-user',
+  ink: lfxColors.gray[200],
+  inkLight: 'var(--ui-neutral-700)',
+  fillLight: 'var(--ui-neutral-50)',
+};
 
 /** Public site listed under the LFX apps in the navbar brand menu. */
 export const NAVBAR_BRAND_SITE = { domain: 'linuxfoundation.org', url: 'https://www.linuxfoundation.org/' } as const;
@@ -86,6 +104,15 @@ export const NAVBAR_NARROW_MAX_WIDTH_PX = 1200;
 
 /** `sessionStorage` key holding the viewer's docked-collapsed navbar preference (also cleared from `localStorage`, its old home). */
 export const NAVBAR_COLLAPSED_STORAGE_KEY = 'lfx-navbar-collapsed';
+
+/** `localStorage` key holding the viewer's desktop sidebar theme (`dark` or `light`). */
+export const NAVBAR_THEME_STORAGE_KEY = 'lfx-navbar-theme';
+
+/** The desktop sidebar theme's options, in the order the account menu's switch shows them. */
+export const NAVBAR_THEME_OPTIONS: readonly NavbarThemeOption[] = [
+  { value: 'dark', label: 'Dark', icon: 'fa-light fa-moon' },
+  { value: 'light', label: 'Light', icon: 'fa-light fa-sun-bright' },
+];
 
 /** Grace period after the pointer leaves an unpinned peek before it closes; re-entering cancels it (ms). */
 export const NAVBAR_PEEK_CLOSE_DELAY_MS = 150;

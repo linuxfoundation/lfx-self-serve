@@ -3,8 +3,8 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
-last_updated: 2026-11-11
+tags: [account, faq, settings, sidebar, theme, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
+last_updated: 2026-11-13
 intercom_collection: Account
 ---
 
@@ -31,6 +31,10 @@ Developer settings are in the **Settings** tab (`/profile/settings`) > **Develop
 ## Are my settings shared across devices?
 
 Account settings (email, password, API token) are tied to your LFX account and apply across all devices.
+
+## Can I switch the sidebar to a light theme?
+
+Yes, on desktop. Open your account menu at the bottom of the sidebar and use the **Sidebar theme** switch, just below **Support**: the moon is **Dark** (the default) and the sun is **Light**. Only the sidebar changes; the rest of the page looks the same. Your choice is saved in your browser, so it stays after a refresh and applies in new tabs, but it doesn't follow you to another browser or device. On mobile, the sidebar is always dark and the switch isn't shown.
 
 ## Does LFX Self Serve have notification preferences?
 

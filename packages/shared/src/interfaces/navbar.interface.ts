@@ -13,6 +13,21 @@ export interface NavbarRoleStyle {
   icon: string;
   /** Foreground/border color of the role mark on the navbar's dark surface. */
   ink: string;
+  /** Foreground/border color of the role mark on the light sidebar theme. */
+  inkLight: string;
+  /** Fill behind the role mark on the light sidebar theme. */
+  fillLight: string;
+}
+
+/** The desktop sidebar's colour theme. The mobile drawer is always `dark`. */
+export type NavbarTheme = 'dark' | 'light';
+
+/** One option of the account menu's sidebar theme switch. */
+export interface NavbarThemeOption {
+  value: NavbarTheme;
+  label: string;
+  /** Font Awesome class string; the switch shows only the icon, with the label as its tooltip and screen-reader name. */
+  icon: string;
 }
 
 /** A project or foundation a role was detected on, listed as a chip in the role mark's tooltip. */

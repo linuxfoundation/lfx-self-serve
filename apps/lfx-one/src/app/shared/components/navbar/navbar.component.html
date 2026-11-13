@@ -167,6 +167,8 @@
                   class="lfxn__me-role"
                   [attr.aria-label]="role.ariaLabel"
                   [style.--lfxn-role-ink]="role.ink"
+                  [style.--lfxn-role-ink-light]="role.inkLight"
+                  [style.--lfxn-role-fill-light]="role.fillLight"
                   [style.z-index]="roleMarks().length - i"
                   [lfxNavTooltip]="role.title"
                   [lfxNavTooltipIcon]="role.icon"
@@ -581,6 +583,30 @@
         <i class="fa-light fa-circle-question" aria-hidden="true"></i>
         <span>Support</span>
       </button>
+
+      <!-- Desktop only: the mobile drawer's sidebar is always dark. -->
+      @if (!mobile()) {
+        <div class="lfxn-account-menu__row lfxn-account-menu__row--static" data-testid="sidebar-theme-row">
+          <i class="fa-light fa-palette" aria-hidden="true"></i>
+          <span class="lfxn-account-menu__row-label">Sidebar theme</span>
+          <lfx-ui-switch
+            class="lfxn-account-menu__row-trail"
+            ariaLabel="Sidebar theme"
+            size="tiny"
+            [value]="sidebarTheme.theme()"
+            (valueChange)="onSidebarThemeChange($event)"
+            data-testid="sidebar-theme-switch">
+            @for (option of sidebarThemeOptions; track option.value) {
+              <lfx-ui-switch-option
+                [value]="option.value"
+                [label]="option.label"
+                [icon]="option.icon"
+                [iconOnly]="true"
+                [attr.data-testid]="'sidebar-theme-' + option.value" />
+            }
+          </lfx-ui-switch>
+        </div>
+      }
 
       <!-- On the rail the footer's actions are out of reach: the account menu carries them. A peek shows the footer, so it doesn't. -->
       @if (railVisible()) {

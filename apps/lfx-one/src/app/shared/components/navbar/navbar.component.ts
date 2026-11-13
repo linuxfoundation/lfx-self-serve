@@ -25,6 +25,7 @@ import {
   NAVBAR_PEEK_RECHECK_DELAY_MS,
   NAVBAR_ROLE_PREPOSITIONS,
   NAVBAR_ROLE_STYLES,
+  NAVBAR_THEME_OPTIONS,
   BOARD_SCOPED_PERSONAS,
   PERSONA_OPTIONS,
   PERSONA_PRIORITY,
@@ -39,6 +40,7 @@ import {
   NavbarRoleMark,
   NavbarRoleProject,
   NavbarTabIndicator,
+  NavbarTheme,
   NavTooltipItem,
   NavTooltipPlacement,
   SidebarMenuItem,
@@ -50,12 +52,15 @@ import { ChangelogService } from '@services/changelog.service';
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { NavbarCollapseService } from '@services/navbar-collapse.service';
+import { NavbarThemeService } from '@services/navbar-theme.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { filter, pairwise } from 'rxjs';
@@ -93,6 +98,8 @@ import { NavMenuBase } from './nav-menu-base.directive';
     NavTooltipDirective,
     OpenIntercomDirective,
     ScrollShadowDirective,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
   ],
   providers: [DialogService],
   templateUrl: './navbar.component.html',
@@ -105,6 +112,8 @@ import { NavMenuBase } from './nav-menu-base.directive';
     '[class.is-narrow]': '!mobile() && collapse.narrow()',
     '[class.is-pinned]': '!mobile() && collapse.peekPinned()',
     '[class.is-animated]': '!mobile() && collapse.animated()',
+    // The light sidebar theme is desktop-only: the mobile drawer always stays dark.
+    '[class.is-light]': '!mobile() && sidebarTheme.light()',
   },
 })
 export class NavbarComponent extends NavMenuBase {
@@ -116,6 +125,7 @@ export class NavbarComponent extends NavMenuBase {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   protected readonly createPermissionService = inject(CreatePermissionService);
   protected readonly collapse = inject(NavbarCollapseService);
+  protected readonly sidebarTheme = inject(NavbarThemeService);
   private readonly injector = inject(Injector);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
@@ -233,6 +243,9 @@ export class NavbarComponent extends NavMenuBase {
 
   // ── Me card ──────────────────────────────────────────────────────────────────────────────────
   protected readonly roleMarks: Signal<NavbarRoleMark[]> = this.initRoleMarks();
+
+  // ── Sidebar theme ────────────────────────────────────────────────────────────────────────────
+  protected readonly sidebarThemeOptions = NAVBAR_THEME_OPTIONS;
 
   // ── Rail actions ─────────────────────────────────────────────────────────────────────────────
   protected readonly canImpersonate = this.userService.canImpersonate;
@@ -391,6 +404,11 @@ export class NavbarComponent extends NavMenuBase {
     this.router.navigate(['/profile/settings']);
   }
 
+  /** The account menu's sidebar theme switch: applies and remembers the choice. The menu stays open. */
+  protected onSidebarThemeChange(theme: string | null): void {
+    if (theme === 'dark' || theme === 'light') this.sidebarTheme.setTheme(theme satisfies NavbarTheme);
+  }
+
   protected openImpersonationDialog(): void {
     this.userMenu()?.hide();
     this.closePeekForDialog();
@@ -483,6 +501,7 @@ export class NavbarComponent extends NavMenuBase {
     afterNextRender(() => {
       if (this.mobile()) return;
       this.collapse.init();
+      this.sidebarTheme.init();
       const doc = this.elementRef.nativeElement.ownerDocument;
       const panel = this.panelEl()?.nativeElement;
 
