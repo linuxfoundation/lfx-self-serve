@@ -236,8 +236,10 @@ export class MeetingService {
    * filter.
    */
   public async getRollupFilterOptions(req: Request, rootUid: string): Promise<MeetingRollupFilterOptions> {
-    const { uids: scopeUids, complete: treeComplete } = await this.resolveRollupScope(req, rootUid);
-    const [projectMap, groups] = await Promise.all([this.projectService.getProjectsByIds(req, scopeUids), this.resolveRollupGroups(req, rootUid)]);
+    // One walk feeds the projects, the groups and the completeness flag, so they always describe the same tree.
+    const scope = await this.resolveRollupScope(req, rootUid);
+    const { uids: scopeUids, complete: treeComplete } = scope;
+    const [projectMap, groups] = await Promise.all([this.projectService.getProjectsByIds(req, scopeUids), this.resolveRollupGroups(req, rootUid, scope)]);
 
     const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
     const projects = [...projectMap.values()].map((project) => ({ uid: project.uid, name: project.name, slug: project.slug })).sort(byName);
@@ -2608,12 +2610,13 @@ export class MeetingService {
     }
     const filters = readRollupFilters(query, operation);
 
-    const scopeUids = narrowRollupScope((await this.resolveRollupScope(req, rootUid)).uids, filters.projectUids);
+    const scope = await this.resolveRollupScope(req, rootUid);
+    const scopeUids = narrowRollupScope(scope.uids, filters.projectUids);
     if (scopeUids.length === 0) {
       return null;
     }
 
-    const committeeUids = await this.resolveRollupCommitteeUids(req, rootUid, scopeUids, filters);
+    const committeeUids = await this.resolveRollupCommitteeUids(req, rootUid, scope, scopeUids, filters);
     if (committeeUids?.length === 0) {
       return null;
     }
@@ -2662,25 +2665,22 @@ export class MeetingService {
    * scope, so a group-type filter does not rescan every group on each list, count and calendar page.
    * Groups of an incomplete tree are served but not cached, for the same reason as the scope.
    */
-  private resolveRollupGroups(req: Request, rootUid: string): Promise<MeetingRollupGroupOption[]> {
+  private resolveRollupGroups(req: Request, rootUid: string, tree: { uids: string[]; complete: boolean }): Promise<MeetingRollupGroupOption[]> {
     const { MEETING_ROLLUP_GROUPS_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
     const username = getEffectiveUsername(req) ?? '';
-    return coalescePerUserOrgFetch(namespace, username, rootUid, (isCurrent) => {
-      let complete = true;
-      return withPerUserCache(
+    // Built from the caller's already-resolved tree (no second walk), and cached only when that walk was
+    // complete, so the groups never describe a different tree than the caller's own completeness flag.
+    return coalescePerUserOrgFetch(namespace, username, rootUid, (isCurrent) =>
+      withPerUserCache(
         namespace,
         username,
         rootUid,
         ttlSeconds,
-        async () => {
-          const scope = await this.resolveRollupScope(req, rootUid);
-          complete = scope.complete;
-          return this.fetchRollupGroups(req, scope.uids);
-        },
+        () => this.fetchRollupGroups(req, tree.uids),
         isRollupGroups,
-        () => complete && isCurrent()
-      );
-    });
+        () => tree.complete && isCurrent()
+      )
+    );
   }
 
   /**
@@ -2688,12 +2688,18 @@ export class MeetingService {
    * `group_type` is resolved to the groups of that category within the scope; with `committee_uid`
    * as well, the group must be one of them.
    */
-  private async resolveRollupCommitteeUids(req: Request, rootUid: string, scopeUids: string[], filters: MeetingRollupFilters): Promise<string[] | undefined> {
+  private async resolveRollupCommitteeUids(
+    req: Request,
+    rootUid: string,
+    tree: { uids: string[]; complete: boolean },
+    scopeUids: string[],
+    filters: MeetingRollupFilters
+  ): Promise<string[] | undefined> {
     if (!filters.groupType) {
       return filters.committeeUid ? [filters.committeeUid] : undefined;
     }
     const inScope = new Set(scopeUids);
-    const typed = (await this.resolveRollupGroups(req, rootUid))
+    const typed = (await this.resolveRollupGroups(req, rootUid, tree))
       .filter((group) => inScope.has(group.project_uid) && group.category === filters.groupType)
       .map((group) => group.uid);
     if (filters.committeeUid) {
