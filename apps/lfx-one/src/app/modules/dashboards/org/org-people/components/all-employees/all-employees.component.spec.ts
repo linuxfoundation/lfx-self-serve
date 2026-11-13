@@ -1077,7 +1077,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       for (const term of ['', '\u200B', ' \u200B ', '\u0085', '\u00AD', '\u0301']) {
         await search(term);
         expect(rowKeys()).toEqual([]);
-        expect(empty()).toContain('No employees found for this organization.');
+        expect(empty()).toContain('No employees found for this company.');
         expect(el().querySelector('[data-testid="org-people-all-employees-clear-filters"]')).toBeNull();
       }
     });
