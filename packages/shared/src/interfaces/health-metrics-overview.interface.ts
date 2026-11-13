@@ -22,7 +22,7 @@ export interface HealthMetricsOverviewEngagementSplit {
   lowPct: number | null;
 }
 
-/** One period of the participating organizations card. */
+/** One period of the participating companies card. */
 export interface HealthMetricsOverviewParticipatingOrgsPeriod {
   activeMembers: number | null;
   newMembers: number | null;
@@ -297,7 +297,7 @@ export interface HealthMetricsOverviewEngagementRowView {
   pctLabel: string;
 }
 
-/** One half of the participating organizations card: members or non-members. */
+/** One half of the participating companies card: members or non-members. */
 export interface HealthMetricsOverviewOrgsHalfView {
   key: 'members' | 'non-members';
   kpis: HealthMetricsOverviewKpiView[];

@@ -366,7 +366,7 @@ export function buildHealthMetricsOverviewTrainingView(
     isEmpty: !enrollment.measured || !period || (!period.totals.enrollments && !period.totals.revenueUsd),
     totalLabel: format(total),
     metricLabel,
-    goalLabel: trainingGoalLabel(goal, noGoal, `${formatShare(fraction)} of ${format(goal)} goal`),
+    goalLabel: trainingGoalLabel(goal, noGoal, fraction, format),
     noGoal,
     trackPath: trainingArcPath(1),
     progressPath: fraction > 0 ? trainingArcPath(Math.min(fraction, 1)) : '',
@@ -1254,8 +1254,8 @@ function trainingGoal(
   return { goal: enrollment.goals.enrollments, progress: enrollment.goals.enrollments ? enrollment.goals.enrollmentsProgressYtd : null };
 }
 
-function trainingGoalLabel(goal: number | null, noGoal: boolean, progressLabel: string): string | null {
-  if (goal) return progressLabel;
+function trainingGoalLabel(goal: number | null, noGoal: boolean, fraction: number, format: (value: number | null) => string): string | null {
+  if (goal) return `${formatShare(fraction)} of ${format(goal)} goal`;
   return noGoal ? 'No goal set' : null;
 }
 
