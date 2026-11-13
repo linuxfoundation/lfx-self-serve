@@ -5,6 +5,7 @@ import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_OVERVIEW_BLANK_COPY,
   HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE,
+  HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX,
   HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES,
   HEALTH_METRICS_OVERVIEW_EVENT_PACE,
   HEALTH_METRICS_OVERVIEW_EVENT_STATUS,
@@ -508,6 +509,13 @@ export function buildHealthMetricsOverviewAddPastMeetingUrl(pccUrl: string, foun
   return foundationSfid ? `${pccUrl}/project/${encodeURIComponent(foundationSfid)}/collaboration/meetings/manage-meeting?isPast=true` : null;
 }
 
+/** The event dialog body's mask: it fades out over 32px at each edge with more to scroll, and not at all otherwise. */
+export function buildHealthMetricsOverviewScrollFadeMask(fadeTop: boolean, fadeBottom: boolean): string {
+  const top = fadeTop ? HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX : 0;
+  const bottom = fadeBottom ? HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX : 0;
+  return `linear-gradient(to bottom, transparent 0, black ${top}px, black calc(100% - ${bottom}px), transparent 100%)`;
+}
+
 /**
  * One upcoming event's registration trend: its headline figures and the chart on a 600×220 canvas spanning the last
  * 180 days before the event. Either input may be missing, which leaves its parts out.
@@ -596,12 +604,15 @@ export function buildHealthMetricsOverviewSnapshotView(
   const days = HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS.find((option) => option.value === period)?.days ?? 7;
   const today = snapshot.today;
   const endHeader = today ? `${formatIsoDateLabel(shiftIsoDate(today, -1))} (today)` : '';
-  const rollingStartHeader = today ? formatIsoDateLabel(shiftIsoDate(today, -days)) : '';
+  const endHeaderShort = today ? `${formatIsoShortYearDate(shiftIsoDate(today, -1))} (today)` : '';
+  const rollingStart = today ? shiftIsoDate(today, -days) : '';
+  const rollingStartHeader = rollingStart ? formatIsoDateLabel(rollingStart) : '';
 
   const { weeks } = snapshot;
   const firstIndex = weeks.findIndex((week) => week.inPeriod[period]);
   const first = firstIndex >= 0 ? weeks[firstIndex] : null;
   const before = firstIndex > 0 ? weeks[firstIndex - 1] : null;
+  const registrationStart = first ? shiftIsoDate(first.weekStartDate, -1) : rollingStart;
   const latest = weeks.at(-1) ?? null;
   const weekly = (level: (week: HealthMetricsEventsSnapshotWeek) => number, delta: (week: HealthMetricsEventsSnapshotWeek) => number) => {
     const end = latest ? level(latest) : 0;
@@ -624,8 +635,10 @@ export function buildHealthMetricsOverviewSnapshotView(
     {
       key: 'registration',
       title: 'Registration',
-      startHeader: first ? formatIsoDateLabel(shiftIsoDate(first.weekStartDate, -1)) : rollingStartHeader,
+      startHeader: registrationStart ? formatIsoDateLabel(registrationStart) : '',
+      startHeaderShort: registrationStart ? formatIsoShortYearDate(registrationStart) : '',
       endHeader,
+      endHeaderShort,
       rows: [
         snapshotRow('registrations', 'Registrations', registrations, formatCount),
         snapshotRow(
@@ -642,7 +655,9 @@ export function buildHealthMetricsOverviewSnapshotView(
       key: 'sponsorship',
       title: 'Sponsorship',
       startHeader: rollingStartHeader,
+      startHeaderShort: rollingStart ? formatIsoShortYearDate(rollingStart) : '',
       endHeader,
+      endHeaderShort,
       rows: [
         ...packages.map((item) => snapshotRow(`package-${item.key}`, item.key, item, formatCount)),
         ...(packages.length ? [{ ...snapshotRow('totals', 'Totals', totals, formatCount), totals: true }] : []),
@@ -1365,12 +1380,20 @@ function snapshotRow(
 /** "+139 (74%)" against the start; no share when the start is zero. A change under one unit reads as none. */
 function snapshotChange(start: number, end: number, format: (value: number) => string): HealthMetricsOverviewSnapshotChangeView {
   const change = Math.round(end - start);
-  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null };
+  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null, inkClass: 'text-gray-500' };
 
   const share = start > 0 ? ` (${Math.abs(Math.round((change / start) * 100))}%)` : '';
   return change > 0
-    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up' }
-    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' };
+    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up', inkClass: 'text-emerald-600' }
+    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down', inkClass: 'text-red-600' };
+}
+
+/** "Nov 6, 26": the Snapshot's phone headers shorten the year. */
+function formatIsoShortYearDate(iso: string): string {
+  const parsed = parseIsoDateAsUtcMidnight(iso);
+  if (!parsed) return iso;
+  const monthDay = parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${monthDay}, ${String(parsed.getUTCFullYear()).slice(-2)}`;
 }
 
 /** Whole dollars with separators, as the Snapshot shows money: `$4,575,877`. */

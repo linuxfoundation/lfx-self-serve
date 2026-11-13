@@ -722,6 +722,8 @@ export interface HealthMetricsOverviewSnapshotChangeView {
   tone: UiBadgeTone;
   /** A solid circle arrow; `null` for no change. */
   icon: string | null;
+  /** The change's colour as phone text under today's value: `text-emerald-600`, `text-red-600` or `text-gray-500`. */
+  inkClass: string;
 }
 
 /** One Snapshot row: the level at the window's start and at its end, and the change between. */
@@ -742,8 +744,12 @@ export interface HealthMetricsOverviewSnapshotSectionView {
   title: string;
   /** e.g. `Oct 25, 2026`. */
   startHeader: string;
+  /** The phone header, e.g. `Oct 25, 26`. */
+  startHeaderShort: string;
   /** e.g. `Nov 4, 2026 (today)`. */
   endHeader: string;
+  /** e.g. `Nov 4, 26 (today)`. */
+  endHeaderShort: string;
   rows: HealthMetricsOverviewSnapshotRowView[];
   /** Shown below the rows when no package has sold. */
   emptyCopy: string | null;
