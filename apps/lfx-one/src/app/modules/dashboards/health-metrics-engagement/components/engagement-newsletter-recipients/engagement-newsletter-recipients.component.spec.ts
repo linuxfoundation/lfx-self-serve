@@ -51,11 +51,9 @@ const RECIPIENTS: HealthMetricsEngagementNewsletterRecipients = {
 
 describe('EngagementNewsletterRecipientsComponent', () => {
   let fixture: ComponentFixture<EngagementNewsletterRecipientsComponent>;
-  let counts: (number | null)[];
   let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEngagementNewsletterRecipients | Error = RECIPIENTS): Promise<void> {
-    counts = [];
     verdicts = [];
     await TestBed.configureTestingModule({
       imports: [EngagementNewsletterRecipientsComponent],
@@ -70,7 +68,6 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementNewsletterRecipientsComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     fixture.detectChanges();
     await fixture.whenStable();
@@ -101,7 +98,6 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     // A failed delivery shows dashes, not zeros, and a missing organization reads "—".
     const failed = [...(query('engagement-newsletter-recipients-row-3')?.querySelectorAll('td') ?? [])].map((cell) => cell.textContent?.trim());
     expect(failed).toEqual(['Recipient Charlie—', 'Failed', '—', '—', '—', '—', '—']);
-    expect(counts.at(-1)).toBe(3);
     expect(verdicts).toEqual([false]);
   });
 
@@ -151,11 +147,10 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     expect(text('engagement-newsletter-recipients-truncated')).toContain('Showing the 3 most engaged recipients');
   });
 
-  it('settles empty with no badge for a foundation that has sent no newsletter', async () => {
+  it('settles empty for a foundation that has sent no newsletter', async () => {
     await render({ newsletter: null, recipients: [], truncated: false });
 
     expect(query('engagement-newsletter-recipients-table')).toBeNull();
-    expect(counts.at(-1)).toBeNull();
     expect(verdicts).toEqual([true]);
   });
 
@@ -163,7 +158,6 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     await render(new Error('boom'));
 
     expect(query('engagement-newsletter-recipients-error')).not.toBeNull();
-    expect(counts.at(-1)).toBeNull();
     expect(verdicts).toEqual([false]);
   });
 });

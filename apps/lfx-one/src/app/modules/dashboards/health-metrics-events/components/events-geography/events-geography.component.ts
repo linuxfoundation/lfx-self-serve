@@ -35,8 +35,6 @@ export class EventsGeographyComponent {
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** The sub-nav badge: countries in the selected period, `null` while loading, failed or unmeasured. */
-  public readonly countChange = output<number | null>();
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
@@ -50,7 +48,6 @@ export class EventsGeographyComponent {
   );
   /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
-  private readonly count: Signal<number | null> = computed(() => (this.loading() || this.loadFailed() ? null : this.view().countries));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -60,9 +57,6 @@ export class EventsGeographyComponent {
         .subscribe(() => {
           if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyView(this.view()));
         });
-      toObservable(this.count)
-        .pipe(distinctUntilChanged(), takeUntilDestroyed())
-        .subscribe((count) => this.countChange.emit(count));
     }
   }
 

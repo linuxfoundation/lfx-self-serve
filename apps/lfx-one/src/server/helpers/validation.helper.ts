@@ -10,6 +10,7 @@ import {
   AKRITES_ESCALATION_PATHS,
   AKRITES_INACTIVE_REASON_OPTIONS,
   AKRITES_STEWARD_ROLE_OPTIONS,
+  FOUNDATION_UID_PATTERN,
   VALID_CLASSIFICATIONS,
   isHealthMetricsRange,
 } from '@lfx-one/shared/constants';
@@ -89,9 +90,6 @@ export function validateItemKeyParameter(itemKey: unknown, req: Request, next: N
 
   return true;
 }
-
-/** query-service `parent`'s uid segment, per its OpenAPI schema (`^[a-zA-Z][a-zA-Z0-9_]*:[a-zA-Z0-9_-]+$` after the `project:` prefix). */
-const FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * Validates the optional `?foundation_uid=` query param (GH-2367), forwarded verbatim into the

@@ -68,8 +68,14 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
     '../../../../../packages/shared/src/constants/documents.constants'
   );
+  // Real value for the add-user conflict code: the add-refusal test asserts the wire value, and the
+  // user form reads the same constant. `project-permissions.constants.ts` has only a type-only import.
+  const permissionConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-permissions.constants')>(
+    '../../../../../packages/shared/src/constants/project-permissions.constants'
+  );
   return {
     ...formationRecordConstants,
+    PROJECT_USER_ALREADY_ON_PROJECT_CODE: permissionConstants.PROJECT_USER_ALREADY_ON_PROJECT_CODE,
     DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
     DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
     DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE: documentConstants.DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,

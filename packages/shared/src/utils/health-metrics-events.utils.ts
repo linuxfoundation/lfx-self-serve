@@ -76,17 +76,9 @@ import type {
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 
-/** Sub-nav items for the Events tab. The forecast carries a note but, per the design, no badge. */
-export function buildHealthMetricsEventsSubNavItems(
-  notes: Partial<Record<HealthMetricsEventsSectionKey, string>> = {},
-  counts: Partial<Record<HealthMetricsEventsSectionKey, number | null>> = {}
-): HealthMetricsEventsSubNavItem[] {
-  return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({
-    key: section.key,
-    label: section.label,
-    count: counts[section.key] ?? null,
-    note: notes[section.key] ?? '',
-  }));
+/** Sub-nav items for the Events tab; a section notes only once it reports a note. */
+export function buildHealthMetricsEventsSubNavItems(notes: Partial<Record<HealthMetricsEventsSectionKey, string>> = {}): HealthMetricsEventsSubNavItem[] {
+  return HEALTH_METRICS_EVENTS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
 }
 
 /** One organizations row. A zero sponsorship or proposal count reads as `—`: the view cannot tell it from not tracked. */
@@ -386,7 +378,7 @@ export function buildHealthMetricsEventsRegistrationsGrowthView(
 ): HealthMetricsEventsRegistrationsGrowthView {
   const byYear = new Map(growth.years.map((year) => [year.year, year]));
   const years = [...byYear.keys()];
-  if (years.length === 0) return { rows: [], yearCount: 0, hasPartialYear: false, pandemicNote: null };
+  if (years.length === 0) return { rows: [], yearCount: 0, pandemicNote: null };
 
   const first = Math.min(...years);
   const last = Math.max(...years);
@@ -397,7 +389,6 @@ export function buildHealthMetricsEventsRegistrationsGrowthView(
   return {
     rows,
     yearCount: rows.length,
-    hasPartialYear: rows.some((row) => row.isPartialYear),
     pandemicNote: formatRegistrationsGrowthPandemicNote(rows, metric),
   };
 }
@@ -567,7 +558,6 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
   return {
     foundationMeasured: geography.periods.length > 0,
     measured,
-    countries,
     countriesLabel: formatGeographyCountriesLabel(countries),
     headline: {
       key: 'countries',

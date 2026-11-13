@@ -3,27 +3,36 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <div class="flex items-center justify-between gap-[16px]" data-testid="meeting-details-header">
-  <!-- Inert until the big title scrolls under this row, so it is neither seen nor focused twice. -->
-  <div
-    class="flex h-[32px] min-w-0 flex-auto flex-col justify-center transition duration-200 motion-reduce:transition-none"
-    [class]="compact() ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-[6px] opacity-0'"
-    [attr.aria-hidden]="compact() ? null : 'true'"
-    [attr.inert]="compact() ? null : ''"
-    data-testid="meeting-details-header-compact">
-    @if (project(); as project) {
-      <lfx-meeting-details-project-link class="flex-none" [project]="project" size="small" />
-    }
-    <!-- Focusable so keyboard users can open the tooltip with the full title. -->
-    <span
-      class="flex-none truncate text-[16px] font-medium leading-[20px] text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-      role="img"
-      tabindex="0"
-      [attr.aria-label]="context.shownRow().title"
-      [lfxUiTooltip]="context.shownRow().title"
-      data-testid="meeting-details-header-title"
-      >{{ context.shownRow().title }}</span
-    >
-  </div>
+  @if (drawer) {
+    <!-- Inert until the big title scrolls under this row, so it is neither seen nor focused twice. -->
+    <div
+      class="flex h-[32px] min-w-0 flex-auto flex-col justify-center transition duration-200 motion-reduce:transition-none"
+      [class]="compact() ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-[6px] opacity-0'"
+      [attr.aria-hidden]="compact() ? null : 'true'"
+      [attr.inert]="compact() ? null : ''"
+      data-testid="meeting-details-header-compact">
+      @if (project(); as project) {
+        <lfx-meeting-details-project-link class="flex-none" [project]="project" size="small" />
+      }
+      <!-- Focusable so keyboard users can open the tooltip with the full title. -->
+      <span
+        class="flex-none truncate text-[16px] font-medium leading-[20px] text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+        role="img"
+        tabindex="0"
+        [attr.aria-label]="context.shownRow().title"
+        [lfxUiTooltip]="context.shownRow().title"
+        data-testid="meeting-details-header-title"
+        >{{ context.shownRow().title }}</span
+      >
+    </div>
+  } @else {
+    <!-- On a page the project leads this row; the page's top bar carries the compact title. -->
+    <div class="flex min-w-0 flex-auto items-center">
+      @if (project(); as project) {
+        <lfx-meeting-details-project-link [project]="project" />
+      }
+    </div>
+  }
   <div class="flex flex-none items-center gap-[8px]">
     @if (phone()) {
       <lfx-ui-button

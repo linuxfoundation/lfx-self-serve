@@ -29,6 +29,7 @@ import { UserService } from '@services/user.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
@@ -48,7 +49,7 @@ import { MeetingDetailsToolsComponent } from '../tools/meeting-details-tools.com
  * The meeting details: a sticky header, the title block, tabs for the agenda and the guests, and a sticky right column for
  * the schedule and tools. Each section mounts into its slot and reads `MeetingDetailsContext`.
  * @description Host-agnostic: the host provides `MeetingDetailsContext`, `MeetingDetailsArtifactsService`, a `MeetingDetailsSource`,
- * `MeetingsHomeEditService` and `MeetingsHomeDeleteService`. Outside a drawer the header drops Close.
+ * `MeetingsHomeEditService` and `MeetingsHomeDeleteService`. Outside a drawer the header drops Close and stops sticking.
  */
 @Component({
   selector: 'lfx-meeting-details-body',
@@ -75,10 +76,12 @@ import { MeetingDetailsToolsComponent } from '../tools/meeting-details-tools.com
 export class MeetingDetailsBodyComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
-  private readonly titleElement = viewChild.required<ElementRef<HTMLElement>>('titleElement');
+  private readonly titleElement = viewChild<ElementRef<HTMLElement>>('titleElement');
   private readonly artifacts = inject(MeetingDetailsArtifactsService);
   protected readonly ownActions = viewChild(MeetingDetailsOwnActionsComponent);
   protected readonly context = inject(MeetingDetailsContext);
+  /** Outside a drawer the details are a page: an h1, and the page's top bar takes the compact title. */
+  protected readonly page = !inject(UiDrawerContext, { optional: true });
 
   /** The big title has scrolled under the sticky header. */
   protected readonly compact = signal(false);
@@ -141,8 +144,8 @@ export class MeetingDetailsBodyComponent {
 
   /** Shows the compact title once the big one has scrolled above the sticky header. */
   private observeTitle(): void {
-    if (typeof IntersectionObserver === 'undefined') return;
-    const title = this.titleElement().nativeElement;
+    const title = this.titleElement()?.nativeElement;
+    if (!title || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
       ([entry]) => this.compact.set(!entry.isIntersecting && entry.boundingClientRect.top < (entry.rootBounds?.top ?? 0)),
       // The host's cdkScrollable scroller, such as the drawer body, else the viewport; 68px is the sticky header.

@@ -11,11 +11,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS,
-  HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS,
@@ -25,11 +23,9 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, debounceTime, distinctUntilChanged, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
-  HealthMetricsFootnotePart,
   HealthMetricsL2Range,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
@@ -42,7 +38,7 @@ import type {
  */
 @Component({
   selector: 'lfx-non-members-people',
-  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, InputTextComponent, TableComponent],
   templateUrl: './non-members-people.component.html',
 })
 export class NonMembersPeopleComponent {
@@ -53,8 +49,6 @@ export class NonMembersPeopleComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every engaged individual in the period, for the sub-nav badge; `null` while a new foundation or period is read, or after a failed read. */
-  public readonly countChange = output<number | null>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -67,8 +61,6 @@ export class NonMembersPeopleComponent {
   });
 
   protected readonly pageSizeOptions: number[] = [...HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS];
-  protected readonly footnote: readonly HealthMetricsFootnotePart[] = [{ text: HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE }];
-  protected readonly allTimeNote = HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE;
   protected readonly maxSearchLength = HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH;
   protected readonly size = signal<number>(HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE);
   protected readonly loading = signal<boolean>(true);
@@ -154,9 +146,6 @@ export class NonMembersPeopleComponent {
 
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
-    // The badge counts the whole period, so only a new foundation or period blanks it; paging and search keep it.
-    let countScope: string | null = null;
-
     return toSignal(
       toObservable(this.query).pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -164,11 +153,6 @@ export class NonMembersPeopleComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          const scope = `${query.foundationSlug}|${query.range}`;
-          if (scope !== countScope) {
-            countScope = scope;
-            this.countChange.emit(null);
-          }
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -180,11 +164,10 @@ export class NonMembersPeopleComponent {
               return of(HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED);
             }),
             tap((response) => {
-              // A clamped page fires a follow-up read, so this one neither settles nor reports a count.
+              // A clamped page fires a follow-up read, so this one does not settle.
               if (this.clampPage(response.totalRecords)) return;
 
               this.loading.set(!foundationSeen);
-              this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen) this.settled.emit(!this.loadFailed() && response.scopeTotal === 0);
             })

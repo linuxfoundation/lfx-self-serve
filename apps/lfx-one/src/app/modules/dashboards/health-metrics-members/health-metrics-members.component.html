@@ -15,22 +15,16 @@
     <lfx-members-growth (reading)="shell.sectionReading('growth')" (settled)="shell.sectionSettled('growth', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="breakdown">
-    <lfx-members-breakdown
-      (countChange)="breakdownCount.set($event)"
-      (reading)="shell.sectionReading('breakdown')"
-      (settled)="shell.sectionSettled('breakdown', $event)" />
+    <lfx-members-breakdown (reading)="shell.sectionReading('breakdown')" (settled)="shell.sectionSettled('breakdown', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="list">
-    <lfx-members-directory (countChange)="listCount.set($event)" (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list', $event)" />
+    <lfx-members-directory (reading)="shell.sectionReading('list')" (settled)="shell.sectionSettled('list', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="risk">
     <lfx-members-at-risk (noteChange)="riskNote.set($event)" (reading)="shell.sectionReading('risk')" (settled)="shell.sectionSettled('risk', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="renewals">
-    <lfx-members-renewals
-      (countChange)="renewalsCount.set($event)"
-      (reading)="shell.sectionReading('renewals')"
-      (settled)="shell.sectionSettled('renewals', $event)" />
+    <lfx-members-renewals (reading)="shell.sectionReading('renewals')" (settled)="shell.sectionSettled('renewals', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="board">
     <lfx-members-board-attendance

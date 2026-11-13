@@ -25,17 +25,10 @@
       (settled)="shell.sectionSettled('forecast', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="past">
-    <lfx-events-past-events
-      (countChange)="pastCount.set($event)"
-      (reading)="shell.sectionReading('past')"
-      (settled)="shell.sectionSettled('past', $event)"
-      (sectionPicked)="shell.scrollToSection($event)" />
+    <lfx-events-past-events (reading)="shell.sectionReading('past')" (settled)="shell.sectionSettled('past', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="reg">
-    <lfx-events-registrations-growth
-      (reading)="shell.sectionReading('reg')"
-      (settled)="shell.sectionSettled('reg', $event)"
-      (sectionPicked)="shell.scrollToSection($event)" />
+    <lfx-events-registrations-growth (reading)="shell.sectionReading('reg')" (settled)="shell.sectionSettled('reg', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="rev">
     <lfx-events-revenue (reading)="shell.sectionReading('rev')" (settled)="shell.sectionSettled('rev', $event)" />
@@ -47,9 +40,9 @@
     <lfx-events-speakers (noteChange)="speakersNote.set($event)" (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="orgs">
-    <lfx-events-organizations (countChange)="orgsCount.set($event)" (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
+    <lfx-events-organizations (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="geo">
-    <lfx-events-geography (countChange)="geoCount.set($event)" (reading)="shell.sectionReading('geo')" (settled)="shell.sectionSettled('geo', $event)" />
+    <lfx-events-geography (reading)="shell.sectionReading('geo')" (settled)="shell.sectionSettled('geo', $event)" />
   </ng-template>
 </lfx-health-metrics-l2-shell>
