@@ -137,6 +137,27 @@ describe('MeetingsHomeDeleteService', () => {
       expect(store.removeOccurrence).toHaveBeenCalledWith('synthetic-meeting', SECOND.occurrence_id);
     });
 
+    it('cancels a date without a meetings list behind it, as on the meeting page', () => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          MeetingsHomeDeleteService,
+          { provide: UserService, useValue: userService },
+          { provide: UiModalService, useValue: { open: modalOpen } },
+          { provide: UiToastService, useValue: { show: toastShow } },
+        ],
+      });
+      const results: boolean[] = [];
+      TestBed.inject(MeetingsHomeDeleteService)
+        .cancelOccurrence(row(SERIES, SECOND), SECOND)
+        .subscribe((cancelled) => results.push(cancelled));
+      confirmResult.next(true);
+
+      expect(results).toEqual([true]);
+      expect(toastShow).toHaveBeenCalledWith({ variant: 'dark', message: 'Meeting occurrence cancelled' });
+      expect(userService.refreshUserMeetings).toHaveBeenCalled();
+    });
+
     it('reports a dismissed cancel as not cancelled', () => {
       const results: boolean[] = [];
       service.cancelOccurrence(row(SERIES, SECOND), SECOND).subscribe((cancelled) => results.push(cancelled));

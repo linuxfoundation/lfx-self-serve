@@ -49,6 +49,7 @@ export class MeetingDetailsOwnActionsComponent {
 
   private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
     const registrantIds = this.context.meeting().my_registrant_ids;
+    if (this.context.listedSelfRegistrantUids().length > 0) return true;
     return registrantIds ? registrantIds.length > 0 : this.context.invited();
   });
 

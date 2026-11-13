@@ -165,7 +165,7 @@ describe('ParticipatingOrgsComponent', () => {
     expect(name?.tagName).toBe('A');
     expect(name?.getAttribute('href')).toBe(`/org/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
     expect(text('participating-orgs-subtitle')).toBe(
-      'Every organization contributing to Synthetic Project, ranked by activity and split by Synthetic Foundation membership.'
+      'Every company contributing to Synthetic Project, ranked by activity and split by Synthetic Foundation membership.'
     );
     expect(getSummary).toHaveBeenCalledWith(PROJECT_SLUG, '12mo');
     expect(getPage).toHaveBeenCalledWith(PROJECT_SLUG, { range: '12mo', segment: 'all', sort: 'commits', dir: 'desc', pageSize: 10, offset: 0 });
@@ -177,7 +177,7 @@ describe('ParticipatingOrgsComponent', () => {
     await render();
 
     expect(text('participating-orgs-subtitle')).toBe(
-      'Synthetic Foundation members and every organization contributing to Synthetic Foundation, ranked by activity.'
+      'Synthetic Foundation members and every company contributing to Synthetic Foundation, ranked by activity.'
     );
   });
 
@@ -464,7 +464,7 @@ describe('ParticipatingOrgsComponent', () => {
     getPage.mockReturnValue(httpError(403));
     await render();
 
-    expect(text('participating-orgs-no-access')).toContain("You don't have access to this project's participating organizations");
+    expect(text('participating-orgs-no-access')).toContain("You don't have access to this project's participating companies");
     expect(query('participating-orgs-table')).toBeNull();
     expect(query('participating-orgs-error')).toBeNull();
   });

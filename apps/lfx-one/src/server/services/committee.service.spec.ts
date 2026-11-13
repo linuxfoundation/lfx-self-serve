@@ -24,6 +24,7 @@ const {
   checkAccessStrict,
   fetchWithETag,
   updateWithETag,
+  deleteWithETag,
   resolveAuditUserDisplayName,
   isImpersonating,
   enrichWithProjectData,
@@ -43,6 +44,7 @@ const {
   ),
   fetchWithETag: vi.fn(),
   updateWithETag: vi.fn(),
+  deleteWithETag: vi.fn(),
   resolveAuditUserDisplayName: vi.fn(),
   isImpersonating: vi.fn(() => false),
   // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
@@ -66,7 +68,12 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
     '../../../../../packages/shared/src/constants/api.constants'
   );
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
   return {
+    COMMITTEE_DOCUMENT_DELETE_TYPES: documentConstants.COMMITTEE_DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
     // Mirrors packages/shared/src/constants/member-import.constants.ts; that module pulls in the mocked enums barrel.
@@ -96,6 +103,7 @@ vi.mock('./etag.service', () => ({
   ETagService: class {
     public fetchWithETag = fetchWithETag;
     public updateWithETag = updateWithETag;
+    public deleteWithETag = deleteWithETag;
   },
 }));
 vi.mock('./project.service', () => ({
@@ -374,6 +382,46 @@ describe('CommitteeService — getCommitteeDocuments', () => {
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Ada Lovelace' }, undefined);
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Bob Builder' }, undefined);
     expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Carol Danvers' }, 'legacyuser');
+  });
+});
+
+describe('CommitteeService — deleteCommitteeDocument', () => {
+  let service: CommitteeService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    deleteWithETag.mockReset();
+    vi.mocked(fetchAllQueryResources).mockReset();
+    fetchWithETag.mockResolvedValue({ data: {}, etag: 'etag-1' });
+    deleteWithETag.mockResolvedValue(undefined);
+    service = new CommitteeService();
+  });
+
+  it.each([
+    ['link', '/committees/committee-1/links/doc-1'],
+    ['file', '/committees/committee-1/documents/doc-1'],
+  ] as const)('deletes a %s through its own upstream path with the fetched ETag', async (type, path) => {
+    await service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', type);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'delete_committee_document');
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', 'delete_committee_document');
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(fetchAllQueryResources).not.toHaveBeenCalled();
+  });
+
+  it('rejects a folder before any upstream call: group folder delete is not available until the upstream guard is deployed', async () => {
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(fetchAllQueryResources).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
   });
 });
 

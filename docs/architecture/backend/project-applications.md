@@ -13,7 +13,7 @@ Everything is mounted at `/api/project-applications` (`routes/project-applicatio
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------- |
 | `GET /mine`                     | `GET /query/resources?type=project_application&tags=submitter:<username>`                                    | user    |
 | `GET /queue`                    | `GET /query/resources?type=project_application` (no project-tree filter)                                     | user    |
-| `GET /access`                   | access-check `team:formation#member`                                                                         | user    |
+| `GET /access`                   | access-check `team:formation#member` and `team:lf-staff#member`                                              | user    |
 | `POST /`                        | `POST /project-applications`                                                                                 | **M2M** |
 | `PUT /:uid`                     | `PUT /project-applications/{uid}` (`If-Match`)                                                               | user    |
 | `POST /:uid/withdraw` · `/deny` | `POST /project-applications/{uid}/withdraw` · `/deny` (`If-Match`)                                           | user    |
@@ -74,7 +74,7 @@ The 403 is expected when the formation member has no writer access on the chosen
 
 Both write guards use the strict membership check (`isFormationTeamMemberStrict`, backed by `checkSingleAccessStrict`): the accept pre-check, and the revise staff-key guard described below. If the access check is unavailable, the write aborts before anything is sent upstream, and the upstream error passes through to the caller (for example a 503). An outage is never treated as "not a member". As a result, a stored parent is never silently dropped, and an outage never shows up as a 403.
 
-Only the browser's `GET /access` probe uses the lenient `isFormationTeamMember` (`checkSingleAccess`). It reads an outage as "not a member", so the Project proposals tab stays hidden.
+Only the browser's `GET /access` probe uses the lenient checks (`checkSingleAccess`). It returns both `is_formation_team` and `is_lf_staff`, and each fails closed: an outage reads as "not a member", so the Project proposals tab stays hidden. `is_lf_staff` gates the read-only Pipeline tab for LF staff outside the formation team (#5544).
 
 Upstream, `parent_project_uid`, `project_slug` and `project_uid` are ordinary answer keys that any `writer` can change. `PROJECT_APPLICATION_STAFF_KEYS` lists them, and the BFF strips them:
 
@@ -89,4 +89,4 @@ Because accept can fail after an earlier write, the UI never retries an accept. 
 
 `validateProjectApplicationAnswers` (shared utils) mirrors formation-service's canonical-field rules, so a bad payload gets a field-specific 400 before any upstream call. Unknown keys are kept as they are.
 
-Answers, emails and upstream messages are never logged. Logs carry only non-sensitive metadata: uid, state, revision, upstream status and reason, counts, and formation-team membership. Read responses are `Cache-Control: private, no-store`.
+Answers, emails and upstream messages are never logged. Logs carry only non-sensitive metadata: uid, state, revision, upstream status and reason, counts, formation-team and LF-staff membership. Read responses are `Cache-Control: private, no-store`.

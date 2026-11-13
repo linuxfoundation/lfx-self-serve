@@ -291,8 +291,12 @@ export class MeetingDetailsGuestsComponent {
             // The previous date's count and hosts must not linger while this load runs, after it fails, or once hidden.
             this.context.guestCount.set(null);
             this.context.hosts.set([]);
+            this.context.listedSelfRegistrantUids.set([]);
           }
-          if (!canView) return of<MeetingGuestsLoad>({ status: 'ready', rows: [] });
+          if (!canView) {
+            this.context.listedSelfRegistrantUids.set([]);
+            return of<MeetingGuestsLoad>({ status: 'ready', rows: [] });
+          }
           const viewer = { username: this.userService.viewerUsername(), email: this.userService.user()?.email ?? null };
           let rows$: Observable<MeetingGuestRow[]>;
           if (ended) {
@@ -316,7 +320,12 @@ export class MeetingDetailsGuestsComponent {
                   viewer,
                   rsvpEnabled
                 );
-                return removedSelf ? rows.filter((row) => !row.you) : rows;
+                const selfUids = rows.filter((row) => row.you).map((row) => row.uid);
+                this.context.listedSelfRegistrantUids.set(removedSelf ? [] : selfUids);
+                if (!removedSelf) return rows;
+                // A new registrant uid for the viewer is a re-invite, which lifts the removal and re-emits without it.
+                this.meetingService.clearRemovalIfReinvited(meeting.id, selfUids);
+                return rows.filter((row) => !row.you);
               })
             );
           }

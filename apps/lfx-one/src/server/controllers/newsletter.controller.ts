@@ -18,6 +18,7 @@ import {
   NewsletterListParams,
   NewsletterRecipientCountPayload,
   NewsletterRenderPreviewPayload,
+  NewsletterResolveAudiencePayload,
   NewsletterSchedulePayload,
   NewsletterShareRequest,
   NewsletterStatus,
@@ -65,9 +66,60 @@ export class NewsletterController {
     try {
       const payload = req.body as NewsletterRecipientCountPayload;
       this.validateCommitteeUids(payload?.committee_uids, req.path, 'newsletter_recipient_count');
+      this.validateOptionalNewsletterUid(payload?.newsletter_uid, req.path, 'newsletter_recipient_count');
       const result = await this.newsletterService.recipientCount(req, projectUid, payload);
       logger.success(req, 'newsletter_recipient_count', startTime, { count: result.count });
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/projects/:projectUid/newsletters/:newsletterUid/audience
+   * Starts the background read of the draft's committees into its audience snapshot (#4352). The service
+   * answers with the audience, `processing` until the read finishes; the client polls GET for `ready`.
+   */
+  public async resolveAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Validation must run inside the try: Express 4 doesn't forward async
+    // rejections, so a throw before the catch would hang the request.
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const payload = req.body as NewsletterResolveAudiencePayload;
+      this.validateCommitteeUids(payload?.committee_uids, req.path, 'newsletter_audience_resolve');
+      const startTime = logger.startOperation(req, 'newsletter_audience_resolve', {
+        project_uid: projectUid,
+        newsletter_id: newsletterUid,
+        committee_count: payload.committee_uids.length,
+        refresh: payload.refresh === true,
+      });
+      const audience = await this.newsletterService.resolveAudience(req, projectUid, newsletterUid, {
+        committee_uids: payload.committee_uids,
+        refresh: payload.refresh === true,
+      });
+      logger.success(req, 'newsletter_audience_resolve', startTime, { newsletter_id: newsletterUid, status: audience.status });
+      res.json(audience);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/projects/:projectUid/newsletters/:newsletterUid/audience
+   */
+  public async getAudience(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const projectUid = this.requireProjectUid(req);
+      const newsletterUid = this.requireNewsletterUid(req);
+      const startTime = logger.startOperation(req, 'newsletter_audience_get', { project_uid: projectUid, newsletter_id: newsletterUid });
+      const audience = await this.newsletterService.getAudience(req, projectUid, newsletterUid);
+      logger.success(req, 'newsletter_audience_get', startTime, {
+        newsletter_id: newsletterUid,
+        status: audience.status,
+        recipient_count: audience.recipient_count,
+      });
+      res.json(audience);
     } catch (error) {
       next(error);
     }
@@ -86,6 +138,7 @@ export class NewsletterController {
     try {
       const payload = req.body as NewsletterRecipientCountPayload;
       this.validateCommitteeUids(payload?.committee_uids, req.path, 'newsletter_recipients');
+      this.validateOptionalNewsletterUid(payload?.newsletter_uid, req.path, 'newsletter_recipients');
       const result = await this.newsletterService.recipients(req, projectUid, payload);
       logger.success(req, 'newsletter_recipients', startTime, { count: result.recipients.length });
       res.json(result);
@@ -847,6 +900,18 @@ export class NewsletterController {
 
     if (Object.keys(fieldErrors).length > 0) {
       throw ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+        operation,
+        service: 'newsletter_controller',
+        path,
+      });
+    }
+  }
+
+  /** `newsletter_uid` is optional on the recipient routes; when present it must be a UUID. */
+  private validateOptionalNewsletterUid(uid: unknown, path: string, operation: string): void {
+    if (uid === undefined) return;
+    if (typeof uid !== 'string' || !isUuid(uid)) {
+      throw ServiceValidationError.forField('newsletter_uid', 'newsletter_uid must be a UUID', {
         operation,
         service: 'newsletter_controller',
         path,

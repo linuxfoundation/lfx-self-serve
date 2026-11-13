@@ -143,11 +143,13 @@ describe('HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS', () => {
     'non-members': Object.values(HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS),
   };
 
-  it.each(Object.entries(HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS))('%s lands on a real section of a real tab, clearing only that tab’s params', (_key, link) => {
+  // No fragment opens the tab at the top; a named one must be a real section.
+  it.each(Object.entries(HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS))('%s lands on a real tab (and section), clearing only that tab’s params', (_key, link) => {
     const [base, tab] = link.commands;
+    const fragment = 'fragment' in link ? link.fragment : undefined;
     expect(base).toBe(HEALTH_METRICS_BASE_PATH);
     expect(HEALTH_METRICS_TABS.map((candidate) => candidate.route)).toContain(tab);
-    expect(sections[tab].map((section) => section.key)).toContain(link.fragment);
+    if (fragment !== undefined) expect(sections[tab].map((section) => section.key)).toContain(fragment);
     for (const param of Object.keys(link.queryParams)) expect(params[tab] ?? []).toContain(param);
   });
 });
@@ -178,7 +180,7 @@ describe('buildHealthMetricsOverviewOrgsView', () => {
       ['Non-members', '4,088'],
       ['Non-renewals', '270'],
     ]);
-    expect(members.link.fragment).toBe('list');
+    expect(members.link.fragment).toBeUndefined();
     expect(nonMembers.link.commands[1]).toBe('non-members');
     expect(members.rows.map((row) => [row.label, row.countLabel, row.pctLabel])).toEqual([
       ['High', '64', '28%'],

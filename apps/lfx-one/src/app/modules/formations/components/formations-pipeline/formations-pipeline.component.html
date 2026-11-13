@@ -12,22 +12,30 @@
       }
     </div>
   } @else {
+    @if (isStaffView() && !loading()) {
+      <p class="text-sm text-gray-500" data-testid="formations-pipeline-staff-note">{{ copy.staffNote }}</p>
+    }
     <!-- The stat strip is a desktop affordance; the phone list is led by the stage pills. -->
     <div class="hidden min-[600px]:block" data-testid="formations-pipeline-stats">
-      <lfx-stat-card-grid [cards]="statCards()" [loading]="loading()" [columns]="5" (actionClick)="onStatAction($event)" />
+      <lfx-stat-card-grid [cards]="statCards()" [loading]="loading()" [columns]="statColumns()" (actionClick)="onStatAction($event)" />
     </div>
 
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="formations-pipeline-card">
       <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-200">
         <div class="max-w-full overflow-x-auto min-[600px]:hidden" data-testid="formations-pipeline-pills-phone">
-          <lfx-filter-pills [options]="pillOptions()" [selectedFilter]="stage()" variant="track" ariaLabel="Stage" (filterChange)="onStageChange($event)" />
+          <lfx-filter-pills
+            [options]="pillOptions()"
+            [selectedFilter]="selectedStage()"
+            variant="track"
+            ariaLabel="Stage"
+            (filterChange)="onStageChange($event)" />
         </div>
         <div class="hidden min-[600px]:block" data-testid="formations-pipeline-pills">
-          <lfx-filter-pills [options]="pillOptions()" [selectedFilter]="stage()" ariaLabel="Stage" (filterChange)="onStageChange($event)" />
+          <lfx-filter-pills [options]="pillOptions()" [selectedFilter]="selectedStage()" ariaLabel="Stage" (filterChange)="onStageChange($event)" />
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-          <div class="w-full min-[600px]:w-56 max-[599px]:[&_.p-select]:min-h-11">
+          <div class="w-full min-[600px]:w-56 max-[599px]:[&_.p-select]:min-h-11" (focusin)="onFoundationSelectOpen()">
             <lfx-select
               [form]="filterForm"
               control="foundation"
@@ -39,12 +47,41 @@
               size="small"
               data-testid="formations-pipeline-foundation" />
           </div>
+          <div class="w-full min-[600px]:w-52 max-[599px]:[&_.p-select]:min-h-11">
+            <lfx-select
+              [form]="filterForm"
+              control="foundationKind"
+              [options]="foundationKindOptions()"
+              [ariaLabel]="copy.foundationKindLabel"
+              styleClass="w-full"
+              size="small"
+              data-testid="formations-pipeline-foundation-kind" />
+          </div>
+          @for (key of classificationKeys; track key) {
+            <div class="w-full min-[600px]:w-52 max-[599px]:[&_.p-multiselect]:min-h-11">
+              <lfx-multi-select
+                [form]="filterForm"
+                [control]="key"
+                [options]="classificationOptions()[key]"
+                [placeholder]="classificationLabels[key]"
+                [ariaLabel]="classificationLabels[key]"
+                [showToggleAll]="false"
+                [filter]="true"
+                [filterPlaceHolder]="classificationPlaceholders[key]"
+                [panelStyleClass]="classificationPanelClasses[key]"
+                [matchTriggerWidth]="true"
+                styleClass="w-full"
+                size="small"
+                [attr.data-testid]="'formations-pipeline-classification-' + key" />
+            </div>
+          }
           <div class="w-full min-[600px]:w-64">
             <lfx-input-text
               [form]="filterForm"
               control="search"
               [placeholder]="copy.searchPlaceholder"
               [ariaLabel]="copy.searchPlaceholder"
+              [maxlength]="searchMaxLength"
               icon="fa-light fa-search"
               styleClass="w-full"
               size="small"
@@ -94,7 +131,7 @@
               data-testid="formations-pipeline-empty" />
           }
         } @else {
-          <!-- Desktop table. min-w-[64rem] is exact by design: below it the eight columns crush each other, so the card scrolls sideways. -->
+          <!-- Desktop table. min-w-[70rem] is exact by design: below it the nine columns crush each other, so the card scrolls sideways. -->
           <div class="hidden min-[600px]:block overflow-x-auto" data-testid="formations-pipeline-table-wrapper">
             <lfx-table
               [value]="displayRows()"
@@ -106,7 +143,7 @@
               [showCurrentPageReport]="true"
               currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
               dataKey="uid"
-              tableStyleClass="table-fixed min-w-[64rem]"
+              tableStyleClass="table-fixed min-w-[70rem]"
               selectionMode="single"
               (onRowSelect)="onRowSelect($event)"
               ariaLabel="Formation pipeline"
@@ -172,6 +209,24 @@
                       }
                     </div>
                   </td>
+                  <td class="break-words" [attr.data-testid]="'formations-pipeline-lead-' + row.uid">
+                    @if (row.formationLeadEmail && row.formationLeadEmail !== row.formationLeadLabel) {
+                      <!-- Focusable so the email tooltip is reachable from the keyboard; the group's label gives screen readers the same name and email. -->
+                      <span
+                        class="text-sm text-gray-700 break-words"
+                        role="group"
+                        tabindex="0"
+                        [attr.aria-label]="row.formationLeadLabel + ', ' + row.formationLeadEmail"
+                        [pTooltip]="row.formationLeadEmail"
+                        tooltipPosition="top"
+                        tooltipStyleClass="max-w-none whitespace-nowrap"
+                        tooltipEvent="both">
+                        <span aria-hidden="true">{{ row.formationLeadLabel }}</span>
+                      </span>
+                    } @else {
+                      <span class="text-sm break-words" [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'">{{ row.formationLeadLabel }}</span>
+                    }
+                  </td>
                   <td class="text-sm text-gray-700">{{ row.formationDateLabel || '—' }}</td>
                   <td class="text-sm text-gray-700">{{ row.legalEntityLabel || '—' }}</td>
                   <td>
@@ -219,6 +274,17 @@
                         · {{ row.launch.relativeLabel }}
                       }
                     </span>
+                  </div>
+                  <div class="flex justify-between gap-3 text-xs">
+                    <span class="text-gray-500">Formation lead</span>
+                    <div class="flex flex-col items-end min-w-0 text-right" [attr.data-testid]="'formations-pipeline-mobile-lead-' + row.uid">
+                      <span class="break-words" [class]="row.formationLeadEmail ? 'text-gray-700' : 'text-gray-500'">{{ row.formationLeadLabel }}</span>
+                      @if (row.formationLeadEmail && row.formationLeadEmail !== row.formationLeadLabel) {
+                        <span class="break-all text-gray-500" [attr.data-testid]="'formations-pipeline-mobile-lead-email-' + row.uid">{{
+                          row.formationLeadEmail
+                        }}</span>
+                      }
+                    </div>
                   </div>
                   <div class="flex justify-between gap-3 text-xs">
                     <span class="text-gray-500">ED / PM</span>

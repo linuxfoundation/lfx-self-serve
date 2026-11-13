@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { afterNextRender, booleanAttribute, ChangeDetectionStrategy, Component, computed, ElementRef, input, signal, Signal, viewChild } from '@angular/core';
-import { UiAvatarStatus, UiAvatarTone } from '@lfx-one/shared/interfaces';
+import { UiAvatarInitialsWeight, UiAvatarShape, UiAvatarStatus, UiAvatarTone } from '@lfx-one/shared/interfaces';
 
 import { UiSkeletonComponent } from '../skeleton/skeleton.component';
 import { UiTooltipDirective } from '../tooltip/tooltip.directive';
 
 /**
  * A person, organization or bot as a photo or initials in a circle. Falls back from the photo to the icon or
- * initials when the image is missing or fails to load, and to a person glyph when there is no photo, icon or initials (a blank name). Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
- * 48 to 64 in headers. Use `lfx-ui-avatar-group` to stack several.
+ * initials when the image is missing or fails to load, and to a person glyph (a building glyph for `shape="logo"`) when there is no photo, icon or initials (a blank name). Match the size to the text beside it: 20 to 24 next to 14px text, 32 next to 16px,
+ * 48 to 64 in headers. Use `lfx-ui-avatar-group` to stack several. `shape="logo"` is the bordered company logo box used beside a
+ * company name in tables.
  */
 @Component({
   selector: 'lfx-ui-avatar',
@@ -46,8 +47,15 @@ export class UiAvatarComponent {
   public readonly size = input<number>(32);
   /** `neutral` is the default: an accent-200 fill with accent-800 text. Any other role tints the circle with its 600 fill and white text, to tell people apart in dense lists. */
   public readonly tone = input<UiAvatarTone>('neutral');
-  /** `circle` is for people; `rounded` has 8px corners, for organizations and other entities. */
-  public readonly shape = input<'circle' | 'rounded'>('circle');
+  /**
+   * `circle` is for people; `rounded` has 8px corners, for organizations and other entities. `logo` is the company logo box: white
+   * with a slate-200 border, 6px corners and 4px padding in both themes, the image contained, and the first letter in slate-600 without one.
+   */
+  public readonly shape = input<UiAvatarShape>('circle');
+  /** Initials size in px, replacing the 38% scale, such as 11 on the 32px avatar of a dense table. */
+  public readonly initialsSize = input<number | null>(null);
+  /** `semibold` for the 600-weight initials of a dense table; `medium` (500) everywhere else. The `logo` shape is always semibold. */
+  public readonly initialsWeight = input<UiAvatarInitialsWeight>('medium');
   /** Shows a shimmering shell while the real avatar loads. Never use it as a permanent fallback. */
   public readonly placeholder = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Hides the avatar from assistive technology. Set it when a visible name sits next to the avatar. */
@@ -69,6 +77,11 @@ export class UiAvatarComponent {
   protected readonly text: Signal<string> = this.initText();
   protected readonly fontSize: Signal<number> = this.initFontSize();
   protected readonly classes: Signal<string> = this.initClasses();
+  // A logo is contained, square-cornered, inside the padded box so its artwork stays whole; a photo covers the shape.
+  protected readonly imageClasses: Signal<string> = computed(
+    () => `h-full w-full ${this.shape() === 'logo' ? 'object-contain' : 'rounded-[inherit] object-cover'}`
+  );
+  protected readonly fallbackIcon: Signal<string> = computed(() => (this.shape() === 'logo' ? 'fa-light fa-building' : 'fa-light fa-user'));
 
   public constructor() {
     // An image that failed before hydration never fires `error`; decode it once after the first render. Never runs on the server.
@@ -109,14 +122,23 @@ export class UiAvatarComponent {
       }
       // Split by code point so an emoji or other astral character is not cut in half.
       const chars = (word: string) => Array.from(word);
+      // A logo box falls back to the company's first letter only.
+      if (this.shape() === 'logo') {
+        return chars(words[0])[0].toUpperCase();
+      }
       const letters = words.length > 1 ? chars(words[0])[0] + chars(words[1])[0] : chars(words[0]).slice(0, 2).join('');
       return letters.toUpperCase();
     });
   }
 
   private initFontSize(): Signal<number> {
-    // The `+N` overflow tile of a group uses the library's smaller 32% scale; initials use 38%.
-    return computed(() => this.size() * (this.initials().startsWith('+') ? 0.32 : 0.38));
+    // The `+N` overflow tile of a group uses the library's smaller 32% scale; initials use 38%; a logo letter is 10px on 24px.
+    return computed(() => {
+      const fixed = this.initialsSize();
+      if (fixed) return fixed;
+      if (this.shape() === 'logo') return this.size() * (10 / 24);
+      return this.size() * (this.initials().startsWith('+') ? 0.32 : 0.38);
+    });
   }
 
   private initStatusClasses(): Signal<string> {
@@ -139,9 +161,11 @@ export class UiAvatarComponent {
 
   private initClasses(): Signal<string> {
     return computed(() => {
-      const base = 'relative inline-grid shrink-0 select-none place-items-center font-medium leading-none';
+      const isLogo = this.shape() === 'logo';
+      const weight = isLogo || this.initialsWeight() === 'semibold' ? 'font-semibold' : 'font-medium';
+      const base = `relative inline-grid shrink-0 select-none place-items-center leading-none ${weight}`;
       // Exact px, not rem: the app root font is 14px.
-      const shapes = { circle: 'rounded-ui-full', rounded: 'rounded-[8px]' };
+      const shapes = { circle: 'rounded-ui-full', rounded: 'rounded-[8px]', logo: 'rounded-[6px]' };
       // text-ui-white matches the library's --white on tints; no on-fill token exists yet.
       const tints = {
         // A photo sits on neutral-100, so a loading or transparent image never shows the accent fill.
@@ -152,8 +176,12 @@ export class UiAvatarComponent {
         warning: 'bg-ui-warning-600 text-ui-white',
         danger: 'bg-ui-danger-600 text-ui-white',
       };
+      // The logo box ignores tone and theme: white (logos expect it) with the light theme's slate-200 border and slate-600 letter,
+      // read from the palette variables since neutral-* flips in the dark theme. Exact px, not rem.
+      const logo = 'border border-[color:var(--ui-slate-200)] bg-ui-white p-[4px] text-[color:var(--ui-slate-600)]';
       // The placeholder is a skeleton clipped to the avatar shape.
-      const fill = this.placeholder() ? 'overflow-hidden' : tints[this.tone()];
+      let fill = isLogo ? logo : tints[this.tone()];
+      if (this.placeholder()) fill = 'overflow-hidden';
       const ring = this.stacked() ? 'ring-2 ring-ui-background-100' : '';
       return `${base} ${shapes[this.shape()]} ${fill} ${ring}`;
     });

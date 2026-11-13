@@ -29,9 +29,10 @@ export class MeetingSelfRemovalService {
         filter(() => this.subject() === subject),
         tap((result) => {
           if (result.remaining_registrant_ids.length > 0) {
+            this.meetingService.rememberRemovedRegistrants(meetingId, result.removed_registrant_ids);
             this.userService.refreshUserMeetings(false);
           } else {
-            this.meetingService.markRegistrationRemoved(meetingId);
+            this.meetingService.markRegistrationRemoved(meetingId, result.removed_registrant_ids);
           }
         })
       );

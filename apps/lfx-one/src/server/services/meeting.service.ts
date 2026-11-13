@@ -1733,6 +1733,14 @@ export class MeetingService {
       }
 
       const content = Buffer.concat(chunks).toString('utf-8');
+      // An unauthenticated platform URL answers with an HTML page instead of the file.
+      if (!content.trimStart().startsWith('WEBVTT')) {
+        logger.warning(req, 'get_past_meeting_transcript_content', 'Transcript file is not WebVTT, returning null', {
+          past_meeting_id: pastMeetingUid,
+          content_type: response.headers.get('content-type'),
+        });
+        return null;
+      }
       return { content };
     } catch (error) {
       logger.warning(req, 'get_past_meeting_transcript_content', 'Failed to fetch transcript content, returning null', {
