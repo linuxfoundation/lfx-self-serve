@@ -1627,7 +1627,11 @@
     }
   }
 
-  // Navigation menu.
+  // Navigation menu. Section labels are neutral-500, a design choice: stronger than the spec's neutral-400.
+  .lfxn__section-label {
+    color: var(--ui-neutral-500);
+  }
+
   .lfxn__section-rule,
   .lfxn__rule {
     background-image: repeating-linear-gradient(to right, var(--ui-neutral-300) 0 1px, transparent 1px 5px);
@@ -1685,8 +1689,10 @@
     color: var(--ui-neutral-500);
   }
 
+  // The notice sits on the neutral-100 panel itself, not a white card: neutral-600 keeps its text at WCAG AA.
   .lfxn__lookup-notice {
     border-color: var(--ui-neutral-alpha-200);
+    color: var(--ui-neutral-600);
   }
 
   .lfxn__empty-action,
