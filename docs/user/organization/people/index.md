@@ -4,7 +4,7 @@ description: How to read the People page for the selected organization — its A
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, people, employees, contributors, maintainers, board, committee, key-contacts, events, training, time-range, team-members]
-last_updated: 2026-11-12
+last_updated: 2026-11-15
 intercom_collection: Organization
 ---
 
@@ -167,7 +167,7 @@ Select a row on either tab to expand it and see each event, course or certificat
 
 You filter a People tab with the search box and menus above its table. Which menus a tab has depends on the tab. **All Employees** and **Contributors** have the most:
 
-1. Type in the search box to find a person. On **All Employees**, **Search by name, title, email or username...** matches a person's name, job title, email or LF username, and ignores case, accents and spaces, so `jose ramirez` finds **José Ramírez**. On **Contributors**, **Search contributors...**, and on **Event Attendees**, **Search event attendees...**, find a person by name or job title, and also ignore case, accents and spaces.
+1. Type in the search box to find a person. On **All Employees**, **Search by name, title, email or username...** matches a person's name, job title, email, LF username or GitHub username, and ignores case, accents and spaces, so `jose ramirez` finds **José Ramírez**. A name matches in either order, given name first or family name first, with or without a space: `lovelace ada` and `lovelaceada` both find **Ada Lovelace**. The LF username is the person's Linux Foundation account name, which is not their GitHub username. A GitHub username matches only when it is linked to the person's code in the selected time range, project type and organization scope; someone with no code there is still found by name. On **Contributors**, **Search contributors...**, and on **Event Attendees**, **Search event attendees...**, find a person by name or job title, and also ignore case, accents and spaces.
 2. Open the foundation menu, which starts on **All Foundations**, and select a foundation. On **Contributors**, also pick a project in the menu that starts on **Any project**.
 3. On **All Employees**, pick an activity: **All Activity**, **Board & Committee**, **Code contributions** (or **Commits**, when you count commits), **Events** or **Training**.
 4. Select a time range: **Past 30 days**, **Past 90 days**, **Past 365 days**, **Past 2 years** or **All time**. **Past 2 years** is the default.

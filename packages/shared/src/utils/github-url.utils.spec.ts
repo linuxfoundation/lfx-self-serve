@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { GITHUB_RESERVED_ROOT_SEGMENTS } from '../constants/github-url.constants';
 
-import { parseGithubUrlTarget } from './github-url.utils';
+import { parseGithubUrlTarget, parseGithubUsername } from './github-url.utils';
 
 /**
  * One parser serves both the intake form's inline warning and the BFF's README
@@ -128,5 +128,24 @@ describe('parseGithubUrlTarget', () => {
   it('returns null for a bare github.com with no owner at all', () => {
     expect(parseGithubUrlTarget('https://github.com')).toBeNull();
     expect(parseGithubUrlTarget('https://github.com/')).toBeNull();
+  });
+});
+
+describe('parseGithubUsername', () => {
+  it('keeps a bare handle and strips a leading @', () => {
+    expect(parseGithubUsername('example-gh-user')).toBe('example-gh-user');
+    expect(parseGithubUsername(' @example-gh-user ')).toBe('example-gh-user');
+  });
+
+  it('reads the handle from a github.com URL', () => {
+    expect(parseGithubUsername('https://github.com/example-gh-user')).toBe('example-gh-user');
+    expect(parseGithubUsername('github.com/example-gh-user?tab=repositories')).toBe('example-gh-user');
+  });
+
+  it('returns null for a blank value or a URL on another host', () => {
+    expect(parseGithubUsername(null)).toBeNull();
+    expect(parseGithubUsername('')).toBeNull();
+    expect(parseGithubUsername('@')).toBeNull();
+    expect(parseGithubUsername('https://gitlab.com/example-org/example-repo')).toBeNull();
   });
 });

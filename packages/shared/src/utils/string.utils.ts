@@ -59,6 +59,27 @@ export function foldForSearch(value: string | null | undefined): string {
 }
 
 /**
+ * The {@link foldForSearch} keys a person's name matches in either order (linuxfoundation/lfx-self-serve#5687): the name
+ * itself, every rotation of its space-separated parts (`明华 李` -> `李明华`, `Juan Carlos Pérez` -> `perezjuancarlos` and
+ * `carlosperezjuan`), and `lastName` + `firstName` when both are present, for names whose parts are stored separately.
+ * Folding removes the spaces, so a query matches with or without one between the parts. Empty keys are dropped and
+ * duplicates collapsed.
+ */
+export function nameSearchKeys(name: string | null | undefined, firstName: string | null | undefined, lastName: string | null | undefined): string[] {
+  const tokens = (name ?? '')
+    .normalize('NFKC')
+    .split(/[\p{White_Space}\p{Default_Ignorable_Code_Point}]+/u)
+    .filter(Boolean);
+  const keys = tokens.map((_, i) => foldForSearch([...tokens.slice(i), ...tokens.slice(0, i)].join('')));
+  const first = foldForSearch(firstName);
+  const last = foldForSearch(lastName);
+  if (first && last) {
+    keys.push(last + first);
+  }
+  return [...new Set(keys.filter(Boolean))];
+}
+
+/**
  * Wraps a text string into multiple lines, breaking on word boundaries.
  * Used to produce multi-line Chart.js axis labels (which accept `string[]`).
  * @param text - The label text to wrap

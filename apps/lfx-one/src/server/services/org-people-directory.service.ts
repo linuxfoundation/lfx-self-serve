@@ -94,6 +94,8 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeCountedRow, value: unknow
       return typeof value === 'number';
     case 'isFormer':
       return value === true || isColumnarAbsent(value);
+    case 'githubUsernames':
+      return isStringArray(value) || isColumnarAbsent(value);
     default:
       return true;
   }

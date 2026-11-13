@@ -84,6 +84,8 @@ export interface OrgPersonLiveCode {
   codeActivitiesCount: number;
   /** Foundations of the projects they have code in, sorted. */
   foundationIds: string[];
+  /** Distinct GitHub handles linked to that code, parsed and sorted (lfx-self-serve#5687); empty when none is linked. */
+  githubUsernames: string[];
 }
 
 /** The live code of a range, project scope and organization scope, per person key, with the labels of its foundations. */

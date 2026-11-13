@@ -1082,6 +1082,57 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       }
     });
 
+    describe('searching by name order and GitHub username (lfx-self-serve#5687)', () => {
+      const search = async (term: string): Promise<string[]> => {
+        (fixture.componentInstance as unknown as { searchTerm: WritableSignal<string> }).searchTerm.set(term);
+        await settle();
+        return rowKeys().sort();
+      };
+
+      beforeEach(async () => {
+        await mount('browser', '/?employment=current');
+        snowflake$.next(
+          response(
+            [
+              // Given name first, family name last, as the warehouse stores it.
+              row('p-cjk', '\u660E\u534E \u674E', { commitsCount: 1 }),
+              row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
+              // A handle that appears nowhere in the name, email or LF username, on someone whose only activity is an event.
+              row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', githubUsernames: ['example-gh-user'], commitsCount: 0, eventsCount: 1 }),
+              row('p-other', 'Alan Turing', { commitsCount: 1 }),
+            ],
+            4
+          )
+        );
+        snowflake$.complete();
+        former$.next(response([], 0));
+        former$.complete();
+        await settle();
+      });
+
+      it('finds a name searched family name first, with or without a space', async () => {
+        expect(await search('\u674E\u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+        expect(await search('\u674E \u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+      });
+
+      it('finds a three-part name from any starting part, ignoring accents and spaces', async () => {
+        expect(await search('p\u00E9rez juan carlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+        expect(await search('perezjuancarlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+      });
+
+      it('finds someone by a GitHub username their name, email and LF username do not contain', async () => {
+        expect(await search('example-gh-user')).toEqual(['org-people-all-employees-row-p-github']);
+        expect(await search('EXAMPLE-GH')).toEqual(['org-people-all-employees-row-p-github']);
+      });
+
+      it('still applies the other filters to a GitHub username match', async () => {
+        const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ activity: FormControl<string> }> };
+        component.filterForm.controls.activity.setValue('code');
+
+        expect(await search('example-gh-user')).toEqual([]);
+      });
+    });
+
     it('never joins a key contact on username: the key-contact row and the former row both stay, under "All"', async () => {
       await mount('browser', '/?employment=all');
       await answerCurrent();

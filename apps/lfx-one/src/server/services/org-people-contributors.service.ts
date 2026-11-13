@@ -126,8 +126,9 @@ export class OrgPeopleContributorsService {
    * The (person, project) code rows of the window, project scope and resolved organization scope, every count column
    * included and team members kept — the one live code read People → Contributors and All Employees share
    * (lfx-self-serve#4735), so both count the same people at any time of day.
-   * `people-contributors:v5:{timeRange}:{projectScope}:{orgScope}` (lfx-self-serve#4482, lfx-self-serve-ops#1219): the
-   * rows no longer carry the declared-maintainer flags, so a `v4` entry must miss. The commit scope, metric,
+   * `people-contributors:v6:{timeRange}:{projectScope}:{orgScope}` (lfx-self-serve#4482, lfx-self-serve-ops#1219): the
+   * rows no longer carry the declared-maintainer flags, so a `v4` entry must miss. `v6` (lfx-self-serve#5687): rows
+   * carry `GITHUB_USERNAME`, which All Employees search reads, so a `v5` entry must miss. The commit scope, metric,
    * employment and team members only pick after the read, so they share the entry; the organization scope picks the
    * columns read.
    */
@@ -139,7 +140,7 @@ export class OrgPeopleContributorsService {
   ): Promise<ContributorPersonProjectRow[]> {
     return withOrgCompactCache(
       accountId,
-      `people-contributors:v5:${timeRange}:${projectScope}:${orgScope}`,
+      `people-contributors:v6:${timeRange}:${projectScope}:${orgScope}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchPersonProjectRows(accountId, timeRange, projectScope, orgScope),
       { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
@@ -168,6 +169,7 @@ export class OrgPeopleContributorsService {
         MIN(cdp_member_id) AS cdp_member_id,
         MAX(display_name) AS display_name,
         MAX(title) AS title,
+        MAX(github_username) AS github_username,
         MAX(project_name) AS project_name,
         MAX(project_slug) AS project_slug,
         MAX(foundation_id) AS foundation_id,
@@ -413,13 +415,17 @@ function isCompactContributorRows(value: unknown): boolean {
   // Absence and wrong types are still rejected — those the mapper cannot survive.
   const personKeyIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('PERSON_KEY');
   const memberIdIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('CDP_MEMBER_ID');
+  const githubUsernameIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('GITHUB_USERNAME');
   const projectIdIndex = ORG_CONTRIBUTOR_PROJECT_COLUMNS.indexOf('PROJECT_ID');
   // `CDP_MEMBER_ID` may be null, not just a string: the query fills it with `MIN(cdp_member_id)`, and
   // an aggregate over an all-NULL group returns NULL. Prod held no such group when this was written,
   // but the cache must never be stricter than the uncached path — which passes a NULL straight
-  // through — or one such row would make that org's entry a permanent miss.
+  // through — or one such row would make that org's entry a permanent miss. `GITHUB_USERNAME` is null for code with no
+  // linked handle, and the live-code merge parses it as a string.
   if (
-    !cache.rows.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[memberIdIndex])) ||
+    !cache.rows.r.every(
+      (row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[memberIdIndex]) && isStoredNullableString(row[githubUsernameIndex])
+    ) ||
     !cache.projects.r.every((row) => isStoredNullableString(row[projectIdIndex]))
   ) {
     return false;

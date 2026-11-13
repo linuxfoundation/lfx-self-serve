@@ -33,6 +33,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // stub would make the round-trip assertions below vacuous.
   ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/github-url.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-people.constants')),
@@ -346,7 +347,7 @@ beforeEach(() => {
       ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER,
       LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, DISPLAY_NAME TEXT, TITLE TEXT, PROJECT_NAME TEXT, PROJECT_SLUG TEXT, FOUNDATION_SLUG TEXT,
       DAILY_COMMITS INTEGER, DAILY_MERGED_COMMITS INTEGER, DAILY_SCOPE_COMMITS INTEGER, DAILY_SCOPE_MERGED_COMMITS INTEGER, DAILY_CODE_ACTIVITIES INTEGER,
-      IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+      IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0, GITHUB_USERNAME TEXT
     )
   `);
   // People with code but no employment row (lfx-self-serve#4730); empty unless a test adds someone.
@@ -1827,9 +1828,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
           'people-all:v8:30d:all',
           'people-all:v8:all:all',
           'people-all:v8:all:lf',
-          'people-contributors:v5:30d:all:all',
-          'people-contributors:v5:all:all:all',
-          'people-contributors:v5:all:lf:all',
+          'people-contributors:v6:30d:all:all',
+          'people-contributors:v6:all:all:all',
+          'people-contributors:v6:all:lf:all',
           'people-former:v4:30d:all',
           'people-former:v4:all:all',
           'people-unclassified:v2:30d:all',
@@ -1915,6 +1916,67 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(current.stats.codeContributors + offRoster.stats.codeContributors).toBe(2);
       // The off-roster read classifies against the roster entry the page lists, not a separate classification read.
       expect((execute.mock.calls as [string][]).some(([query]) => query.includes("IFF(IS_FORMER, 'former', 'current')"))).toBe(false);
+    });
+  });
+
+  describe('GitHub usernames for All Employees search (lfx-self-serve#5687)', () => {
+    beforeEach(() => {
+      database.exec(TRAINING_FOUNDATION_COLUMNS);
+    });
+
+    /** Sets the warehouse `github_username` on every code day of `key`'s project in `foundationId`. */
+    function setGithubUsername(key: string, value: string | null, foundationId = 'foundation-two'): void {
+      database
+        .prepare('UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = ? WHERE PERSON_KEY = ? AND PROJECT_ID = ?')
+        .run(value, key, `project-${foundationId}`);
+    }
+
+    it.each(['all', '730d'] as const)("puts the handles of a current employee's code in range %s on their row", async (range) => {
+      addRangeRow(ACCOUNT, personKey, range, false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      setGithubUsername(personKey, '@example-gh-user');
+
+      const response = await service.getAllEmployees(ACCOUNT, range, FILTERS);
+
+      expect(response.rows.map((row) => [row.personKey, row.githubUsernames])).toEqual([[personKey, ['example-gh-user']]]);
+    });
+
+    it('parses URL and @ values, dedupes them across projects ignoring case and drops masked emails', async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      addCodeDay(ACCOUNT, personKey, '365d', { commits: 1, merged: 1, code: 1 }, ['foundation-three', 'Foundation Three']);
+      addCodeDay(ACCOUNT, personKey, '365d', { commits: 1, merged: 1, code: 1 }, ['foundation-four', 'Foundation Four']);
+      setGithubUsername(personKey, 'https://github.com/Example-GH-User');
+      setGithubUsername(personKey, '@example-gh-user', 'foundation-three');
+      setGithubUsername(personKey, 'recent@...', 'foundation-four');
+
+      const [row] = (await service.getAllEmployees(ACCOUNT, '365d', FILTERS)).rows;
+
+      // One handle either way: which casing is kept depends on row order, and search folds case.
+      expect(row?.githubUsernames?.map((handle) => handle.toLowerCase())).toEqual(['example-gh-user']);
+    });
+
+    it('leaves githubUsernames off the row of someone without a linked handle or without code in the range', async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      addRangeRow(ACCOUNT, 'person-events', '365d', false, 'events', 'Events Only', 'events@company.example', 0);
+      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1 WHERE PERSON_KEY = 'person-events'`);
+
+      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS);
+
+      expect(response.rows.map((row) => row.personKey).sort()).toEqual(['person-events', personKey].sort());
+      for (const row of response.rows) expect(row).not.toHaveProperty('githubUsernames');
+    });
+
+    it('puts the handles on former and unclassified rows', async () => {
+      addRangeRow(ACCOUNT, 'person-former', '365d', true, 'leftuser', 'Left User', null, 4);
+      addUnclassifiedRow(ACCOUNT, 'cdp:member-seven', '365d', 'noroster', 'No Roster', 3);
+      setGithubUsername('person-former', 'example-gh-former');
+      setGithubUsername('cdp:member-seven', 'github.com/example-gh-unclassified', 'foundation-three');
+
+      const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+      expect(response.rows.map((row) => [row.personKey, row.githubUsernames])).toEqual([
+        ['person-former', ['example-gh-former']],
+        ['cdp:member-seven', ['example-gh-unclassified']],
+      ]);
     });
   });
 
@@ -2199,7 +2261,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-other-org', 8]]);
       expect(queries().some((query) => /INSIGHTS|insights_daily/.test(query))).toBe(false);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v6:365d:all:all')!)).toBe(true);
     });
 
     it('leaves the unranged roster unscoped, without resolving the scope', async () => {
@@ -2243,8 +2305,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(1);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v4:365d:all')!)).toBe(true);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v2:365d:all')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:insights')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v6:365d:all:insights')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v6:365d:all:all')!)).toBe(false);
     });
 
     it("counts the Code tab's Insights-scoped code under insights, and today's code under all", async () => {
@@ -2498,6 +2560,7 @@ function liveCodeRow(personKey: string, foundationId: string, commits: number, m
     CDP_MEMBER_ID: `member-${personKey}`,
     DISPLAY_NAME: null,
     TITLE: null,
+    GITHUB_USERNAME: null,
     PROJECT_NAME: null,
     PROJECT_SLUG: null,
     FOUNDATION_ID: foundationId,

@@ -150,6 +150,8 @@ export interface ContributorPersonProjectRow {
   CDP_MEMBER_ID: string;
   DISPLAY_NAME: string | null;
   TITLE: string | null;
+  /** Raw `MAX(github_username)` of the person's code in the project — a handle, `@handle` or GitHub URL; see `parseGithubUsername`. */
+  GITHUB_USERNAME: string | null;
   PROJECT_NAME: string | null;
   PROJECT_SLUG: string | null;
   FOUNDATION_ID: string | null;

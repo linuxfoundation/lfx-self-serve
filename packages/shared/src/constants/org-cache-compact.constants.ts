@@ -175,4 +175,5 @@ export const ORG_CONTRIBUTOR_ROW_COLUMNS = [
   'MERGED_COMMITS',
   'CODE_ACTIVITIES',
   'LAST_ACTIVE_DATE',
+  'GITHUB_USERNAME',
 ] as const satisfies readonly (keyof ContributorPersonProjectRow)[];

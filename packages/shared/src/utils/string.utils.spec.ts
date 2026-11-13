@@ -9,6 +9,7 @@ import {
   foldForSearch,
   formatTag,
   joinAsSentenceList,
+  nameSearchKeys,
   sanitizePlainText,
   slugify,
   splitIntoParagraphs,
@@ -53,6 +54,44 @@ describe('foldForSearch', () => {
   it('folds null and undefined to an empty string', () => {
     expect(foldForSearch(null)).toBe('');
     expect(foldForSearch(undefined)).toBe('');
+  });
+});
+
+describe('nameSearchKeys', () => {
+  it('matches a two-part CJK name in either order', () => {
+    expect(nameSearchKeys('明华 李', null, null)).toEqual(['明华李', '李明华']);
+  });
+
+  it('matches a two-part Latin name in either order', () => {
+    expect(nameSearchKeys('Ada Lovelace', 'Ada', 'Lovelace')).toEqual(['adalovelace', 'lovelaceada']);
+  });
+
+  it('gives one key per rotation of a three-part name, folded', () => {
+    expect(nameSearchKeys('Juan Carlos Pérez', null, null)).toEqual(['juancarlosperez', 'carlosperezjuan', 'perezjuancarlos']);
+  });
+
+  it('splits on ideographic and zero-width spaces like foldForSearch removes them', () => {
+    expect(nameSearchKeys('明华　李', null, null)).toEqual(['明华李', '李明华']);
+    expect(nameSearchKeys('明华​李', null, null)).toEqual(['明华李', '李明华']);
+  });
+
+  it('adds the family name + given name pair for a single-part name', () => {
+    expect(nameSearchKeys('Mei', 'Mei', 'Chen')).toEqual(['mei', 'chenmei']);
+  });
+
+  it('skips the pair when either part is missing', () => {
+    expect(nameSearchKeys('Mei', 'Mei', null)).toEqual(['mei']);
+    expect(nameSearchKeys('Mei', ' ', 'Chen')).toEqual(['mei']);
+  });
+
+  it('returns no keys for a missing or blank name', () => {
+    expect(nameSearchKeys(null, null, null)).toEqual([]);
+    expect(nameSearchKeys(undefined, undefined, undefined)).toEqual([]);
+    expect(nameSearchKeys('  ', null, null)).toEqual([]);
+  });
+
+  it('collapses duplicate keys', () => {
+    expect(nameSearchKeys('Lee Lee', 'Lee', 'Lee')).toEqual(['leelee']);
   });
 });
 

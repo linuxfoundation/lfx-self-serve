@@ -53,7 +53,16 @@ import type {
   OrgTeamMemberKeys,
   OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import {
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  isFilterSafeIdentifier,
+  parseGithubUsername,
+  splitDisplayName,
+  toColumnar,
+} from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -283,8 +292,8 @@ export class OrgLensPeopleService {
       this.readLiveCode(accountId, range, filters.projectScope, scope),
       this.getTeamMemberPersonKeys(accountId, teamMembers),
     ]);
-    const offRosterRow = (identity: OrgPeopleIdentityRow, code: OrgPersonLiveCode): OrgAllEmployeeRowInternal =>
-      this.mapEmployeeRow({
+    const offRosterRow = (identity: OrgPeopleIdentityRow, code: OrgPersonLiveCode): OrgAllEmployeeRowInternal => ({
+      ...this.mapEmployeeRow({
         ...identity,
         ACCOUNT_ID: accountId,
         NAME: offRosterDisplayName(identity),
@@ -299,7 +308,9 @@ export class OrgLensPeopleService {
         EVENTS_COUNT: 0,
         COURSES_COUNT: 0,
         ENGAGED_FOUNDATION_IDS: code.foundationIds,
-      });
+      }),
+      githubUsernames: code.githubUsernames,
+    });
     const formerRows = former.flatMap((identity) => {
       const code = liveCode.people.get(identity.PERSON_KEY);
       return code ? [{ ...offRosterRow(identity, code), isFormer: true }] : [];
@@ -1620,7 +1631,8 @@ function offRosterDisplayName(row: OrgPeopleIdentityRow): string | null {
 /**
  * Sums People → Contributors (person, project) rows per person (lfx-self-serve#4735): each row credits a commit to one
  * project in the scope, so the sums are that tab's row; the foundations are those of the projects, as its Foundations
- * filter reads them.
+ * filter reads them. The GitHub handles are the parsed, case-insensitively distinct `GITHUB_USERNAME`s of those rows
+ * (lfx-self-serve#5687); a value still holding `@` after parsing is the warehouse's masked email, not a handle.
  */
 function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiveCode {
   const people = new Map<string, OrgPersonLiveCode>();
@@ -1628,7 +1640,7 @@ function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiv
   for (const row of rows) {
     let person = people.get(row.PERSON_KEY);
     if (!person) {
-      person = { identity: row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0, foundationIds: [] };
+      person = { identity: row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0, foundationIds: [], githubUsernames: [] };
       people.set(row.PERSON_KEY, person);
     }
     person.commitsCount += row.COMMITS ?? 0;
@@ -1638,8 +1650,15 @@ function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiv
       if (!person.foundationIds.includes(row.FOUNDATION_ID)) person.foundationIds.push(row.FOUNDATION_ID);
       if (row.FOUNDATION_NAME) foundationNames.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);
     }
+    const handle = parseGithubUsername(row.GITHUB_USERNAME);
+    if (handle && !handle.includes('@') && !person.githubUsernames.some((known) => known.toLowerCase() === handle.toLowerCase())) {
+      person.githubUsernames.push(handle);
+    }
   }
-  for (const person of people.values()) person.foundationIds.sort();
+  for (const person of people.values()) {
+    person.foundationIds.sort();
+    person.githubUsernames.sort();
+  }
   return { people, foundationNames };
 }
 
@@ -1659,6 +1678,7 @@ function withLiveCode(row: OrgAllEmployeeRowInternal, code: OrgPersonLiveCode | 
     mergedCommitsCount: code?.mergedCommitsCount ?? 0,
     codeActivitiesCount: code?.codeActivitiesCount ?? 0,
     engagedFoundationIds: [...new Set([...row.engagedFoundationIds, ...(code?.foundationIds ?? [])])].sort(),
+    githubUsernames: code?.githubUsernames ?? [],
   };
 }
 

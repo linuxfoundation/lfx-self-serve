@@ -469,7 +469,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     for (const subResource of [
       'people-all:v8:365d:all',
       'people-all:v8:roster',
-      'people-contributors:v5:all:all',
+      'people-contributors:v6:all:all',
       'people-former:v4:all:all',
       'people-event-attendees:v7:730d:all',
       'people-trainees:v10:all',

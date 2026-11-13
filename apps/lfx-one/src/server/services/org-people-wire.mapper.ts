@@ -51,6 +51,7 @@ export function toStoredRow(row: OrgAllEmployeeRowInternal): OrgAllEmployeeCount
     engagedFoundationIds: row.engagedFoundationIds,
     ...(row.isFormer ? { isFormer: true } : {}),
     ...(row.isUnclassified ? { isUnclassified: true } : {}),
+    ...(row.githubUsernames?.length ? { githubUsernames: row.githubUsernames } : {}),
   };
 }
 
@@ -84,6 +85,7 @@ export function toWireRow(row: OrgAllEmployeeCountedRow, filters: OrgCommitFilte
     engagedFoundationIds: row.engagedFoundationIds,
     ...(row.isFormer ? { isFormer: true } : {}),
     ...(row.isUnclassified ? { isUnclassified: true } : {}),
+    ...(row.githubUsernames?.length ? { githubUsernames: row.githubUsernames } : {}),
   };
 }
 
