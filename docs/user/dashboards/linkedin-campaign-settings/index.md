@@ -4,7 +4,7 @@ description: See and narrow what a LinkedIn targeting profile targets, edit each
 audience: [executive-director]
 product_area: Dashboards
 tags: [campaigns, paid marketing, linkedin ads, sponsored content, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
-last_updated: 2026-11-12
+last_updated: 2026-11-13
 intercom_collection: Dashboards
 ---
 
