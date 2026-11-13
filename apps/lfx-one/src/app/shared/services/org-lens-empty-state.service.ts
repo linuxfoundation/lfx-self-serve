@@ -69,7 +69,7 @@ export class OrgLensEmptyStateService {
    * the page must ask the server whether it is readable. `null` for everyone else.
    */
   private readonly contractorProbeUid: Signal<string | null> = computed(() => {
-    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly()) {
+    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly() || this.selectionAwaitsClaOnlyRows()) {
       return null;
     }
     const uid = this.accountContext.selectedAccount().uid;
@@ -101,8 +101,21 @@ export class OrgLensEmptyStateService {
     return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
   });
 
-  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+  private readonly selectionAwaitsClaOnlyRows: Signal<boolean> = computed(() => {
+    if (!this.orgNavigation.selectionUndecided()) {
+      return false;
+    }
+    const uid = this.accountContext.selectedAccount().uid;
+    return !!uid && !isOrgRollUpSegment(uid) && !this.selectedHeld() && !this.selectedClaOnly();
+  });
+
+  /**
+   * Grants and persona have answered, an owed contractor read check has answered, and the selection is
+   * not waiting on a grant holder's CLA-only rows; before this, pages render a skeleton, never a state.
+   */
+  public readonly settled: Signal<boolean> = computed(
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.selectionAwaitsClaOnlyRows()
+  );
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
