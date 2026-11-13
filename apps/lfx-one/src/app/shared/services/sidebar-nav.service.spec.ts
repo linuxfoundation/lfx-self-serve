@@ -167,7 +167,6 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
-            menuContext: selectedProject,
             menuProject: activeProject,
             menuCanWrite: canWrite,
             menuProjectStage: activeProjectStage,
