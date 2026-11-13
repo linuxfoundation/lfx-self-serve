@@ -10,17 +10,19 @@ import type {
   FoundationParticipatingOrgsPage,
   FoundationParticipatingOrgsRange,
 } from '../interfaces/foundation-participating-orgs.interface';
+import {
+  PROJECT_PARTICIPATING_ORGS_DEFAULT_RANGE,
+  PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS,
+  PROJECT_PARTICIPATING_ORGS_RANGES,
+} from './project-participating-orgs.constants';
 
-export const FOUNDATION_PARTICIPATING_ORGS_RANGES = ['12mo', '90d', '30d', 'all'] as const;
+// The same warehouse column as the project page, so one allow-list serves both and they cannot drift.
+export const FOUNDATION_PARTICIPATING_ORGS_RANGES = PROJECT_PARTICIPATING_ORGS_RANGES;
 
-export const FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE: FoundationParticipatingOrgsRange = '12mo';
+export const FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE: FoundationParticipatingOrgsRange = PROJECT_PARTICIPATING_ORGS_DEFAULT_RANGE;
 
-export const FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS: readonly { label: string; value: FoundationParticipatingOrgsRange }[] = [
-  { label: 'Past 12 Months', value: '12mo' },
-  { label: 'Past 90 Days', value: '90d' },
-  { label: 'Past 30 Days', value: '30d' },
-  { label: 'All Time', value: 'all' },
-];
+export const FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS: readonly { label: string; value: FoundationParticipatingOrgsRange }[] =
+  PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS;
 
 /** Label used in card sublines and chips, per range. */
 export const FOUNDATION_PARTICIPATING_ORGS_RANGE_LABELS: Record<FoundationParticipatingOrgsRange, string> = {

@@ -3,19 +3,21 @@
 
 // Foundation Lens → Participating Companies (#5697). The foundation-level counterpart of the project page
 // (project-participating-orgs.interface.ts): every company contributing to any project of a foundation, with
-// foundation totals summed from project activity and a per-project breakdown on demand.
+// foundation totals read from the warehouse's foundation-level rows and a per-project breakdown on demand.
 
-import type { FOUNDATION_PARTICIPATING_ORGS_RANGES } from '../constants/foundation-participating-orgs.constants';
+import type { Request } from 'express';
+
 import type { MembershipTierClass } from './org-lens.interface';
 import type {
   ProjectParticipatingOrgChangeTone,
+  ProjectParticipatingOrgsRange,
   ProjectParticipatingOrgsSegment,
   ProjectParticipatingOrgsSortDirection,
   ProjectParticipatingOrgsSortField,
 } from './project-participating-orgs.interface';
 
 /** Activity window, in the warehouse's `time_range` vocabulary: the past 12 months (default), 90 days, 30 days, or all time. */
-export type FoundationParticipatingOrgsRange = (typeof FOUNDATION_PARTICIPATING_ORGS_RANGES)[number];
+export type FoundationParticipatingOrgsRange = ProjectParticipatingOrgsRange;
 export type FoundationParticipatingOrgsSegment = ProjectParticipatingOrgsSegment;
 export type FoundationParticipatingOrgsSortField = ProjectParticipatingOrgsSortField;
 export type FoundationParticipatingOrgsSortDirection = ProjectParticipatingOrgsSortDirection;
@@ -82,7 +84,7 @@ export interface FoundationParticipatingOrg {
   membershipTierClass: MembershipTierClass | null;
   /** Other LF membership data available (for example project-level membership), shown beside the foundation badge. */
   otherMemberships: string[];
-  /** Foundation projects where the company has at least one commit in the range. */
+  /** Foundation projects where the company has commits or contributors in the range. */
   projectsInvolved: number;
   commits: number;
   commitsChange: number | null;
@@ -233,7 +235,7 @@ export interface FoundationParticipatingOrgsSourceCompany {
   isMember: boolean;
   tier: MembershipTierClass | null;
   otherMemberships: string[];
-  /** Foundation projects where the company has commits in the range. */
+  /** Foundation projects where the company has commits or contributors in the range. */
   projectsInvolved: number;
   commits: number;
   commitsChange: number | null;
@@ -262,7 +264,7 @@ export interface FoundationParticipatingOrgsSourceProjectLine {
   contributorsChange: number | null;
 }
 
-/** Which project lines to read: one project's (the project scope), one company's (its breakdown), or all (the by-project export). */
+/** Which project lines to read: one project's (the project scope), one company's (its breakdown), or the named companies' (the by-project export). */
 export interface FoundationParticipatingOrgsSourceLineFilter {
   projectSlug?: string;
   companyKey?: string;
@@ -285,9 +287,10 @@ export interface FoundationCompanyActivity {
  */
 export interface FoundationParticipatingOrgsDataSource {
   /** Foundation-level totals per company, and the foundation's projects. Null when the warehouse has nothing for the slug. */
-  getFoundation(slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null>;
+  getFoundation(req: Request, slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null>;
   /** Project lines for the filter; the foundation's own project is never one of them. */
   getProjectLines(
+    req: Request,
     slug: string,
     range: FoundationParticipatingOrgsRange,
     filter: FoundationParticipatingOrgsSourceLineFilter

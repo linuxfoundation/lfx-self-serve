@@ -66,7 +66,7 @@ import { FoundationParticipatingOrgsService } from './services/foundation-partic
 
 /**
  * Foundation Lens → Participating Companies (#5697): every company contributing to any project of the foundation,
- * with foundation totals summed from project activity and a per-project breakdown on demand. Server-paged, -sorted
+ * with foundation totals read from the warehouse's foundation-level rows and a per-project breakdown on demand. Server-paged, -sorted
  * and -filtered; access is enforced by the BFF (executive director of the foundation, or LF staff).
  */
 @Component({

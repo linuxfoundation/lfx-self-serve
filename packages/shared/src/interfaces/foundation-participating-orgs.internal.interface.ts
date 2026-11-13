@@ -4,7 +4,7 @@
 // Foundation Lens → Participating Companies (#5707): Snowflake query-row shapes read by the BFF only. The client contract
 // lives in `foundation-participating-orgs.interface.ts`; the table is the project page's `PROJECT_PARTICIPATING_ORGS`.
 
-/** A foundation-level company row: the foundation project's row of the list, with the count of its other projects with commits. */
+/** A foundation-level company row: the foundation project's row of the list, with the count of its other projects with commits or contributors. */
 export interface FoundationParticipatingOrgsCompanyRow {
   FOUNDATION_NAME: string | null;
   AS_OF_DATE: Date | string | null;

@@ -14,11 +14,14 @@ import type {
   FoundationParticipatingOrgsSourceProjectLine,
   MembershipTierClass,
 } from '@lfx-one/shared/interfaces';
+import type { Request } from 'express';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { resolveLfxOnePlatinumSchema } from '../helpers/snowflake-schema.helper';
+import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
+import { clampInteger } from '../helpers/validation.helper';
 import { SnowflakeService } from './snowflake.service';
-import { withFoundationParticipatingOrgsCache, withProjectParticipatingOrgsCache } from './valkey.service';
+import { withFoundationParticipatingOrgsCache } from './valkey.service';
 
 /**
  * Reads Foundation Lens → Participating Companies from the lf-dbt `PROJECT_PARTICIPATING_ORGS` table the project page uses.
@@ -30,44 +33,59 @@ import { withFoundationParticipatingOrgsCache, withProjectParticipatingOrgsCache
  *
  * Cost: every read filters on `foundation_slug` and `time_range` and binds them. A foundation costs two queries per range
  * (companies, projects), shared-cached for an hour; a project scope or a company breakdown is one more.
+ *
+ * Two figures are defined here because the table does not carry them: "projects involved" (projects other than the foundation's
+ * own where the company has commits or contributors; an intermediate parent counts beside its children, as its row is a
+ * rollup) and the picker's per-range commits. Both belong in lf-dbt eventually; the project page's own picker-style counts
+ * are computed the same way today.
  */
 export class FoundationParticipatingOrgsSnowflakeSource implements FoundationParticipatingOrgsDataSource {
   private readonly snowflakeService = SnowflakeService.getInstance();
 
-  public async getFoundation(slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null> {
+  public async getFoundation(req: Request, slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null> {
     // Wrapped so a foundation with no rows is a cache hit too.
     const entry = await withFoundationParticipatingOrgsCache(
       slug,
+      'roster',
       [range],
-      async () => ({ foundation: await this.fetchFoundation(slug, range) }),
+      async () => ({ foundation: await this.fetchFoundation(req, slug, range) }),
       isFoundationEntry
     );
     return entry.foundation;
   }
 
   public async getProjectLines(
+    req: Request,
     slug: string,
     range: FoundationParticipatingOrgsRange,
     filter: FoundationParticipatingOrgsSourceLineFilter
   ): Promise<FoundationParticipatingOrgsSourceProjectLine[]> {
-    // The export reads everything and is never cached; a project or a company is a small set worth sharing.
-    if (filter.companyKeys || (!filter.projectSlug && !filter.companyKey)) return this.fetchLines(slug, range, filter);
-    const entry = await withProjectParticipatingOrgsCache(
+    // The by-project export names its companies and is never cached; a project or a company is a small set worth sharing.
+    if (filter.companyKeys || (!filter.projectSlug && !filter.companyKey)) return this.fetchLines(req, slug, range, filter);
+    const entry = await withFoundationParticipatingOrgsCache(
       slug,
-      'foundation-lens-lines',
+      'lines',
       [range, filter.projectSlug ?? '', filter.companyKey ?? ''],
-      async () => ({ lines: await this.fetchLines(slug, range, filter) }),
+      async () => ({ lines: await this.fetchLines(req, slug, range, filter) }),
       isLinesEntry
     );
     return entry.lines;
   }
 
-  /** A missing table or revoked grant is an expected, alertable condition, not a failure for the shared Snowflake breaker. */
-  private execute<T>(sql: string, binds: string[]) {
-    return this.snowflakeService.execute<T>(sql, binds, { expectMissingObject: true });
+  /** A missing table or revoked grant is logged as an error to alert on, and never counts against the shared Snowflake breaker. */
+  private execute<T>(req: Request, operation: string, sql: string, binds: string[]) {
+    return executeSnowflakeViewRead<T>(this.snowflakeService, req, sql, binds, {
+      view: tableName(),
+      operation,
+      clientMessage: 'Participating companies are unavailable right now.',
+    });
   }
 
-  private async fetchFoundation(slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null> {
+  private async fetchFoundation(
+    req: Request,
+    slug: string,
+    range: FoundationParticipatingOrgsRange
+  ): Promise<FoundationParticipatingOrgsSourceFoundation | null> {
     const table = tableName();
     const companiesSql = `
       WITH foundation AS (
@@ -110,8 +128,8 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     `;
 
     const [companies, projects] = await Promise.all([
-      this.execute<FoundationParticipatingOrgsCompanyRow>(companiesSql, [slug, range, slug, range]),
-      this.execute<FoundationParticipatingOrgsProjectRow>(projectsSql, [range, slug]),
+      this.execute<FoundationParticipatingOrgsCompanyRow>(req, 'get_foundation_participating_orgs_roster', companiesSql, [slug, range, slug, range]),
+      this.execute<FoundationParticipatingOrgsProjectRow>(req, 'get_foundation_participating_orgs_projects', projectsSql, [range, slug]),
     ]);
     if (companies.rows.length === 0 && projects.rows.length === 0) return null;
 
@@ -133,6 +151,7 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
   }
 
   private async fetchLines(
+    req: Request,
     slug: string,
     range: FoundationParticipatingOrgsRange,
     filter: FoundationParticipatingOrgsSourceLineFilter
@@ -153,7 +172,9 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     const joinBinds = filter.companyKeys ? [JSON.stringify(filter.companyKeys)] : [];
     const order = filter.companyKeys ? 'k.index ASC, l.commits DESC, l.project_slug ASC' : 'l.participant_key ASC, l.commits DESC, l.project_slug ASC';
     // Inlined, not bound: clamped to a positive integer first.
-    const limit = filter.limit ? `LIMIT ${Math.max(1, Math.min(Math.floor(filter.limit), FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1))}` : '';
+    const limit = filter.limit
+      ? `LIMIT ${clampInteger(filter.limit, 1, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1)}`
+      : '';
     const sql = `
       SELECT l.participant_key, l.project_slug, l.commits, l.commits_change, l.contributors, l.contributors_change
       FROM ${tableName()} l
@@ -168,7 +189,7 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
       ${limit}
     `;
     const binds = [...joinBinds, slug, range, ...predicateBinds];
-    const result = await this.execute<FoundationParticipatingOrgsLineRow>(sql, binds);
+    const result = await this.execute<FoundationParticipatingOrgsLineRow>(req, 'get_foundation_participating_orgs_lines', sql, binds);
     return result.rows
       .filter((row) => !!row.PARTICIPANT_KEY && !!row.PROJECT_SLUG)
       .map((row) => ({

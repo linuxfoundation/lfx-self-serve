@@ -87,8 +87,14 @@ describe('FoundationParticipatingOrgsService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getFoundation.mockResolvedValue(FOUNDATION);
-    getProjectLines.mockImplementation(async (_slug, _range, filter) =>
-      LINES.filter((item) => (!filter.projectSlug || item.projectSlug === filter.projectSlug) && (!filter.companyKey || item.companyKey === filter.companyKey))
+    // Honours every filter the real source does, so a test cannot pass by reading more than it asked for.
+    getProjectLines.mockImplementation(async (_req, _slug, _range, filter) =>
+      LINES.filter(
+        (item) =>
+          (!filter.projectSlug || item.projectSlug === filter.projectSlug) &&
+          (!filter.companyKey || item.companyKey === filter.companyKey) &&
+          (!filter.companyKeys || filter.companyKeys.includes(item.companyKey))
+      ).slice(0, filter.limit ?? Infinity)
     );
     service = new FoundationParticipatingOrgsService({ getFoundation, getProjectLines } as FoundationParticipatingOrgsDataSource);
   });
@@ -97,7 +103,7 @@ describe('FoundationParticipatingOrgsService', () => {
     await service.getSummary(req, { foundationSlug: SLUG, range: '30d' });
     await service.getPage(req, { ...base, range: '90d' });
     await service.getProjects(req, SLUG, 'all');
-    expect(getFoundation.mock.calls.map((call) => call[1])).toEqual(['30d', '90d', 'all']);
+    expect(getFoundation.mock.calls.map((call) => call[2])).toEqual(['30d', '90d', 'all']);
   });
 
   it('lists companies with activity by commits and leaves the idle member out of the table', async () => {
@@ -182,7 +188,7 @@ describe('FoundationParticipatingOrgsService', () => {
       ['Alpha Inc', 5, 5],
       ['Gamma', 5, 2],
     ]);
-    expect(getProjectLines).toHaveBeenCalledWith(SLUG, '12mo', { projectSlug: 'quiet' });
+    expect(getProjectLines).toHaveBeenCalledWith(req, SLUG, '12mo', { projectSlug: 'quiet' });
     const summary = await service.getSummary(req, { foundationSlug: SLUG, range: '12mo', projectSlug: 'quiet' });
     expect(summary).toMatchObject({ projectSlug: 'quiet', projectName: 'Quiet', companiesCount: 2 });
   });
@@ -201,7 +207,7 @@ describe('FoundationParticipatingOrgsService', () => {
       ['quiet', 5],
     ]);
     expect(breakdown.projects[0].shareOfCompanyCommits).toBeCloseTo(250 / 300, 6);
-    expect(getProjectLines).toHaveBeenCalledWith(SLUG, '12mo', { companyKey: 'alpha' });
+    expect(getProjectLines).toHaveBeenCalledWith(req, SLUG, '12mo', { companyKey: 'alpha' });
   });
 
   it('answers not found for the breakdown of a company without activity or an unknown one', async () => {
@@ -242,23 +248,23 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(items.map((item) => item.lines.map((entry) => entry.projectSlug))).toEqual([['busy', 'quiet'], ['busy'], ['quiet']]);
       expect(truncated).toBe(false);
       expect(getProjectLines).toHaveBeenCalledTimes(1);
-      expect(getProjectLines.mock.calls[0][2].limit).toBeGreaterThan(0);
+      expect(getProjectLines.mock.calls[0][3].limit).toBeGreaterThan(0);
     });
 
     it('budgets one line per company under a project scope, so a wide company does not cut the key list short', async () => {
       await service.getExportRows(req, { ...base, projectSlug: 'busy' }, 'by-project', 2);
       // Alpha is in 2 projects, but only its busy line counts here: the second in-scope company still gets read.
       // The first read is the scoped row list; the export's own read is the last.
-      expect(getProjectLines.mock.calls.at(-1)?.[2].companyKeys).toEqual(['alpha', 'beta']);
+      expect(getProjectLines.mock.calls.at(-1)?.[3].companyKeys).toEqual(['alpha', 'beta']);
     });
 
     it('reads only the matching companies lines, so filtered-out companies never use the row budget', async () => {
       await service.getExportRows(req, { ...base, search: 'gamma' }, 'by-project');
-      expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['gamma']);
+      expect(getProjectLines.mock.calls[0][3].companyKeys).toEqual(['gamma']);
       getProjectLines.mockClear();
       await service.getExportRows(req, { ...base, segment: 'members' }, 'by-project');
       // The first read is the scoped row list; the export's own read is the last.
-      expect(getProjectLines.mock.calls.at(-1)?.[2].companyKeys).toEqual(['alpha', 'beta']);
+      expect(getProjectLines.mock.calls.at(-1)?.[3].companyKeys).toEqual(['alpha', 'beta']);
     });
 
     it('limits the by-project file to the selected project under a project scope', async () => {
@@ -277,6 +283,15 @@ describe('FoundationParticipatingOrgsService', () => {
       getProjectLines.mockResolvedValueOnce([LINES[0], LINES[1], LINES[2]]);
       const { truncated } = await service.getExportRows(req, base, 'by-project', 2);
       expect(truncated).toBe(true);
+    });
+
+    it('says the file is cut when the cached roster promised more lines than the live read held', async () => {
+      // The roster says Alpha is in 5 projects, so the budget stops after it; the live read has fewer lines, and Beta and Gamma
+      // are left out of the read. They must not be written as empty companies with the file claiming to be complete.
+      getFoundation.mockResolvedValue({ ...FOUNDATION, companies: FOUNDATION.companies.map((c) => (c.key === 'alpha' ? { ...c, projectsInvolved: 5 } : c)) });
+      const { items, truncated } = await service.getExportRows(req, base, 'by-project', 4);
+      expect(truncated).toBe(true);
+      expect(items.every((item) => item.lines.length > 0)).toBe(true);
     });
   });
 });

@@ -379,6 +379,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
 
     await withFoundationParticipatingOrgsCache(
       'synthetic-foundation',
+      'roster',
       ['12mo'],
       async () => roster,
       () => true
@@ -394,6 +395,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     getMock.mockResolvedValueOnce(null);
     await withFoundationParticipatingOrgsCache(
       'synthetic-foundation',
+      'roster',
       ['12mo'],
       async () => roster,
       () => true
@@ -401,7 +403,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
 
     getMock.mockResolvedValueOnce(setMock.mock.calls[0][1]);
     const fetcher = vi.fn(async () => ({ padding: 'fresh' }));
-    const hit = await withFoundationParticipatingOrgsCache('synthetic-foundation', ['12mo'], fetcher, () => true);
+    const hit = await withFoundationParticipatingOrgsCache('synthetic-foundation', 'roster', ['12mo'], fetcher, () => true);
 
     expect(hit).toEqual(roster);
     expect(fetcher).not.toHaveBeenCalled();

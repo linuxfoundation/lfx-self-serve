@@ -36,7 +36,7 @@ export class FoundationParticipatingOrgsService {
 
   public async getProjects(req: Request, slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsProject[]> {
     logger.debug(req, 'get_foundation_participating_orgs_projects', 'Reading project scope list', { slug, range });
-    const foundation = await this.dataSource().getFoundation(slug, range);
+    const foundation = await this.dataSource().getFoundation(req, slug, range);
     if (!foundation) return [];
     // Busiest first; the figure itself is not part of the picker.
     return [...foundation.projects]
@@ -47,13 +47,13 @@ export class FoundationParticipatingOrgsService {
   public async getSummary(req: Request, query: FoundationParticipatingOrgsSummaryQuery): Promise<FoundationParticipatingOrgsSummary | null> {
     const { foundationSlug: slug, range, projectSlug } = query;
     logger.debug(req, 'get_foundation_participating_orgs_summary', 'Reading summary', { slug, range, project_slug: projectSlug });
-    const foundation = await this.dataSource().getFoundation(slug, range);
+    const foundation = await this.dataSource().getFoundation(req, slug, range);
     if (!foundation) {
       if (projectSlug) throw new ResourceNotFoundError('Project', projectSlug, { operation: 'resolve_foundation_participating_orgs_project' });
       return null;
     }
     const project = this.resolveProject(foundation, projectSlug);
-    const base = await this.rows(foundation, range, projectSlug);
+    const base = await this.rows(req, foundation, range, projectSlug);
     // No activity at all in scope is the empty state; a search or tier that matches nothing still gets its zeros.
     if (base.length === 0) return null;
 
@@ -85,7 +85,7 @@ export class FoundationParticipatingOrgsService {
       segment: query.segment,
       offset: query.offset,
     });
-    const rows = await this.filtered(query);
+    const { rows } = await this.filtered(req, query);
     return { rows: rows.slice(query.offset, query.offset + query.pageSize), totalRecords: rows.length };
   }
 
@@ -97,12 +97,12 @@ export class FoundationParticipatingOrgsService {
     companyKey: string
   ): Promise<FoundationParticipatingOrgBreakdown> {
     logger.debug(req, 'get_foundation_participating_orgs_breakdown', 'Reading project breakdown', { slug, range, company_key: companyKey });
-    const foundation = await this.dataSource().getFoundation(slug, range);
+    const foundation = await this.dataSource().getFoundation(req, slug, range);
     const company = foundation?.companies.find((candidate) => candidate.key === companyKey);
     if (!foundation || !company || !isActive(company)) {
       throw new ResourceNotFoundError('Company', companyKey, { operation: 'get_foundation_participating_orgs_breakdown' });
     }
-    const lines = await this.dataSource().getProjectLines(slug, range, { companyKey });
+    const lines = await this.dataSource().getProjectLines(req, slug, range, { companyKey });
     const total: FoundationParticipatingOrgProjectLine = {
       projectSlug: slug,
       name: `${foundation.name} total`,
@@ -128,12 +128,11 @@ export class FoundationParticipatingOrgsService {
     maxRows: number = FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS
   ): Promise<{ items: FoundationCompanyActivity[]; truncated: boolean }> {
     logger.debug(req, 'export_foundation_participating_orgs', 'Reading export rows', { slug: filters.foundationSlug, kind });
-    const rows = await this.filtered(filters);
+    const { foundation, rows } = await this.filtered(req, filters);
     if (kind === 'summary') {
       return { items: rows.slice(0, maxRows).map((row) => ({ row, lines: [] })), truncated: rows.length > maxRows };
     }
 
-    const foundation = await this.dataSource().getFoundation(filters.foundationSlug, filters.range);
     if (!foundation) return { items: [], truncated: false };
     // Only the matching companies' lines are read, as many companies as the cap can hold: the filters and the order apply first,
     // so unrelated companies never take the row budget. One past the cap says the warehouse had more than the file can hold.
@@ -145,7 +144,7 @@ export class FoundationParticipatingOrgsService {
       budget += filters.projectSlug ? 1 : Math.max(1, row.projectsInvolved);
       if (budget > maxRows) break;
     }
-    const read = await this.dataSource().getProjectLines(filters.foundationSlug, filters.range, {
+    const read = await this.dataSource().getProjectLines(req, filters.foundationSlug, filters.range, {
       projectSlug: filters.projectSlug,
       companyKeys,
       limit: maxRows + 1,
@@ -156,7 +155,10 @@ export class FoundationParticipatingOrgsService {
     const companies = new Map(foundation.companies.map((company) => [company.key, company]));
     const items: FoundationCompanyActivity[] = [];
     let remaining = maxRows;
+    const readKeys = new Set(companyKeys);
     for (const row of rows) {
+      // The roster can be older than the live read (cached up to an hour), so the budget may have stopped short of this company.
+      if (!readKeys.has(row.participantKey)) return { items, truncated: true };
       const company = companies.get(row.participantKey);
       const lines = company ? toProjectLines(foundation, company, byCompany.get(row.participantKey) ?? []) : [];
       if (remaining <= 0) return { items, truncated: true };
@@ -173,20 +175,23 @@ export class FoundationParticipatingOrgsService {
     return this.source;
   }
 
-  private async filtered(filters: FoundationParticipatingOrgsExportFilters): Promise<FoundationParticipatingOrg[]> {
-    const foundation = await this.dataSource().getFoundation(filters.foundationSlug, filters.range);
+  private async filtered(
+    req: Request,
+    filters: FoundationParticipatingOrgsExportFilters
+  ): Promise<{ foundation: FoundationParticipatingOrgsSourceFoundation | null; rows: FoundationParticipatingOrg[] }> {
+    const foundation = await this.dataSource().getFoundation(req, filters.foundationSlug, filters.range);
     if (!foundation) {
       if (filters.projectSlug) throw new ResourceNotFoundError('Project', filters.projectSlug, { operation: 'resolve_foundation_participating_orgs_project' });
-      return [];
+      return { foundation: null, rows: [] };
     }
     this.resolveProject(foundation, filters.projectSlug);
-    const rows = (await this.rows(foundation, filters.range, filters.projectSlug)).filter((row) => {
+    const rows = (await this.rows(req, foundation, filters.range, filters.projectSlug)).filter((row) => {
       if (filters.segment === 'members' && !row.isMember) return false;
       if (filters.segment === 'non_members' && row.isMember) return false;
       return matches(row, filters);
     });
     const direction = filters.dir === 'asc' ? 1 : -1;
-    return rows.sort((a, b) => {
+    const sorted = rows.sort((a, b) => {
       // A missing comparison or tier goes last in both directions; the direction only orders the values that exist.
       const missingA = isMissing(a, filters.sort);
       const missingB = isMissing(b, filters.sort);
@@ -194,6 +199,7 @@ export class FoundationParticipatingOrgsService {
       // Name, then the company key, so two companies that share a name and a value never swap between page reads.
       return (missingA ? 0 : compare(a, b, filters.sort) * direction) || a.name.localeCompare(b.name) || a.participantKey.localeCompare(b.participantKey);
     });
+    return { foundation, rows: sorted };
   }
 
   private resolveProject(foundation: FoundationParticipatingOrgsSourceFoundation, projectSlug?: string): { slug: string; name: string } | null {
@@ -208,6 +214,7 @@ export class FoundationParticipatingOrgsService {
    * Foundation totals come from the source as they are: contributors are already unique across projects, so nothing is summed.
    */
   private async rows(
+    req: Request,
     foundation: FoundationParticipatingOrgsSourceFoundation,
     range: FoundationParticipatingOrgsRange,
     projectSlug?: string
@@ -215,7 +222,7 @@ export class FoundationParticipatingOrgsService {
     if (!projectSlug) return foundation.companies.filter(isActive).map((company) => toRow(company, company));
 
     const companies = new Map(foundation.companies.map((company) => [company.key, company]));
-    const lines = await this.dataSource().getProjectLines(foundation.slug, range, { projectSlug });
+    const lines = await this.dataSource().getProjectLines(req, foundation.slug, range, { projectSlug });
     return lines.flatMap((line) => {
       const company = companies.get(line.companyKey);
       return company ? [toRow(company, line)] : [];
