@@ -142,6 +142,13 @@ export const FORMATION_PIPELINE_CLASSIFICATION_LABELS: Record<FormationPipelineC
   industry: 'Industry',
 };
 
+/** Placeholder of each classification select's search box. */
+export const FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS: Record<FormationPipelineClassificationKey, string> = {
+  technical_activity_type: 'Search technical activity type',
+  technology: 'Search technology',
+  industry: 'Search industry',
+};
+
 /** URL query param of each classification filter; repeated once per selected value (`?tat=A&tat=B`), so a value may hold any character. */
 export const FORMATION_PIPELINE_CLASSIFICATION_PARAMS: Record<FormationPipelineClassificationKey, string> = {
   technical_activity_type: FORMATION_PIPELINE_QUERY_PARAMS.technicalActivityType,

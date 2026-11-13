@@ -18,6 +18,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { FormationService } from '@services/formation.service';
 import {
+  FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS,
   FORMATION_PIPELINE_CLASSIFICATION_KEYS,
   FORMATION_PIPELINE_CLASSIFICATION_LABELS,
   FORMATION_PIPELINE_COLUMNS,
@@ -51,6 +52,7 @@ import {
   comparePipelineText,
   countPipelineRows,
   emptyPipelineCounts,
+  emptyPipelineClassification,
   filterPipelineRowsByClassification,
   filterPipelineRowsByFoundationKind,
   getPipelineClassificationOptions,
@@ -131,6 +133,7 @@ export class FormationsPipelineComponent {
   });
   protected readonly classificationKeys = FORMATION_PIPELINE_CLASSIFICATION_KEYS;
   protected readonly classificationLabels = FORMATION_PIPELINE_CLASSIFICATION_LABELS;
+  protected readonly classificationPlaceholders = FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   protected readonly loading = signal(true);
@@ -266,14 +269,7 @@ export class FormationsPipelineComponent {
   }
 
   protected resetFilters(): void {
-    this.filterForm.reset({
-      search: '',
-      foundation: null,
-      foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND,
-      technical_activity_type: [],
-      technology: [],
-      industry: [],
-    });
+    this.filterForm.reset({ search: '', foundation: null, foundationKind: FORMATION_PIPELINE_DEFAULT_FOUNDATION_KIND, ...emptyPipelineClassification() });
     this.stage.set(FORMATION_PIPELINE_DEFAULT_STAGE);
   }
 
@@ -348,21 +344,6 @@ export class FormationsPipelineComponent {
     );
   }
 
-  /** Drops link-borne classification values that no loaded row holds, once, so a stale or hand-edited link opens a sane view. */
-  private pruneUnknownClassification(response: FormationPipelineResponse): void {
-    if (this.classificationChecked) {
-      return;
-    }
-    this.classificationChecked = true;
-    const current = this.classification();
-    const pruned = pruneUnknownPipelineClassification(current, response.rows);
-    for (const key of FORMATION_PIPELINE_CLASSIFICATION_KEYS) {
-      if (pruned[key].length !== current[key].length) {
-        this.filterForm.controls[key].setValue(pruned[key]);
-      }
-    }
-  }
-
   private initFoundationKind(): Signal<FormationPipelineFoundationKindFilter> {
     return toSignal(this.filterForm.controls.foundationKind.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef)), {
       initialValue: this.initialState.foundationKind,
@@ -393,6 +374,21 @@ export class FormationsPipelineComponent {
       ),
       { initialValue: empty }
     );
+  }
+
+  /** Drops link-borne classification values that no loaded row holds, once, so a stale or hand-edited link opens a sane view. */
+  private pruneUnknownClassification(response: FormationPipelineResponse): void {
+    if (this.classificationChecked) {
+      return;
+    }
+    this.classificationChecked = true;
+    const current = this.classification();
+    const pruned = pruneUnknownPipelineClassification(current, response.rows);
+    for (const key of FORMATION_PIPELINE_CLASSIFICATION_KEYS) {
+      if (pruned[key].length !== current[key].length) {
+        this.filterForm.controls[key].setValue(pruned[key]);
+      }
+    }
   }
 
   /** A link that opens already scoped to a foundation has no unfiltered read to list the foundations from, so the select would show no label: read it once in the background. */

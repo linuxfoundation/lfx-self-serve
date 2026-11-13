@@ -389,6 +389,11 @@ export function getPipelineUpdatedLabel(updatedAt: string | null | undefined): s
   return updatedAt ? timeAgo(updatedAt) : '';
 }
 
+/** `rowsToCsv` neutralizes a formula prefix only at the start of a cell; a multi-value cell holds several values, so each is neutralized before joining (a `;` list separator would otherwise start a new cell in some locales). */
+function neutralizeCsvValue(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
 const PIPELINE_CSV_HEADER: string[] = [
   'Project',
   'Foundation',
@@ -424,7 +429,7 @@ export function buildPipelineCsvRows(rows: readonly FormationPipelineRow[]): str
       personName(row.program_manager),
       getPipelineOpportunityOwner(row),
       row.updated_at ?? '',
-      ...FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => row[key].join(FORMATION_PIPELINE_CLASSIFICATION_CSV_SEPARATOR)),
+      ...FORMATION_PIPELINE_CLASSIFICATION_KEYS.map((key) => row[key].map(neutralizeCsvValue).join(FORMATION_PIPELINE_CLASSIFICATION_CSV_SEPARATOR)),
     ]),
   ];
 }

@@ -536,6 +536,13 @@ describe('Pipeline classification filters (#5619 Part C)', () => {
     expect(getPipelineClassificationOptions([], 'industry')).toEqual([]);
   });
 
+  it('neutralizes a formula prefix on every value of a classification cell, not only the first', () => {
+    const risky = row({ technology: ['=SUM(1)', 'Safe', '@cmd', '-1+1'] });
+    const csv = rowsToCsv(buildPipelineCsvRows([risky])).split('\r\n')[1];
+    expect(csv).toContain("'=SUM(1); Safe; '@cmd; '-1+1");
+    expect(csv).not.toMatch(/; [=+\-@]/);
+  });
+
   it('adds three CSV columns after the existing ones, joined with "; "', () => {
     const [header, first, empty] = buildPipelineCsvRows([rows[0], rows[3]]);
     expect(header.slice(-3)).toEqual(['Technical activity type', 'Technology', 'Industry']);
@@ -573,6 +580,14 @@ describe('Pipeline classification filters (#5619 Part C)', () => {
       const many = Array.from({ length: FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES + 10 }, (_, index) => `v${index}`);
       expect(sanitizePipelineClassificationValues(many)).toHaveLength(FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES);
       expect(fromQuery(`tat=&tat=${long}&tech=Quantum`).classification).toEqual(select({ technology: ['Quantum'] }));
+    });
+
+    it('treats prototype-looking values as plain text', () => {
+      const parsed = fromQuery('tat=__proto__&tech=constructor&ind=toString');
+      expect(parsed.classification).toEqual(select({ technical_activity_type: ['__proto__'], technology: ['constructor'], industry: ['toString'] }));
+      expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+      expect(filterPipelineRowsByClassification(rows, parsed.classification)).toEqual([]);
+      expect(pruneUnknownPipelineClassification(parsed.classification, rows)).toEqual(emptyPipelineClassification());
     });
 
     it('drops a value no row holds once the rows are known', () => {
