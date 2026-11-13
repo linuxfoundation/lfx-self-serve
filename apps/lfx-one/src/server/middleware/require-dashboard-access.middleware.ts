@@ -10,11 +10,9 @@ import {
 import type { PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { resolveRootProjectUid } from '../helpers/root-project.helper';
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from '../services/logger.service';
-import { NatsService } from '../services/nats.service';
 import { ProjectService } from '../services/project.service';
 
 const ED: PersonaType = 'executive-director';
@@ -90,12 +88,12 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
 // Variant for routes keyed by a *project* slug (e.g. `/api/projects/:slug/participating-orgs*`), where
 // `foundationSlug` is absent so `requireDashboardAccess` would skip scoping. LF Staff pass outright. An executive
 // director passes only for a project that is, or sits under, a foundation they direct: the project's parent chain
-// is read server-side (metadata only) and matched against the ED's scoped projects. A root writer, who carries the
-// ED persona without ED scopes, passes only with writer access on the confirmed topmost foundation (the project
-// just below the hidden ROOT), never on ROOT itself and never when the chain could not be fully resolved.
+// is read server-side (metadata only, fails closed) and matched against the ED's scoped projects. A root writer,
+// who carries the ED persona without ED scopes, passes only with verified writer access on the requested project
+// itself: `global_writer` is withheld on some (Draft/Confidential) projects, so the hidden-ROOT grant alone is not
+// trusted, and a grant on an umbrella ancestor is not consulted.
 // The route's own `requireProjectParticipatingOrgsAccess` (project `viewer`) still runs after this gate.
 const projectService = new ProjectService();
-const natsService = new NatsService();
 
 export async function requireExecutiveOrLFStaff(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const operation = 'require_executive_or_lf_staff';
@@ -126,7 +124,8 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
     const edUids = new Set(edProjects.map((project) => project.projectUid));
     const edSlugs = new Set(edProjects.map((project) => project.projectSlug.toLowerCase()));
 
-    // The requested project: an unknown slug is left to the viewer gate (404); an outage surfaces as itself.
+    // The requested project. A lookup outage is a 503 and an unknown slug a 404, both answered here so the
+    // scope decision never depends on a second, separate lookup in the viewer gate agreeing with this one.
     let uid: string;
     let exists: boolean;
     try {
@@ -143,36 +142,23 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
       });
     }
     if (!exists) {
-      next();
-      return;
+      throw new MicroserviceError('Project not found', 404, 'NOT_FOUND', { operation });
     }
 
-    // Climb project -> parent -> ... Ancestor reads are metadata-only (`access: false`) and fail closed: an
-    // unreadable ancestor ends the climb as "incomplete", which can never grant the root-writer fallback.
-    // The hidden ROOT sentinel is not user-readable, so it is recognised by uid (NATS-resolved) rather than by reading it;
-    // if ROOT cannot be resolved the climb simply cannot be confirmed complete at a top-level project (fails closed).
-    const rootUid = await resolveRootProjectUid(req, natsService);
+    // Climb project -> parent -> ... until an ED-scoped project is found. Ancestor reads are metadata-only
+    // (`access: false`); an unreadable ancestor (or the hidden ROOT) simply ends the climb as "not in scope".
     let project: Project = await projectService.getProjectById(req, uid, false);
-    let foundation: Project | null = null;
-    let complete = false;
     for (let depth = 0; depth < PROJECT_ANCESTRY_MAX_DEPTH; depth++) {
       if (edUids.has(project.uid) || edSlugs.has((project.slug ?? '').toLowerCase())) {
         next();
         return;
       }
-      foundation = project;
-
       if (!project.parent_uid) {
-        complete = true;
         break;
       }
       if (edUids.has(project.parent_uid)) {
         next();
         return;
-      }
-      if (rootUid && project.parent_uid === rootUid) {
-        complete = true;
-        break;
       }
 
       let parent: Project;
@@ -180,17 +166,16 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
         parent = await projectService.getProjectById(req, project.parent_uid, false);
       } catch (error) {
         // Caller-reachable (an unreadable ancestor), so DEBUG rather than a floodable WARN.
-        logger.debug(req, operation, 'Project ancestry lookup ended before a foundation was confirmed', { slug, err: error });
+        logger.debug(req, operation, 'Project ancestry lookup ended before an ED-scoped foundation was found', { slug, err: error });
         break;
       }
       if (parent.slug === ROOT_PROJECT_SLUG) {
-        complete = true;
         break;
       }
       project = parent;
     }
 
-    if (complete && result.isRootWriter && foundation && (await personaDetectionService.checkProjectWriter(req, foundation.slug))) {
+    if (result.isRootWriter && (await personaDetectionService.checkProjectWriter(req, slug))) {
       next();
       return;
     }

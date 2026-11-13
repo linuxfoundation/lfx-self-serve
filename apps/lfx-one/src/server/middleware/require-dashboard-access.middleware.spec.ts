@@ -29,10 +29,7 @@ vi.mock('../services/project.service', () => ({
 
 vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
-const resolveRootProjectUid = vi.fn();
-vi.mock('../helpers/root-project.helper', () => ({ resolveRootProjectUid: (...args: unknown[]) => resolveRootProjectUid(...args) }));
-vi.mock('../services/nats.service', () => ({ NatsService: class {} }));
-
+const { AuthorizationError, MicroserviceError, ServiceValidationError } = await import('../errors');
 const { requireDashboardAccess, requireExecutiveOrLFStaff } = await import('./require-dashboard-access.middleware');
 
 interface PersonaResult {
@@ -259,6 +256,7 @@ describe('requireExecutiveOrLFStaff', () => {
   };
   const rootWriter = (): PersonaResult => ({ personas: ['executive-director'], personaProjects: {}, isRootWriter: true, isLFStaff: false });
   const proj = (uid: string, slug: string, parentUid = '') => ({ uid, slug, parent_uid: parentUid });
+  const errorOf = (next: ReturnType<typeof vi.fn>) => next.mock.calls[0][0];
 
   /** Wires the slug lookup plus a uid -> project map for getProjectById. */
   const projects = (...list: ReturnType<typeof proj>[]) => {
@@ -275,8 +273,6 @@ describe('requireExecutiveOrLFStaff', () => {
     getProjectIdBySlug.mockReset();
     getProjectById.mockReset();
     checkProjectWriter.mockReset();
-    resolveRootProjectUid.mockReset();
-    resolveRootProjectUid.mockResolvedValue('uid-root');
   });
 
   it('allows LF staff without resolving the project', async () => {
@@ -285,9 +281,9 @@ describe('requireExecutiveOrLFStaff', () => {
     expect(getProjectIdBySlug).not.toHaveBeenCalled();
   });
 
-  it('rejects a malformed slug with a validation error before any persona or project lookup', async () => {
+  it('rejects a malformed slug with a 400 validation error before any persona or project lookup', async () => {
     const next = await run(projectReq('Bad Slug!'));
-    expect(verdict(next)).toBe('deny');
+    expect(errorOf(next)).toBeInstanceOf(ServiceValidationError);
     expect(getPersonas).not.toHaveBeenCalled();
   });
 
@@ -295,9 +291,10 @@ describe('requireExecutiveOrLFStaff', () => {
     ['a board member', ['board-member']],
     ['a project writer', ['maintainer']],
     ['a plain viewer', ['contributor']],
-  ])('denies %s', async (_label, personas) => {
+  ])('denies %s with an AuthorizationError', async (_label, personas) => {
     getPersonas.mockResolvedValue({ personas, personaProjects: {}, isLFStaff: false });
-    expect(verdict(await run())).toBe('deny');
+    const next = await run();
+    expect(errorOf(next)).toBeInstanceOf(AuthorizationError);
     expect(getProjectIdBySlug).not.toHaveBeenCalled();
   });
 
@@ -318,59 +315,56 @@ describe('requireExecutiveOrLFStaff', () => {
   it('denies an ED for a project under a different foundation', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
     projects(proj('uid-child', 'child', 'uid-b'), proj('uid-b', 'foundation-b', 'uid-root'), proj('uid-root', 'ROOT'));
-    expect(verdict(await run())).toBe('deny');
+    expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
   });
 
-  it('leaves an unknown project to the viewer gate (404) instead of denying', async () => {
+  it('denies an ED for a top-level project with no parent', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a']));
+    projects(proj('uid-top', 'top'));
+    expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
+  });
+
+  it('stops at the depth cap and denies a deeper chain', async () => {
+    getPersonas.mockResolvedValue(edFor(['p8']));
+    projects(...['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'].map((slug, i, all) => proj(`uid-${slug}`, slug, all[i + 1] ? `uid-${all[i + 1]}` : '')));
+    expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
+  });
+
+  it('answers 404 for an unknown project instead of falling through', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
     getProjectIdBySlug.mockResolvedValue({ exists: false });
-    expect(verdict(await run())).toBe('allow');
+    expect(errorOf(await run())).toMatchObject({ statusCode: 404, code: 'NOT_FOUND' });
   });
 
-  it('denies when an ancestor lookup fails (fails closed, no 5xx)', async () => {
+  it('denies (403, not 5xx) when an ancestor lookup fails', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
     projects(proj('uid-child', 'child', 'uid-missing'));
-    expect(verdict(await run())).toBe('deny');
-  });
-
-  it('allows a root writer only with writer access on the foundation below ROOT', async () => {
-    getPersonas.mockResolvedValue(rootWriter());
-    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-root'), proj('uid-root', 'ROOT'));
-    checkProjectWriter.mockResolvedValue(true);
-    expect(verdict(await run())).toBe('allow');
-    expect(checkProjectWriter).toHaveBeenCalledTimes(1);
-    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'f');
-  });
-
-  it('denies a root writer without writer access on the foundation (never checks ROOT)', async () => {
-    getPersonas.mockResolvedValue(rootWriter());
-    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-root'), proj('uid-root', 'ROOT'));
-    checkProjectWriter.mockResolvedValue(false);
-    expect(verdict(await run())).toBe('deny');
-    expect(checkProjectWriter).not.toHaveBeenCalledWith(expect.anything(), 'ROOT');
-  });
-
-  it('denies a root writer when the ancestry cannot be fully resolved, even with child writer access', async () => {
-    getPersonas.mockResolvedValue(rootWriter());
-    projects(proj('uid-child', 'child', 'uid-missing'));
-    checkProjectWriter.mockResolvedValue(true);
-    expect(verdict(await run())).toBe('deny');
-    expect(checkProjectWriter).not.toHaveBeenCalled();
-  });
-
-  it('allows a root writer when ROOT itself is unreadable, recognising it by uid', async () => {
-    getPersonas.mockResolvedValue(rootWriter());
-    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-root'));
-    checkProjectWriter.mockResolvedValue(true);
-    expect(verdict(await run())).toBe('allow');
-    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'f');
+    expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
   });
 
   it('maps a slug lookup outage to 503 ACCESS_CHECK_UNAVAILABLE', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
     getProjectIdBySlug.mockRejectedValue(new Error('nats timeout'));
-    const next = await run();
-    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 503, code: 'ACCESS_CHECK_UNAVAILABLE' });
+    const error = errorOf(await run());
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'ACCESS_CHECK_UNAVAILABLE' });
+  });
+
+  it('allows a root writer only with verified writer access on the requested project', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-tlf'), proj('uid-tlf', 'tlf', 'uid-root'), proj('uid-root', 'ROOT'));
+    checkProjectWriter.mockResolvedValue(true);
+    expect(verdict(await run())).toBe('allow');
+    expect(checkProjectWriter).toHaveBeenCalledTimes(1);
+    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'child');
+  });
+
+  it('denies a root writer without writer access on the requested project, whatever its umbrella grants', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-tlf'), proj('uid-tlf', 'tlf', 'uid-root'), proj('uid-root', 'ROOT'));
+    checkProjectWriter.mockImplementation(async (_req: unknown, slug: string) => slug === 'tlf');
+    expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
+    expect(checkProjectWriter).not.toHaveBeenCalledWith(expect.anything(), 'tlf');
   });
 
   it('forwards a persona lookup failure instead of allowing', async () => {
