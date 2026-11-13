@@ -154,6 +154,48 @@ describe('FormationPipelineService.getPipeline', () => {
     expect(b).toMatchObject({ announcement_date: null, executive_director: null, program_manager: null, opportunity_owner: null, has_checklist: true });
   });
 
+  // #5619 Part C: the PCC classification arrays ride on the `project` documents the pipeline already reads; no extra upstream call.
+  it('maps the classification arrays: present, empty, missing and null', async () => {
+    mockUpstream({
+      projects: [
+        project({
+          uid: 'a',
+          name: 'A',
+          technical_activity_type: ['Open Source Software', 'Open Standard / Specification'],
+          technology: ['Quantum'],
+          industry: ['Finance'],
+        }),
+        project({ uid: 'b', name: 'B', technical_activity_type: [], technology: [], industry: [] }),
+        project({ uid: 'c', name: 'C' }),
+        project({ uid: 'd', name: 'D', technical_activity_type: null, technology: null, industry: null }),
+        project({ uid: 'e', name: 'E', technology: [' Quantum ', 'Quantum', ''] }),
+      ],
+    });
+
+    const { rows } = await service.getPipeline(req, allStages);
+    const of = (uid: string) => rows.find((row) => row.uid === uid);
+
+    expect(of('a')).toMatchObject({
+      technical_activity_type: ['Open Source Software', 'Open Standard / Specification'],
+      technology: ['Quantum'],
+      industry: ['Finance'],
+    });
+    for (const uid of ['b', 'c', 'd']) {
+      expect(of(uid)).toMatchObject({ technical_activity_type: [], technology: [], industry: [] });
+    }
+    expect(of('e')?.technology).toEqual(['Quantum']);
+  });
+
+  it('makes no extra upstream read for the classification fields', async () => {
+    mockUpstream({ projects: [project({ uid: 'a', name: 'A', technology: ['Quantum'] })] });
+
+    await service.getPipeline(req, allStages);
+
+    const types = proxyRequest.mock.calls.map((call) => call[4]?.type);
+    expect(types.filter((type) => type === 'project').length).toBeGreaterThanOrEqual(1);
+    expect([...new Set(types)].sort()).toEqual(['formation', 'project', 'project_settings']);
+  });
+
   // #5619 D8: the Formation Lead arrives on `project_settings.formation_lead`; values land once lfx-v1-sync-helper#216's backfill has run.
   it('serves the formation lead from settings (name, email, username only), and null when empty or missing', async () => {
     mockUpstream({

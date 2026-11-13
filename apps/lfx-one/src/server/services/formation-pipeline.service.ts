@@ -31,6 +31,7 @@ import {
   getPipelineStageKey,
   isTestProjectName,
   matchesPipelineSearch,
+  normalizePipelineClassification,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -353,6 +354,9 @@ export class FormationPipelineService {
       program_manager: null,
       opportunity_owner: null,
       formation_lead: null,
+      technical_activity_type: normalizePipelineClassification(project.technical_activity_type),
+      technology: normalizePipelineClassification(project.technology),
+      industry: normalizePipelineClassification(project.industry),
       created_at: project.created_at || null,
       updated_at: project.updated_at || null,
       has_checklist: false,

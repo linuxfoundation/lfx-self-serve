@@ -4,6 +4,8 @@
 import { FORMATION_PIPELINE_SEARCH_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import type { FormationPipelineFoundationKindFilter, FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
@@ -28,6 +30,9 @@ function row(overrides: Partial<FormationPipelineRow>): FormationPipelineRow {
     program_manager: null,
     opportunity_owner: null,
     formation_lead: null,
+    technical_activity_type: [],
+    technology: [],
+    industry: [],
     foundation_kind: 'under_foundation',
     created_at: null,
     updated_at: null,
@@ -214,6 +219,88 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(fixture.componentInstance['filterForm'].controls.foundation.value).toBe('f2');
     });
 
+    it('retries the background foundation-options read after it fails, on the next refresh', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      let unfilteredReads = 0;
+      getFormationPipeline = vi.fn((foundationUid: string | null) => {
+        if (foundationUid) return of(response([row({ uid: 'only', name: 'Only' })]));
+        unfilteredReads += 1;
+        return unfilteredReads === 1
+          ? throwError(() => new HttpErrorResponse({ status: 503 }))
+          : of(response([row({ uid: 'p', parent: { uid: 'f2', name: 'Foundation Two' } })]));
+      });
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationsPipelineComponent],
+        providers: [
+          provideRouter([]),
+          { provide: FormationService, useValue: { getFormationPipeline } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ foundation: 'f2' }) } } },
+        ],
+      }).compileComponents();
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture = TestBed.createComponent(FormationsPipelineComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const labels = (): string[] => fixture.componentInstance['foundationOptions']().map((option: { label: string }) => option.label);
+      expect(unfilteredReads).toBe(1);
+      expect(consoleError).toHaveBeenCalledWith('[FormationsPipeline] Failed to load the foundation options', expect.anything());
+      expect(labels()).not.toContain('Foundation Two');
+      expect(rowIds()).toEqual(['only']);
+
+      fixture.componentInstance['onRetry']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(unfilteredReads).toBe(2);
+      expect(labels()).toContain('Foundation Two');
+    });
+
+    it('retries the failed foundation-options read when the Foundation select is focused, and labels it', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      let unfilteredReads = 0;
+      getFormationPipeline = vi.fn((foundationUid: string | null) => {
+        if (foundationUid) return of(response([row({ uid: 'only', name: 'Only' })]));
+        unfilteredReads += 1;
+        return unfilteredReads === 1
+          ? throwError(() => new HttpErrorResponse({ status: 503 }))
+          : of(response([row({ uid: 'p', parent: { uid: 'f2', name: 'Foundation Two' } })]));
+      });
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormationsPipelineComponent],
+        providers: [
+          provideRouter([]),
+          { provide: FormationService, useValue: { getFormationPipeline } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ foundation: 'f2' }) } } },
+        ],
+      }).compileComponents();
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      fixture = TestBed.createComponent(FormationsPipelineComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const labels = (): string[] => fixture.componentInstance['foundationOptions']().map((option: { label: string }) => option.label);
+      expect(unfilteredReads).toBe(1);
+      expect(labels()).not.toContain('Foundation Two');
+
+      q('formations-pipeline-foundation')!.dispatchEvent(new Event('focusin', { bubbles: true }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(unfilteredReads).toBe(2);
+      expect(labels()).toContain('Foundation Two');
+
+      // Once listed (or while a read is in flight) focusing again reads nothing more.
+      q('formations-pipeline-foundation')!.dispatchEvent(new Event('focusin', { bubbles: true }));
+      await fixture.whenStable();
+      expect(unfilteredReads).toBe(2);
+    });
+
     it('ignores bad values, and the foundation types an earlier link may carry, and opens on the defaults', async () => {
       await render(of(response(ROWS)), { stage: 'bogus', type: 'bogus', sort: 'bogus', foundation: 'no spaces allowed' });
 
@@ -259,7 +346,7 @@ describe('FormationsPipelineComponent (#5475)', () => {
       fixture.detectChanges();
       await new Promise((resolve) => setTimeout(resolve, 350));
       fixture.detectChanges();
-      expect(lastParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null });
+      expect(lastParams()).toEqual({ stage: null, foundation: null, type: null, q: null, sort: null, dir: null, tat: null, tech: null, ind: null });
     });
 
     it('round-trips: what one view writes, a fresh page reads back as the same view', async () => {
@@ -634,5 +721,174 @@ describe('FormationsPipelineComponent (#5475)', () => {
     expect(q('formations-pipeline-error')?.textContent).toContain("Couldn't load the pipeline. Try again.");
     await click(q('formations-pipeline-retry'));
     expect(getFormationPipeline).toHaveBeenCalledTimes(2);
+  });
+
+  // #5619 Part C: three multi-select classification filters, client-side, joined with the other filters.
+  describe('classification filters', () => {
+    const SPEC = 'Open Standard / Specification';
+    const OSS = 'Open Source Software';
+    const CROWD = [
+      row({ uid: 'a', name: 'Alpha', stage: 'engaged', technical_activity_type: [OSS, SPEC], technology: ['Quantum'], industry: ['Finance'] }),
+      row({ uid: 'b', name: 'Bravo', stage: 'engaged', technical_activity_type: [SPEC], technology: ['AI & ML'], industry: [] }),
+      row({
+        uid: 'c',
+        name: 'Charlie',
+        stage: 'exploratory',
+        technical_activity_type: [OSS],
+        technology: ['Quantum', 'AI & ML'],
+        industry: ['Finance', 'Health'],
+      }),
+      row({ uid: 'd', name: 'Delta', stage: 'exploratory' }),
+      row({ uid: 'e', name: 'Echo', stage: 'archived', technical_activity_type: [SPEC] }),
+    ];
+    const set = async (key: 'technical_activity_type' | 'technology' | 'industry', values: string[]): Promise<void> => {
+      fixture.componentInstance['filterForm'].controls[key].setValue(values);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    const optionsOf = (key: 'technical_activity_type' | 'technology' | 'industry'): string[] =>
+      fixture.componentInstance['classificationOptions']()[key].map((option) => option.label);
+    const lastParams = (): Record<string, string | string[] | null> => {
+      const calls = vi.mocked(TestBed.inject(Router).navigate).mock.calls;
+      return (calls[calls.length - 1][1] as { queryParams: Record<string, string | string[] | null> }).queryParams;
+    };
+
+    it('renders the three selects with their labels, and shows every live row while none is set', async () => {
+      await render(of(response(CROWD)));
+
+      for (const label of ['Technical activity type', 'Technology', 'Industry']) {
+        expect(q('formations-pipeline')?.querySelector(`[aria-label="${label}"]`)).not.toBeNull();
+      }
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('lists the values present, sorted, with counts that follow the stage and the other filters', async () => {
+      await render(of(response(CROWD)));
+      // Live stages only: the archived row's Specification does not count.
+      expect(optionsOf('technical_activity_type')).toEqual([`${OSS} (2)`, `${SPEC} (2)`]);
+      expect(optionsOf('technology')).toEqual(['AI & ML (2)', 'Quantum (2)']);
+
+      await set('industry', ['Health']);
+      expect(optionsOf('technology')).toEqual(['AI & ML (1)', 'Quantum (1)']);
+      // The field's own filter is left out of its options, so a second industry stays pickable.
+      expect(optionsOf('industry')).toEqual(['Finance (2)', 'Health (1)']);
+
+      fixture.componentInstance['onStageChange']('archived');
+      fixture.detectChanges();
+      expect(optionsOf('technical_activity_type')).toEqual([]);
+    });
+
+    it('keeps a selected value listed with a zero count when the other filters have emptied it', async () => {
+      await render(of(response(CROWD)));
+      await set('technology', ['Quantum']);
+      await set('industry', ['Health']);
+      await set('technical_activity_type', [SPEC]);
+
+      expect(optionsOf('technical_activity_type')).toContain(`${SPEC} (0)`);
+    });
+
+    it('keeps working when clearing a select leaves null on its control, and drops that param from the URL', async () => {
+      await render(of(response(CROWD)), {});
+      await set('technology', ['Quantum']);
+      expect(lastParams()).toMatchObject({ tech: ['Quantum'] });
+
+      await set('technology', null as unknown as string[]);
+
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c', 'd']);
+      expect(optionsOf('technology')).toEqual(['AI & ML (2)', 'Quantum (2)']);
+      expect(fixture.componentInstance['isFiltered']()).toBe(false);
+      expect(lastParams()).toMatchObject({ tech: null });
+      expect(q('formations-pipeline-error')).toBeNull();
+    });
+
+    it('gives each select its own panel class, so the wrapper can size every panel to its trigger', async () => {
+      await render(of(response(CROWD)));
+
+      const selects = fixture.debugElement.queryAll(By.directive(MultiSelectComponent)).map((el) => el.componentInstance as MultiSelectComponent);
+      expect(selects).toHaveLength(3);
+      const classes = selects.map((select) => select.panelStyleClass());
+      expect(classes).toEqual(['formations-pipeline-tat-panel', 'formations-pipeline-technology-panel', 'formations-pipeline-industry-panel']);
+      expect(new Set(classes).size).toBe(3);
+      expect(selects.every((select) => select.matchTriggerWidth())).toBe(true);
+    });
+
+    it('filters by each field alone, OR within a filter and AND across filters', async () => {
+      await render(of(response(CROWD)));
+
+      await set('technical_activity_type', [SPEC]);
+      expect(rowIds().sort()).toEqual(['a', 'b']);
+      await set('technical_activity_type', [SPEC, OSS]);
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c']);
+      await set('technology', ['Quantum']);
+      expect(rowIds().sort()).toEqual(['a', 'c']);
+      await set('industry', ['Health']);
+      expect(rowIds()).toEqual(['c']);
+    });
+
+    it('hides a row with an empty array while any classification filter is set, and shows it again when cleared', async () => {
+      await render(of(response(CROWD)));
+      await set('industry', ['Finance']);
+      expect(rowIds()).not.toContain('d');
+      expect(rowIds()).not.toContain('b');
+
+      await set('industry', []);
+      expect(rowIds()).toContain('d');
+    });
+
+    it('makes the counts, pills and stat cards follow the filters', async () => {
+      await render(of(response(CROWD)));
+      await set('technical_activity_type', [SPEC]);
+
+      expect(fixture.componentInstance['counts']()).toMatchObject({ engaged: 2, exploratory: 0, archived: 1, total: 3 });
+      const pills = [...fixture.nativeElement.querySelectorAll('[data-testid="formations-pipeline-pills"] button')].map((el: Element) =>
+        el.textContent?.trim()
+      );
+      expect(pills[0]).toBe('In pipeline (2)');
+    });
+
+    it('writes each selection to the URL as repeated params, values with spaces, "/" and "&" intact, and reset clears them', async () => {
+      await render(of(response(CROWD)), {});
+      await set('technical_activity_type', [SPEC, OSS]);
+      await set('technology', ['AI & ML']);
+
+      expect(lastParams()).toMatchObject({ tat: [SPEC, OSS], tech: ['AI & ML'], ind: null });
+
+      fixture.componentInstance['resetFilters']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(lastParams()).toMatchObject({ tat: null, tech: null, ind: null });
+      expect(rowIds().sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('opens on the classification in the URL, and drops a value no row holds', async () => {
+      await render(of(response(CROWD)), { tat: SPEC, tech: 'AI & ML', ind: 'Not A Real Sector' } as unknown as Record<string, string>);
+
+      const form = fixture.componentInstance['filterForm'];
+      expect(form.controls.technical_activity_type.value).toEqual([SPEC]);
+      expect(form.controls.technology.value).toEqual(['AI & ML']);
+      expect(form.controls.industry.value).toEqual([]);
+      expect(rowIds()).toEqual(['b']);
+    });
+
+    it('exports the filtered rows with the three classification columns', async () => {
+      await render(of(response(CROWD)));
+      await set('technology', ['Quantum']);
+      let captured: Blob | null = null;
+      URL.createObjectURL = vi.fn((blob: Blob) => {
+        captured = blob;
+        return 'blob:x';
+      });
+      URL.revokeObjectURL = vi.fn();
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+      fixture.componentInstance['exportCsv']();
+
+      const lines = (await (captured as unknown as Blob).text()).split('\r\n');
+      expect(lines[0]).toContain('Technical activity type,Technology,Industry');
+      expect(lines[1]).toContain(`${OSS}; ${SPEC}`);
+      expect(lines[1]).toContain('Quantum');
+      expect(lines.filter((line) => line.startsWith('Bravo'))).toEqual([]);
+    });
   });
 });
