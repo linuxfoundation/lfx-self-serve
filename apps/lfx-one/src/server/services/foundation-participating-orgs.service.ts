@@ -109,7 +109,7 @@ export class FoundationParticipatingOrgsService {
   public getBreakdown(req: Request, slug: string, range: FoundationParticipatingOrgsRange, companyKey: string): FoundationParticipatingOrgBreakdown {
     logger.debug(req, 'get_foundation_participating_orgs_breakdown', 'Building project breakdown', { slug, range, company_key: companyKey });
     const foundation = this.source.getFoundation(slug);
-    const item = this.activities(foundation, range).find((candidate) => candidate.row.participantKey === companyKey);
+    const item = this.activities(foundation, range, undefined, companyKey)[0];
     if (!item) {
       throw new ResourceNotFoundError('Company', companyKey, { operation: 'get_foundation_participating_orgs_breakdown' });
     }
@@ -186,13 +186,16 @@ export class FoundationParticipatingOrgsService {
   private activities(
     foundation: FoundationParticipatingOrgsSourceFoundation,
     range: FoundationParticipatingOrgsRange,
-    projectSlug?: string
+    projectSlug?: string,
+    companyKey?: string
   ): FoundationCompanyActivity[] {
     const scale = this.source.rangeScale[range];
     const names = new Map(foundation.projects.map((project) => [project.slug, project]));
     const items: FoundationCompanyActivity[] = [];
 
-    for (const company of foundation.companies) {
+    // A breakdown names one company, so only that company is built instead of the whole roster.
+    const companies = companyKey ? foundation.companies.filter((company) => company.key === companyKey) : foundation.companies;
+    for (const company of companies) {
       const scoped = projectSlug ? company.projects.filter((project) => project.projectSlug === projectSlug) : company.projects;
       if (scoped.length === 0) continue;
 
