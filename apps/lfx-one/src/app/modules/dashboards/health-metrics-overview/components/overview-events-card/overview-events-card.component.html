@@ -83,11 +83,7 @@
         /></span>
         <!-- On a phone the legend moves under the title, above the list it explains. -->
         <div class="hidden flex-wrap gap-x-[16px] gap-y-[6px] max-[640px]:flex" data-testid="overview-events-legend-top">
-          @for (item of legend; track item.key) {
-            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-              ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
-            >
-          }
+          <ng-container *ngTemplateOutlet="legendItems" />
         </div>
 
         <!--
@@ -132,7 +128,8 @@
                   <span class="text-[12px] text-gray-500">{{ row.meta }}</span>
                 </div>
 
-                <!-- Stacked, a cell is a label over its value beside a 3px line in its status colour; rings and bars hide. -->
+                <!-- Stacked, a cell is a label over its value beside a 3px line in its status colour; rings and bars hide. Exact
+                     px from the design, which the 14px root's rem scale undershoots. -->
                 <div
                   class="flex min-w-0 flex-col justify-center border-l-[3px] pl-[8px] @[561px]/evtbl:flex-row @[561px]/evtbl:items-center @[561px]/evtbl:justify-start @[561px]/evtbl:gap-[10px] @[561px]/evtbl:border-l-0 @[561px]/evtbl:pl-0"
                   [class]="row.registrations.lineClass"
@@ -275,16 +272,21 @@
         <div
           class="order-1 flex flex-wrap gap-x-[24px] gap-y-[6px] max-[640px]:hidden min-[1101px]:order-3 min-[1101px]:justify-end"
           data-testid="overview-events-legend">
-          @for (item of legend; track item.key) {
-            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
-              ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
-            >
-          }
+          <ng-container *ngTemplateOutlet="legendItems" />
         </div>
       </div>
     </div>
   }
 </lfx-overview-card>
+
+<!-- The status legend's items, shown in the footer, or under the list title on a phone. -->
+<ng-template #legendItems>
+  @for (item of legend; track item.key) {
+    <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+      ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
+    >
+  }
+</ng-template>
 
 <!-- A cell's figure and its description, shared by the ring and the bar layouts: "Goal: 1,000", or "No goal set" in the quiet colour. -->
 <ng-template #figure let-bar>
