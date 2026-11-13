@@ -390,13 +390,13 @@ describe('OrgSelectorComponent navbar card', () => {
   });
   describe('a CLA-only organization (#5557)', () => {
     const claOnlyB: OrgItem = { ...rowB, slug: null, claOnly: true };
-    const CLA_ONLY_TOOLTIP = 'You are a CLA Manager or initial CLA Manager designee for this organization. Only its EasyCLA page opens.';
+    const CLA_ONLY_TOOLTIP = 'You are a CLA Manager or initial CLA Manager designee for this company. Only its EasyCLA page opens.';
 
     it('labels a CLA-only row listed after a held one, and keeps the panel openable', async () => {
       const card = await createCard({ items: [rowA, claOnlyB], writers: [UID_A] });
 
       expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([
-        [UID_A, 'Org Admin Editor', ''],
+        [UID_A, 'Company Admin Editor', ''],
         [UID_B, 'CLA Manager', CLA_ONLY_TOOLTIP],
       ]);
       expect(card.isSingleOrg()).toBe(false);
@@ -436,8 +436,8 @@ describe('OrgSelectorComponent navbar card', () => {
     it('lets a held grant win over a CLA-only flag on the same row', async () => {
       const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A], claManagerOrgs: [UID_A] });
 
-      expect(card.selectedRoleLabel()).toBe('Org Admin Editor');
-      expect(card.displayedItems()[0].roleLabel).toBe('Org Admin Editor');
+      expect(card.selectedRoleLabel()).toBe('Company Admin Editor');
+      expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
     });
   });
 });
