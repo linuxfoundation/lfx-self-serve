@@ -69,7 +69,7 @@ export class OrgLensEmptyStateService {
    * the page must ask the server whether it is readable. `null` for everyone else.
    */
   private readonly contractorProbeUid: Signal<string | null> = computed(() => {
-    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly()) {
+    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly() || this.selectionAwaitsClaOnlyRows()) {
       return null;
     }
     const uid = this.accountContext.selectedAccount().uid;
@@ -101,8 +101,29 @@ export class OrgLensEmptyStateService {
     return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
   });
 
-  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
-  public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+  /**
+   * M3 — a grant holder's CLA-only rows are still on their way, and the selection is neither held nor
+   * known to be CLA-only, so it may yet be one of them. A restored CLA-only company is recorded only
+   * once those rows land (`OrgNavigationService.handlePendingSelection`); judged before then, the page
+   * would treat an organization the caller can open as one they cannot, and the contractor probe would
+   * ask the read gate a question it refuses by design.
+   */
+  private readonly selectionAwaitsClaOnlyRows: Signal<boolean> = computed(() => {
+    if (!this.orgNavigation.claOnlyPending()) {
+      return false;
+    }
+    const uid = this.accountContext.selectedAccount().uid;
+    return !!uid && !isOrgRollUpSegment(uid) && !this.selectedHeld() && !this.selectedClaOnly();
+  });
+
+  /**
+   * Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed), and
+   * the selection is not waiting on the CLA-only rows to be classified; before this, pages render a
+   * skeleton, never a state.
+   */
+  public readonly settled: Signal<boolean> = computed(
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.selectionAwaitsClaOnlyRows()
+  );
 
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
