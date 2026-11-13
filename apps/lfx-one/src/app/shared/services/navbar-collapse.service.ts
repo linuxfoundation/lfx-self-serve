@@ -3,16 +3,18 @@
 
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
-import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_NARROW_MAX_WIDTH_PX, NAVBAR_PEEK_OUT_MS } from '@lfx-one/shared/constants';
+import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_LEFT_PAGE_STORAGE_KEY, NAVBAR_NARROW_MAX_WIDTH_PX, NAVBAR_PEEK_OUT_MS } from '@lfx-one/shared/constants';
 
 /**
  * Collapse state of the desktop navbar: docked open (288px gutter), docked to its 56px rail, or peeking
  * open over the page from the rail. The layouts read it to size the page gutter; the desktop navbar
  * drives it (pointer, FLIP morph) and renders it.
  *
- * - `collapsed` is the viewer's docked preference, kept in `sessionStorage` and restored only on a reload: a new tab or
- *   browser session always starts docked open, including a duplicated tab or one opened from a link, which inherit a copy
- *   of the opener's session storage.
+ * - `collapsed` is the viewer's docked preference, kept in `sessionStorage`. It is restored only when this tab itself left
+ *   the page and came back: a reload, Back/Forward, or one of the app's own full-page redirects (sign-in, account linking,
+ *   invites). Each page leaves a one-time mark on `pagehide` that the next load consumes. A new tab or browser session
+ *   always starts docked open, including a duplicated tab or one opened from a link: they inherit a copy of the opener's
+ *   session storage, but the opener never left its page, so there is no mark to inherit.
  * - `narrow` (a non-touch viewport under {@link NAVBAR_NARROW_MAX_WIDTH_PX}) forces the rail without
  *   touching the preference, which returns once the viewport widens again.
  * - A non-touch device keeps the navbar (as the rail) at every width; the hamburger + drawer below `lg`
@@ -83,11 +85,12 @@ export class NavbarCollapseService {
     if (!this.isBrowser || this.initialized) return;
     this.initialized = true;
     this.clearLegacyPreference();
-    if (this.isReload()) this.collapsedPreference.set(this.readPreference());
+    if (this.consumeLeftPageMark()) this.collapsedPreference.set(this.readPreference());
     else this.writePreference(false);
     this.initializedState.set(true);
 
     const view = this.document.defaultView;
+    view?.addEventListener('pagehide', () => this.markLeftPage());
     if (view?.matchMedia) {
       const narrowQuery = view.matchMedia(`(max-width: ${NAVBAR_NARROW_MAX_WIDTH_PX - 0.02}px)`);
       const touchQuery = view.matchMedia('(hover: none) and (pointer: coarse)');
@@ -172,16 +175,24 @@ export class NavbarCollapseService {
     }
   }
 
-  /**
-   * The page was reloaded, rather than opened fresh (a new or duplicated tab, a link, a typed address). Browsers without
-   * the Navigation Timing entry count as a reload, so they keep the stored preference.
-   */
-  private isReload(): boolean {
+  /** This tab is leaving the page (reload, redirect, Back/Forward): the next load in it restores the preference. */
+  private markLeftPage(): void {
     try {
-      const entry = this.document.defaultView?.performance?.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined;
-      return !entry || entry.type === 'reload';
+      this.document.defaultView?.sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
     } catch {
-      return true;
+      // Storage blocked: the next load starts docked open.
+    }
+  }
+
+  /** Whether this tab left the page and came back. The mark is removed, so a tab duplicated later can't inherit it. */
+  private consumeLeftPageMark(): boolean {
+    try {
+      const storage = this.document.defaultView?.sessionStorage;
+      const marked = storage?.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY) === 'true';
+      storage?.removeItem(NAVBAR_LEFT_PAGE_STORAGE_KEY);
+      return marked;
+    } catch {
+      return false;
     }
   }
 

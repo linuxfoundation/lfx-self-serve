@@ -3,7 +3,7 @@
 
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_PEEK_OUT_MS } from '@lfx-one/shared/constants';
+import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_LEFT_PAGE_STORAGE_KEY, NAVBAR_PEEK_OUT_MS } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NavbarCollapseService } from './navbar-collapse.service';
@@ -51,6 +51,7 @@ describe('NavbarCollapseService', () => {
 
   it('starts docked open until init, so SSR and the first client render agree', () => {
     sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
     const service = setup();
 
     expect(service.collapsed()).toBe(false);
@@ -68,6 +69,7 @@ describe('NavbarCollapseService', () => {
     window.addEventListener('resize', resize);
 
     sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
     setup().init();
     expect(resize).toHaveBeenCalledTimes(1);
     window.removeEventListener('resize', resize);
@@ -98,7 +100,6 @@ describe('NavbarCollapseService', () => {
 
   it('starts docked open in a new session, ignoring and clearing a preference left in localStorage', () => {
     localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
-    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'navigate' } as PerformanceNavigationTiming]);
     const service = setup();
 
     service.init();
@@ -107,8 +108,8 @@ describe('NavbarCollapseService', () => {
   });
 
   it('starts docked open in a fresh tab that inherited a collapsed preference (duplicated, or opened from a link)', () => {
+    // A copy of the opener's session storage: the preference, but no mark, since the opener never left its page.
     sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
-    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'navigate' } as PerformanceNavigationTiming]);
     const service = setup();
 
     service.init();
@@ -116,13 +117,30 @@ describe('NavbarCollapseService', () => {
     expect(sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
   });
 
-  it('restores the collapsed preference on a reload', () => {
+  it('restores the collapsed preference when this tab left the page and came back (reload, redirect, Back/Forward)', () => {
     sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
-    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming]);
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
     const service = setup();
 
     service.init();
     expect(service.collapsed()).toBe(true);
+    // Consumed, so a tab duplicated from this page later starts docked open.
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
+  });
+
+  it('marks the tab as leaving the page on pagehide, so its next load restores the preference', () => {
+    const service = setup();
+    service.init();
+    service.setCollapsed(true);
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
+
+    window.dispatchEvent(new Event('pagehide'));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
+
+    TestBed.resetTestingModule();
+    const next = setup();
+    next.init();
+    expect(next.collapsed()).toBe(true);
   });
 
   it('keeps the docked preference out of localStorage, so it never outlives the session', () => {
