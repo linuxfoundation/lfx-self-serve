@@ -234,7 +234,8 @@ describe('FoundationParticipatingOrgsService', () => {
     it('budgets one line per company under a project scope, so a wide company does not cut the key list short', async () => {
       await service.getExportRows(req, { ...base, projectSlug: 'busy' }, 'by-project', 2);
       // Alpha is in 2 projects, but only its busy line counts here: the second in-scope company still gets read.
-      expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['alpha', 'beta']);
+      // The first read is the scoped row list; the export's own read is the last.
+      expect(getProjectLines.mock.calls.at(-1)?.[2].companyKeys).toEqual(['alpha', 'beta']);
     });
 
     it('reads only the matching companies lines, so filtered-out companies never use the row budget', async () => {
@@ -242,7 +243,8 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['gamma']);
       getProjectLines.mockClear();
       await service.getExportRows(req, { ...base, segment: 'members' }, 'by-project');
-      expect(getProjectLines.mock.calls[0][2].companyKeys).toEqual(['alpha', 'beta']);
+      // The first read is the scoped row list; the export's own read is the last.
+      expect(getProjectLines.mock.calls.at(-1)?.[2].companyKeys).toEqual(['alpha', 'beta']);
     });
 
     it('limits the by-project file to the selected project under a project scope', async () => {
