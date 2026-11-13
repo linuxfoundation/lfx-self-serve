@@ -207,7 +207,21 @@ export class FoundationParticipatingOrgsComponent {
         filter(([previous, current]) => previous !== '' && previous !== current),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.filterForm.controls.project.setValue(null));
+      .subscribe(() => {
+        this.filterForm.controls.project.setValue(null);
+        this.filterForm.controls.tier.setValue(null);
+      });
+
+    // A tier the foundation's roster does not hold has dropped out of the picker, so it stops filtering too.
+    toObservable(this.summary)
+      .pipe(
+        filter((summary): summary is FoundationParticipatingOrgsSummary => summary !== null),
+        takeUntilDestroyed()
+      )
+      .subscribe((summary) => {
+        const tier = this.filterForm.controls.tier.value;
+        if (tier && !summary.availableTiers.includes(tier)) this.filterForm.controls.tier.setValue(null);
+      });
   }
 
   protected onSegmentChange(id: string): void {

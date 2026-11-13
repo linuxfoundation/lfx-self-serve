@@ -203,6 +203,19 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(fixture.componentInstance['breakdownFilterForm'].contains(KEY)).toBe(false);
   });
 
+  it('drops a selected tier the foundation does not hold, on a foundation switch or a new summary', async () => {
+    await render();
+    fixture.componentInstance['filterForm'].controls.tier.setValue('Gold');
+    await settle();
+    selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+    await settle();
+    expect(fixture.componentInstance['filterForm'].controls.tier.value).toBeNull();
+
+    fixture.componentInstance['filterForm'].controls.tier.setValue('Silver');
+    await settle();
+    expect(fixture.componentInstance['filterForm'].controls.tier.value).toBeNull();
+  });
+
   it('says nothing about the data source until a summary arrives', async () => {
     getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
     await render();
