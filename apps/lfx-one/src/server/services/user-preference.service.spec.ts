@@ -70,6 +70,13 @@ describe('UserPreferenceService', () => {
     });
   }
 
+  // Every lookup must bypass potentially stale user-service list responses (#5679).
+  function expectListReadsBypassCache(expectedReads: number): void {
+    const listReads = gw.mock.calls.filter((c) => c[1] === listUrl);
+    expect(listReads).toHaveLength(expectedReads);
+    expect(listReads.every((c) => c[2].bypassCache === true)).toBe(true);
+  }
+
   beforeEach(() => {
     vi.restoreAllMocks();
     gw.mockReset();
@@ -85,6 +92,7 @@ describe('UserPreferenceService', () => {
 
       expect(value).toBe('{"ids":["a"]}');
       expect(gw).toHaveBeenCalledWith(req, listUrl, expect.objectContaining({ operation: 'get_user_preference', service: 'user_service' }));
+      expectListReadsBypassCache(1);
     });
 
     it('returns null when the fail-open filter response has no AppName+Name match', async () => {
@@ -118,6 +126,7 @@ describe('UserPreferenceService', () => {
         })
       );
       expect(gw.mock.calls.some((c) => c[2].method === 'POST')).toBe(false);
+      expectListReadsBypassCache(1);
     });
 
     it('POSTs a create when no row exists, with pinned Type/System metadata', async () => {
@@ -154,6 +163,7 @@ describe('UserPreferenceService', () => {
       await service.upsertPreference(req, appName, name, '{"ids":["b"]}');
 
       expect(gw).toHaveBeenCalledWith(req, `${baseUrl}/pref-1`, expect.objectContaining({ method: 'PATCH' }));
+      expectListReadsBypassCache(2);
     });
 
     it('rethrows the 409 when the fallback re-GET still finds nothing', async () => {
@@ -199,6 +209,7 @@ describe('UserPreferenceService', () => {
       await service.deletePreference(req, appName, name);
 
       expect(gw).toHaveBeenCalledWith(req, `${baseUrl}/pref-1`, expect.objectContaining({ method: 'DELETE' }));
+      expectListReadsBypassCache(1);
     });
 
     it('is a no-op when no row exists', async () => {

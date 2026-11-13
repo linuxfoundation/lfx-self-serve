@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
+import type { AccessAwareOrgsResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -64,10 +65,18 @@ const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensR
  * the same promise, so one request performs one roster lookup and one authorizer call, and a
  * denial is replayed rather than re-queried.
  *
+ * `roster` lets a caller checking many orgs in one request (a family roll-up) share one roster
+ * lookup across them; it must be this request's caller's `getAccessAwareOrgs` answer.
+ *
  * Must run before any cache read or Snowflake query so an ungranted caller never reaches the data.
  * Returns how the caller qualified; throwing is the only way this function denies.
  */
-export async function assertOrgLensRead(req: Request, orgUid: string, operation: string): Promise<OrgLensReadQualification> {
+export async function assertOrgLensRead(
+  req: Request,
+  orgUid: string,
+  operation: string,
+  roster?: Promise<AccessAwareOrgsResult>
+): Promise<OrgLensReadQualification> {
   let byOrg = qualificationByRequest.get(req);
   if (!byOrg) {
     byOrg = new Map();
@@ -75,13 +84,18 @@ export async function assertOrgLensRead(req: Request, orgUid: string, operation:
   }
   let qualification = byOrg.get(orgUid);
   if (!qualification) {
-    qualification = resolveOrgLensRead(req, orgUid, operation);
+    qualification = resolveOrgLensRead(req, orgUid, operation, roster);
     byOrg.set(orgUid, qualification);
   }
   return qualification;
 }
 
-async function resolveOrgLensRead(req: Request, orgUid: string, operation: string): Promise<OrgLensReadQualification> {
+async function resolveOrgLensRead(
+  req: Request,
+  orgUid: string,
+  operation: string,
+  roster: Promise<AccessAwareOrgsResult> | undefined
+): Promise<OrgLensReadQualification> {
   const forbidden = (): MicroserviceError =>
     new MicroserviceError('You do not have access to Company Lens data for this company.', 403, 'FORBIDDEN', {
       operation,
@@ -109,7 +123,7 @@ async function resolveOrgLensRead(req: Request, orgUid: string, operation: strin
   // be missing. Deliberately kept separate from `lookupFailed`: they justify different decisions.
   let rollUpIncomplete = false;
   try {
-    const { resolved, upstreamFailed, degraded } = await roleGrants.getAccessAwareOrgs(req, username);
+    const { resolved, upstreamFailed, degraded } = await (roster ?? roleGrants.getAccessAwareOrgs(req, username));
     // `getAccessAwareOrgs` degrades to an empty/partial grant map instead of throwing, so an
     // unverified lookup is indistinguishable from "no grants" unless these flags are checked.
     lookupFailed = upstreamFailed;

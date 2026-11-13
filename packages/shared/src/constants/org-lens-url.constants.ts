@@ -72,6 +72,8 @@ export const ORG_EASYCLA_PAGE_SEGMENT = 'easycla';
  */
 export const ORG_ROLLUP_SEGMENT_PREFIX = 'family-';
 
+export const ORG_LENS_ROLL_UP_READ_METHODS: readonly string[] = ['GET', 'HEAD'];
+
 /**
  * A family roll-up segment, capturing the family's top account id. The id is matched exactly as an
  * SFID is (`ORG_ACCOUNT_ID_PATTERN`): Salesforce ids are case-sensitive, so the prefix is the only
