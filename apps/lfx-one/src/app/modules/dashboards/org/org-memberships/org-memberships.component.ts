@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, signal, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, FormsModule } from '@angular/forms';
@@ -40,8 +41,11 @@ import { foundationInitials, foundationLogoSquareClasses } from '../components/o
 import { environment } from '@environments/environment';
 import { MembershipProjectsDrawerComponent } from './components/membership-projects-drawer/membership-projects-drawer.component';
 
-/** Active-membership row plus its detail-page router commands (`null` when the row carries no foundation slug). */
-type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[] | null };
+/**
+ * Active-membership row plus its detail-page router commands (`null` when the row carries no foundation slug). In a roll-up,
+ * `groupStart` marks the first organization's line under each foundation, where the foundation's header row is drawn.
+ */
+type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[] | null; groupStart: boolean };
 
 @Component({
   selector: 'lfx-org-memberships',
@@ -49,6 +53,7 @@ type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[
   imports: [
     PageHeaderComponent,
     FormsModule,
+    NgTemplateOutlet,
     RouterLink,
     TableComponent,
     TooltipModule,
@@ -286,10 +291,16 @@ export class OrgMembershipsComponent {
   }
 
   private initMemberships(): ActiveMembershipLinkedRow[] {
-    return (this.activeData()?.memberships ?? []).map((m) => ({
+    const memberships = this.activeData()?.memberships ?? [];
+    // A roll-up's table is grouped by foundation, so it keeps this order instead of letting the table sort it.
+    const ordered = this.isRollUp()
+      ? [...memberships].sort((a, b) => a.foundationName.localeCompare(b.foundationName) || a.foundationId.localeCompare(b.foundationId))
+      : memberships;
+    return ordered.map((m, index) => ({
       ...m,
       // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
       membershipLink: this.membershipLink(m),
+      groupStart: index === 0 || ordered[index - 1].foundationId !== m.foundationId,
       initials: foundationInitials(m.foundationName),
       tierRange: `${this.formatDateShort(m.tierStartDate)} – ${this.formatDateShort(m.tierEndDate)}`,
       memberSinceFormatted: this.formatDateShort(m.memberSince),

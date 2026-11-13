@@ -283,6 +283,28 @@ describe('OrgMembershipsComponent', () => {
       expect(cell(SUBSIDIARY_ORG)).toBe('Subsidiary Co');
     });
 
+    it('groups the rows by foundation, one header per foundation and one line per organization under it', async () => {
+      const row = membershipRow(3);
+      const lfn = { ...row, foundationId: 'lfn', foundationName: 'LF Networking', foundationSlug: 'lfn' };
+      const response: OrgActiveMembershipsResponse = {
+        ...rollUpResponse(),
+        memberships: [
+          { ...lfn, organization: PARENT_ORG },
+          { ...row, organization: PARENT_ORG },
+          { ...row, organization: SUBSIDIARY_ORG },
+        ],
+      };
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response } });
+      await settleActiveFetch(fixture);
+
+      const rows = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="memberships-active-table"] tbody tr') as NodeListOf<HTMLElement>);
+      const shape = rows.map((tr) => tr.getAttribute('data-testid') ?? tr.querySelector('[data-testid^="memberships-active-company-"]')?.textContent?.trim());
+      expect(shape).toEqual(['memberships-active-group-cncf', 'Parent Co', 'Subsidiary Co', 'memberships-active-group-lfn', 'Parent Co']);
+      expect(fixture.nativeElement.querySelector('[data-testid="memberships-active-group-cncf"]')?.textContent).toContain(
+        'Cloud Native Computing Foundation (CNCF)'
+      );
+    });
+
     it('titles the page with the roll-up’s name', async () => {
       const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
 
@@ -350,6 +372,7 @@ describe('OrgMembershipsComponent', () => {
 
       expect(has(fixture, 'memberships-active-company-header')).toBe(false);
       expect(has(fixture, 'memberships-company-filter')).toBe(false);
+      expect(has(fixture, 'memberships-active-group-cncf')).toBe(false);
       const text = (testid: string) => fixture.nativeElement.querySelector(`[data-testid="${testid}"]`)?.textContent?.trim();
       expect(text('memberships-stat-active-label')).toBe('Active Memberships');
       expect(text('memberships-stat-renewing-label')).toBe('Renewing Within 90 Days');
