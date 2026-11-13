@@ -3,11 +3,11 @@
 
 import { MEMBERSHIP_TIER_ORDER } from '@lfx-one/shared/constants';
 import type {
-  FoundationParticipatingOrgsDataSource,
   FoundationParticipatingOrgsSourceCompany,
   FoundationParticipatingOrgsSourceFoundation,
   FoundationParticipatingOrgsSourceProjectLine,
 } from '@lfx-one/shared/interfaces';
+import type { FoundationParticipatingOrgsDataSource } from '../types/foundation-participating-orgs-data-source.types';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

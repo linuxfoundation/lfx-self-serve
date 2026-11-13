@@ -7,7 +7,6 @@ import type {
   FoundationParticipatingOrg,
   FoundationParticipatingOrgBreakdown,
   FoundationParticipatingOrgProjectLine,
-  FoundationParticipatingOrgsDataSource,
   FoundationParticipatingOrgsExportFilters,
   FoundationParticipatingOrgsExportKind,
   FoundationParticipatingOrgsPage,
@@ -20,6 +19,7 @@ import type {
   FoundationParticipatingOrgsSummary,
   FoundationParticipatingOrgsSummaryQuery,
 } from '@lfx-one/shared/interfaces';
+import type { FoundationParticipatingOrgsDataSource } from '../types/foundation-participating-orgs-data-source.types';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';

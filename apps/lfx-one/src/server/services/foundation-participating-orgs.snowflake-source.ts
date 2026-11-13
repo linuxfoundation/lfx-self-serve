@@ -4,7 +4,6 @@
 import { FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS } from '@lfx-one/shared/constants';
 import type {
   FoundationParticipatingOrgsCompanyRow,
-  FoundationParticipatingOrgsDataSource,
   FoundationParticipatingOrgsLineRow,
   FoundationParticipatingOrgsProjectRow,
   FoundationParticipatingOrgsRange,
@@ -14,6 +13,7 @@ import type {
   FoundationParticipatingOrgsSourceProjectLine,
   MembershipTierClass,
 } from '@lfx-one/shared/interfaces';
+import type { FoundationParticipatingOrgsDataSource } from '../types/foundation-participating-orgs-data-source.types';
 import type { Request } from 'express';
 
 import { toIsoDate } from '../helpers/date-format.helper';

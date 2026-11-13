@@ -5,8 +5,6 @@
 // (project-participating-orgs.interface.ts): every company contributing to any project of a foundation, with
 // foundation totals read from the warehouse's foundation-level rows and a per-project breakdown on demand.
 
-import type { Request } from 'express';
-
 import type { MembershipTierClass } from './org-lens.interface';
 import type {
   ProjectParticipatingOrgChangeTone,
@@ -279,20 +277,4 @@ export interface FoundationCompanyActivity {
   row: FoundationParticipatingOrg;
   /** Every project the company is active in for the range, sorted by commits. */
   lines: FoundationParticipatingOrgProjectLine[];
-}
-
-/**
- * Seam between the BFF and the warehouse, backed by the lf-dbt `project_lens` participating-orgs table. Every read takes the
- * range, and the change against the previous period comes from the same rows as the figure.
- */
-export interface FoundationParticipatingOrgsDataSource {
-  /** Foundation-level totals per company, and the foundation's projects. Null when the warehouse has nothing for the slug. */
-  getFoundation(req: Request, slug: string, range: FoundationParticipatingOrgsRange): Promise<FoundationParticipatingOrgsSourceFoundation | null>;
-  /** Project lines for the filter; the foundation's own project is never one of them. */
-  getProjectLines(
-    req: Request,
-    slug: string,
-    range: FoundationParticipatingOrgsRange,
-    filter: FoundationParticipatingOrgsSourceLineFilter
-  ): Promise<FoundationParticipatingOrgsSourceProjectLine[]>;
 }
