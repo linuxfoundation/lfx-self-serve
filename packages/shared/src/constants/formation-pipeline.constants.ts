@@ -149,6 +149,13 @@ export const FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS: Record<Forma
   industry: 'Search industry',
 };
 
+/** Unique overlay class of each classification select. `lfx-multi-select` finds the body-appended panel by it to size the panel to its trigger (`matchTriggerWidth`), so each key needs its own. */
+export const FORMATION_PIPELINE_CLASSIFICATION_PANEL_CLASSES: Record<FormationPipelineClassificationKey, string> = {
+  technical_activity_type: 'formations-pipeline-tat-panel',
+  technology: 'formations-pipeline-technology-panel',
+  industry: 'formations-pipeline-industry-panel',
+};
+
 /** URL query param of each classification filter; repeated once per selected value (`?tat=A&tat=B`), so a value may hold any character. */
 export const FORMATION_PIPELINE_CLASSIFICATION_PARAMS: Record<FormationPipelineClassificationKey, string> = {
   technical_activity_type: FORMATION_PIPELINE_QUERY_PARAMS.technicalActivityType,

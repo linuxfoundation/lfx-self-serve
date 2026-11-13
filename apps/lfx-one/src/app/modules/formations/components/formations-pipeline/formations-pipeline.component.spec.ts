@@ -4,6 +4,8 @@
 import { FORMATION_PIPELINE_SEARCH_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import type { FormationPipelineFoundationKindFilter, FormationPipelineResponse, FormationPipelineRow } from '@lfx-one/shared/interfaces';
@@ -702,6 +704,17 @@ describe('FormationsPipelineComponent (#5475)', () => {
       await set('technical_activity_type', [SPEC]);
 
       expect(optionsOf('technical_activity_type')).toContain(`${SPEC} (0)`);
+    });
+
+    it('gives each select its own panel class, so the wrapper can size every panel to its trigger', async () => {
+      await render(of(response(CROWD)));
+
+      const selects = fixture.debugElement.queryAll(By.directive(MultiSelectComponent)).map((el) => el.componentInstance as MultiSelectComponent);
+      expect(selects).toHaveLength(3);
+      const classes = selects.map((select) => select.panelStyleClass());
+      expect(classes).toEqual(['formations-pipeline-tat-panel', 'formations-pipeline-technology-panel', 'formations-pipeline-industry-panel']);
+      expect(new Set(classes).size).toBe(3);
+      expect(selects.every((select) => select.matchTriggerWidth())).toBe(true);
     });
 
     it('filters by each field alone, OR within a filter and AND across filters', async () => {

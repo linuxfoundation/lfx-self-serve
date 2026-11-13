@@ -20,6 +20,7 @@ import { FormationService } from '@services/formation.service';
 import {
   FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS,
   FORMATION_PIPELINE_CLASSIFICATION_KEYS,
+  FORMATION_PIPELINE_CLASSIFICATION_PANEL_CLASSES,
   FORMATION_PIPELINE_CLASSIFICATION_LABELS,
   FORMATION_PIPELINE_COLUMNS,
   FORMATION_PIPELINE_COPY,
@@ -134,6 +135,7 @@ export class FormationsPipelineComponent {
   protected readonly classificationKeys = FORMATION_PIPELINE_CLASSIFICATION_KEYS;
   protected readonly classificationLabels = FORMATION_PIPELINE_CLASSIFICATION_LABELS;
   protected readonly classificationPlaceholders = FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS;
+  protected readonly classificationPanelClasses = FORMATION_PIPELINE_CLASSIFICATION_PANEL_CLASSES;
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   protected readonly loading = signal(true);
