@@ -49,7 +49,6 @@ interface Harness {
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
   listUpstreamFailed: WritableSignal<boolean>;
-  /** `OrgNavigationService.claOnlyPending` — a grant holder's deferred CLA-only rows have not landed. */
   claOnlyPending: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
@@ -842,9 +841,6 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
   });
 });
 
-// M3 (#5744) — a grant holder's CLA-only rows land after the held page, and a cookie-restored CLA-only
-// company is recorded as one only then. Until it is, the page cannot tell it from an organization the
-// caller does not hold, so it keeps its skeleton rather than judge it.
 describe('OrgLensEmptyStateService — a selection the CLA-only rows have not classified yet', () => {
   let h: Harness;
 
