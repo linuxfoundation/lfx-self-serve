@@ -16,8 +16,8 @@
  *   S4  Foundation lens — board-member without canWrite hides Newsletters
  *   S5  Project lens — contributor without canWrite hides Newsletters
  *   S6  Project lens — contributor with canWrite sees Newsletters
- *   S7  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard redirect non-ED to /foundation/overview (incl. /foundation/social-listening)
- *   S8  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard pass for ED persona (incl. /foundation/social-listening page content)
+ *   S7  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard/socialListeningAccessGuard redirect non-ED to /foundation/overview (social listening: unless an opted-in group grants access)
+ *   S8  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard/socialListeningAccessGuard pass for ED persona (incl. /foundation/social-listening page content)
  *   S9  Route guard — writerGuard redirects contributor without write access
  *   S10 Route guard — writerGuard passes for ED via synchronous fast path
  *   S11 Settings page — view-only banner shown to non-writer
@@ -527,8 +527,15 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
     });
   });
 
-  test('board-member navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
+  test('board-member without an opted-in group navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
+    // The sidebar the client-side navigation waits on is hidden below the lg breakpoint.
+    await page.setViewportSize({ width: 1440, height: 900 });
     await stubPersona(page, ['board-member']);
+    // The guard also asks the access probe. page.route() only reaches browser requests, so the page is
+    // opened by client-side navigation below — an SSR load would ask the real BFF for the test account.
+    await page.route('**/api/social-listening/access**', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ canView: false, reason: 'none' }) })
+    );
     await stubNavLensItems(page, 'foundation');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
     await setPersonaCookie(page, ['board-member']);
@@ -536,8 +543,15 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
+    // Client-side navigation, so the guard runs in the browser where the access-probe stub answers it.
+    await expect(
+      page.getByTestId('sidebar'),
+      'persona=board-member lens=foundation sidebar should be visible before client-side navigation to /foundation/social-listening'
+    ).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+    await page.evaluate((url) => {
+      window.history.pushState({}, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, `/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page, 'persona=board-member should be redirected away from /foundation/social-listening').toHaveURL(/\/foundation\/overview/, {
       timeout: ELEMENT_TIMEOUT,
@@ -736,7 +750,7 @@ test.describe('S15: Foundation lens — LF Staff (isLFStaff: true, contributor p
     });
   });
 
-  test('LF Staff navigating to /foundation/social-listening reaches the page (dashboardAccessGuard)', async ({ page }) => {
+  test('LF Staff navigating to /foundation/social-listening reaches the page (socialListeningAccessGuard)', async ({ page }) => {
     await stubSocialListeningApi(page);
 
     await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });

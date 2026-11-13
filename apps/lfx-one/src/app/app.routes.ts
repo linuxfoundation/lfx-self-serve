@@ -33,6 +33,7 @@ import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
+import { socialListeningAccessGuard } from './shared/guards/social-listening-access.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
@@ -381,12 +382,12 @@ export const routes: Routes = [
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
-      // Foundation Lens — Social Listening page (ED + LF Staff)
+      // Foundation Lens — Social Listening page (ED + LF Staff; members of the foundation's groups that opt in)
       {
         path: 'foundation/social-listening',
         title: 'Social Listening',
         data: { lens: 'foundation' },
-        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        canActivate: [socialListeningAccessGuard], // also seeds the foundation from ?project=
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
       },
       // Foundation Lens — Projects page

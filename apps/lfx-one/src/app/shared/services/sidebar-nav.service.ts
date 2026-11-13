@@ -40,6 +40,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
 import { finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
@@ -64,6 +65,7 @@ export class SidebarNavService {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly socialListeningService = inject(SocialListeningService);
 
   /** The Me lens section Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'Engagement';
@@ -124,6 +126,12 @@ export class SidebarNavService {
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
+
+  /**
+   * True when a non-ED, non-LF-Staff user can view Social Listening for the selected foundation because
+   * one of their groups on it has the setting on (lfx-self-serve-ops#387).
+   */
+  private readonly canGroupMemberViewSocialListening: Signal<boolean> = this.initCanGroupMemberViewSocialListening();
 
   /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
   private readonly foundationAuditorProbePending = signal(false);
@@ -648,21 +656,23 @@ export class SidebarNavService {
         });
       }
 
-      if (this.personaService.canViewExecutiveDashboards()) {
-        const metricsItems: SidebarMenuItem[] = [
-          {
+      const canViewExecutiveDashboards = this.personaService.canViewExecutiveDashboards();
+      if (canViewExecutiveDashboards || this.canGroupMemberViewSocialListening()) {
+        const metricsItems: SidebarMenuItem[] = [];
+        if (canViewExecutiveDashboards) {
+          metricsItems.push({
             label: 'Health Metrics',
             icon: 'fa-light fa-chart-line-up',
             routerLink: '/foundation/health-metrics',
             testId: 'sidebar-metrics-health-metrics',
-          },
-          {
-            label: 'Social Listening',
-            icon: 'fa-light fa-radar',
-            routerLink: '/foundation/social-listening',
-            testId: 'sidebar-metrics-social-listening',
-          },
-        ];
+          });
+        }
+        metricsItems.push({
+          label: 'Social Listening',
+          icon: 'fa-light fa-radar',
+          routerLink: '/foundation/social-listening',
+          testId: 'sidebar-metrics-social-listening',
+        });
 
         items.push({
           label: 'Metrics',
@@ -1176,6 +1186,32 @@ export class SidebarNavService {
       routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
       testId: 'sidebar-project-newsletters',
     };
+  }
+
+  private initCanGroupMemberViewSocialListening(): Signal<boolean> {
+    // Probe with the slug as stored: the server looks it up verbatim.
+    // Only probe for an authenticated user on the foundation lens (the docs shell injects this service too).
+    const groupFoundationSlug = computed((): string | null => {
+      if (!this.userService.authenticated() || this.menuLens() !== 'foundation' || this.personaService.canViewExecutiveDashboards()) {
+        return null;
+      }
+      return this.projectContextService.selectedFoundation()?.slug ?? null;
+    });
+
+    return toSignal(
+      toObservable(groupFoundationSlug).pipe(
+        switchMap((slug) =>
+          slug
+            ? this.socialListeningService.getAccess(slug).pipe(
+                map((access) => access.canView),
+                // Start each foundation's probe at false so the previous foundation's answer can't linger while it loads.
+                startWith(false)
+              )
+            : of(false)
+        )
+      ),
+      { initialValue: false }
+    );
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {

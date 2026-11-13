@@ -2,16 +2,16 @@
 title: Social Listening FAQ
 description: Frequently asked questions about Social Listening access, data sources, freshness, and limits in LFX Self Serve.
 display_order: 4
-audience: [executive-director]
+audience: [contributor, maintainer, board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, faq, octolens, access, limits]
-last_updated: 2026-10-14
+last_updated: 2026-10-19
 intercom_collection: Social Listening
 ---
 
 ## Who can see Social Listening?
 
-Social Listening is available to users with the **executive-director** persona and to **LF Staff**. It appears in the **Foundation** lens only.
+Social Listening is available to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's own groups (not its projects' groups) can also see it for that foundation when their group's **Members Can View Social Listening** setting is on. The setting is off by default, and anyone who can manage the group can turn it on in the group's **Settings** tab. Group members see the whole foundation and can filter by project. It appears in the **Foundation** lens only.
 
 ## Why don't I see Social Listening in the navigation?
 
@@ -20,7 +20,7 @@ Check two things:
 1. You are viewing a **Foundation** lens — switch lenses using the lens switcher.
 2. Look under **Metrics** in the left navigation sidebar — Social Listening sits alongside Health Metrics.
 
-If you still don't see it, your account doesn't have the executive-director persona or LF Staff access for that foundation.
+If you still don't see it, your account doesn't have the executive-director persona or LF Staff access for that foundation, or none of your groups on that foundation has turned on **Members Can View Social Listening**. Board members with access see Social Listening under **Metrics** on its own, without Health Metrics. Members of other groups with access don't get the Foundation lens; they open Social Listening by direct link (`/foundation/social-listening?project=<foundation-slug>`).
 
 ## Where does the data come from?
 

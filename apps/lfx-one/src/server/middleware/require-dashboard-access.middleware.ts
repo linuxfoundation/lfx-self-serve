@@ -1,68 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PersonaType } from '@lfx-one/shared/interfaces';
+import { EXECUTIVE_DIRECTOR_PERSONA } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError } from '../errors';
+import { getDashboardAccessReason } from '../helpers/dashboard-access.helper';
 import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from '../services/logger.service';
 
-const ED: PersonaType = 'executive-director';
-
 // Dashboard access admits the same callers as the client-side dashboardAccessGuard: EDs and LF Staff,
-// via server-verified personas (never the spoofable cookie); ED scope is per-foundation, and a root
-// writer passes it only when it also holds `writer_guard` on the named foundation.
+// via server-verified personas (never the spoofable cookie); see getDashboardAccessReason for the
+// per-foundation ED and root-writer scoping.
 export async function requireDashboardAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const result = await personaDetectionService.getPersonas(req);
-    const isED = result.personas.includes(ED);
-
-    if (!isED && !result.isLFStaff) {
-      logger.warning(req, 'require_dashboard_access', 'User without dashboard access attempted an executive-dashboard endpoint', {
-        path: req.path,
-        personas: result.personas,
-      });
-
-      next(
-        new AuthorizationError('Executive dashboard access required for this resource', {
-          operation: 'require_dashboard_access',
-          service: 'authorization',
-          path: req.path,
-          code: 'DASHBOARD_ACCESS_REQUIRED',
-        })
-      );
-      return;
-    }
-
     const rawSlug = req.method === 'POST' ? req.body?.['foundationSlug'] : req.query['foundationSlug'];
     const requestedSlug = typeof rawSlug === 'string' ? rawSlug.toLowerCase() : '';
 
-    // No slug on the request means there is nothing to scope against — the handler is responsible
-    // for rejecting a missing required parameter, and unscoped dashboard endpoints stay allowed.
-    if (!requestedSlug || result.isLFStaff) {
+    if ((await getDashboardAccessReason(req, result, requestedSlug)) !== 'none') {
       next();
       return;
     }
 
-    // Upstream project slugs are verbatim — normalize case on both sides so mixed-case data can't 403 a scoped ED.
-    const edSlugs = (result.personaProjects?.[ED] ?? []).map((project) => project.projectSlug.toLowerCase());
-    if (edSlugs.includes(requestedSlug.toLowerCase())) {
-      next();
-      return;
-    }
-
-    // A root writer is trusted per foundation, not across the board: the ROOT check admits
-    // `global_writer`, which is withheld on some projects, so the named foundation must agree.
-    if (result.isRootWriter && (await personaDetectionService.checkProjectWriter(req, requestedSlug))) {
-      next();
-      return;
-    }
-
-    logger.warning(req, 'require_dashboard_access', 'ED requested a foundation outside their scope', {
+    logger.warning(req, 'require_dashboard_access', 'User without dashboard access attempted an executive-dashboard endpoint', {
       path: req.path,
-      requested_slug: requestedSlug,
-      scoped_slugs: edSlugs,
+      personas: result.personas,
+      requested_slug: requestedSlug || undefined,
+      scoped_slugs: (result.personaProjects?.[EXECUTIVE_DIRECTOR_PERSONA] ?? []).map((project) => project.projectSlug),
     });
 
     next(

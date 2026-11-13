@@ -11,6 +11,7 @@ import type { Server } from 'node:http';
 import { firstValueFrom, from } from 'rxjs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ProjectContextService } from '../../app/shared/services/project-context.service';
 import { SocialListeningService as AngularSocialListeningService } from '../../app/shared/services/social-listening.service';
 
 const { execute, getPersonas, checkProjectWriter, upsertPreference, deletePreference } = vi.hoisted(() => ({
@@ -21,6 +22,8 @@ const { execute, getPersonas, checkProjectWriter, upsertPreference, deletePrefer
   deletePreference: vi.fn(),
 }));
 
+// The real ProjectContextService pulls in browser-only modules; the gateway only needs its token.
+vi.mock('../../app/shared/services/project-context.service', () => ({ ProjectContextService: class {} }));
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas, checkProjectWriter } }));
 vi.mock('../services/snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }) } }));
 vi.mock('../services/valkey.service', () => ({
@@ -87,7 +90,13 @@ beforeAll(async () => {
         })()
       ),
   });
-  const injector = Injector.create({ providers: [{ provide: HttpClient, useValue: http }] });
+  const injector = Injector.create({
+    providers: [
+      { provide: HttpClient, useValue: http },
+      // The gateway scopes preference calls to the selected foundation (lfx-self-serve-ops#387).
+      { provide: ProjectContextService, useValue: { selectedFoundation: () => ({ slug: 'synthetic-owned' }) } },
+    ],
+  });
   gateway = runInInjectionContext(injector, () => new AngularSocialListeningService());
 });
 
