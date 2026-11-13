@@ -41,7 +41,7 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 ## Project lens
 
-The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics. **Participating companies** (`/project/participating-orgs`) lists the companies contributing to the project. LF Staff see it on every project; executive directors see it only for projects under a foundation they direct. Other roles don't see the page.
+The **Projects** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics. **Participating companies** (`/project/participating-orgs`) lists the companies contributing to the project. LF Staff see it on every project; executive directors see it for a foundation they direct and for projects directly under it (projects nested deeper don't show the link, though the page itself still opens from its address). Other roles don't see the page.
 
 ## Org lens
 
