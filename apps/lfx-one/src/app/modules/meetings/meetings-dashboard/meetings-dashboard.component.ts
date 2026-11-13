@@ -1455,8 +1455,9 @@ export class MeetingsDashboardComponent {
             fromLink || sessionChoice ? of<string[] | null>(fromLink ?? sessionChoice ?? null) : this.meetingService.getRollupProjectsPreference(rootUid);
           const rootOptions$ = options$.pipe(
             // Only options loaded for this root: a previous root's (which may contain this one) would let a
-            // saved choice keep projects outside this tree.
-            filter((options) => this.rollupOptionsRootUid === rootUid && options.projects.some((p) => p.uid === rootUid)),
+            // saved choice keep projects outside this tree. A partial list (some project details failed, even
+            // the root's) still applies; only the stale-project pruning waits for a complete one.
+            filter((options) => this.rollupOptionsRootUid === rootUid && options.projects.length > 0),
             take(1)
           );
           return choice$.pipe(

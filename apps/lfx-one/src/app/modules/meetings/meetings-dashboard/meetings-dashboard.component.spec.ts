@@ -1147,6 +1147,17 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         expect(component.rollupProjectsFilter()).toEqual(['child', 'missing-branch']);
       });
 
+      it('applies a saved choice from an incomplete list that lacks the root itself', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(['child']));
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({ projects: [{ uid: 'child', name: 'Child project', slug: 'child' }], groups: [], complete: false })
+        );
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual(['child']);
+      });
+
       it('saves Show all projects as all projects even from an incomplete list', () => {
         vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
           of({
