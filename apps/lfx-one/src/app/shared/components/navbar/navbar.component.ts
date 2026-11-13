@@ -286,11 +286,14 @@ export class NavbarComponent extends NavMenuBase {
   // ── Collapse / peek (desktop only) ───────────────────────────────────────────────────────────
   /** The panel shows as the slim rail. */
   protected readonly railVisible: Signal<boolean> = computed(() => !this.mobile() && this.collapse.visualCollapsed());
-  /** Docked to the rail (even while peeking): the footer actions then also live in the account menu. */
-  protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
+  /**
+   * The sidebar toggle shows on desktop, except over a narrow viewport's peek: the panel can't dock open there, so there is
+   * nothing to keep open. That peek closes as the pointer leaves, on an outside click, or on Escape.
+   */
+  protected readonly showSidebarToggle: Signal<boolean> = computed(() => !this.mobile() && (!this.collapse.narrow() || this.railVisible()));
   /** Rail tooltips open beside the trigger; the open panel's below it. */
   protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
-  /** The rail's toggle shows the sidebar over the page; from a peek it docks open (wide) or pins it (narrow); otherwise it closes the sidebar. */
+  /** The rail's toggle shows the sidebar over the page; from a peek it docks open; otherwise it closes the sidebar. */
   protected readonly toggleLabel: Signal<string> = computed(() => {
     if (this.railVisible()) return 'Show sidebar';
     return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
@@ -324,17 +327,13 @@ export class NavbarComponent extends NavMenuBase {
   /**
    * The sidebar toggle. On the rail it peeks the panel open over the page, closing once the pointer leaves it — pinned on a
    * touch device, which has no pointer to leave, so an outside tap closes it instead. From an open panel it docks open or
-   * closed on wide viewports; on narrow ones, which can't dock open, it pins the peek and closes a pinned one. A keyboard
-   * press (no click count) keeps focus in the navbar; a pointer click drops it.
+   * closed; a narrow viewport's peek has no toggle ({@link showSidebarToggle}). A keyboard press (no click count) keeps focus
+   * in the navbar; a pointer click drops it.
    */
   protected onToggleClick(event: MouseEvent): void {
     const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
     if (this.railVisible()) {
       this.morph(() => this.collapse.openPeek(this.collapse.touch()), focus);
-      return;
-    }
-    if (this.collapse.narrow()) {
-      this.morph(() => (this.collapse.peekPinned() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
       return;
     }
     if (this.collapse.peek()) {

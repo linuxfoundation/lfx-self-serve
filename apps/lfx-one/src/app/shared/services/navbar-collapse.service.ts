@@ -10,7 +10,8 @@ import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_NARROW_MAX_WIDTH_PX, NAVBAR_PEEK_O
  * open over the page from the rail. The layouts read it to size the page gutter; the desktop navbar
  * drives it (pointer, FLIP morph) and renders it.
  *
- * - `collapsed` is the viewer's docked preference, kept in `localStorage`.
+ * - `collapsed` is the viewer's docked preference, kept in `sessionStorage`: it holds across reloads in the tab, and a new
+ *   tab or browser session always starts docked open.
  * - `narrow` (a non-touch viewport under {@link NAVBAR_NARROW_MAX_WIDTH_PX}) forces the rail without
  *   touching the preference, which returns once the viewport widens again.
  * - A non-touch device keeps the navbar (as the rail) at every width; the hamburger + drawer below `lg`
@@ -80,6 +81,7 @@ export class NavbarCollapseService {
   public init(): void {
     if (!this.isBrowser || this.initialized) return;
     this.initialized = true;
+    this.clearLegacyPreference();
     this.collapsedPreference.set(this.readPreference());
     this.initializedState.set(true);
 
@@ -154,7 +156,7 @@ export class NavbarCollapseService {
 
   private readPreference(): boolean {
     try {
-      return this.document.defaultView?.localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY) === 'true';
+      return this.document.defaultView?.sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY) === 'true';
     } catch {
       return false;
     }
@@ -162,9 +164,18 @@ export class NavbarCollapseService {
 
   private writePreference(collapsed: boolean): void {
     try {
-      this.document.defaultView?.localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
+      this.document.defaultView?.sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
     } catch {
-      // Storage blocked (private mode, policy): the choice still holds for this session.
+      // Storage blocked (private mode, policy): the choice still holds for this page.
+    }
+  }
+
+  /** The preference used to live in `localStorage`, where it kept every later visit collapsed; drop that stale copy. */
+  private clearLegacyPreference(): void {
+    try {
+      this.document.defaultView?.localStorage.removeItem(NAVBAR_COLLAPSED_STORAGE_KEY);
+    } catch {
+      // Storage blocked: nothing was stored there either.
     }
   }
 }

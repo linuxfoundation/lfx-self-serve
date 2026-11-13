@@ -25,6 +25,7 @@ describe('NavbarCollapseService', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     queries = { narrow: { matches: false, listeners: [] }, touch: { matches: false, listeners: [] } };
     vi.stubGlobal(
       'matchMedia',
@@ -49,7 +50,7 @@ describe('NavbarCollapseService', () => {
   });
 
   it('starts docked open until init, so SSR and the first client render agree', () => {
-    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
     const service = setup();
 
     expect(service.collapsed()).toBe(false);
@@ -66,7 +67,7 @@ describe('NavbarCollapseService', () => {
     const resize = vi.fn();
     window.addEventListener('resize', resize);
 
-    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
     setup().init();
     expect(resize).toHaveBeenCalledTimes(1);
     window.removeEventListener('resize', resize);
@@ -88,21 +89,38 @@ describe('NavbarCollapseService', () => {
   });
 
   it('never reads storage on the server', () => {
-    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
     const service = setup('server');
 
     service.init();
     expect(service.collapsed()).toBe(false);
   });
 
-  it('remembers the docked preference', () => {
+  it('starts docked open in a new session, ignoring and clearing a preference left in localStorage', () => {
+    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
+  it('keeps the docked preference out of localStorage, so it never outlives the session', () => {
     const service = setup();
     service.init();
 
     service.setCollapsed(true);
-    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
+  it('remembers the docked preference for the session', () => {
+    const service = setup();
+    service.init();
+
+    service.setCollapsed(true);
+    expect(sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('true');
     service.setCollapsed(false);
-    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
+    expect(sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
   });
 
   it('forces the rail on narrow non-touch viewports and restores the preference when they widen', () => {

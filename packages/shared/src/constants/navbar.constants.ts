@@ -84,7 +84,7 @@ export const NAV_TOOLTIP_RAIL_OFFSET_PX = 10;
 /** Below this viewport width (px) a non-touch desktop keeps the navbar collapsed to its rail; it can only peek open. */
 export const NAVBAR_NARROW_MAX_WIDTH_PX = 1200;
 
-/** `localStorage` key holding the viewer's docked-collapsed navbar preference. */
+/** `sessionStorage` key holding the viewer's docked-collapsed navbar preference (also cleared from `localStorage`, its old home). */
 export const NAVBAR_COLLAPSED_STORAGE_KEY = 'lfx-navbar-collapsed';
 
 /** Grace period after the pointer leaves an unpinned peek before it closes; re-entering cancels it (ms). */
