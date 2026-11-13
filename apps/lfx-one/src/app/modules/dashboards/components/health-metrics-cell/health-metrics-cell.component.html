@@ -1,0 +1,49 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem: the design's tiles, gaps and type. -->
+@if (lead(); as lead) {
+  @if (lead.kind === 'icon') {
+    <span
+      class="absolute left-0 top-1/2 inline-grid h-[28px] w-[28px] -translate-y-1/2 place-items-center rounded-[8px] bg-white text-gray-900 shadow-sm"
+      aria-hidden="true"
+      data-testid="health-metrics-cell-icon"
+      ><i class="text-[13px]" [class]="lead.icon"></i
+    ></span>
+  } @else if (lead.kind === 'person') {
+    <!-- The avatar's host is `relative`, so a wrapper takes the absolute position. -->
+    <span class="absolute left-0 top-1/2 inline-flex -translate-y-1/2" data-testid="health-metrics-cell-person">
+      <lfx-ui-avatar [size]="32" [name]="lead.name" [src]="lead.photoUrl" decorative />
+    </span>
+  }
+}
+<span class="flex min-w-0 max-w-full items-center gap-[8px]">
+  @if (lead(); as lead) {
+    @if (lead.kind === 'company') {
+      <lfx-ui-avatar class="flex-none" shape="logo" [size]="24" [name]="lead.name" [src]="lead.logoUrl" decorative data-testid="health-metrics-cell-company" />
+    }
+  }
+  @if (tier(); as tier) {
+    <lfx-health-metrics-tier-icon [tier]="tier" data-testid="health-metrics-cell-tier" />
+  }
+  @if (dotClass()) {
+    <span class="h-[8px] w-[8px] flex-none rounded-full" [class]="dotClass()" aria-hidden="true" data-testid="health-metrics-cell-dot"></span>
+  }
+  <span class="min-w-0 truncate" [class.text-gray-400]="isDash()" data-testid="health-metrics-cell-text">{{ text() }}</span>
+  <ng-content />
+</span>
+@if (description()) {
+  <span
+    class="max-w-full truncate text-[12px] font-normal leading-[16px] text-gray-500"
+    [class]="descriptionIndentClass()"
+    data-testid="health-metrics-cell-description">
+    @if (descriptionIcon()) {
+      <i class="mr-[5px] text-[11px]" [class]="descriptionIcon()" aria-hidden="true"></i>
+    }
+    <!-- Its own element, so no template space lands between the icons and the text. -->
+    <span>{{ description() }}</span>
+    @if (descriptionEndIcon()) {
+      <i class="ml-[4px] text-[10px]" [class]="descriptionEndIcon()" aria-hidden="true"></i>
+    }
+  </span>
+}

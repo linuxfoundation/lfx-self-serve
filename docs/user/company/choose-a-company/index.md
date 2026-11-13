@@ -4,7 +4,7 @@ description: Pick the company you are viewing in the Company lens, switch to ano
 audience: [all]
 product_area: Company
 tags: [company, org, org-lens, switcher, switch-company, url, not-found, access]
-last_updated: 2026-11-06
+last_updated: 2026-11-12
 intercom_collection: Company
 ---
 
@@ -45,12 +45,15 @@ The line under the company's name in the switcher is your role on that company. 
 | **Org Admin Editor (Inherited)**   | You can view and edit this company through your admin access to a related company                                              |
 | **Org Admin Viewer (Inherited)**   | You can view this company through your access to a related company                                                             |
 | **(Original)** after a direct role | Your role was granted directly on this company. The label is added when some of your other access comes from related companies |
+| **CLA Manager**                    | You are a CLA Manager or initial CLA Manager designee for this company. Only its **EasyCLA** page opens                        |
 
 In the list of companies, hovering over an inherited role shows **Inherited from your access to** followed by the related company's name. If the line says **Company** instead of a role, you have no admin role on that company.
 
 ## Why is a company missing from the switcher?
 
-The company switcher lists the companies where you have an admin or viewer role, including a role inherited from a related company. It lists companies where your only role is CLA Manager or initial CLA Manager designee only when you have no admin or viewer role on any company, and each of those opens on its **EasyCLA** page. So if you are an admin or viewer on even one company, a company where you are only a CLA Manager or initial CLA Manager designee is missing from the switcher.
+The company switcher lists the companies where you have an admin or viewer role, including a role inherited from a related company, and the companies where your only role is CLA Manager or initial CLA Manager designee. A company can be missing when you have none of these roles on it, when part of your list did not load, or when your CLA Manager role was added in the last 30 minutes and has not reached the Company lens yet.
+
+Companies where you have an admin or viewer role come first. Companies where your only role is CLA Manager or initial CLA Manager designee follow them, labelled **CLA Manager**, and each opens on its **EasyCLA** page. A company where you have both an admin or viewer role and a CLA Manager role is listed once, with your admin or viewer role, and opens the full lens.
 
 Messages in the switcher:
 
@@ -59,7 +62,7 @@ Messages in the switcher:
 
 ## What does the company in a page address mean?
 
-Every Company lens page address names the company it shows, in the form `/company/<company>/<page>`. For example, `app.lfx.dev/company/<company>/projects` opens the **Projects** page of that company.
+Every Company lens page address names the company it shows, in the form `/company/<company>/<page>`. For example, `app.lfx.dev/org/<company>/projects` opens the **Projects** page of that company.
 
 - `<company>` is the company's short name, in lowercase letters, numbers, and hyphens. A company without a short name is addressed by its 18-character account ID, which starts with `001`.
 - `/company/<company>` on its own opens that company's **Dashboard**, or its **EasyCLA** page when your only role on it is CLA Manager or initial CLA Manager designee.

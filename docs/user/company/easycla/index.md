@@ -4,7 +4,7 @@ description: View and manage a company's corporate CLAs in the Company lens — 
 audience: [all]
 product_area: Company
 tags: [company, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-11-06
+last_updated: 2026-11-12
 intercom_collection: Company
 ---
 
@@ -50,7 +50,7 @@ A CLA Manager role that was just added or just removed can take about 30 minutes
 - **You don't have an EasyCLA role at this company.** The page then offers **contact support** if you need EasyCLA assistance. That button opens support. It is not the reason the page is empty.
 - **Something went wrong fetching this company's corporate CLAs.** Refresh the page to try again. That failure is not a statement about your role.
 
-If you have an admin or viewer role on any company, the company switcher lists only the companies where you have that role, and leaves out companies where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. See [Why is a company missing from the switcher?](../choose-a-company/#why-is-a-company-missing-from-the-switcher).
+The company switcher lists the companies where you have an admin or viewer role first, then the companies where your only role is CLA Manager or initial CLA Manager designee, labelled **CLA Manager**. Picking one of those opens its **EasyCLA** page, and only that page. Whether a company is a Linux Foundation member does not by itself decide whether it appears. See [Why is a company missing from the switcher?](../choose-a-company/#why-is-a-company-missing-from-the-switcher).
 
 ## What does the EasyCLA list show?
 

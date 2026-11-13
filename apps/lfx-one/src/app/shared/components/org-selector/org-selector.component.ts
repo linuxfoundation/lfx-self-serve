@@ -21,6 +21,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
 import {
+  NAVBAR_ORG_CLA_ONLY_ROLE,
   NAVBAR_ORG_ROLE_DIRECT_SUFFIX,
   NAVBAR_ORG_ROLE_TOOLTIPS,
   NAVBAR_ORG_ROLE_UNKNOWN_SOURCE,
@@ -34,6 +35,7 @@ import { orgRollUpAccount, resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { ElementIdService } from '@services/element-id.service';
 import { LensService } from '@services/lens.service';
+import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -59,6 +61,7 @@ export class OrgSelectorComponent {
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
@@ -199,9 +202,19 @@ export class OrgSelectorComponent {
       this.orgRoleGrantsService.inheritedAuditorSet()
     );
   });
-  protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation()));
-  protected readonly selectedRoleIcon: Signal<string> = computed(() => this.personaToIcon(this.selectedRolePersona()));
+  // Read from the access service, not `items()`: a search drops the selected row from the list.
+  private readonly selectedClaOnly: Signal<boolean> = computed(() => {
+    const uid = this.selectedAccountUid();
+    return !!uid && !this.selectedRolePersona() && this.claOnlyAccess.isClaOnly(uid);
+  });
+  protected readonly selectedRoleLabel: Signal<string> = computed(() =>
+    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.label : this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation())
+  );
+  protected readonly selectedRoleIcon: Signal<string> = computed(() =>
+    this.selectedClaOnly() ? NAVBAR_ORG_CLA_ONLY_ROLE.icon : this.personaToIcon(this.selectedRolePersona())
+  );
   protected readonly selectedRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
     if (!uid || !persona) return '';
@@ -228,7 +241,10 @@ export class OrgSelectorComponent {
     // inherited grants — one org-items row, two or more organizations — would get the static card
     // and no way to open the panel the roll-up lives in (#4132).
     if (this.showRollUpRow()) return false;
-    if (this.isStaff() || this.loading() || this.hasMore() || this.listIncomplete() || items.length !== 1) return false;
+    // CLA-only rows still on their way count as loading: they can add a row to switch to.
+    if (this.isStaff() || this.loading() || this.orgNavigationService.claOnlyPending() || this.hasMore() || this.listIncomplete() || items.length !== 1) {
+      return false;
+    }
     // The one row must be the selection: a deep-linked selection outside the list still needs the
     // panel to switch back, and the not-found dead end recovers through picking the selected row.
     return items[0].uid === this.selectedAccountUid() && !this.onNotFound();
@@ -243,6 +259,7 @@ export class OrgSelectorComponent {
 
   /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
   protected readonly navbarRoleTooltip: Signal<string> = computed(() => {
+    if (this.selectedClaOnly()) return NAVBAR_ORG_CLA_ONLY_ROLE.tooltip;
     const uid = this.selectedAccountUid();
     const persona = this.selectedRolePersona();
     if (!uid || !persona) return '';
@@ -265,6 +282,15 @@ export class OrgSelectorComponent {
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
       // signal map only if the server response somehow omitted it on a row known to be inherited.
       const parentName = item.parentName ?? parentNameByUid.get(item.uid) ?? '';
+      if (!persona && item.claOnly === true) {
+        return {
+          item,
+          isSelected: !!selectedUid && selectedUid === item.uid,
+          roleLabel: NAVBAR_ORG_CLA_ONLY_ROLE.label,
+          roleIcon: NAVBAR_ORG_CLA_ONLY_ROLE.icon,
+          roleTooltip: NAVBAR_ORG_CLA_ONLY_ROLE.tooltip,
+        };
+      }
       return {
         item,
         isSelected: !!selectedUid && selectedUid === item.uid,
@@ -442,6 +468,10 @@ export class OrgSelectorComponent {
   }
 
   protected selectItem(item: OrgItem): void {
+    // M3: the path guard skips the resolver for the organization already selected, so this pick is the
+    // only place the row's CLA-only answer can reach the CLA-only shell. Recorded for a re-pick of the
+    // selection too, which returns below without navigating.
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
     // one exception is the not-found dead end, where the selection is the cookie's or a default that
@@ -692,7 +722,8 @@ export class OrgSelectorComponent {
       const familiesAnswerOwed =
         this.accountContextService.rollUpFamiliesLoading() ||
         (this.accountContextService.rollUpFamiliesUnsettled() && !this.accountContextService.rollUpFamiliesIncomplete());
-      const selectedRowOwed = this.accountContextService.isRollUp() && familiesAnswerOwed;
+      // A selected CLA-only organization's row arrives with the deferred CLA-only rows, after the held list.
+      const selectedRowOwed = (this.accountContextService.isRollUp() && familiesAnswerOwed) || this.orgNavigationService.claOnlyPending();
       if (selectedIdx >= 0 || (this.orgNavigationService.loaded() && !selectedRowOwed)) {
         this.pendingInitialFocus = false;
       }

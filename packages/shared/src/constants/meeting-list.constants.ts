@@ -121,3 +121,9 @@ export const MEETING_DETAILS_OVERLAY_ID = 'meeting-details-drawer';
 
 /** Analytics event sent when the meeting details drawer opens, in place of a meeting page view. */
 export const MEETING_DETAILS_OPENED_EVENT = 'Meeting Details Opened';
+
+/**
+ * Most projects a meetings roll-up filter may name (GH-5566); the server rejects more. Selecting every
+ * project sends no subset at all, so only a hand-picked partial selection of a very large tree can reach it.
+ */
+export const MEETING_ROLLUP_MAX_PROJECTS = 200;

@@ -66,14 +66,10 @@
             <div class="flex min-w-0 flex-col gap-[2px]">
               <span class="text-[13px] font-semibold text-gray-900" data-testid="overview-board-name">{{ row.name }}</span>
               @if (row.title) {
-                <span
-                  class="truncate text-[12px] text-gray-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                  tabindex="0"
-                  tooltipEvent="both"
-                  tooltipPosition="top"
-                  [pTooltip]="row.title"
-                  >{{ row.title }}</span
-                >
+                <!-- Focusable so keyboard users reach the page's truncation tip when the title is cut off. -->
+                <span class="truncate text-[12px] text-gray-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" tabindex="0">{{
+                  row.title
+                }}</span>
               }
             </div>
           </div>
@@ -87,14 +83,9 @@
                 <span class="text-[10px] font-semibold text-gray-600">{{ row.organizationInitial }}</span>
               }
             </span>
-            <span
-              class="truncate text-[13px] text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-              tabindex="0"
-              tooltipEvent="both"
-              tooltipPosition="top"
-              [pTooltip]="row.organization"
-              >{{ row.organization }}</span
-            >
+            <span class="truncate text-[13px] text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" tabindex="0">{{
+              row.organization
+            }}</span>
           </div>
           <div class="flex min-w-0 items-center gap-[12px]" role="cell">
             <span class="h-[8px] w-[56px] flex-none overflow-hidden rounded-full bg-gray-100" aria-hidden="true"

@@ -45,6 +45,7 @@ import {
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import { readRollupRootUid } from '../helpers/meeting-rollup.helper';
 import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
@@ -106,6 +107,36 @@ export class MeetingController {
       });
 
       res.json({ data: result, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/rollup-filters?root_project_uid=
+   *
+   * Options for the roll-up filters on a foundation or parent project's meetings list (GH-5566): the
+   * projects in the tree and their groups, as the caller can see them.
+   */
+  public async getRollupFilterOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meeting_rollup_filters', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const rootUid = readRollupRootUid({ root_project_uid: req.query['root_project_uid'] }, 'get_meeting_rollup_filters');
+      if (!rootUid) {
+        throw ServiceValidationError.forField('root_project_uid', 'root_project_uid is required', { operation: 'get_meeting_rollup_filters' });
+      }
+
+      const options = await this.meetingService.getRollupFilterOptions(req, rootUid);
+
+      logger.success(req, 'get_meeting_rollup_filters', startTime, {
+        project_count: options.projects.length,
+        group_count: options.groups.length,
+      });
+
+      res.json(options);
     } catch (error) {
       next(error);
     }

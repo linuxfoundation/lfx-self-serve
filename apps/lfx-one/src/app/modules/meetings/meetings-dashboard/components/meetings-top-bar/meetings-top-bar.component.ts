@@ -8,13 +8,14 @@ import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.co
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FilterPillOption, MeetingDashboardView, MeetingResponseFilter } from '@lfx-one/shared/interfaces';
 import { combineLatest } from 'rxjs';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent, CardTabsBarComponent, CheckboxComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, MultiSelectComponent, FilterPillsComponent, CardTabsBarComponent, CheckboxComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
 export class MeetingsTopBarComponent {
@@ -37,10 +38,21 @@ export class MeetingsTopBarComponent {
   public readonly meetingTypeFilter = input<string | null>(null);
   public readonly foundationFilter = input<string | null>(null);
   public readonly projectFilter = input<string | null>(null);
+  // Roll-up filters (foundation/project lens): the projects in the tree, their groups and group types.
+  public readonly showRollupFilters = input<boolean>(false);
+  public readonly rollupProjectOptions = input<{ label: string; value: string }[]>([]);
+  public readonly groupOptions = input<{ label: string; value: string }[]>([]);
+  public readonly groupTypeOptions = input<{ label: string; value: string }[]>([]);
+  public readonly rollupProjectsFilter = input<string[]>([]);
+  public readonly groupFilter = input<string | null>(null);
+  public readonly groupTypeFilter = input<string | null>(null);
 
   public readonly meetingTypeChange = output<string | null>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
+  public readonly rollupProjectsFilterChange = output<string[]>();
+  public readonly groupFilterChange = output<string | null>();
+  public readonly groupTypeFilterChange = output<string | null>();
   public readonly searchQuery = input<string>('');
   public readonly searchQueryChange = output<string>();
   public readonly meetingViewChange = output<MeetingDashboardView>();
@@ -53,6 +65,9 @@ export class MeetingsTopBarComponent {
     meetingType: new FormControl<string | null>(null),
     foundationFilter: new FormControl<string | null>(null),
     projectFilter: new FormControl<string | null>(null),
+    rollupProjects: new FormControl<string[]>([], { nonNullable: true }),
+    group: new FormControl<string | null>(null),
+    groupType: new FormControl<string | null>(null),
   });
 
   public readonly personalFiltersForm = new FormGroup({
@@ -88,13 +103,27 @@ export class MeetingsTopBarComponent {
         }
       });
 
-    combineLatest([toObservable(this.searchQuery), toObservable(this.meetingTypeFilter), toObservable(this.foundationFilter), toObservable(this.projectFilter)])
+    // The multi-select has no change event of its own, so its control reports the selection.
+    this.searchForm
+      .get('rollupProjects')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((value: string[] | null) => this.rollupProjectsFilterChange.emit(value ?? []));
+
+    combineLatest([
+      toObservable(this.searchQuery),
+      toObservable(this.meetingTypeFilter),
+      toObservable(this.foundationFilter),
+      toObservable(this.projectFilter),
+      toObservable(this.rollupProjectsFilter),
+      toObservable(this.groupFilter),
+      toObservable(this.groupTypeFilter),
+    ])
       .pipe(takeUntilDestroyed())
-      .subscribe(([search, meetingType, foundationFilter, projectFilter]) => {
-        const selections = { search, meetingType, foundationFilter, projectFilter };
+      .subscribe(([search, meetingType, foundationFilter, projectFilter, rollupProjects, group, groupType]) => {
+        const selections = { search, meetingType, foundationFilter, projectFilter, rollupProjects, group, groupType };
         for (const [name, value] of Object.entries(selections)) {
           const control = this.searchForm.get(name);
-          if (control?.value !== value) {
+          if (JSON.stringify(control?.value) !== JSON.stringify(value)) {
             control?.setValue(value, { emitEvent: false });
           }
         }
@@ -113,6 +142,14 @@ export class MeetingsTopBarComponent {
 
   public onProjectFilterChange(value: string | null): void {
     this.projectFilterChange.emit(value);
+  }
+
+  public onGroupFilterChange(value: string | null): void {
+    this.groupFilterChange.emit(value);
+  }
+
+  public onGroupTypeFilterChange(value: string | null): void {
+    this.groupTypeFilterChange.emit(value);
   }
 
   public onMeetingViewChange(value: string): void {

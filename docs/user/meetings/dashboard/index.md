@@ -4,7 +4,7 @@ description: How to find meetings, filter by your RSVP, and subscribe to a proje
 audience: [all]
 product_area: Meetings
 tags: [meetings, dashboard, filters, rsvp, calendar, subscribe, upcoming, past]
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 intercom_collection: Meetings
 ---
 
@@ -46,9 +46,16 @@ The public calendar and the subscription cover the selected foundation or projec
 Use the controls above the list to narrow it:
 
 - **Search meetings...** finds meetings by name.
-- **Select Type** limits the list to one meeting type.
+- **All Types** limits the list to one meeting type.
 - In the Me lens, you can also filter by foundation or project.
+- In the Foundation or Project lens, you can also narrow the meetings rolled up from its projects:
+  - **All projects** picks one or more projects, such as the foundation itself and a few of its sub-projects. It appears when there are sub-projects.
+  - **All groups** limits the list to one group. A group from a sub-project shows that project's name in brackets.
+  - **All group types** limits the list to groups of one type, such as Board or Working Group.
+  - The lists offer only what fits your other choices: picking projects narrows the groups and group types, and picking a group type narrows the groups.
 - **Reset filters** clears every filter you've set, without changing the **Upcoming** or **Past** tab.
+
+The filters combine, and they apply to both the list and the calendar. In the Foundation or Project lens, the page address keeps your filters and your **List** or **Calendar** choice, so you can bookmark a filtered view or share its link. A link shows each person only the meetings they have access to.
 
 Your search and meeting type stay selected when you switch between **Upcoming** and **Past**. Your foundation or project, response, and organizer choices reset when you switch.
 

@@ -48,6 +48,7 @@ interface Harness {
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
+  listUpstreamFailed: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
   /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
@@ -86,6 +87,7 @@ function setup(): Harness {
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
   const listLoading = signal(false);
+  const listUpstreamFailed = signal(false);
   const listGeneration = signal(0);
   const startListFetch = (): number => {
     listGeneration.update((g) => g + 1);
@@ -141,7 +143,14 @@ function setup(): Harness {
       },
       {
         provide: OrgNavigationService,
-        useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, firstPageLandedGeneration: firstPageLanded, refreshList },
+        useValue: {
+          loaded: listLoaded,
+          loading: listLoading,
+          upstreamFailed: listUpstreamFailed,
+          generation: listGeneration,
+          firstPageLandedGeneration: firstPageLanded,
+          refreshList,
+        },
       },
     ],
   });
@@ -168,6 +177,7 @@ function setup(): Harness {
     refresh,
     listLoaded,
     listLoading,
+    listUpstreamFailed,
     grantsLoading,
     refreshList,
     startListFetch,
@@ -206,6 +216,56 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
     // FR-010: the incomplete list is the switcher's notice, not a page state.
     expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it.each([
+    ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
+    ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],
+  ])('raises the switcher notice for a held selection when %s', (_label, fail) => {
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    expect(h.service.listIncomplete()).toBe(false);
+
+    fail(h);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('leaves a staff search outage to the switcher’s own search copy', () => {
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    h.isStaff.set(true);
+    h.listUpstreamFailed.set(true);
+
+    expect(h.service.listIncomplete()).toBe(false);
+  });
+
+  // A grant holder who switched to a CLA-only company can still be missing another one, so the notice and its Retry stay.
+  it.each([
+    ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
+    ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],
+  ])('raises the switcher notice on a CLA-only selection when %s', (_label, fail) => {
+    h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    h.claOnlyUids.set(new Set([OTHER]));
+    expect(h.service.listIncomplete()).toBe(false);
+
+    fail(h);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('raises no switcher notice on a selection that is neither held nor CLA-only', () => {
+    h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    h.claLookupFailed.set(true);
+
+    expect(h.service.listIncomplete()).toBe(false);
   });
 
   /**
