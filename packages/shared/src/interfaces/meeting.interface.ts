@@ -2502,6 +2502,11 @@ export interface MeetingRollupGroupOption {
 export interface MeetingRollupFilterOptions {
   projects: MeetingRollupProjectOption[];
   groups: MeetingRollupGroupOption[];
+  /**
+   * Whether `projects` lists the whole tree: the walk missed no branch and every resolved project's details
+   * loaded. Only then does checking every listed project mean "all projects"; otherwise it stays a subset.
+   */
+  complete: boolean;
 }
 
 /**

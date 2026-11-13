@@ -153,6 +153,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
           { uid: 'board', name: 'Board', category: 'Board', project_uid: 'scope' },
           { uid: 'wg', name: 'Working group', category: 'Working Group', project_uid: 'child' },
         ],
+        complete: true,
       })
     );
     composer = TestBed.inject(MeetingComposerService);
@@ -922,6 +923,30 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
     });
 
+    it('keeps every listed project as a subset when the options do not list the whole tree', () => {
+      vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+        of({
+          projects: [
+            { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+            { uid: 'child', name: 'Child project', slug: 'child' },
+          ],
+          groups: [],
+          complete: false,
+        })
+      );
+      const component = mount();
+      openScope(component);
+
+      component.onRollupProjectsFilterChange(['scope', 'child']);
+      flush();
+
+      expect(meetings.getMeetingsByProjectPaginated).toHaveBeenLastCalledWith('scope', undefined, undefined, undefined, undefined, {
+        includeSubProjects: true,
+        projectUids: ['scope', 'child'],
+        pageSize: 1000,
+      });
+    });
+
     it('treats every project selected as the whole roll-up, while keeping the selection shown', () => {
       const component = mount();
       openScope(component);
@@ -1063,6 +1088,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
                   { uid: 'sibling', name: 'Sibling', slug: 'sibling' },
                 ],
                 groups: [],
+                complete: true,
               })
         );
         vi.mocked(meetings.getRollupProjectsPreference).mockImplementation((root) => of(root === 'child' ? ['child', 'sibling'] : null));
@@ -1079,6 +1105,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
             { uid: 'grandchild', name: 'Grandchild', slug: 'grandchild' },
           ],
           groups: [],
+          complete: true,
         });
         flush();
         expect(component.rollupProjectsFilter()).toEqual([]);
@@ -1133,7 +1160,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
 
       it('covers every project for a link to all projects even when the options fail to load', () => {
         route.snapshot.queryParamMap = convertToParamMap({ projects: 'all' });
-        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(of({ projects: [], groups: [] }));
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(of({ projects: [], groups: [], complete: false }));
         const component = mount();
         openScope(component);
 

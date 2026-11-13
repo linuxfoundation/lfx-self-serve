@@ -852,11 +852,15 @@ describe('MeetingService project-lens meeting fetchers (#4964)', () => {
 
     it('fetches the filter options for a root, and offers none when that fails', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      get.mockReturnValueOnce(of({ projects: [{ uid: 'p', name: 'P', slug: 'p' }], groups: [] }));
+      get.mockReturnValueOnce(of({ projects: [{ uid: 'p', name: 'P', slug: 'p' }], groups: [], complete: true }));
       get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
 
-      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({ projects: [{ uid: 'p', name: 'P', slug: 'p' }], groups: [] });
-      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({ projects: [], groups: [] });
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({
+        projects: [{ uid: 'p', name: 'P', slug: 'p' }],
+        groups: [],
+        complete: true,
+      });
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({ projects: [], groups: [], complete: false });
       expect(get.mock.calls[0][0]).toBe('/api/meetings/rollup-filters');
       expect(params().get('root_project_uid')).toBe('root');
     });

@@ -236,12 +236,14 @@ export class MeetingService {
    * filter.
    */
   public async getRollupFilterOptions(req: Request, rootUid: string): Promise<MeetingRollupFilterOptions> {
-    const { uids: scopeUids } = await this.resolveRollupScope(req, rootUid);
+    const { uids: scopeUids, complete: treeComplete } = await this.resolveRollupScope(req, rootUid);
     const [projectMap, groups] = await Promise.all([this.projectService.getProjectsByIds(req, scopeUids), this.resolveRollupGroups(req, rootUid)]);
 
     const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
     const projects = [...projectMap.values()].map((project) => ({ uid: project.uid, name: project.name, slug: project.slug })).sort(byName);
-    return { projects, groups: groups.filter((group) => group.name).sort(byName) };
+    // The list covers the tree only if the walk was complete and every resolved project's details loaded.
+    const complete = treeComplete && scopeUids.every((uid) => projectMap.has(uid));
+    return { projects, groups: groups.filter((group) => group.name).sort(byName), complete };
   }
 
   /**

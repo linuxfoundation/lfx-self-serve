@@ -203,8 +203,12 @@ export class MeetingsDashboardComponent {
   private readonly rollupProjectsMode: Signal<'default' | 'all' | 'subset'> = computed(() => {
     const selected = this.rollupProjectsFilter();
     const all = this.rollupProjectOptions();
-    if (selected.length === 0) return this.rollupAllProjects() ? 'all' : 'default';
-    return all.length > 0 && all.every((option) => selected.includes(option.value)) ? 'all' : 'subset';
+    // A linked or saved "all" stays all; otherwise checking every listed project is all only when the
+    // options list the whole tree (from an incomplete list it is still a subset, sent as one).
+    if (this.rollupAllProjects()) return 'all';
+    if (selected.length === 0) return 'default';
+    const wholeTree = this.rollupFilterOptions().complete;
+    return wholeTree && all.length > 0 && all.every((option) => selected.includes(option.value)) ? 'all' : 'subset';
   });
   // The project picker's label while nothing is checked: the default view, the root's own meetings.
   protected readonly rollupProjectsPlaceholder: Signal<string> = computed(() => `${this.project()?.name ?? 'This project'} only`);
@@ -1270,7 +1274,7 @@ export class MeetingsDashboardComponent {
 
   /** The roll-up's projects and groups, loaded per foundation/project; none on the Me lens or before hydration. */
   private initRollupFilterOptions(): Signal<MeetingRollupFilterOptions> {
-    const empty: MeetingRollupFilterOptions = { projects: [], groups: [] };
+    const empty: MeetingRollupFilterOptions = { projects: [], groups: [], complete: false };
     return toSignal(
       combineLatest([toObservable(this.project), toObservable(this.activeLens)]).pipe(
         map(([project, lens]) => (lens === 'me' || !isPlatformBrowser(this.platformId) ? null : (project?.uid ?? null))),
