@@ -222,6 +222,9 @@ export * from './health-metrics-overview.interface';
 // Health Metrics Training page interfaces
 export * from './health-metrics-training.interface';
 
+// Health Metrics shared table cells
+export * from './health-metrics-table.interface';
+
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
 
