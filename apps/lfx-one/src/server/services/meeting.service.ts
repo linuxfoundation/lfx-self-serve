@@ -2668,8 +2668,13 @@ export class MeetingService {
   private resolveRollupGroups(req: Request, rootUid: string, tree: { uids: string[]; complete: boolean }): Promise<MeetingRollupGroupOption[]> {
     const { MEETING_ROLLUP_GROUPS_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
     const username = getEffectiveUsername(req) ?? '';
-    // Built from the caller's already-resolved tree (no second walk), and cached only when that walk was
-    // complete, so the groups never describe a different tree than the caller's own completeness flag.
+    // Built from the caller's already-resolved tree (no second walk). Only a complete tree is shared: every
+    // complete walk yields the same tree, so joining another request's flight or reading the cache gives the
+    // groups of this tree too. An incomplete walk's groups are fetched for this caller alone, never shared
+    // or cached, so they can't reach a request whose own walk differs.
+    if (!tree.complete) {
+      return this.fetchRollupGroups(req, tree.uids);
+    }
     return coalescePerUserOrgFetch(namespace, username, rootUid, (isCurrent) =>
       withPerUserCache(
         namespace,
@@ -2678,7 +2683,7 @@ export class MeetingService {
         ttlSeconds,
         () => this.fetchRollupGroups(req, tree.uids),
         isRollupGroups,
-        () => tree.complete && isCurrent()
+        () => isCurrent()
       )
     );
   }
