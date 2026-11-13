@@ -77,12 +77,15 @@ describe('OverviewNewsletterCardComponent', () => {
     expect(text('overview-newsletter-kpis-subscribers-value')).toBe('1,458');
     expect(text('overview-newsletter-kpis-cto-value')).toBe('9%');
     expect(query('overview-newsletter-chart')).not.toBeNull();
-    // Each open point takes focus, and its tooltip carries the same words as its accessible name.
-    const point = query('overview-newsletter-open-n1');
-    expect(point?.getAttribute('tabindex')).toBe('0');
-    expect(point?.getAttribute('aria-label')).toBe(`Monthly: Hello · Aug 24, ${YEAR} · open 37%, click 2%`);
-    expect(text('overview-newsletter-tip-n1')).toBe(`Monthly: Hello · Aug 24, ${YEAR} · open 37%, click 2%`);
-    expect(query('overview-newsletter-tip-n1')?.className).toContain('left-0');
+    expect(text('overview-newsletter-kpis-subscribers-delta-suffix')).toBe('since Jan');
+    // Each newsletter's column takes focus and names its rates; the latest one's points are larger.
+    const column = query('overview-newsletter-column-n1');
+    expect(column?.getAttribute('tabindex')).toBe('0');
+    expect(column?.getAttribute('aria-label')).toBe(`Monthly: Hello, Aug 24, ${YEAR}: open rate 37%, click rate 2%`);
+    expect(query('overview-newsletter-open-n1')?.className).toContain('h-[8px]');
+    expect(query('overview-newsletter-open-n2')?.className).toContain('h-[10px]');
+    expect([...(query('overview-newsletter-labels')?.children ?? [])].map((label) => label.textContent?.trim())).toEqual(['Aug', 'Sep']);
+    expect(query('overview-newsletter-engagement-basis')?.className).toContain('text-gray-400');
     const high = [...(query('overview-newsletter-engagement-high')?.children ?? [])].map((cell) => cell.textContent?.trim());
     expect(high).toEqual(['HighOpened 7+ newsletters and clicked a link', '175', '12%']);
     const mostEngaging = [...(query('overview-newsletter-most-engaging')?.children ?? [])].map((cell) => cell.textContent?.trim());
@@ -90,6 +93,41 @@ describe('OverviewNewsletterCardComponent', () => {
     const explore = query('overview-newsletter-explore') as HTMLAnchorElement;
     expect(explore.textContent?.trim()).toBe('Explore Newsletters');
     expect(explore.getAttribute('href')).toBe('/foundation/health-metrics/engagement#newsletters');
+  });
+
+  it('shows a newsletter’s popover on focus or hover, and hides it on blur, leave or Escape', async () => {
+    await render();
+    const column = query('overview-newsletter-column-n1') as HTMLElement;
+
+    column.dispatchEvent(new Event('focus'));
+    fixture.detectChanges();
+    expect(text('health-metrics-chart-tip-title')).toBe(`Monthly: Hello · Aug 24, ${YEAR}`);
+    expect(
+      [...fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')].map((row: Element) =>
+        row.textContent?.replace(/\s+/g, ' ').trim()
+      )
+    ).toEqual(['Open rate37%', 'Click rate2%']);
+    expect(column.className).toContain('z-20');
+
+    column.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+    expect(query('overview-newsletter-tip-n1')).toBeNull();
+
+    column.dispatchEvent(new Event('mouseenter'));
+    fixture.detectChanges();
+    expect(query('overview-newsletter-tip-n1')).not.toBeNull();
+    column.dispatchEvent(new Event('mouseleave'));
+    fixture.detectChanges();
+    expect(query('overview-newsletter-tip-n1')).toBeNull();
+  });
+
+  it('draws no click point and a dash in the popover for a newsletter without a click rate', async () => {
+    await render({ ...NEWSLETTERS, newsletters: [{ ...NEWSLETTERS.newsletters[1], clickRate: null }] });
+
+    expect(query('overview-newsletter-click-n1')).toBeNull();
+    query('overview-newsletter-column-n1')?.dispatchEvent(new Event('focus'));
+    fixture.detectChanges();
+    expect(text('overview-newsletter-tip-n1')).toContain('Click rate—');
   });
 
   it('says so in place of the chart when no newsletter in the period carries engagement data', async () => {

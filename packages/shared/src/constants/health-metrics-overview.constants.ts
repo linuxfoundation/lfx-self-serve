@@ -389,6 +389,15 @@ export const HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP =
 /** The narrowest span, in days, the trend's navigator lets the reader zoom to. */
 export const HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS = 7;
 
+/** The newsletter rate chart's fixed top, 60%; a higher rate grows it in 10-point steps. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN = 0.6;
+
+/** A newsletter label's slot below this width collides with its neighbours, so the chart labels each month once. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX = 28;
+
+/** The room the chart popover needs beside its column before it opens on the other side. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX = 292;
+
 /** The progress blue at 10%: the fill under the newsletter charts' open rate. */
 export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 

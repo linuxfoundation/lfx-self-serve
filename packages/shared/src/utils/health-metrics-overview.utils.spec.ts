@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
+import { lfxColors } from '../constants/colors.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
@@ -799,7 +800,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       ['Avg. open rate', '43%'],
       ['Avg. click-to-open rate', '9%'],
     ]);
-    expect(view.kpis[0]?.delta).toEqual({ label: '39% since Jan', direction: 'up', good: true });
+    expect(view.kpis[0]?.delta).toEqual({ label: '39%', direction: 'up', good: true, suffix: ' since Jan' });
     expect(view.engagementBasis).toBe('Based on opens and clicks across the last 10 newsletters');
     expect(view.mostEngaging).toEqual({ name: 'Monthly: Protocol ships', rateLabel: '12% click-to-open' });
   });
@@ -809,15 +810,28 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
 
     expect(chart?.points.map((point) => point.key)).toEqual(['n2', 'n3', 'n4']);
     expect(chart?.points.map((point) => point.xPct)).toEqual(['0.00', '50.00', '100.00']);
-    // Tooltips at either end open inward.
-    expect(chart?.points.map((point) => point.tipAlign)).toEqual(['start', 'center', 'end']);
-    // The scale tops out at 50%, the highest open rate rounded up to the next 10%.
-    expect(chart?.points.map((point) => point.openYPct)).toEqual(['40.00', '20.00', '0.00']);
-    expect(chart?.points[0]?.clickYPct).toBe('94.00');
+    // Each newsletter owns an equal share of the plot to hover, and the latest one's points are larger.
+    expect(chart?.points.map((point) => point.columnWidthPct)).toEqual(['33.33', '33.33', '33.33']);
+    expect(chart?.points.map((point) => point.latest)).toEqual([false, false, true]);
+    // The scale stays 0–60% while every rate is lower.
+    expect(chart?.points.map((point) => point.openYPct)).toEqual(['50.00', '33.33', '16.67']);
+    expect(chart?.points[0]?.clickYPct).toBe('95.00');
     expect(chart?.points[1]?.clickYPct).toBe('');
-    expect(chart?.points[2]?.label).toBe(`Newsletter n4 · Sep 21, ${year} · open 50%, click 6%`);
-    expect(chart?.points[1]?.label).toBe(`Newsletter n3 · Aug 24, ${year} · open 40%, click —`);
+    expect(chart?.points[2]?.tip).toEqual({
+      title: `Newsletter n4 · Sep 21, ${year}`,
+      rows: [
+        { label: 'Open rate', value: '50%', color: lfxColors.blue[500], separated: false },
+        { label: 'Click rate', value: '6%', color: '#AD46FF', separated: false },
+      ],
+    });
+    expect(chart?.points[1]?.tip.rows[1]?.value).toBe('—');
+    expect(chart?.points[1]?.ariaLabel).toBe(`Newsletter n3, Aug 24, ${year}: open rate 40%, click rate —`);
     expect(chart?.ticks).toEqual([
+      { label: 'Aug', xPct: '0.00' },
+      { label: 'Aug', xPct: '50.00' },
+      { label: 'Sep', xPct: '100.00' },
+    ]);
+    expect(chart?.monthTicks).toEqual([
       { label: 'Aug', xPct: '0.00' },
       { label: 'Sep', xPct: '100.00' },
     ]);
@@ -826,12 +840,12 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     expect(chart?.openAreaPath.endsWith('L600.0 200 L0.0 200 Z')).toBe(true);
   });
 
-  it('scales to a click rate above every open rate, so neither line is clipped', () => {
-    const clicky = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.2, 0.4)] };
+  it('grows the scale past 60% for a click rate above it too, so neither line is clipped', () => {
+    const clicky = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.4, 0.8)] };
     expect(buildHealthMetricsOverviewNewsletterView(clicky, 'YTD').chart?.points[0]).toMatchObject({ openYPct: '50.00', clickYPct: '0.00' });
   });
 
-  it('tops the scale out at an exact tenth rather than the next one', () => {
+  it('grows the scale above 60% to an exact tenth rather than the next one', () => {
     const exact = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.7, 0.07), send('n2', `${year}-04-02`, 0.35, 0.03)] };
     expect(buildHealthMetricsOverviewNewsletterView(exact, 'YTD').chart?.points.map((point) => point.openYPct)).toEqual(['0.00', '50.00']);
   });
@@ -876,7 +890,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       ...newsletters,
       periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, growthBaselineDate: `${year - 1}-03-09` }),
     };
-    expect(buildHealthMetricsOverviewNewsletterView(earlier, 'YTD').kpis[0]?.delta?.label).toBe(`39% since Mar ${year - 1}`);
+    expect(buildHealthMetricsOverviewNewsletterView(earlier, 'YTD').kpis[0]?.delta?.suffix).toBe(` since Mar ${year - 1}`);
   });
 
   it('drops the growth month and the basis when the view gives neither', () => {
@@ -886,7 +900,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     };
     const view = buildHealthMetricsOverviewNewsletterView(bare, 'YTD');
 
-    expect(view.kpis[0]?.delta?.label).toBe('39%');
+    expect(view.kpis[0]?.delta).toEqual({ label: '39%', direction: 'up', good: true });
     expect(view.engagementBasis).toBe('');
   });
 });

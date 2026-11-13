@@ -15,6 +15,7 @@ import {
   HEALTH_METRICS_OVERVIEW_KPI_MIN_HALF_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT,
+  HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
   HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
   HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY,
@@ -416,9 +417,8 @@ export function buildHealthMetricsOverviewNewsletterView(
     kpis: [
       {
         ...kpi('subscribers', 'Subscribers', formatCount(period?.subscribers)),
-        delta: buildPctDelta(
-          period?.subscribersGrowth ?? null,
-          true,
+        delta: withDeltaSuffix(
+          buildPctDelta(period?.subscribersGrowth ?? null, true),
           formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, getYearForRange(range))
         ),
       },
@@ -920,7 +920,7 @@ function formatIsoMonth(iso: string): string {
 
 /**
  * One point per newsletter sent in the period's year, oldest first and evenly spaced, as the design spaces them. The
- * read only carries newsletters with engagement data. The scale tops out at the highest rate of either line, rounded up to the next 10%.
+ * read only carries newsletters with engagement data. The scale is 0–60%, growing in 10-point steps above that.
  */
 function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, year: number): HealthMetricsOverviewNewsletterChartView | null {
   const sends = newsletters.newsletters
@@ -930,7 +930,7 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
 
   // Rounded to a tenth of a point first, so a peak of exactly 70% tops out at 70% rather than 80%.
   const peak = Math.round(Math.max(...sends.flatMap((send) => [send.openRate as number, send.clickRate ?? 0])) * 1000) / 1000;
-  const top = Math.min(1, Math.max(0.1, Math.ceil(peak * 10) / 10));
+  const top = Math.min(1, Math.max(HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN, Math.ceil(peak * 10) / 10));
   const x = (index: number): number => (sends.length === 1 ? 300 : (index / (sends.length - 1)) * 600);
   const y = (rate: number): number => 200 - (Math.min(rate, top) / top) * 200;
   const points = sends.map((send, index) => {
@@ -942,39 +942,46 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
   const openCoords = points.map((point): [number, number] => [point.x, point.openY]);
   const first = points[0];
   const last = points[points.length - 1];
-  const seenMonths = new Set<string>();
+  const xPct = (px: number): string => ((px / 600) * 100).toFixed(2);
+  const ticks = points.map((point) => ({
+    label: point.send.sentDate ? formatIsoMonth(point.send.sentDate) : '',
+    xPct: xPct(point.x),
+    month: point.send.sentDate?.slice(0, 7) ?? '',
+  }));
 
   return {
     openPath: path(openCoords),
     openAreaPath: first && last ? `${path(openCoords)} L${last.x.toFixed(1)} 200 L${first.x.toFixed(1)} 200 Z` : '',
     clickPath: path(points.filter((point) => point.clickY !== null).map((point): [number, number] => [point.x, point.clickY as number])),
-    points: points.map((point) => ({
-      key: point.send.key,
-      xPct: ((point.x / 600) * 100).toFixed(2),
-      openYPct: ((point.openY / 200) * 100).toFixed(2),
-      clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
-      tipAlign: tipAlign(point.x / 600),
-      label: [
-        point.send.name,
-        point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : '',
-        `open ${formatShare(point.open, false)}, click ${formatShare(point.click)}`,
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    })),
-    ticks: points.flatMap((point) => {
-      const month = point.send.sentDate?.slice(0, 7) ?? '';
-      if (!month || seenMonths.has(month)) return [];
-      seenMonths.add(month);
-      return [{ label: formatIsoMonth(`${month}-01`), xPct: ((point.x / 600) * 100).toFixed(2) }];
+    points: points.map((point, index) => {
+      const title = [point.send.name, point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : ''].filter(Boolean).join(' · ');
+      const open = formatShare(point.open, false);
+      const click = formatShare(point.click, false);
+      return {
+        key: point.send.key,
+        xPct: xPct(point.x),
+        columnWidthPct: (100 / points.length).toFixed(2),
+        openYPct: ((point.openY / 200) * 100).toFixed(2),
+        clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
+        latest: index === points.length - 1,
+        ariaLabel: `${title.replace(' · ', ', ')}: open rate ${open}, click rate ${click}`,
+        tip: {
+          title,
+          rows: [
+            { label: 'Open rate', value: open, color: HEALTH_METRICS_OVERVIEW_STROKES.progress, separated: false },
+            { label: 'Click rate', value: click, color: HEALTH_METRICS_OVERVIEW_STROKES.thisYear, separated: false },
+          ],
+        },
+      };
     }),
+    ticks: ticks.map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
+    monthTicks: ticks.filter((tick, index) => tick.month && tick.month !== ticks[index - 1]?.month).map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
   };
 }
 
-/** A point near either edge opens its tooltip inward. */
-function tipAlign(fraction: number): HealthMetricsOverviewNewsletterPointView['tipAlign'] {
-  if (fraction < 0.2) return 'start';
-  return fraction > 0.8 ? 'end' : 'center';
+/** A change with muted context after it; no change shows neither. */
+function withDeltaSuffix(delta: HealthMetricsOverviewDelta | null, suffix: string): HealthMetricsOverviewDelta | null {
+  return delta && suffix ? { ...delta, suffix } : delta;
 }
 
 /** High / Medium / Low with the view's share of each; a level too small to see keeps a sliver of the bar. */
