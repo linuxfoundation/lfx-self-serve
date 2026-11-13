@@ -3,7 +3,7 @@
 
 import {
   FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N,
-  PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES,
+  FOUNDATION_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES,
   PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES,
   PROJECT_PARTICIPATING_ORGS_TIER_BADGE_DEFAULT_CLASS,
 } from '@lfx-one/shared/constants';
@@ -105,7 +105,7 @@ export function groupProjectOptions(projects: FoundationParticipatingOrgsProject
 
 function metric(value: number, fraction: number | null): FoundationParticipatingOrgMetricVm {
   const [changeLabel, changeTone] = change(fraction);
-  return { value, changeLabel, changeTone, changeClass: PROJECT_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES[changeTone] };
+  return { value, changeLabel, changeTone, changeClass: FOUNDATION_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES[changeTone] };
 }
 
 function change(fraction: number | null): [string, FoundationParticipatingOrgChangeTone] {

@@ -35,10 +35,10 @@
       @if (viewState() === 'ready' || summaryLoading()) {
         <div class="flex flex-col gap-2">
           <lfx-stat-card-grid [cards]="tiles()" [columns]="4" [loading]="summaryLoading()" data-testid="foundation-participating-orgs-tiles" />
-          <p class="flex items-center gap-1 text-xs text-gray-500">
+          <p class="flex items-center gap-1 text-xs text-gray-600">
             <button
               type="button"
-              class="rounded text-gray-500 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              class="rounded text-gray-600 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               [pTooltip]="commitShareTooltip"
               tooltipPosition="top"
               tooltipEvent="both"
@@ -69,7 +69,7 @@
             (onClick)="exportMenuRef.toggle($event)"
             data-testid="foundation-participating-orgs-export-csv" />
           @if (totalRecords() === 0 && !pageLoading()) {
-            <span class="text-xs text-gray-500" data-testid="foundation-participating-orgs-export-hint">No rows to export</span>
+            <span class="text-xs text-gray-600" data-testid="foundation-participating-orgs-export-hint">No rows to export</span>
           }
           <lfx-menu #exportMenuRef [model]="exportMenu()" [popup]="true" appendTo="body" data-testid="foundation-participating-orgs-export-menu">
             <ng-template #item let-item>
@@ -81,7 +81,7 @@
                 class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left"
                 [attr.data-testid]="'foundation-participating-orgs-export-' + item.id">
                 <span class="text-sm font-medium text-gray-900">{{ item.label }}</span>
-                <span class="text-xs text-gray-500">{{ item.title }}</span>
+                <span class="text-xs text-gray-600">{{ item.title }}</span>
               </button>
             </ng-template>
           </lfx-menu>
@@ -188,7 +188,7 @@
 
         @if (hasActiveFilters()) {
           <div class="mx-5 mb-3 flex flex-wrap items-center gap-2 text-xs" data-testid="foundation-participating-orgs-chips">
-            <span class="text-gray-500">Filters:</span>
+            <span class="text-gray-600">Filters:</span>
             @for (chip of activeFilters(); track chip.id) {
               <span class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-blue-900">
                 {{ chip.label }}
@@ -290,7 +290,7 @@
                   <td>
                     <button
                       type="button"
-                      class="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      class="flex h-7 w-7 items-center justify-center rounded text-gray-600 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-expanded]="expanded().has(row.participantKey)"
                       [attr.aria-controls]="'foundation-participating-orgs-panel-' + row.participantKey"
                       [attr.aria-label]="(expanded().has(row.participantKey) ? 'Hide projects for ' : 'Show projects for ') + row.name"
@@ -320,7 +320,7 @@
                           [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-name'"
                           >{{ row.name }}</span
                         >
-                        <span class="text-xs text-gray-500">{{ row.projectsInvolvedLabel }}</span>
+                        <span class="text-xs text-gray-600">{{ row.projectsInvolvedLabel }}</span>
                       </div>
                     </div>
                   </td>
@@ -380,7 +380,7 @@
                       <div class="flex flex-col items-center gap-2">
                         <i class="fa-light fa-magnifying-glass text-xl text-gray-400" aria-hidden="true"></i>
                         <p class="text-sm font-medium text-gray-900">No companies match your filters</p>
-                        <p class="text-sm text-gray-500">Check the spelling, or try another tier, project or time range.</p>
+                        <p class="text-sm text-gray-600">Check the spelling, or try another tier, project or time range.</p>
                         <lfx-button
                           label="Clear search and filters"
                           severity="secondary"
@@ -445,7 +445,7 @@
       <div class="overflow-x-auto">
         <table class="w-full min-w-[640px] text-sm" [attr.data-testid]="'foundation-participating-orgs-breakdown-' + row.participantKey">
           <thead>
-            <tr class="text-left text-xs uppercase tracking-wide text-gray-500">
+            <tr class="text-left text-xs uppercase tracking-wide text-gray-600">
               <th scope="col" class="py-1 font-medium">Project</th>
               <th scope="col" class="py-1 text-right font-medium">Commits</th>
               <th scope="col" class="py-1 text-right font-medium">Change</th>
@@ -525,7 +525,7 @@
     class="flex cursor-pointer select-none items-center gap-1 text-xs font-medium"
     [class.ml-auto]="end"
     [class.text-gray-900]="sort() === field"
-    [class.text-gray-500]="sort() !== field"
+    [class.text-gray-600]="sort() !== field"
     [attr.aria-label]="srLabel ?? null"
     [attr.data-testid]="'foundation-participating-orgs-sort-' + field"
     (click)="onSort(field)">

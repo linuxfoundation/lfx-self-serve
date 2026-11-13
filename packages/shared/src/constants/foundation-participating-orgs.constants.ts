@@ -4,7 +4,11 @@
 // Foundation Lens → Participating Companies (#5697). Sorting, segments, tier badges and change colours reuse the project
 // page's constants; the ranges (this page adds 6 months and has no 30 days) and the paging limits are this page's own.
 
-import type { FoundationParticipatingOrgsPage, FoundationParticipatingOrgsRange } from '../interfaces/foundation-participating-orgs.interface';
+import type {
+  FoundationParticipatingOrgChangeTone,
+  FoundationParticipatingOrgsPage,
+  FoundationParticipatingOrgsRange,
+} from '../interfaces/foundation-participating-orgs.interface';
 
 export const FOUNDATION_PARTICIPATING_ORGS_RANGES = ['12mo', '6mo', '90d', 'all'] as const;
 
@@ -89,3 +93,15 @@ export const FOUNDATION_PARTICIPATING_ORGS_COMMIT_SHARE_TOOLTIP =
   'Share of commits in the selected period made by people from member companies. Foundation totals add up every project; a contributor active in several projects is counted once.';
 
 export const EMPTY_FOUNDATION_PARTICIPATING_ORGS_PAGE: FoundationParticipatingOrgsPage = { rows: [], totalRecords: 0 };
+
+/**
+ * Text colour of a Commits / Contributors change cell. Darker than the project page's for the neutral and no-comparison tones,
+ * because this page shows them at 14px and they must reach 4.5:1 on white; the sign or the dash, never colour, carries the meaning.
+ */
+export const FOUNDATION_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES: Record<FoundationParticipatingOrgChangeTone, string> = {
+  positive: 'text-emerald-700',
+  negative: 'text-red-600',
+  neutral: 'text-gray-600',
+  new: 'text-emerald-700',
+  none: 'text-gray-600',
+};
