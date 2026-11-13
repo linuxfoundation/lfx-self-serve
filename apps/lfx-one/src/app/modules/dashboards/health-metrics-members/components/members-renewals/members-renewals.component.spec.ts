@@ -45,7 +45,6 @@ describe('MembersRenewalsComponent', () => {
   let getMembersRenewals: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
 
   // `payload` answers the first read; `followUpPayload` (a value or a stream) every read after it.
@@ -72,7 +71,6 @@ describe('MembersRenewalsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(MembersRenewalsComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
     await settle();
@@ -95,11 +93,10 @@ describe('MembersRenewalsComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
-    counts = [];
     lifecycle = [];
   });
 
-  it('reads the selected foundation, renders the hero and count, and settles with the count', async () => {
+  it('reads the selected foundation, renders the hero and count, and settles', async () => {
     await render();
 
     expect(getMembersRenewals).toHaveBeenCalledWith({ foundationSlug: 'acme', window: '90_days', offset: 0, pageSize: 10 });
@@ -111,7 +108,6 @@ describe('MembersRenewalsComponent', () => {
     expect(text('members-renewals-count')).toBe('3 renewals');
     expect(query('members-renewals-coverage')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
-    expect(counts).toEqual([null, 3]);
   });
 
   it('renders a renewal row the way the design draws it, without a status or due-in column', async () => {
@@ -158,16 +154,14 @@ describe('MembersRenewalsComponent', () => {
     expect(text(`members-renewals-row-${ACCOUNT_ID}-dues`)).toBe('—');
   });
 
-  it('pages through the table, keeping the count, and writes the page to the URL with the fragment kept', async () => {
+  it('pages through the table and writes the page to the URL with the fragment kept', async () => {
     await render(response({ totalRecords: 30, summary: { renewalCount: 30, valueUsd: 600000, withoutDuesCount: 0 } }));
     getMembersRenewals.mockClear();
-    counts.length = 0;
 
     fixture.componentInstance['onTablePage']({ first: 20, rows: 10 });
     await settle();
 
     expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ offset: 20 }));
-    expect(counts.every((count) => count === 30)).toBe(true);
     expect(navigate).toHaveBeenLastCalledWith(
       [],
       expect.objectContaining({ queryParams: { renewalsWindow: null, renewalsPage: 3 }, preserveFragment: true, replaceUrl: true })
@@ -262,16 +256,14 @@ describe('MembersRenewalsComponent', () => {
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { renewalsWindow: null, renewalsPage: 2 } }));
   });
 
-  it('re-reads from page 1 and blanks the count for a newly selected foundation', async () => {
+  it('re-reads from page 1 for a newly selected foundation', async () => {
     await render(response({ totalRecords: 30 }), { renewalsPage: '3' });
     getMembersRenewals.mockClear();
-    counts.length = 0;
 
     selectedFoundation.set({ slug: 'beta' });
     await settle();
 
     expect(getMembersRenewals).toHaveBeenCalledWith(expect.objectContaining({ foundationSlug: 'beta', offset: 0 }));
-    expect(counts).toEqual([null, 3]);
   });
 
   it('holds the skeleton, not the old figures, while a newly selected foundation reads', async () => {
@@ -293,7 +285,6 @@ describe('MembersRenewalsComponent', () => {
     // The window pills stay, so an empty window is not a dead end.
     expect(query('members-renewals-window')).not.toBeNull();
     expect(text('members-renewals-count')).toBe('0 renewals');
-    expect(counts.at(-1)).toBe(0);
   });
 
   it('shows the rows with a dashed hero, not the empty state, when the model leaves the totals unset', async () => {
@@ -303,7 +294,6 @@ describe('MembersRenewalsComponent', () => {
     expect(query(`members-renewals-row-${ACCOUNT_ID}`)).not.toBeNull();
     expect(text('members-renewals-value')).toBe('—');
     expect(text('members-renewals-due')).toBe('—');
-    expect(counts.at(-1)).toBeNull();
   });
 
   it('shows the dashed hero, not the empty state, for an empty window whose model total is unset', async () => {
@@ -311,7 +301,6 @@ describe('MembersRenewalsComponent', () => {
 
     expect(query('members-renewals-empty')).toBeNull();
     expect(text('members-renewals-due')).toBe('—');
-    expect(counts.at(-1)).toBeNull();
   });
 
   it('shows the matched rows, not the empty state, when the model count reads zero', async () => {
@@ -322,9 +311,8 @@ describe('MembersRenewalsComponent', () => {
   });
 
   // A failed read must not render copy that asserts nothing is due.
-  it('separates a failed read from an empty one, settling it without a count', async () => {
+  it('separates a failed read from an empty one, settling it', async () => {
     await render(response({ totalRecords: 30 }));
-    counts.length = 0;
     lifecycle.length = 0;
     getMembersRenewals.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
@@ -333,7 +321,6 @@ describe('MembersRenewalsComponent', () => {
 
     expect(query('members-renewals-error')).not.toBeNull();
     expect(query('members-renewals-empty')).toBeNull();
-    expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 

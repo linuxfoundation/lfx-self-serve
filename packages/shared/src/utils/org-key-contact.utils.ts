@@ -8,6 +8,7 @@ import {
 } from '../constants/org-people-key-contacts.constants';
 import { ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS } from '../constants/org-people.constants';
 import { SALESFORCE_ID_PATTERN } from '../constants/regex.constants';
+import type { OrgAllEmployeeKeyContactFilter } from '../interfaces/org-people.interface';
 
 /** Tailwind pill classes for a role string; falls back when upstream returns an unknown role. Shared so the People tab and the person-detail drawer colour the same role the same way. */
 export function orgKeyContactRolePillClass(role: string): string {
@@ -25,4 +26,13 @@ export function isKeyContactRecordId(id: string): boolean {
  */
 export function keyContactEmailLookupIds(ids: readonly string[] | null | undefined): string[] {
   return [...new Set((ids ?? []).filter(isKeyContactRecordId))].slice(0, ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS);
+}
+
+/** Whether a person holding `roles` passes the All Employees Key Contact filter (`all` passes everyone; a role matches by exact string). */
+export function matchesKeyContactFilter(roles: readonly string[] | null | undefined, filter: OrgAllEmployeeKeyContactFilter): boolean {
+  const held = roles ?? [];
+  if (filter === 'all') return true;
+  if (filter === 'any') return held.length > 0;
+  if (filter === 'none') return held.length === 0;
+  return held.includes(filter);
 }

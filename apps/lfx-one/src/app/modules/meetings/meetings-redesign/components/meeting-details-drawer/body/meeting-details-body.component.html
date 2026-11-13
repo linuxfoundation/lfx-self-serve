@@ -1,32 +1,47 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact [Npx] design values: rem undershoots at the 14px root. 68px is the sticky header's height. -->
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. 68px is the drawer's sticky header; a page sets its own --md-head. -->
 <!-- 16px sides on phones. -->
-<div class="flex w-full flex-col gap-[20px] px-[16px] pb-[48px] pt-[24px] text-gray-900 [--md-head:68px] sm:px-[32px]">
-  <div class="sticky top-0 z-[5] -mx-[16px] -mt-[24px] bg-white px-[16px] pb-[12px] pt-[24px] sm:-mx-[32px] sm:px-[32px]">
-    <lfx-meeting-details-header [compact]="compact()" [ownActions]="ownActions() ?? null" />
-    @if (showFades()) {
-      <span
-        class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
-        aria-hidden="true"></span>
-    }
-  </div>
+<div
+  class="flex w-full flex-col gap-[20px] px-[16px] text-gray-900 sm:px-[32px]"
+  [class]="page ? 'pb-[32px] pt-[20px] sm:pb-[96px] sm:pt-[32px]' : 'pb-[48px] pt-[24px] [--md-head:68px]'">
+  @if (page) {
+    <!-- The page's top bar carries the compact title, so this row scrolls away. -->
+    <lfx-meeting-details-header class="-mb-[12px]" [ownActions]="ownActions() ?? null" />
+  } @else {
+    <div class="sticky top-0 z-[5] -mx-[16px] -mt-[24px] bg-white px-[16px] pb-[12px] pt-[24px] sm:-mx-[32px] sm:px-[32px]">
+      <lfx-meeting-details-header [compact]="compact()" [ownActions]="ownActions() ?? null" />
+      @if (showFades()) {
+        <span
+          class="pointer-events-none absolute inset-x-0 top-full h-[16px] bg-gradient-to-b from-white via-white/85 via-35% to-white/0"
+          aria-hidden="true"></span>
+      }
+    </div>
+  }
 
   <!-- Two columns from a 720px drawer; narrower, the right column moves above the tabs and stops sticking. -->
   <div
     class="grid grid-cols-1 gap-x-[32px] gap-y-[24px] @[720px]:grid-cols-[minmax(0,1fr)_minmax(280px,calc((100%-32px)/3))] @[720px]:grid-rows-[auto_1fr]"
     data-testid="meeting-details-body">
     <div class="col-start-1 row-start-1 flex min-w-0 flex-col gap-[14px]" data-testid="meeting-details-title-block">
-      @if (project(); as project) {
-        <lfx-meeting-details-project-link class="-mb-[6px]" [project]="project" />
+      @if (page) {
+        <h1
+          class="m-0 font-display text-[24px] font-light leading-[30px] tracking-[-0.01em] text-gray-900 [text-wrap:pretty] break-words sm:text-[30px] sm:leading-[36px]"
+          data-testid="meeting-details-title">
+          {{ context.shownRow().title }}
+        </h1>
+      } @else {
+        @if (project(); as project) {
+          <lfx-meeting-details-project-link class="-mb-[6px]" [project]="project" />
+        }
+        <h2
+          #titleElement
+          class="m-0 font-display text-[30px] font-light leading-[36px] tracking-[-0.01em] text-gray-900 [text-wrap:pretty] break-words"
+          data-testid="meeting-details-title">
+          {{ context.shownRow().title }}
+        </h2>
       }
-      <h2
-        #titleElement
-        class="m-0 font-display text-[30px] font-light leading-[36px] tracking-[-0.01em] text-gray-900 [text-wrap:pretty] break-words"
-        data-testid="meeting-details-title">
-        {{ context.shownRow().title }}
-      </h2>
 
       <div class="flex flex-wrap items-center gap-x-[10px] gap-y-[8px]" data-testid="meeting-details-badges">
         @for (badge of visibilityBadges(); track badge.kind) {
@@ -73,9 +88,12 @@
       </div>
 
       @if (organizers().length || scheduledZone()) {
-        <div class="flex flex-wrap items-center gap-x-[6px] gap-y-[4px] text-[13px] leading-[18px] text-gray-600" data-testid="meeting-details-meta">
+        <!-- Shifted left and clipped back, so a separator that leads a wrapped line is cut off. -->
+        <div
+          class="-ml-[33px] flex flex-wrap items-center gap-y-[4px] text-[13px] leading-[18px] text-gray-600 [clip-path:inset(-4px_-4px_-4px_29px)]"
+          data-testid="meeting-details-meta">
           @if (organizers().length) {
-            <div class="flex min-w-0 flex-wrap items-center gap-[6px]" data-testid="meeting-details-organizers">
+            <div class="ml-[33px] flex min-w-0 flex-wrap items-center gap-[6px]" data-testid="meeting-details-organizers">
               <span>Organized by:</span>
               <span class="inline-flex flex-none items-center pl-[2px]">
                 <!-- One organizer is named beside the avatar, so only a stack of two or more names each avatar. -->
@@ -125,13 +143,13 @@
             </div>
           }
           @if (scheduledZone(); as zone) {
-            @if (organizers().length) {
-              <span class="mx-[4px] text-gray-400" aria-hidden="true">・</span>
-            }
             <!-- Top-aligned so the globe stays on the first line when the zone wraps. -->
-            <p class="m-0 flex min-w-0 items-start gap-[6px]" data-testid="meeting-details-scheduled-zone">
+            <div class="relative ml-[33px] flex min-w-0 items-start gap-[6px]" data-testid="meeting-details-scheduled-zone">
+              @if (organizers().length) {
+                <span class="absolute right-full top-0 w-[33px] text-center text-gray-400" aria-hidden="true">・</span>
+              }
               <i class="fa-light fa-globe leading-[18px]" aria-hidden="true"></i><span class="min-w-0">{{ zone }}</span>
-            </p>
+            </div>
           }
         </div>
       }

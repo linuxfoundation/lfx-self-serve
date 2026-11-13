@@ -53,6 +53,14 @@ describe('FormationsTableComponent', () => {
     fixture.detectChanges();
   };
 
+  it('words the empty state with Draft, not Prospect (#5619)', async () => {
+    await render([]);
+
+    const empty = fixture.nativeElement.querySelector('[data-testid="formations-table-empty"]') as HTMLElement;
+    expect(empty.textContent).toContain('Formations between Draft and Active will appear here.');
+    expect(fixture.nativeElement.textContent).not.toMatch(/prospect/i);
+  });
+
   const readinessHeaderButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="formations-sort-readiness"] button');
   const announcementHeaderButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="formations-sort-announcement"] button');
   const rowUidsInOrder = (): (string | null)[] =>

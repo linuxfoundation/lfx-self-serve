@@ -26,7 +26,6 @@ class EnrollStubComponent {
 /** Stands in for Courses, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-training-courses', template: '<div data-testid="training-courses-stub"></div>' })
 class CoursesStubComponent {
-  public readonly countChange = output<number | null>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -98,28 +97,14 @@ describe('HealthMetricsTrainingComponent', () => {
     expect(testId('health-metrics-training-page')?.textContent).not.toContain('Awaiting data');
   });
 
-  it('lists every section in the sub-nav, with no badge before a read', async () => {
+  it('lists every section in the sub-nav, with no note', async () => {
     await setup();
     const nav = testId('training-sub-nav') as HTMLElement;
 
     for (const section of HEALTH_METRICS_TRAINING_SECTIONS) {
       expect(testId(`training-sub-nav-${section.key}`)?.textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
-  });
-
-  it('badges Courses with the in-scope count it reports, and clears it while a read is pending', async () => {
-    await setup();
-    const courses = stub(CoursesStubComponent);
-
-    courses.countChange.emit(340);
-    await flush();
-    expect(testId('training-sub-nav-courses')?.textContent).toContain('340');
-    expect(testId('training-sub-nav-enroll')?.textContent).not.toMatch(/\d/);
-
-    courses.countChange.emit(null);
-    await flush();
-    expect(testId('training-sub-nav-courses')?.textContent).not.toMatch(/\d/);
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('re-lands a held deep link as each data section settles, releasing it once both have', async () => {

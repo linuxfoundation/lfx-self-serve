@@ -83,6 +83,8 @@ export class MeetingService {
    * still report `invited: true`.
    */
   public readonly removedRegistrationMeetingIds: Signal<ReadonlySet<string>> = this.removedRegistrationIds.asReadonly();
+  /** Registrant uids removed with each entry of {@link removedRegistrationMeetingIds}, to tell a re-invite from index lag. */
+  private readonly removedSelfRegistrantUids = new Map<string, ReadonlySet<string>>();
 
   private readonly attachmentScopeOverridesState: WritableSignal<AttachmentScopeOverrides> = signal(new Map<string, string>());
   /**
@@ -796,10 +798,25 @@ export class MeetingService {
     );
   }
 
-  public markRegistrationRemoved(meetingUid: string): void {
+  public markRegistrationRemoved(meetingUid: string, registrantUids: readonly string[] = []): void {
+    this.rememberRemovedRegistrants(meetingUid, registrantUids);
     this.removedRegistrationIds.update((ids) => new Set(ids).add(meetingUid));
   }
 
+  /** Adds to the viewer's removed registrant uids, so a retry that finishes a partial removal still knows the earlier ones. */
+  public rememberRemovedRegistrants(meetingUid: string, registrantUids: readonly string[]): void {
+    const known = this.removedSelfRegistrantUids.get(meetingUid) ?? [];
+    this.removedSelfRegistrantUids.set(meetingUid, new Set([...known, ...registrantUids]));
+  }
+
+  /** Clears a removal once the viewer is listed under a registrant uid other than the removed ones, as after a re-invite. */
+  public clearRemovalIfReinvited(meetingUid: string, selfRegistrantUids: readonly string[]): void {
+    const removed = this.removedSelfRegistrantUids.get(meetingUid);
+    if (!removed?.size || !this.removedRegistrationIds().has(meetingUid)) return;
+    if (selfRegistrantUids.some((uid) => !removed.has(uid))) this.clearRemovedRegistration(meetingUid);
+  }
+
+  /** Lifts the active removal; the removed registrant uids stay, so a later removal still knows them. */
   public clearRemovedRegistration(meetingUid: string): void {
     this.removedRegistrationIds.update((ids) => {
       const next = new Set(ids);

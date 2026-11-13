@@ -3,6 +3,7 @@
 
 import { TestBed } from '@angular/core/testing';
 import { NavigationEnd, Router } from '@angular/router';
+import { MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import type { Event as RouterEvent } from '@angular/router';
 import type { LfxSegmentAnalytics } from '@lfx-one/shared/interfaces';
 import { sanitizeSegmentEvent } from '@lfx-one/shared/utils';
@@ -172,6 +173,15 @@ describe('SegmentService', () => {
       await navigate('/');
 
       expect(analytics.page).toHaveBeenCalledWith('Home', expect.objectContaining({ path: '/' }));
+    });
+
+    it('sends no second page when the meeting page hands a visit to the legacy page', async () => {
+      const router = TestBed.inject(Router) as unknown as { lastSuccessfulNavigation: unknown };
+      await navigate('/meetings/abc');
+      router.lastSuccessfulNavigation = { extras: { state: { [MEETING_PAGE_LEGACY_STATE]: true } } };
+      await navigate('/meetings/abc');
+
+      expect(analytics.page).toHaveBeenCalledTimes(1);
     });
 
     it('sends no page while impersonating', async () => {

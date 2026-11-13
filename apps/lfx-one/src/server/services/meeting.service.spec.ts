@@ -101,6 +101,7 @@ import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { ResourceNotFoundError } from '../errors';
 import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getPastMeetingTranscriptUrl } from '@lfx-one/shared/utils';
 
 const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
@@ -2756,5 +2757,32 @@ describe('MeetingService.getCommitteeNameMap', () => {
     const names = await service.getCommitteeNameMap(req, [{ id: 'm1', committees: [{ uid: 'c1' }] }] as Meeting[]);
 
     expect(names.size).toBe(0);
+  });
+});
+
+describe('MeetingService.getPastMeetingTranscriptContent', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset().mockResolvedValue({ resources: [{ data: { recording_files: [] } }] });
+    vi.mocked(getPastMeetingTranscriptUrl).mockReturnValue('https://files.example.com/transcript');
+    service = new MeetingService();
+  });
+
+  const respond = (body: string, contentType = 'text/vtt'): void => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(body, { headers: { 'content-type': contentType } }));
+  };
+
+  it('returns WebVTT content, including one with a leading byte order mark', async () => {
+    respond('WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.000\nAda: Hi');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toEqual({ content: expect.stringContaining('Ada: Hi') });
+
+    respond('\uFEFFWEBVTT\n');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toEqual({ content: '\uFEFFWEBVTT\n' });
+  });
+
+  it('returns null for an HTML page served in place of the file', async () => {
+    respond('<!doctype html><html><body>Sign in</body></html>', 'text/html');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toBeNull();
   });
 });

@@ -74,6 +74,11 @@ export class MicroserviceError extends BaseApiError {
       if (typeof this.errorBody['error'] === 'string' && this.errorBody['error'].trim()) {
         response['upstreamCode'] = this.errorBody['error'];
       }
+      // newsletter-service's 409 audience_not_ready says why the snapshot can't be used
+      // (none / processing / failed / stale), so the client knows whether to start or wait.
+      if (typeof this.errorBody['audience_status'] === 'string' && this.errorBody['audience_status'].trim()) {
+        response['audienceStatus'] = this.errorBody['audience_status'];
+      }
     }
 
     return response;

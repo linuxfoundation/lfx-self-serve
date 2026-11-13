@@ -5,7 +5,7 @@
 <div class="flex flex-wrap items-center justify-between gap-[12px]" [attr.data-testid]="testId() + '-header'">
   <div class="flex min-w-0 flex-col gap-[2px]">
     <div class="flex items-center gap-[6px]">
-      <h2 class="m-0 text-[16px] font-semibold text-gray-900">{{ heading() }}</h2>
+      <h2 class="m-0 text-[18px] font-semibold text-gray-900">{{ heading() }}</h2>
       <lfx-overview-info-tip size="title" [text]="info()" />
     </div>
     @if (meta().length && status() === 'ready' && !isEmpty()) {

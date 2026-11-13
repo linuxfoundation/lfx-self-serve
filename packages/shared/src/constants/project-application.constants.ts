@@ -273,7 +273,7 @@ export const MY_FORMATIONS_PAGE_TAB_OPTIONS: FilterPillOption[] = [
   { id: PROJECT_APPLICATION_TABS.proposals, label: 'Submitted proposals' },
 ];
 
-/** Page-level tabs on the foundation Formations queue (The Linux Foundation + formation team only). */
+/** Page-level tabs on the foundation Formations queue (The Linux Foundation only). Pipeline shows to the formation team and LF staff; Project proposals only to the formation team. */
 export const FORMATIONS_QUEUE_PAGE_TAB_OPTIONS: FilterPillOption[] = [
   { id: FORMATION_PIPELINE_TAB_ID, label: 'Pipeline' },
   { id: PROJECT_APPLICATION_TABS.formations, label: 'Formations' },

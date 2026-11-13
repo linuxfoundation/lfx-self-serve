@@ -24,7 +24,7 @@
 
   <!-- The page scrolls the sections, beside the sticky nav. `relative` anchors absolutely-positioned descendants
        rendered inline (e.g. icon-field decorations) to the column. -->
-  <!-- The header only sticks at `lg`, so only there does a section need its offset as a scroll margin. -->
+  <!-- The header sticks at every width, so a section always scrolls to just under it. -->
   <div class="relative flex min-w-0 flex-1 flex-col gap-[24px]" [style.--l2-sticky-top]="chrome.stickyTopPx() + 'px'">
     <!-- Lights the first section when the reader lands back at the top, which a jump there never crosses the band for. -->
     <div #startSentinel class="absolute inset-x-0 top-0 h-px" aria-hidden="true"></div>
@@ -33,20 +33,42 @@
       @let empty = emptySections().get(section.key);
       <section
         [id]="section.id"
-        class="flex flex-col gap-[16px] rounded-[12px] border border-gray-200 bg-white p-[20px] lg:scroll-mt-[var(--l2-sticky-top)]"
+        class="flex flex-col gap-[16px] rounded-[12px] border border-gray-200 bg-white p-[20px] scroll-mt-[var(--l2-sticky-top)]"
         [attr.data-testid]="testIdPrefix() + '-section-' + section.key">
-        <div class="flex flex-col gap-[2px]" [id]="section.headingId">
-          <div class="flex flex-wrap items-center gap-[6px]">
-            <h2 class="m-0 text-[16px] font-semibold text-gray-900">{{ section.heading }}</h2>
-            @if (section.headingBadge) {
-              <span
-                class="inline-flex h-[18px] items-center rounded-full bg-amber-50 px-[7px] text-[10px] font-semibold uppercase tracking-[0.04em] text-amber-800"
-                [attr.data-testid]="testIdPrefix() + '-heading-badge-' + section.key"
-                >{{ section.headingBadge }}</span
-              >
-            }
+        <!-- The design's card header: the title block takes 1 1 260px, the controls wrap on its right, and the header wraps
+             with a 12px gap. On phones, a header holding a select gives the controls the full width and the select fills it. -->
+        <div class="flex flex-wrap items-start justify-between gap-[12px]" [attr.data-testid]="testIdPrefix() + '-header-' + section.key">
+          <div class="flex min-w-0 flex-[1_1_260px] flex-col gap-[2px]" [id]="section.headingId">
+            <div class="flex flex-wrap items-center gap-[6px]">
+              <h2 class="m-0 text-[18px] font-semibold text-gray-900">{{ section.heading }}</h2>
+              @if (section.provisional) {
+                <!-- Focusable for its tooltip, so it carries a role; its name is the label and the tooltip describes it, once. -->
+                <lfx-ui-badge
+                  tone="warning"
+                  variant="subtle"
+                  size="sm"
+                  role="img"
+                  tabindex="0"
+                  class="cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  [lfxUiTooltip]="provisionalBadge.tip"
+                  [attr.aria-label]="provisionalBadge.label"
+                  [attr.data-testid]="testIdPrefix() + '-heading-badge-' + section.key"
+                  >{{ provisionalBadge.label }}</lfx-ui-badge
+                >
+              }
+            </div>
+            <p class="m-0 text-[12px] leading-[16px] text-gray-500">{{ section.description }}</p>
           </div>
-          <p class="m-0 text-[12px] leading-normal text-gray-400">{{ section.description }}</p>
+          @if (controlsByKey().get(section.key); as controls) {
+            <!-- Hidden, not dropped, with an empty section's body, so the controls keep their state. -->
+            <div
+              class="flex-wrap items-center gap-[10px] max-[640px]:has-[lfx-ui-select]:w-full max-[640px]:[&>lfx-ui-select]:flex-[1_1_100%]"
+              [class.flex]="!empty"
+              [class.hidden]="!!empty"
+              [attr.data-testid]="testIdPrefix() + '-controls-' + section.key">
+              <ng-container [ngTemplateOutlet]="controls" />
+            </div>
+          }
         </div>
 
         @if (empty) {
@@ -67,12 +89,9 @@
           <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
         }
 
-        <!-- A footnote explains a body, so it waits until there is one. -->
-        @if (body && !empty && section.footnote.length) {
-          <lfx-health-metrics-footnote
-            [parts]="section.footnote"
-            [caution]="section.footnoteCaution"
-            [attr.data-testid]="testIdPrefix() + '-footnote-' + section.key" />
+        <!-- A note explains a body, so it waits until there is one. -->
+        @if (body && !empty && section.note; as note) {
+          <lfx-health-metrics-footnote [tone]="note.tone" [parts]="note.parts" [attr.data-testid]="testIdPrefix() + '-note-' + section.key" />
         }
       </section>
     }

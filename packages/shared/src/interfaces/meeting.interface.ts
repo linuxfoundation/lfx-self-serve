@@ -2047,6 +2047,16 @@ export interface PublicMeetingResponse {
   can_join: boolean;
 }
 
+/** What the redesigned `/meetings/:id` page shows: a state of its own, the details, or a hand-off to the legacy page. */
+export type MeetingPageView = 'loading' | 'error' | 'details' | 'fallback';
+
+/** Which `/meetings/:id` page the server rendered, handed to the browser so hydration picks the same one. */
+export interface MeetingPageRedesignDecision {
+  /** The `:id` route param the decision was made for. */
+  id: string;
+  enabled: boolean;
+}
+
 /**
  * SSR-serialized state for the meeting join page (GH-2041), following the same TransferState
  * pattern as {@link PublicProfilePageState}: seeds the client's first paint from the server's

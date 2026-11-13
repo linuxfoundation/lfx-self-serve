@@ -6,6 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { Meeting, PublicMeetingProject } from '@lfx-one/shared';
 import { MeetingService } from '@services/meeting.service';
+import { PlausibleService } from '@services/plausible.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,8 @@ describe('MeetingPageDataService', () => {
   let getPublicMeeting: ReturnType<typeof vi.fn>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
+  let trackPage: ReturnType<typeof vi.fn>;
+  let analyticsReady: ReturnType<typeof signal<boolean>>;
 
   const create = async (): Promise<TestHostComponent> => {
     const fixture = TestBed.createComponent(TestHostComponent);
@@ -39,6 +42,8 @@ describe('MeetingPageDataService', () => {
     getPublicMeeting = vi.fn().mockReturnValue(of({ meeting: { id: '123', title: 'Live' }, project, full_access: true, can_join: false }));
     getPublicPastMeeting = vi.fn().mockReturnValue(of({ meeting: { id: '123-1700000000000', title: 'Past' }, project, full_access: true }));
     navigate = vi.fn();
+    trackPage = vi.fn();
+    analyticsReady = signal(false);
 
     TestBed.configureTestingModule({
       providers: [
@@ -61,6 +66,7 @@ describe('MeetingPageDataService', () => {
         { provide: Router, useValue: { navigate } },
         { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting } },
         { provide: UserService, useValue: { authenticated: signal(true) } },
+        { provide: PlausibleService, useValue: { ready: analyticsReady, trackPage } },
       ],
     });
   });
@@ -111,6 +117,63 @@ describe('MeetingPageDataService', () => {
     expect(host.data.meetingLoadFailed()).toBe(true);
   });
 
+  it('counts a load as a reload only once one was asked for', async () => {
+    const host = await create();
+    expect(host.data.reloadsDone()).toBe(0);
+
+    host.data.refresh();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(host.data.reloadsDone()).toBe(1);
+
+    host.data.reloadOnNextLoad();
+    expect(host.data.reloadsDone()).toBe(1);
+    queryParamMap$.next(convertToParamMap({ occurrence: '1' }));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(host.data.reloadsDone()).toBe(2);
+  });
+
+  describe('claimJoinOnLoad', () => {
+    const openNow = (): void => {
+      const start = new Date(Date.now() - 5 * 60_000).toISOString();
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: { id: '123', title: 'Live', start_time: start, duration: 60 }, project, full_access: true, can_join: true })
+      );
+    };
+
+    it('allows Zoom to open once when the join window was open at load', async () => {
+      openNow();
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+
+    it.each([{ zoom_redirect: 'false' }, { action: 'leave' }])('never allows it with %o in the URL', async (params) => {
+      openNow();
+      queryParamMap$.next(convertToParamMap(params));
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+
+    it('decides again for another meeting the page moves to', async () => {
+      openNow();
+      const host = await create();
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+
+      paramMap$.next(convertToParamMap({ id: '456' }));
+      await new Promise((resolve) => setTimeout(resolve));
+
+      expect(host.data.claimJoinOnLoad()).toBe(true);
+    });
+
+    it('never allows it when the window opened after load', async () => {
+      const host = await create();
+
+      expect(host.data.claimJoinOnLoad()).toBe(false);
+    });
+  });
+
   it('resolves ?occurrence= to that active date', async () => {
     queryParamMap$.next(convertToParamMap({ occurrence: String(Date.parse('2030-01-08T10:00:00Z')) }));
     const host = await create();
@@ -122,5 +185,48 @@ describe('MeetingPageDataService', () => {
     } as Meeting;
 
     expect(host.data.resolveOccurrence(meeting)?.occurrence_id).toBe('b');
+  });
+
+  it('sends one pageview with the foundation and project once analytics is ready', async () => {
+    getPublicMeeting.mockReturnValue(
+      of({
+        meeting: { id: '123' },
+        project: { ...project, slug: 'child', name: 'Child', parent_uid: 'f1', parent: { slug: 'found', name: 'Foundation' } },
+        full_access: true,
+        can_join: false,
+      })
+    );
+    const host = await create();
+    host.data.trackPageview();
+    TestBed.tick();
+    expect(trackPage).not.toHaveBeenCalled();
+
+    analyticsReady.set(true);
+    TestBed.tick();
+    host.data.refresh();
+    await new Promise((resolve) => setTimeout(resolve));
+    TestBed.tick();
+
+    expect(trackPage).toHaveBeenCalledTimes(1);
+    expect(trackPage).toHaveBeenCalledWith({ foundation: 'found', foundation_name: 'Foundation', project: 'child', project_name: 'Child' });
+  });
+
+  it('treats a top-level project as the foundation', async () => {
+    analyticsReady.set(true);
+    const host = await create();
+    host.data.trackPageview();
+    TestBed.tick();
+
+    expect(trackPage).toHaveBeenCalledWith({ foundation: 'project', foundation_name: 'Project' });
+  });
+
+  it('drops a pageview still waiting for analytics when a newer one replaces it', async () => {
+    const host = await create();
+    host.data.trackPageview();
+    host.data.trackPageview();
+    analyticsReady.set(true);
+    TestBed.tick();
+
+    expect(trackPage).toHaveBeenCalledTimes(1);
   });
 });

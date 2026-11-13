@@ -1178,6 +1178,18 @@ export const MEETING_DURATION_OPTIONS = [
 /** How often the meeting page re-reads the wall clock so time-gated UI (join window, ended) updates without a reload. */
 export const MEETING_CLOCK_TICK_MS = 5_000;
 
+/** Router navigation state that sends a `/meetings/:id` visit to the legacy page when the redesigned one can't serve it. */
+export const MEETING_PAGE_LEGACY_STATE = 'meetingPageLegacy';
+
+/** Copy of the meeting page's cancelled notes, kept in one place so it can change without touching the page. `{date}` is the cancelled date. */
+export const MEETING_PAGE_CANCELLED_COPY = {
+  occurrence: 'This occurrence on {date} was cancelled',
+  series: 'All occurrences of this meeting were cancelled',
+} as const;
+
+/** Router navigation state that opens the legacy page's guest form, to join with another email address. */
+export const MEETING_PAGE_GUEST_FORM_STATE = 'meetingPageGuestForm';
+
 /**
  * How many upcoming meetings the dashboard meetings card lets a user page through, starting from the
  * meeting it opens on. Fixed rather than a setting so there is nothing to store per user.

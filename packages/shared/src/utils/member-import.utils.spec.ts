@@ -15,7 +15,9 @@ import {
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { CommitteeMemberBulkCreateRowResult } from '../interfaces/member.interface';
 import type { MemberImportCells, MemberImportGroupRules, MemberImportRow } from '../interfaces/member-import.interface';
+import { rowsToCsv } from './file.utils';
 import {
+  buildMemberImportInvalidRowsCsv,
   buildMemberImportPayload,
   classifyMemberImportBulkResult,
   decodeMemberImportFile,
@@ -93,6 +95,155 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
     for (const forbidden of ['username', 'status', 'permission', 'writer', 'organization_id', 'agency', 'country']) {
       expect(headers).not.toContain(forbidden);
     }
+  });
+});
+
+describe('buildMemberImportInvalidRowsCsv', () => {
+  const rows = (csv: string, rules: MemberImportGroupRules) => prepareMemberImportRows(parseMemberImportCsv(csv, rules).records, rules, new Set());
+
+  it('uses the group template header plus reserved recovery metadata', () => {
+    expect(buildMemberImportInvalidRowsCsv([], OPEN)[0]).toEqual([...getMemberImportTemplateHeaders(OPEN), 'lfx_import_encoding', 'errors']);
+    expect(buildMemberImportInvalidRowsCsv([], VOTING)[0]).toEqual([...getMemberImportTemplateHeaders(VOTING), 'lfx_import_encoding', 'errors']);
+    expect(buildMemberImportInvalidRowsCsv([], OPEN)[0]).not.toContain('voting_status');
+  });
+
+  it('returns only the header when no row is invalid', () => {
+    expect(buildMemberImportInvalidRowsCsv(rows('email\nada@example.com\nada@example.com', OPEN), OPEN)).toEqual([
+      [...getMemberImportTemplateHeaders(OPEN), 'lfx_import_encoding', 'errors'],
+    ]);
+  });
+
+  it('exports only invalid rows, in template column order, with their values as written', () => {
+    const csv = buildMemberImportInvalidRowsCsv(
+      rows('role,email,first_name\nNone,ada@example.com,Ada\nunsupported,grace@example.com,Grace\nNone,bad,Linus', OPEN),
+      OPEN
+    );
+    const headers = csv[0];
+    const records = csv.slice(1);
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record[headers.indexOf('email')])).toEqual(['grace@example.com', 'bad']);
+    expect(records[0][headers.indexOf('role')]).toBe('unsupported');
+    expect(records[0][headers.indexOf('first_name')]).toBe('Grace');
+    expect(records[0][headers.indexOf('last_name')]).toBe('');
+    expect(records[1][headers.indexOf('errors')]).toBe('Email is not a valid address.');
+    expect(records.every((record) => record.length === headers.length)).toBe(true);
+  });
+
+  it('joins every issue of a row into its errors column', () => {
+    const [row] = rows('email,first_name\n,' + 'x'.repeat(101), OPEN);
+    const [, record] = buildMemberImportInvalidRowsCsv([row], OPEN);
+    expect(row.issues.length).toBeGreaterThan(1);
+    expect(record.at(-1)).toBe(row.issues.map((issue) => issue.message).join(' '));
+  });
+
+  it.each([OPEN, VOTING])('round-trips corrected downloads with diagnostics for group rules %j', (rules) => {
+    const csv = rules.votingEnabled ? `${VOTING_HEADER}\nbad,Example Org,https://org.example,None,Observer` : 'email\nbad';
+    const exported = buildMemberImportInvalidRowsCsv(rows(csv, rules), rules);
+    exported[1][exported[0].indexOf('email')] = 'fixed@example.com';
+    const parsed = parseMemberImportCsv('\ufeff' + rowsToCsv(exported), rules);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.headers).not.toContain('errors');
+    expect(parsed.headers).not.toContain('lfx_import_encoding');
+    expect(parsed.records[0].cells).not.toHaveProperty('errors');
+    expect(parsed.records[0].cells).not.toHaveProperty('lfx_import_encoding');
+    const [ready] = prepareMemberImportRows(parsed.records, rules, new Set());
+    expect(ready.status).toBe('ready');
+    expect(ready.payload?.email).toBe('fixed@example.com');
+  });
+
+  it.each(['+person@example.com', '-person@example.com', '=person@example.com', "'person@example.com", "'+person@example.com"])(
+    'preserves the exact email identity %s after fixing another field',
+    (email) => {
+      const exported = buildMemberImportInvalidRowsCsv(rows(`email,role\n${email},unsupported`, OPEN), OPEN);
+      exported[1][exported[0].indexOf('role')] = 'Chair';
+      const parsed = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+      expect(parsed.errors).toEqual([]);
+      const [ready] = prepareMemberImportRows(parsed.records, OPEN, new Set());
+      expect(ready.status).toBe('ready');
+      expect(ready.payload?.email).toBe(email);
+      expect(ready.normalizedEmail).toBe(email.toLowerCase());
+      expect(prepareMemberImportRows(parsed.records, OPEN, new Set([email.toLowerCase()]))[0].status).toBe('skipped');
+    }
+  );
+
+  it.each(['=SUM(1,2)', '+formula', '-formula', '@formula', "'literal", 'lfx-text:+literal', 'lfx-text:lfx-text:literal', 'Name, "Quoted"\nNext line'])(
+    'keeps spreadsheet-safe recovery text reversible: %s',
+    (name) => {
+      const csv = rowsToCsv([
+        ['email', 'first_name'],
+        ['bad', name],
+      ]);
+      // Use the parsed, trimmed contract; the generic serializer deliberately prefixes formulas.
+      const invalid = rows(csv, OPEN);
+      invalid[0].cells.first_name = name;
+      const exported = buildMemberImportInvalidRowsCsv(invalid, OPEN);
+      const encoded = exported[1][exported[0].indexOf('first_name')];
+      expect(encoded).not.toMatch(/^[=+\-@\t\r]/);
+      if (/^[=+\-@]/.test(name) || name.startsWith('lfx-text:')) expect(encoded).toBe(`lfx-text:${name}`);
+      const serialized = rowsToCsv(exported);
+      const original = parseMemberImportCsv(serialized, OPEN);
+      expect(original.errors).toEqual([]);
+      expect(original.records[0].cells.first_name).toBe(name);
+      expect(buildMemberImportInvalidRowsCsv(prepareMemberImportRows(original.records, OPEN, new Set()), OPEN)).toEqual(exported);
+      exported[1][0] = 'fixed@example.com';
+      const corrected = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+      const [ready] = prepareMemberImportRows(corrected.records, OPEN, new Set());
+      expect(ready.status).toBe('ready');
+      expect(ready.payload?.first_name).toBe(name);
+    }
+  );
+
+  it('retains all supplied offending voting columns for non-voting groups without changing the blank template', () => {
+    const invalid = rows('email,voting_status,voting_start_date,voting_end_date\nperson@example.com,Observer,2026-01-01,2026-12-31', OPEN);
+    const exported = buildMemberImportInvalidRowsCsv(invalid, OPEN);
+    for (const column of MEMBER_IMPORT_VOTING_COLUMNS) {
+      expect(exported[0]).toContain(column);
+      expect(exported[1][exported[0].indexOf(column)]).toBe(invalid[0].cells[column]);
+      expect(getMemberImportTemplateHeaders(OPEN)).not.toContain(column);
+    }
+    expect(exported[1].at(-1)).toBe(invalid[0].issues.map((issue) => issue.message).join(' '));
+    const parsed = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+    expect(parsed.errors).toEqual([]);
+    expect(prepareMemberImportRows(parsed.records, OPEN, new Set())[0].status).toBe('invalid');
+    for (const column of MEMBER_IMPORT_VOTING_COLUMNS) exported[1][exported[0].indexOf(column)] = '';
+    const corrected = parseMemberImportCsv(rowsToCsv(exported), OPEN);
+    expect(prepareMemberImportRows(corrected.records, OPEN, new Set())[0].status).toBe('ready');
+  });
+
+  it('does not decode ordinary CSV text or diagnostic-only recovery files', () => {
+    for (const csv of [
+      "email,first_name\n'+person@example.com,lfx-text:+Literal",
+      "errors,first_name,email\nold problem,lfx-text:+Literal,'+person@example.com",
+    ]) {
+      const parsed = parseMemberImportCsv(csv, OPEN);
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.records[0].cells).toEqual({ email: "'+person@example.com", first_name: 'lfx-text:+Literal' });
+    }
+  });
+
+  it('combines normalized recovery headers with ignored extra columns', () => {
+    const parsed = parseMemberImportCsv(
+      'E-mail,First Name,LFX Import Encoding,Errors,permission\nlfx-text:+person@example.com,lfx-text:+Name,text-v1,old problem,manage',
+      OPEN
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.headers).toEqual(['email', 'first_name']);
+    expect(parsed.ignoredColumns).toEqual(['permission']);
+    expect(parsed.records[0].cells).toEqual({ email: '+person@example.com', first_name: '+Name' });
+    expect(prepareMemberImportRows(parsed.records, OPEN, new Set())[0].status).toBe('ready');
+  });
+
+  it.each([
+    ['email,errors,errors\nperson@example.com,a,b', 'appears more than once'],
+    ['email,lfx_import_encoding,lfx_import_encoding\nperson@example.com,text-v1,text-v1', 'appears more than once'],
+    ['email,LFX Import Encoding,lfx_import_encoding\nperson@example.com,text-v1,text-v1', 'appears more than once'],
+    ['email,lfx_import_encoding\nperson@example.com,text-v2', 'unsupported recovery encoding'],
+    ['email,lfx_import_encoding\nperson@example.com,', 'unsupported recovery encoding'],
+    ['email,errors\nperson@example.com', 'has 1 cells but the header has 2'],
+  ])('retains strict recovery-file structure checks %#', (csv, expected) => {
+    const parsed = parseMemberImportCsv(csv, OPEN);
+    expect(parsed.errors.join(' ')).toContain(expected);
+    expect(parsed.records).toEqual([]);
   });
 });
 

@@ -5,21 +5,14 @@
   <lfx-ui-skeleton width="100%" height="100%" data-testid="ui-avatar-skeleton" />
 } @else {
   @if (photoSrc(); as url) {
-    <img
-      #photo
-      class="h-full w-full rounded-[inherit] object-cover"
-      [src]="url"
-      alt=""
-      aria-hidden="true"
-      (error)="onPhotoError(url)"
-      data-testid="ui-avatar-image" />
+    <img #photo [class]="imageClasses()" [src]="url" alt="" aria-hidden="true" (error)="onPhotoError(url)" data-testid="ui-avatar-image" />
   } @else if (icon()) {
     <i class="ui-icon" [class]="icon()" aria-hidden="true" data-testid="ui-avatar-icon"></i>
   } @else if (text()) {
     <span aria-hidden="true" data-testid="ui-avatar-initials">{{ text() }}</span>
   } @else {
-    <!-- No photo, icon or initials to show: a person glyph keeps the circle from looking broken. -->
-    <i class="ui-icon fa-light fa-user" aria-hidden="true" data-testid="ui-avatar-fallback"></i>
+    <!-- No photo, icon or initials to show: a person (or, for a logo, a building) glyph keeps the shape from looking broken. -->
+    <i class="ui-icon" [class]="fallbackIcon()" aria-hidden="true" data-testid="ui-avatar-fallback"></i>
   }
   @if (badgeIcon()) {
     <!-- Exact px, not rem: the app root font is 14px. -->

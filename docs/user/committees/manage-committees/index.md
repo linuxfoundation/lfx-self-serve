@@ -4,7 +4,7 @@ description: How to view a group's tabs, edit a group, manage members and applic
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, manage, members, governance, csv, import]
-last_updated: 2026-11-11
+last_updated: 2026-11-12
 intercom_collection: Committees
 ---
 
@@ -81,9 +81,19 @@ If you can manage a group's members, you can add many people at once from a CSV 
 3. Select **Download template**. The template contains only the columns that apply to this group. Open **Column reference** to see which columns are required and the complete accepted role and appointed-by values.
 4. Fill in one member per row and save the file as **CSV UTF-8 (comma delimited)**. Column order and capitalization don't matter, and spaces, hyphens and underscores in column names are ignored, so `First Name` matches `first_name` and `E-mail` matches `email`. Columns the import doesn't use are ignored and listed in a notice above the preview.
 5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.
-6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. To fix a value, correct the file and choose it again; you can also remove a row from the preview. The import cannot start while any row is invalid.
+6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. Select a status pill above the table, such as **Invalid (3)**, to show only those rows, or **All** to show every row again. Invalid rows don't block the import: they are skipped and nothing is sent for them. To fix them, select **Download invalid rows** to save a CSV with their original values and an **errors** column describing each problem, or correct your file and choose it again. You can also remove a row from the preview.
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
-8. Select **Add _N_ members**. Rows are added in batches, one batch at a time. While the import runs, each row shows **Not yet submitted**, **Adding…**, or **Waiting to resume** until it settles. A retry run preserves **Outcome unknown** for an unconfirmed earlier attempt until that row is sent again.
+8. Select **Add _N_ members**. If the file has invalid rows, the button says how many are skipped, for example **Add 27 members (skip 3 invalid)**. Rows are added in batches, one batch at a time. While the import runs, each row shows **Not yet submitted**, **Adding…**, or **Waiting to resume** until it settles. A retry run preserves **Outcome unknown** for an unconfirmed earlier attempt until that row is sent again.
+
+Status filters stay available while the import runs and in the results. If the selected status no longer has rows, the table returns to **All** and keeps showing all rows until you select another status.
+
+### Fix and re-import downloaded rows
+
+The invalid-rows download keeps the group's template columns plus any other known columns supplied on invalid rows, including voting values that must be cleared for a non-voting group. The **errors** column describes the problems; it is ignored on re-import, and validation runs again against the corrected member values.
+
+Keep the **lfx_import_encoding** column and its **text-v1** values unchanged. To prevent spreadsheet formulas without changing member identities, formula-leading values and values already starting with **lfx-text:** have one **lfx-text:** safety prefix added. Keep that first prefix when editing the value after it. For example, **lfx-text:+person@example.com** is restored to **+person@example.com** on import, not to an address with an extra apostrophe. Other values, including literal apostrophes, are unchanged.
+
+Correct the member values, save as **CSV UTF-8 (comma delimited)**, and choose the downloaded file again. You do not need to remove **errors** or the encoding column. An unsupported or missing encoding value is rejected rather than guessing how to restore the values.
 
 ### Import while creating or editing a group
 
@@ -91,7 +101,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 2. Select **Import Members** alongside **Invite by email** and **Add with details**.
 3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the form.
 4. Optionally select **Send notification emails to added members**. Notifications are off by default; this choice is retained when you edit staged members or move between steps.
-5. Select **Import _N_ members**. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
+5. Select **Import _N_ members**. As on the Members tab, invalid rows are skipped and the button says how many, for example **Import 27 members (skip 3 invalid)**; use **Download invalid rows** to fix them later. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
 6. Select **Done** (when creating) or **Update Group** (when editing) to save the pending member additions along with your other changes. Cancelling the CSV preview, selecting **Skip For Now**, or leaving without saving does not add those members or revoke their invitations. When creating, the group itself has already been saved; only the pending members are discarded.
 
 **Done** and **Update Group** stay unavailable while member or group details are loading or could not be loaded. No pending changes are submitted in that state. Once the members step loads successfully, you can save; your staged additions, edits, removals, and invitations remain pending.
@@ -112,13 +122,13 @@ People already in the group or already staged in the form are skipped. Imports u
 ### Members-tab results and retry
 
 - People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
-- After the import, each row shows **Added**, **Skipped**, **Failed**, **Outcome unknown**, or **Not yet submitted** with the reason. Select **Retry _N_** to send the **Not yet submitted** rows, unresolved attempts and any failed rows that can still succeed. Added and skipped rows are never resubmitted, and rows the service rejected as invalid are not retried — fix them in the file and import it again.
+- After the import, each row shows **Added**, **Skipped**, **Failed**, **Outcome unknown**, or **Not yet submitted** with the reason. Skipped invalid rows stay listed as **Invalid**, and **Download invalid rows** is still available. Select a status pill, such as **Failed**, to show only those rows. Select **Retry _N_** to send the **Not yet submitted** rows, unresolved attempts and any failed rows that can still succeed. Added and skipped rows are never resubmitted, and rows the service rejected as invalid are not retried — fix them in the file and import it again.
 - If the service asks the import to slow down, or a batch hits a temporary problem, the import pauses and resumes on its own, up to 3 times per run. The dialog shows when it will resume. A server cooldown longer than two minutes stops automatic recovery rather than retrying early; the dialog shows the earliest retry time. **Retry** stays unavailable until a known cooldown ends, even after **Stop import**. The cooldown notice disappears and **Retry** becomes available when the wait ends. Once the pause budget is exhausted, review the outcomes before retrying.
-- Select **Stop import** during a pause to end the import. Rows that were never sent stay **Not yet submitted**. A submitted row whose response was lost stays **Outcome unknown**, not Failed or Added; close the dialog to refresh and review the roster before retrying.
+- Select **Stop import** at any time during the import to end it. During a pause, the import stops right away. Otherwise the button shows **Stopping…** while the batch already being sent finishes, and later rows are not sent. Rows that were never sent stay **Not yet submitted**. A submitted row whose response was lost stays **Outcome unknown**, not Failed or Added; close the dialog to refresh and review the roster before retrying.
 - When recovery finds an existing membership, the row is **Skipped**, not proof that this import added the person or applied the CSV details. Review the existing member and any pending invitation; skipped rows do not trigger invitation cleanup.
 - If your session expires, you lose permission to manage the group, or the group can no longer be found, the import stops with the next step to take, and rows that were not sent are marked **Not yet submitted** so you can retry them later.
-- If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, and missing-invitation errors during cleanup also stop new member requests, but never resubmit the members already added. A cleanup that is rate limited only adds the warning and does not stop the import.
-- Select **Close** to return to the roster, which refreshes to show the new members. Newly added members can take a few moments to appear.
+- If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, and missing-invitation errors during cleanup also stop new member requests, but never resubmit the members already added. The error appears immediately, even while other invitation cleanup requests finish; **Stopping…** is reserved for selecting **Stop import** yourself. A cleanup that is rate limited only adds the warning and does not stop the import.
+- Select **Close** to return to the roster, which refreshes to show the new members. When the import added anyone, a confirmation shows how many members were added to the group and that new members may take a moment to appear. No confirmation shows when nobody was added.
 
 ## Delete a group
 

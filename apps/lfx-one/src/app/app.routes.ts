@@ -40,12 +40,14 @@ import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
+import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
+import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
@@ -425,16 +427,17 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
-      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
-      // project `viewer` on every read.
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). Executive directors
+      // and LF staff only (as Health Metrics). The guard checks the role only; the BFF additionally scopes an ED to
+      // projects under a foundation they direct (403 renders the no-access state) and requires project `viewer`.
       {
         path: 'project/participating-orgs',
-        title: 'Participating Organizations',
-        data: { lens: 'project' },
+        title: 'Participating Companies',
+        data: { lens: 'project', accessDeniedRedirect: '/project/overview' },
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.
         runGuardsAndResolvers: 'paramsOrQueryParamsChange',
-        canActivate: [projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
       // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
@@ -572,7 +575,7 @@ export const routes: Routes = [
       // `?item=<template_item_key>` opens that item's panel on arrival here too (#2732).
       {
         path: 'foundation/formations/:projectSlug',
-        title: 'Formation Checklist',
+        title: 'Formation',
         data: { lens: 'foundation' },
         canMatch: [formationEnabledGuard],
         canActivate: [formationsQueueAuditorGuard, projectQueryParamGuard],
@@ -741,7 +744,7 @@ export const routes: Routes = [
       {
         path: 'meetings',
         title: 'Meetings',
-        canActivate: [lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [openprofileMeLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
       {
@@ -873,7 +876,7 @@ export const routes: Routes = [
       {
         path: 'events',
         title: 'Events',
-        canActivate: [myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
+        canActivate: [openprofileMeLensGuard, myEventsRequestLensGuard, lensRedirectGuard, projectQueryParamGuard],
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
       {
@@ -961,10 +964,25 @@ export const routes: Routes = [
     data: { preload: false },
     loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
   },
+  // Paired like `meetings/:id` below: the redesigned not-found page when `meetingPageRedesignGuard` matches, else the legacy one.
+  {
+    path: 'meetings/not-found',
+    title: 'Meeting Not Found',
+    canMatch: [meetingPageRedesignGuard],
+    loadComponent: () => import('./modules/meetings/meeting-page/not-found/meeting-page-not-found.component').then((m) => m.MeetingPageNotFoundComponent),
+  },
   {
     path: 'meetings/not-found',
     title: 'Meeting Not Found',
     loadComponent: () => import('./modules/meetings/meeting-not-found/meeting-not-found.component').then((m) => m.MeetingNotFoundComponent),
+  },
+  // Paired by path: the redesigned page when `meetingPageRedesignGuard` matches, else the legacy page below.
+  // Fallback rule: whatever the redesigned page doesn't serve yet (see `MeetingPageComponent`) renders the legacy page.
+  {
+    path: 'meetings/:id',
+    title: 'Meeting',
+    canMatch: [meetingPageRedesignGuard],
+    loadComponent: () => import('./modules/meetings/meeting-page/meeting-page.component').then((m) => m.MeetingPageComponent),
   },
   {
     path: 'meetings/:id',

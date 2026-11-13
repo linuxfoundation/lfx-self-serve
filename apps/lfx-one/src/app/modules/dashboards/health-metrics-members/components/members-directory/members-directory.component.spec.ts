@@ -49,7 +49,6 @@ describe('MembersDirectoryComponent', () => {
   let getMembersDirectoryTiers: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
   let verdicts: boolean[];
 
@@ -78,7 +77,6 @@ describe('MembersDirectoryComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(MembersDirectoryComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe((empty) => {
       lifecycle.push('settled');
@@ -109,7 +107,6 @@ describe('MembersDirectoryComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     getMembersDirectoryTiers = vi.fn().mockReturnValue(of({ tiers: ['Platinum Membership', 'Gold Membership'] }));
-    counts = [];
     lifecycle = [];
     verdicts = [];
   });
@@ -122,7 +119,6 @@ describe('MembersDirectoryComponent', () => {
     expect(text('members-directory-count')).toBe('725 members · 27 at risk · highest dues first');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(counts).toEqual([null, 725]);
   });
 
   it('renders a member row the way the design draws it', async () => {
@@ -252,21 +248,6 @@ describe('MembersDirectoryComponent', () => {
     expect(getMembersDirectory).toHaveBeenCalledWith(expect.objectContaining({ tier: '', nps: '', search: '' }));
   });
 
-  it('keeps the sub-nav count through page turns and filters, blanking it only for a new period', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }));
-    counts.length = 0;
-
-    fixture.componentInstance['onTablePage']({ first: 10, rows: 10 });
-    fixture.componentInstance['filterForm'].controls.nps.setValue('Promoter');
-    await settle();
-    expect(counts.every((count) => count === 80)).toBe(true);
-
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
-    await settle();
-    expect(counts.at(-2)).toBeNull();
-    expect(counts.at(-1)).toBe(80);
-  });
-
   it('offers a count-free search placeholder until the first read lands', async () => {
     selectedFoundation.set(null);
     await render();
@@ -332,7 +313,6 @@ describe('MembersDirectoryComponent', () => {
     expect(getMembersDirectory).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30 }));
     expect(getMembersDirectory).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(counts).toEqual([null, 34]);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { memTier: null, memNps: null, memSearch: null, memPage: 4 } }));
   });
 
@@ -360,9 +340,8 @@ describe('MembersDirectoryComponent', () => {
   });
 
   // A failed read must not render copy that asserts the foundation had no members.
-  it('separates a failed read from an empty one, settling it without a count', async () => {
+  it('separates a failed read from an empty one, settling it', async () => {
     await render();
-    counts.length = 0;
     lifecycle.length = 0;
     getMembersDirectory.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
@@ -370,7 +349,6 @@ describe('MembersDirectoryComponent', () => {
     await settle();
 
     expect(query('members-directory-error')).not.toBeNull();
-    expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false, false]);
   });
@@ -381,7 +359,6 @@ describe('MembersDirectoryComponent', () => {
 
     expect(getMembersDirectory).not.toHaveBeenCalled();
     expect(getMembersDirectoryTiers).not.toHaveBeenCalled();
-    expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(text('members-directory-count')).toBe('—');
   });

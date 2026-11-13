@@ -64,18 +64,11 @@ export class HealthMetricsEventsComponent {
   // Empty until the forecast reports, which renders no note rather than a premature one.
   protected readonly forecastNote = signal<string>('');
   protected readonly speakersNote = signal<string>('');
-  // `null` until Past events reports, so the badge never shows a count the section has not read.
-  protected readonly pastCount = signal<number | null>(null);
-  protected readonly orgsCount = signal<number | null>(null);
-  protected readonly geoCount = signal<number | null>(null);
   // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
-    buildHealthMetricsEventsSubNavItems(
-      { forecast: this.forecastNote(), spk: this.speakersNote() },
-      { past: this.pastCount(), orgs: this.orgsCount(), geo: this.geoCount() }
-    )
+    buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote(), spk: this.speakersNote() })
   );
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
