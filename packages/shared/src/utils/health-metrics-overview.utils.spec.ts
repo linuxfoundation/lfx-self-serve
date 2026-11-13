@@ -820,11 +820,15 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     expect(chart?.points[2]?.tip).toEqual({
       title: `Newsletter n4 · Sep 21, ${year}`,
       rows: [
-        { label: 'Open rate', value: '50%', color: lfxColors.blue[500], separated: false },
-        { label: 'Click rate', value: '6%', color: '#AD46FF', separated: false },
+        { label: 'Open rate', value: '50%', color: lfxColors.blue[500], separated: false, inline: true },
+        { label: 'Click rate', value: '6%', color: '#AD46FF', separated: false, inline: true },
       ],
     });
     expect(chart?.points[1]?.tip.rows[1]?.value).toBe('—');
+    // A click rate under 1% is not rounded down to 0%.
+    expect(chart?.points[0]?.tip.rows[1]?.value).toBe('3%');
+    const faint = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.3, 0.004)] };
+    expect(buildHealthMetricsOverviewNewsletterView(faint, 'YTD').chart?.points[0]?.tip.rows[1]?.value).toBe('<1%');
     expect(chart?.points[1]?.ariaLabel).toBe(`Newsletter n3, Aug 24, ${year}: open rate 40%, click rate —`);
     expect(chart?.ticks).toEqual([
       { label: 'Aug', xPct: '0.00' },

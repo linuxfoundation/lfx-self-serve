@@ -398,7 +398,7 @@ export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX = 28;
 /** The room the chart popover needs beside its column before it opens on the other side. */
 export const HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX = 292;
 
-/** The progress blue at 10%: the fill under the newsletter charts' open rate. */
+/** The progress blue at 10%: the fill under the Engagement newsletter performance chart's open rate. */
 export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
 /** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */

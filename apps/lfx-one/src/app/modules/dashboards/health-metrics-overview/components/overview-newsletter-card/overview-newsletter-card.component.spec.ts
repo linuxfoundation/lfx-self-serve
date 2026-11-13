@@ -106,7 +106,8 @@ describe('OverviewNewsletterCardComponent', () => {
       [...fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-chart-tip-row"]')].map((row: Element) =>
         row.textContent?.replace(/\s+/g, ' ').trim()
       )
-    ).toEqual(['Open rate37%', 'Click rate2%']);
+    ).toEqual(['Open rate: 37%', 'Click rate: 2%']);
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-chart-tip-row"] strong')?.className).toContain('font-semibold');
     expect(column.className).toContain('z-20');
 
     column.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
@@ -127,7 +128,7 @@ describe('OverviewNewsletterCardComponent', () => {
     expect(query('overview-newsletter-click-n1')).toBeNull();
     query('overview-newsletter-column-n1')?.dispatchEvent(new Event('focus'));
     fixture.detectChanges();
-    expect(text('overview-newsletter-tip-n1')).toContain('Click rate—');
+    expect(text('overview-newsletter-tip-n1')).toContain('Click rate: —');
   });
 
   it('says so in place of the chart when no newsletter in the period carries engagement data', async () => {

@@ -73,7 +73,6 @@ import type {
   HealthMetricsOverviewNewsletterChartView,
   HealthMetricsOverviewNewsletterEngagementRowView,
   HealthMetricsOverviewNewsletterPeriod,
-  HealthMetricsOverviewNewsletterPointView,
   HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewNewsletterView,
   HealthMetricsOverviewNps,
@@ -954,9 +953,10 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
     openAreaPath: first && last ? `${path(openCoords)} L${last.x.toFixed(1)} 200 L${first.x.toFixed(1)} 200 Z` : '',
     clickPath: path(points.filter((point) => point.clickY !== null).map((point): [number, number] => [point.x, point.clickY as number])),
     points: points.map((point, index) => {
-      const title = [point.send.name, point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : ''].filter(Boolean).join(' · ');
+      const parts = [point.send.name, point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : ''].filter(Boolean);
       const open = formatShare(point.open, false);
-      const click = formatShare(point.click, false);
+      // A click rate under 1% reads "<1%" rather than rounding to a misleading 0%.
+      const click = formatShare(point.click);
       return {
         key: point.send.key,
         xPct: xPct(point.x),
@@ -964,12 +964,12 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
         openYPct: ((point.openY / 200) * 100).toFixed(2),
         clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
         latest: index === points.length - 1,
-        ariaLabel: `${title.replace(' · ', ', ')}: open rate ${open}, click rate ${click}`,
+        ariaLabel: `${parts.join(', ')}: open rate ${open}, click rate ${click}`,
         tip: {
-          title,
+          title: parts.join(' · '),
           rows: [
-            { label: 'Open rate', value: open, color: HEALTH_METRICS_OVERVIEW_STROKES.progress, separated: false },
-            { label: 'Click rate', value: click, color: HEALTH_METRICS_OVERVIEW_STROKES.thisYear, separated: false },
+            { label: 'Open rate', value: open, color: HEALTH_METRICS_OVERVIEW_STROKES.progress, separated: false, inline: true },
+            { label: 'Click rate', value: click, color: HEALTH_METRICS_OVERVIEW_STROKES.thisYear, separated: false, inline: true },
           ],
         },
       };
