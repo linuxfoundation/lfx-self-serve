@@ -94,6 +94,32 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
     for (const item of items) expect(item.lines.map((line) => line.projectSlug)).toEqual([project.slug]);
   });
 
+  it('keeps the project shares of a company at 100% in every range, using the displayed rounded figures', () => {
+    for (const range of ['12mo', '6mo', '90d', 'all'] as const) {
+      const { rows } = service.getPage(req, { ...base, range });
+      for (const { participantKey, commits } of rows) {
+        const breakdown = service.getBreakdown(req, SLUG, range, participantKey);
+        const summed = breakdown.projects.reduce((sum, line) => sum + line.commits, 0);
+        const share = breakdown.projects.reduce((sum, line) => sum + line.shareOfCompanyCommits, 0);
+        expect(summed).toBe(commits);
+        expect(share).toBeCloseTo(1, 6);
+      }
+    }
+  });
+
+  it('computes the change of a company from summed current and previous commits, and has none when any project lacks a comparison', () => {
+    const { rows } = service.getPage(req, base);
+    const withChange = rows.find((row) => row.commitsChange !== null);
+    expect(withChange).toBeDefined();
+    const breakdown = service.getBreakdown(req, SLUG, '12mo', withChange!.participantKey);
+    const previous = breakdown.projects.reduce((sum, line) => sum + (line.commitsChange === null ? NaN : line.commits / (1 + line.commitsChange)), 0);
+    if (!Number.isNaN(previous)) expect(withChange!.commitsChange).toBeCloseTo(withChange!.commits / previous - 1, 1);
+    for (const row of rows) {
+      const lines = service.getBreakdown(req, SLUG, '12mo', row.participantKey).projects;
+      if (lines.some((line) => line.commitsChange === null)) expect(row.commitsChange).toBeNull();
+    }
+  });
+
   it('is deterministic for a foundation', () => {
     expect(service.getPage(req, base)).toEqual(service.getPage(req, base));
   });

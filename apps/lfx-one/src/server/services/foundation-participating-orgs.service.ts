@@ -154,25 +154,27 @@ export class FoundationParticipatingOrgsService {
       const scoped = projectSlug ? company.projects.filter((project) => project.projectSlug === projectSlug) : company.projects;
       if (scoped.length === 0) continue;
 
-      const totalCommits = Math.max(1, Math.round(company.projects.reduce((sum, project) => sum + project.commits, 0) * scale));
+      // Each project's figure is rounded once and every total, share and change below is built from those displayed values.
+      const scaledCommits = new Map(company.projects.map((project) => [project.projectSlug, Math.max(1, Math.round(project.commits * scale))]));
+      const totalCommits = [...scaledCommits.values()].reduce((sum, value) => sum + value, 0);
       const lines = company.projects
         .map((project) => ({
           projectSlug: project.projectSlug,
           name: names.get(project.projectSlug)?.name ?? project.projectSlug,
           maturity: names.get(project.projectSlug)?.maturity ?? null,
-          commits: Math.max(1, Math.round(project.commits * scale)),
+          commits: scaledCommits.get(project.projectSlug) ?? 1,
           commitsChange: range === 'all' ? null : project.commitsChange,
           contributors: project.contributors,
           contributorsChange: range === 'all' ? null : project.contributorsChange,
-          shareOfCompanyCommits: Math.min(1, Math.max(1, Math.round(project.commits * scale)) / totalCommits),
+          shareOfCompanyCommits: (scaledCommits.get(project.projectSlug) ?? 1) / totalCommits,
         }))
         .sort((a, b) => b.commits - a.commits);
 
-      const commits = scoped.reduce((sum, project) => sum + Math.max(1, Math.round(project.commits * scale)), 0);
+      const commits = scoped.reduce((sum, project) => sum + (scaledCommits.get(project.projectSlug) ?? 1), 0);
       const single = projectSlug ? scoped[0] : null;
-      const weighted =
-        scoped.reduce((sum, project) => sum + (project.commitsChange ?? 0) * project.commits, 0) / scoped.reduce((sum, project) => sum + project.commits, 0);
-      const foundationChange = Math.round(weighted * 100) / 100;
+      const foundationChange = combinedChange(
+        scoped.map((project) => ({ commits: scaledCommits.get(project.projectSlug) ?? 1, change: project.commitsChange }))
+      );
       const commitsChange = single ? single.commitsChange : foundationChange;
       const contributorsChange = single ? single.contributorsChange : company.foundationContributorsChange;
       const row: FoundationParticipatingOrg = {
@@ -193,6 +195,17 @@ export class FoundationParticipatingOrgsService {
     }
     return items;
   }
+}
+
+/**
+ * Growth of a sum of projects: current commits against the summed previous-period commits (each project's previous is its
+ * current divided by 1 + its change). Null when any project has no comparison, so a missing figure is never read as zero growth.
+ */
+function combinedChange(parts: { commits: number; change: number | null }[]): number | null {
+  if (parts.some((part) => part.change === null || part.change <= -1)) return null;
+  const current = parts.reduce((sum, part) => sum + part.commits, 0);
+  const previous = parts.reduce((sum, part) => sum + part.commits / (1 + (part.change ?? 0)), 0);
+  return previous > 0 ? Math.round((current / previous - 1) * 100) / 100 : null;
 }
 
 /** Search (name substring) and tier narrow every figure on the page; the tab and project scope are applied separately. */
