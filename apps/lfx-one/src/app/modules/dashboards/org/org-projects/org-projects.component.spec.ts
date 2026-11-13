@@ -58,6 +58,7 @@ describe('OrgProjectsComponent', () => {
           useValue: {
             pageState,
             hasPageState: computed(() => pageState() !== null),
+            employerName: signal(null),
             pageReady,
             settled,
             retrying: signal(false),
@@ -209,6 +210,7 @@ describe('OrgProjectsComponent — health label', () => {
           useValue: {
             pageState: signal(null),
             hasPageState: computed(() => false),
+            employerName: signal(null),
             pageReady: signal(true),
             settled: signal(true),
             retrying: signal(false),
