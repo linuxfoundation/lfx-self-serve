@@ -69,33 +69,41 @@
               </svg>
               <div class="absolute inset-0" role="list" aria-label="Open and click rate by newsletter">
                 @for (point of chart.points; track point.key; let index = $index) {
-                  <!-- Each newsletter's column is centred on its points; hover or focus draws a hairline and its popover. -->
+                  <!-- Each newsletter's column is centred on its points and cut off at the plot's edges; hover or focus draws a
+                       hairline through the points and opens the popover. -->
                   <div
-                    class="absolute inset-y-0 -translate-x-1/2 outline-none hover:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:bg-[linear-gradient(to_right,transparent_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%-0.5px),var(--ui-neutral-alpha-300)_calc(50%+0.5px),transparent_calc(50%+0.5px))] focus-visible:ring-2 focus-visible:ring-blue-500"
+                    class="group absolute inset-y-0 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     role="listitem"
                     tabindex="0"
                     [class.z-20]="openTipIndex() === index"
-                    [style.left.%]="point.xPct"
+                    [style.left.%]="point.columnLeftPct"
                     [style.width.%]="point.columnWidthPct"
                     [attr.aria-label]="point.ariaLabel"
                     [attr.data-testid]="'overview-newsletter-column-' + point.key"
-                    (mouseenter)="showTip(index, $event)"
-                    (focus)="showTip(index, $event)"
-                    (mouseleave)="hideTip(index)"
-                    (blur)="hideTip(index)">
+                    (mouseenter)="onColumnHover(index, $event, point.pointOffsetPct)"
+                    (focus)="onColumnFocus(index, $event, point.pointOffsetPct)"
+                    (mouseleave)="onColumnLeave(index)"
+                    (blur)="onColumnBlur(index)">
+                    <span
+                      class="pointer-events-none absolute inset-y-0 hidden w-px -translate-x-1/2 bg-[var(--ui-neutral-alpha-300)] group-hover:block group-focus-visible:block"
+                      aria-hidden="true"
+                      [style.left.%]="point.pointOffsetPct"
+                      [attr.data-testid]="'overview-newsletter-hairline-' + point.key"></span>
                     <!-- Exact px: the design's 8px points, 10px for the latest newsletter. -->
                     <span
-                      class="pointer-events-none absolute left-1/2 box-border -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
+                      class="pointer-events-none absolute box-border -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
                       [class]="point.latest ? 'h-[10px] w-[10px]' : 'h-[8px] w-[8px]'"
                       aria-hidden="true"
+                      [style.left.%]="point.pointOffsetPct"
                       [style.border-color]="strokes.progress"
                       [style.top.%]="point.openYPct"
                       [attr.data-testid]="'overview-newsletter-open-' + point.key"></span>
                     @if (point.clickYPct) {
                       <span
-                        class="pointer-events-none absolute left-1/2 box-border -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
+                        class="pointer-events-none absolute box-border -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
                         [class]="point.latest ? 'h-[10px] w-[10px]' : 'h-[8px] w-[8px]'"
                         aria-hidden="true"
+                        [style.left.%]="point.pointOffsetPct"
                         [style.border-color]="strokes.thisYear"
                         [style.top.%]="point.clickYPct"
                         [attr.data-testid]="'overview-newsletter-click-' + point.key"></span>
@@ -104,8 +112,8 @@
                       @if (open.index === index) {
                         <lfx-health-metrics-chart-tip
                           class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
-                          [class]="open.sideClass"
-                          [style.left]="open.shiftPx === null ? null : 'calc(50% + ' + open.shiftPx + 'px)'"
+                          [style.left]="open.left"
+                          [style.right]="open.right"
                           aria-hidden="true"
                           [tip]="point.tip"
                           [attr.data-testid]="'overview-newsletter-tip-' + point.key" />

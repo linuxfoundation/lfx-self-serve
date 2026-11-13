@@ -811,7 +811,12 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     expect(chart?.points.map((point) => point.key)).toEqual(['n2', 'n3', 'n4']);
     expect(chart?.points.map((point) => point.xPct)).toEqual(['0.00', '50.00', '100.00']);
     // Each newsletter owns an equal share of the plot to hover, and the latest one's points are larger.
-    expect(chart?.points.map((point) => point.columnWidthPct)).toEqual(['33.33', '33.33', '33.33']);
+    // The end columns stop at the plot's edges, so they never cover the panel beside the chart; the points stay put.
+    expect(chart?.points.map((point) => [point.columnLeftPct, point.columnWidthPct, point.pointOffsetPct])).toEqual([
+      ['0.00', '16.67', '0.00'],
+      ['33.33', '33.33', '50.00'],
+      ['83.33', '16.67', '100.00'],
+    ]);
     expect(chart?.points.map((point) => point.latest)).toEqual([false, false, true]);
     // The scale stays 0–60% while every rate is lower.
     expect(chart?.points.map((point) => point.openYPct)).toEqual(['50.00', '33.33', '16.67']);
@@ -856,7 +861,12 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
 
   it('centres a lone newsletter and has no chart when none in the period has an open rate', () => {
     const lone = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.25, 0.05)] };
-    expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]?.xPct).toBe('50.00');
+    expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]).toMatchObject({
+      xPct: '50.00',
+      columnLeftPct: '0.00',
+      columnWidthPct: '100.00',
+      pointOffsetPct: '50.00',
+    });
 
     const unrated = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, null, null)] };
     expect(buildHealthMetricsOverviewNewsletterView(unrated, 'YTD').chart).toBeNull();

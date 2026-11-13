@@ -525,8 +525,11 @@ export interface HealthMetricsOverviewCodeView {
 export interface HealthMetricsOverviewNewsletterPointView {
   key: string;
   xPct: string;
-  /** The hover column's width: an equal share of the plot, centred on the points. */
+  /** The hover column: an equal share of the plot centred on the points, cut off at the plot's edges. */
+  columnLeftPct: string;
   columnWidthPct: string;
+  /** Where the points, hairline and popover sit across the column; 50 except in a column cut off at an edge. */
+  pointOffsetPct: string;
   openYPct: string;
   /** Empty when the newsletter has no click rate, which draws no click point. */
   clickYPct: string;
@@ -543,13 +546,14 @@ export interface HealthMetricsOverviewNewsletterTickView {
   xPct: string;
 }
 
-/** Where an open chart popover sits: beside its column on either side, or shifted to stay on a screen too narrow for both. */
+/**
+ * Where an open chart popover sits, as CSS offsets inside its column: beside the point on either side, or shifted to stay
+ * on a screen too narrow for both. One of `left` and `right` is set.
+ */
 export interface HealthMetricsOverviewChartTipPlacement {
   index: number;
-  /** The side class, empty when `shiftPx` places it. */
-  sideClass: string;
-  /** The popover's left edge from the column's centre, for a screen with room on neither side. */
-  shiftPx: number | null;
+  left: string | null;
+  right: string | null;
 }
 
 /** The open and click rate lines, in a 600 × 200 viewBox drawn without keeping its aspect ratio. */

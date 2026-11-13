@@ -73,6 +73,7 @@ import type {
   HealthMetricsOverviewNewsletterChartView,
   HealthMetricsOverviewNewsletterEngagementRowView,
   HealthMetricsOverviewNewsletterPeriod,
+  HealthMetricsOverviewNewsletterPointView,
   HealthMetricsOverviewNewsletters,
   HealthMetricsOverviewNewsletterView,
   HealthMetricsOverviewNps,
@@ -960,7 +961,7 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
       return {
         key: point.send.key,
         xPct: xPct(point.x),
-        columnWidthPct: (100 / points.length).toFixed(2),
+        ...newsletterColumn((point.x / 600) * 100, points.length),
         openYPct: ((point.openY / 200) * 100).toFixed(2),
         clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
         latest: index === points.length - 1,
@@ -977,6 +978,20 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
     ticks: ticks.map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
     monthTicks: ticks.filter((tick, index) => tick.month && tick.month !== ticks[index - 1]?.month).map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
   };
+}
+
+/**
+ * A newsletter's hover column: 1/N of the plot wide and centred on its points, as designed, but cut off at the plot's
+ * edges so an end column never covers the panel beside it. The points sit `pointOffsetPct` across it.
+ */
+function newsletterColumn(
+  centrePct: number,
+  count: number
+): Pick<HealthMetricsOverviewNewsletterPointView, 'columnLeftPct' | 'columnWidthPct' | 'pointOffsetPct'> {
+  const half = 50 / count;
+  const left = Math.max(0, centrePct - half);
+  const width = Math.min(100, centrePct + half) - left;
+  return { columnLeftPct: left.toFixed(2), columnWidthPct: width.toFixed(2), pointOffsetPct: (((centrePct - left) / width) * 100).toFixed(2) };
 }
 
 /** A change with muted context after it; no change shows neither. */

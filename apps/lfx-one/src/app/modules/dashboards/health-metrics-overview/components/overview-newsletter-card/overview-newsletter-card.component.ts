@@ -40,7 +40,7 @@ import type {
   imports: [HealthMetricsChartTipComponent, OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
   templateUrl: './overview-newsletter-card.component.html',
   // Escape closes a popover however it opened, since hovering a column doesn't focus it.
-  host: { class: 'flex min-w-0 flex-col', '(document:keydown.escape)': 'tip.set(null)' },
+  host: { class: 'flex min-w-0 flex-col', '(document:keydown.escape)': 'dismissTips()' },
 })
 export class OverviewNewsletterCardComponent {
   private readonly analyticsService = inject(AnalyticsService);
@@ -56,7 +56,10 @@ export class OverviewNewsletterCardComponent {
   protected readonly areaGradientId = 'overview-newsletter-area';
   protected readonly areaFill = `url(#${this.areaGradientId})`;
   protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.newsletters;
-  protected readonly tip = signal<HealthMetricsOverviewChartTipPlacement | null>(null);
+  /** Hover and focus open a popover separately, and it stays while either remains (WCAG 1.4.13); hover shows over focus. */
+  private readonly hoverTip = signal<HealthMetricsOverviewChartTipPlacement | null>(null);
+  private readonly focusTip = signal<HealthMetricsOverviewChartTipPlacement | null>(null);
+  protected readonly tip = computed(() => this.hoverTip() ?? this.focusTip());
   protected readonly openTipIndex = computed(() => this.tip()?.index ?? null);
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewNewsletters({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewNewsletterView | null>(() => {
@@ -70,33 +73,29 @@ export class OverviewNewsletterCardComponent {
     queryParams: { project: this.projectContext.selectedFoundation()?.slug ?? null },
   }));
   private readonly plot = viewChild<ElementRef<HTMLElement>>('plot');
-  /** `null` until measured, so the server and the first paint label every newsletter. */
+  /** `null` until measured, so the first paint keeps to the month labels, which can't crowd as much. */
   private readonly plotWidthPx: Signal<number | null> = this.initPlotWidth();
   protected readonly ticks: Signal<HealthMetricsOverviewNewsletterTickView[]> = this.initTicks();
 
-  /**
-   * Opens a newsletter's popover on the right of its column, or on the left when only the left has room; a screen with
-   * room on neither side shifts it to stay inside the screen.
-   */
-  protected showTip(index: number, event: Event): void {
-    const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const centre = column.left + column.width / 2;
-    const viewport = document.documentElement.clientWidth;
-    if (viewport - centre >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) {
-      this.tip.set({ index, sideClass: 'left-[calc(50%+12px)]', shiftPx: null });
-    } else if (centre >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) {
-      this.tip.set({ index, sideClass: 'right-[calc(50%+12px)]', shiftPx: null });
-    } else {
-      const left = Math.max(
-        HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
-        viewport - HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX - HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX
-      );
-      this.tip.set({ index, sideClass: '', shiftPx: Math.round(left - centre) });
-    }
+  protected onColumnHover(index: number, event: Event, pointOffsetPct: string): void {
+    this.hoverTip.set(this.placeTip(index, event, pointOffsetPct));
   }
 
-  protected hideTip(index: number): void {
-    if (this.tip()?.index === index) this.tip.set(null);
+  protected onColumnFocus(index: number, event: Event, pointOffsetPct: string): void {
+    this.focusTip.set(this.placeTip(index, event, pointOffsetPct));
+  }
+
+  protected onColumnLeave(index: number): void {
+    if (this.hoverTip()?.index === index) this.hoverTip.set(null);
+  }
+
+  protected onColumnBlur(index: number): void {
+    if (this.focusTip()?.index === index) this.focusTip.set(null);
+  }
+
+  protected dismissTips(): void {
+    this.hoverTip.set(null);
+    this.focusTip.set(null);
   }
 
   /** Watches the plot's width while it is on the page; the server never measures it. */
@@ -111,14 +110,45 @@ export class OverviewNewsletterCardComponent {
     );
   }
 
-  /** One label per newsletter, or the first of each month when their slots get too narrow to keep them apart. */
+  /**
+   * One label per newsletter when the points are far enough apart, or else the first of each month, skipping any that
+   * would land on the label before it. Until the plot is measured it keeps to the month labels.
+   */
   private initTicks(): Signal<HealthMetricsOverviewNewsletterTickView[]> {
     return computed(() => {
       const chart = this.view()?.chart;
       if (!chart) return [];
       const width = this.plotWidthPx();
-      return width !== null && width / chart.ticks.length < HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX ? chart.monthTicks : chart.ticks;
+      if (width === null) return chart.monthTicks;
+      if (width / Math.max(1, chart.ticks.length - 1) >= HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX) return chart.ticks;
+
+      const kept: HealthMetricsOverviewNewsletterTickView[] = [];
+      for (const tick of chart.monthTicks) {
+        const previous = kept.at(-1);
+        const apartPx = previous ? ((Number(tick.xPct) - Number(previous.xPct)) / 100) * width : Infinity;
+        if (apartPx >= HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX) kept.push(tick);
+      }
+      return kept;
     });
+  }
+
+  /**
+   * Opens a newsletter's popover on the right of its points, or on the left when only the left has room; a screen with
+   * room on neither side shifts it to stay inside the screen.
+   */
+  private placeTip(index: number, event: Event, pointOffsetPct: string): HealthMetricsOverviewChartTipPlacement {
+    const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const offset = Number(pointOffsetPct);
+    const point = column.left + (column.width * offset) / 100;
+    const viewport = document.documentElement.clientWidth;
+    if (viewport - point >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { index, left: `calc(${offset}% + 12px)`, right: null };
+    if (point >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { index, left: null, right: `calc(${100 - offset}% + 12px)` };
+
+    const left = Math.max(
+      HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+      viewport - HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX - HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX
+    );
+    return { index, left: `calc(${offset}% + ${Math.round(left - point)}px)`, right: null };
   }
 }
 
