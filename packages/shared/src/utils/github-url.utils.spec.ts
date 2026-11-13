@@ -148,4 +148,19 @@ describe('parseGithubUsername', () => {
     expect(parseGithubUsername('@')).toBeNull();
     expect(parseGithubUsername('https://gitlab.com/example-org/example-repo')).toBeNull();
   });
+
+  it.each([
+    'https://notgithub.com/example-user',
+    'https://github.com.example.test/example-user',
+    'https://example.test/github.com/example-user',
+    'https://example.test/?next=https://github.com/example-user',
+    'https://[invalid/github.com/example-user',
+  ])('rejects a foreign or malformed URL even when it contains github.com: %s', (value) => {
+    expect(parseGithubUsername(value)).toBeNull();
+  });
+
+  it('accepts the GitHub hostname case-insensitively and ignores query strings and fragments', () => {
+    expect(parseGithubUsername('https://WWW.GITHUB.COM/Example-User/?tab=repositories#readme')).toBe('Example-User');
+    expect(parseGithubUsername('https://github.com/')).toBeNull();
+  });
 });

@@ -37,6 +37,8 @@ export interface OrgAllEmployeesCountedResponse {
 /** In-memory merge payload — the stored seed. Never cached, never sent. */
 export interface OrgAllEmployeesInternalResponse extends OrgAllEmployeesCountedResponse {
   rows: OrgAllEmployeeRowInternal[];
+  /** Identity enrichment failed; serve these rows/counts but never store a complete merged-directory entry. Never sent. */
+  githubUsernamesUnavailable?: true;
 }
 
 /** Per-(account, person) roster row: one time range of `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES`, or the unranged `ORG_PEOPLE_ALL`. */
@@ -75,6 +77,12 @@ export type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: str
 /** Who an off-roster person is — a former employee's ORG_PEOPLE_ALL_RANGES row or an ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS row; no counts. */
 export type OrgPeopleIdentityRow = Pick<OrgPeopleAllRow, 'PERSON_KEY' | 'LFID' | 'LF_USERNAME' | 'CDP_MEMBER_ID' | 'NAME' | 'PHOTO'>;
 
+/** Distinct historical GitHub identity linked to a person within one account; independent of activity filters. */
+export interface OrgPersonGithubIdentityRow {
+  PERSON_KEY: string;
+  GITHUB_USERNAME: string;
+}
+
 /** One person's code in a range, project scope and organization scope, summed over their People → Contributors project rows (lfx-self-serve#4735). */
 export interface OrgPersonLiveCode {
   /** Their first project row, whose identity columns stand in when no roster or unclassified row names them. */
@@ -84,8 +92,6 @@ export interface OrgPersonLiveCode {
   codeActivitiesCount: number;
   /** Foundations of the projects they have code in, sorted. */
   foundationIds: string[];
-  /** Distinct GitHub handles linked to that code, parsed and sorted (lfx-self-serve#5687); empty when none is linked. */
-  githubUsernames: string[];
 }
 
 /** The live code of a range, project scope and organization scope, per person key, with the labels of its foundations. */

@@ -96,6 +96,14 @@ export function parseGithubUsername(value: string | null | undefined): string | 
   if (!trimmed.includes('/')) {
     return trimmed.replace(/^@/, '') || null;
   }
-  const match = trimmed.match(/github\.com\/([^/?#]+)/i);
-  return match?.[1] ?? null;
+  let parsed: URL;
+  try {
+    parsed = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+  if (!GITHUB_HOSTS.has(parsed.hostname.toLowerCase())) {
+    return null;
+  }
+  return parsed.pathname.split('/').filter(Boolean)[0] ?? null;
 }

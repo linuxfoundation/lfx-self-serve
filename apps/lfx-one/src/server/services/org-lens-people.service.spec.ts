@@ -1831,6 +1831,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
           'people-contributors:v6:30d:all:all',
           'people-contributors:v6:all:all:all',
           'people-contributors:v6:all:lf:all',
+          'people-github-identities:v1',
           'people-former:v4:30d:all',
           'people-former:v4:all:all',
           'people-unclassified:v2:30d:all',
@@ -1954,7 +1955,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(row?.githubUsernames?.map((handle) => handle.toLowerCase())).toEqual(['example-gh-user']);
     });
 
-    it('leaves githubUsernames off the row of someone without a linked handle or without code in the range', async () => {
+    it('leaves githubUsernames off the row of someone without a linked handle in retained history', async () => {
       addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
       addRangeRow(ACCOUNT, 'person-events', '365d', false, 'events', 'Events Only', 'events@company.example', 0);
       database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1 WHERE PERSON_KEY = 'person-events'`);
@@ -1977,6 +1978,100 @@ describe('OrgLensPeopleService person-key company emails', () => {
         ['person-former', ['example-gh-former']],
         ['cdp:member-seven', ['example-gh-unclassified']],
       ]);
+    });
+
+    it.each(['all', '730d'] as const)('keeps historical handles on recent event attendees in %s without adding people or foreign identities', async (range) => {
+      addRangeRow(ACCOUNT, personKey, range, false, 'events', 'Event Person', 'events@company.example', 0);
+      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1 WHERE PERSON_KEY = '${personKey}'`);
+      addCodeDay(ACCOUNT, personKey, 'all', { commits: 2, merged: 1, code: 3 });
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET ACTIVITY_DATE = '2020-01-01'`);
+      setGithubUsername(personKey, 'historical-event-handle');
+      addDailyCode('account-other', personKey, '2020-01-01', 'foundation-other', 'Foundation Other');
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = 'foreign-handle' WHERE ACCOUNT_ID = 'account-other'`);
+      addDailyCode(ACCOUNT, 'not-on-selected-roster', '2020-01-01', 'foundation-two', 'Foundation Two');
+      setGithubUsername('not-on-selected-roster', 'excluded-handle');
+
+      const cold = await service.getAllEmployees(ACCOUNT, range, FILTERS);
+      expect(cold.rows.map((row) => [row.personKey, row.githubUsernames])).toEqual([[personKey, ['historical-event-handle']]]);
+      expect(cold.rows[0]?.commitsCount).toBe(range === 'all' ? 2 : 0);
+      expect(cold.rows[0]?.eventsCount).toBe(1);
+      const reads = execute.mock.calls.length;
+      expect(await service.getAllEmployees(ACCOUNT, range, FILTERS)).toEqual(cold);
+      expect(execute).toHaveBeenCalledTimes(reads);
+      const identityReads = (execute.mock.calls as [string, string[]][]).filter(([query]) => query.includes('SELECT DISTINCT person_key, github_username'));
+      expect(identityReads).toHaveLength(1);
+      expect(identityReads[0]?.[1]).toEqual([ACCOUNT]);
+    });
+
+    it('keeps linked handles when project and organization scopes exclude their code, without counting that code', async () => {
+      addRangeRow(ACCOUNT, personKey, '730d', false, 'events', 'Event Person', null, 0, { projectScope: 'lf' });
+      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1 WHERE PERSON_KEY = '${personKey}'`);
+      addCodeDay(ACCOUNT, personKey, '30d', { commits: 4, merged: 2, code: 5 }, undefined, 0);
+      setGithubUsername(personKey, 'non-lf-identity');
+      database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_CODE_ACTIVITIES INTEGER DEFAULT 0');
+      database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_SCOPE_COMMITS INTEGER DEFAULT 0');
+      database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_SCOPE_MERGED_COMMITS INTEGER DEFAULT 0');
+      resolveOrgScope.mockImplementation(async (_snowflake: unknown, _account: string, scope: string) => scope);
+
+      const result = await service.getAllEmployees(ACCOUNT, '730d', { ...FILTERS, projectScope: 'lf' }, 'include', 'insights');
+      expect(result.rows.map((row) => [row.personKey, row.commitsCount, row.githubUsernames])).toEqual([[personKey, 0, ['non-lf-identity']]]);
+      expect(result.stats.codeContributors).toBe(0);
+    });
+
+    it.each(['all', '730d'] as const)('preserves both same-project daily identities in %s without duplicating code counts, cold and warm', async (range) => {
+      addRangeRow(ACCOUNT, personKey, range, false, 'linked', 'Linked Person', null, 3);
+      setGithubUsername(personKey, 'alpha-handle');
+      addCodeDay(ACCOUNT, personKey, '30d', { commits: 2, merged: 1, code: 4 });
+      database
+        .prepare('UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = ?, CDP_MEMBER_ID = ? WHERE ACTIVITY_DATE = ?')
+        .run('zeta-handle', 'member-second-identity', daysAgo(RANGE_DAY['30d']));
+
+      const cold = await service.getAllEmployees(ACCOUNT, range, FILTERS);
+      expect(cold.rows.map((row) => [row.githubUsernames, row.commitsCount, row.codeActivitiesCount])).toEqual([[['alpha-handle', 'zeta-handle'], 5, 7]]);
+      expect(cold.stats.codeContributors).toBe(1);
+      const contributors = new OrgPeopleContributorsService();
+      const projects = await contributors.readPersonProjectRows(ACCOUNT, range, 'all', 'all');
+      expect(projects).toHaveLength(1);
+      expect(projects[0]?.COMMITS).toBe(5);
+      const reads = execute.mock.calls.length;
+      expect(await service.getAllEmployees(ACCOUNT, range, FILTERS)).toEqual(cold);
+      expect(execute).toHaveBeenCalledTimes(reads);
+    });
+
+    it('rejects malformed cached identity rows and refetches only the account-bound identities', async () => {
+      addRangeRow(ACCOUNT, personKey, '730d', false, 'linked', 'Linked Person', null, 1);
+      setGithubUsername(personKey, 'verified-handle');
+      cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v1')!, JSON.stringify([{ PERSON_KEY: personKey, GITHUB_USERNAME: ['invalid'] }]));
+      expect((await service.getAllEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['verified-handle']);
+    });
+
+    it('preserves current and former rows on an identity outage, without caching failure, and recovers handles', async () => {
+      addRangeRow(ACCOUNT, personKey, '730d', false, 'linked', 'Linked Person', null, 1);
+      addRangeRow(ACCOUNT, 'person-former', '730d', true, 'former', 'Former Person', null, 2);
+      setGithubUsername(personKey, 'current-handle');
+      setGithubUsername('person-former', 'former-handle');
+      const warehouse = execute.getMockImplementation()!;
+      execute.mockImplementation(async (query: string, binds: string[]) => {
+        if (query.includes('SELECT DISTINCT person_key, github_username')) throw new Error('identity lookup unavailable');
+        return warehouse(query, binds);
+      });
+      const internal = await service.getAllEmployeesInternal(ACCOUNT, '730d', 'all');
+      expect(internal.githubUsernamesUnavailable).toBe(true);
+      const current = await service.getAllEmployees(ACCOUNT, '730d', FILTERS);
+      const former = await service.getFormerEmployees(ACCOUNT, '730d', FILTERS);
+      expect(current.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([[personKey, 1]]);
+      expect(former.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-former', 2]]);
+      for (const result of [current, former]) {
+        expect(result).not.toHaveProperty('githubUsernamesUnavailable');
+        expect(result.rows[0]).not.toHaveProperty('githubUsernames');
+      }
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v1')!)).toBe(false);
+      execute.mockImplementation(warehouse);
+      const recovered = await service.getAllEmployeesInternal(ACCOUNT, '730d', 'all');
+      expect(recovered).not.toHaveProperty('githubUsernamesUnavailable');
+      expect(recovered.rows[0]?.githubUsernames).toEqual(['current-handle']);
+      expect((await service.getFormerEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['former-handle']);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v1')!)).toBe(true);
     });
   });
 
@@ -2577,6 +2672,7 @@ function liveCodeRow(personKey: string, foundationId: string, commits: number, m
 function mockWarehouse(roster: Record<string, unknown>[], foundations: Record<string, unknown>[], live: Record<string, unknown>[]): void {
   execute.mockImplementation(async (query: string) => {
     if (query.includes('GROUP BY person_key, project_id')) return { rows: live };
+    if (query.includes('SELECT DISTINCT person_key, github_username')) return { rows: [] };
     return { rows: query.includes('ORDER BY NAME') ? roster : foundations };
   });
 }
@@ -2608,7 +2704,7 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
 
     const wire = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
 
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(4);
     expect(wire.rows).toHaveLength(1);
     expect(wire.rows[0]).not.toHaveProperty('emails');
     expect(wire.rows[0]).not.toHaveProperty('mergedFrom');
@@ -2616,7 +2712,7 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
 
     // The internal accessor serves the same cached raw rows; merge-only fields survive for the live merge.
     const internal = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(4);
     expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
   });
 });
@@ -2682,7 +2778,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // fixes and a decode must not perturb.
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(4);
     // Tiles are counted over the projected rows, so a cache hit recomputes the same numbers.
     expect((await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include')).stats).toEqual({
       activeInOss: 2,
@@ -2691,7 +2787,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
       eventAttendees: 1,
       trainees: 1,
     });
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(4);
     // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it — the
     // column is stored verbatim, so a decode that normalized it would show up here.
     expect(fromHit.rows.map((row) => row.engagedFoundationIds)).toEqual([['foundation-one', 'foundation-two'], ['foundation-one']]);
@@ -2748,8 +2844,8 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
-    // The roster entry and the live code entry.
-    expect(cacheValues.size).toBe(2);
+    // The roster, live code and historical GitHub identity entries.
+    expect(cacheValues.size).toBe(3);
   });
 
   it('treats a pre-compaction cached roster as a miss rather than decoding it', async () => {

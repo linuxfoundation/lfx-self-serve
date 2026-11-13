@@ -257,6 +257,8 @@ export class OrgPeopleDirectoryService {
    * list the former ones as current for the whole TTL. A ranged request whose organization scope cannot be resolved
    * is served the live sources the same way, uncached and outside the coalesced entry: no stored code counts are read
    * or cached under a guessed scope.
+   * An identity-enrichment outage keeps all eligible stored rows/counts but also skips the directory cache, so
+   * the next request can recover missing search handles rather than reusing an incomplete entry.
    */
   public async getLive(
     req: Request,
@@ -378,7 +380,7 @@ export class OrgPeopleDirectoryService {
     }
 
     const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
-    return { directory, complete: stored !== null && formerUsernames !== null };
+    return { directory, complete: stored !== null && !stored.githubUsernamesUnavailable && formerUsernames !== null };
   }
 
   /**

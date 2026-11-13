@@ -128,7 +128,7 @@ export class OrgPeopleContributorsService {
    * (lfx-self-serve#4735), so both count the same people at any time of day.
    * `people-contributors:v6:{timeRange}:{projectScope}:{orgScope}` (lfx-self-serve#4482, lfx-self-serve-ops#1219): the
    * rows no longer carry the declared-maintainer flags, so a `v4` entry must miss. `v6` (lfx-self-serve#5687): rows
-   * carry `GITHUB_USERNAME`, which All Employees search reads, so a `v5` entry must miss. The commit scope, metric,
+   * carry `GITHUB_USERNAME`, so a `v5` entry must miss. All Employees reads its search identities separately. The commit scope, metric,
    * employment and team members only pick after the read, so they share the entry; the organization scope picks the
    * columns read.
    */

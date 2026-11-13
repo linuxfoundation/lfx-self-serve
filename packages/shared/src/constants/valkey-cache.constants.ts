@@ -59,9 +59,10 @@ export const VALKEY_CACHE = {
    * `v7` (#4401): rows carry `keyContactRoles`. The shape guard already rejects a `v6` entry, but sharing
    * one key space across a rolling deploy would have old and new pods each reject and overwrite the
    * other's entry, so the directory mostly misses until the rollout ends. `v8` (#5687): rows carry
-   * `githubUsernames` for All Employees search, bumped for the same rolling-deploy reason.
+   * `githubUsernames` for All Employees search, bumped for the same rolling-deploy reason. `v9` (#5687): handles
+   * come from retained account history, not just selected-window code; old entries must not hide those identities.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v8',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v9',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -386,9 +387,9 @@ export const VALKEY_CACHE = {
     // 4.3 MiB × 1.25 rounds up to 6 MiB. `v6` adds one mostly-absent `isFormer` cell per row (~7 bytes), well
     // inside the headroom. `v7` (#4401) adds a short, usually-empty `keyContactRoles` array per row —
     // only the minority of people holding a key-contact role carry any — likewise inside it. `v8` (#5687)
-    // adds a `githubUsernames` array, present only on rows with code in the window (one or two short
-    // handles), likewise inside it. The cap is keyed by namespace, so it has to move with each bump or
-    // large orgs drop to the 1 MiB default.
-    'org-people-dir:v8': 6 * 1_048_576,
+    // adds a `githubUsernames` array. `v9` enriches eligible rows from retained identity history rather than
+    // only in-window code. The existing cap carries over unmeasured; oversized entries skip storage safely.
+    // The cap is keyed by namespace, so it has to move with each bump or large orgs drop to the 1 MiB default.
+    'org-people-dir:v9': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

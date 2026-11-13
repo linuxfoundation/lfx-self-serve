@@ -25,6 +25,7 @@ import type {
   OrgPeopleIdentityRow,
   OrgPeopleLiveCode,
   OrgPersonLiveCode,
+  OrgPersonGithubIdentityRow,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
   OrgAllEmployeeEvent,
@@ -246,16 +247,19 @@ export class OrgLensPeopleService {
     projectScope: OrgProjectScope,
     orgScope: OrgScopeFilter = 'all'
   ): Promise<OrgAllEmployeesInternalResponse> {
-    const [raw, liveCode] = await Promise.all([
+    const [raw, liveCode, githubUsernames] = await Promise.all([
       this.readRosterRaw(accountId, range, projectScope),
       range ? this.readLiveCode(accountId, range, projectScope, orgScope) : null,
+      range ? this.readGithubUsernames(accountId) : null,
     ]);
 
     const rows = raw.rowsRaw.map((row) => this.mapEmployeeRow(row));
+    const keptRows = liveCode ? rows.flatMap((row) => withLiveCode(row, liveCode.people.get(row.personKey)) ?? []) : rows;
     return {
       accountId,
-      rows: liveCode ? rows.flatMap((row) => withLiveCode(row, liveCode.people.get(row.personKey)) ?? []) : rows,
+      rows: githubUsernames ? keptRows.map((row) => ({ ...row, githubUsernames: githubUsernames.get(row.personKey) ?? [] })) : keptRows,
       foundations: raw.foundationRaw.map((row) => ({ foundationId: row.FOUNDATION_ID, foundationName: row.FOUNDATION_NAME })),
+      ...(range && githubUsernames === null ? { githubUsernamesUnavailable: true as const } : {}),
     };
   }
 
@@ -285,12 +289,13 @@ export class OrgLensPeopleService {
     orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
   ): Promise<OrgAllEmployeesResponse> {
     const scope = await this.resolveOrgScope(accountId, orgScope);
-    const [former, unclassified, roster, liveCode, teamMemberKeys] = await Promise.all([
+    const [former, unclassified, roster, liveCode, teamMemberKeys, githubUsernames] = await Promise.all([
       this.getFormerIdentities(accountId, range, filters.projectScope),
       this.getUnclassifiedIdentities(accountId, range, filters.projectScope),
       this.readRosterRaw(accountId, range, filters.projectScope),
       this.readLiveCode(accountId, range, filters.projectScope, scope),
       this.getTeamMemberPersonKeys(accountId, teamMembers),
+      this.readGithubUsernames(accountId),
     ]);
     const offRosterRow = (identity: OrgPeopleIdentityRow, code: OrgPersonLiveCode): OrgAllEmployeeRowInternal => ({
       ...this.mapEmployeeRow({
@@ -309,7 +314,7 @@ export class OrgLensPeopleService {
         COURSES_COUNT: 0,
         ENGAGED_FOUNDATION_IDS: code.foundationIds,
       }),
-      githubUsernames: code.githubUsernames,
+      githubUsernames: githubUsernames?.get(identity.PERSON_KEY) ?? [],
     });
     const formerRows = former.flatMap((identity) => {
       const code = liveCode.people.get(identity.PERSON_KEY);
@@ -923,6 +928,51 @@ export class OrgLensPeopleService {
    */
   private async readLiveCode(accountId: string, range: OrgLensTimeRange, projectScope: OrgProjectScope, orgScope: OrgScopeFilter): Promise<OrgPeopleLiveCode> {
     return sumLiveCode(await this.contributorsService.readPersonProjectRows(accountId, range, projectScope, orgScope));
+  }
+
+  /**
+   * Identity enrichment only (lfx-self-serve#5687): distinct retained historical handles at this account, not
+   * code activity in the selected window/scopes. Callers attach them only to already eligible People rows.
+   * Read before person/project MAX aggregation so multiple linked identities on different days survive.
+   */
+  private async readGithubUsernames(accountId: string): Promise<Map<string, string[]> | null> {
+    const rows = await withOrgCache(
+      accountId,
+      'people-github-identities:v1',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        const result = await this.snowflakeService.execute<OrgPersonGithubIdentityRow>(
+          `SELECT DISTINCT person_key, github_username
+           FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_CONTRIBUTORS_DAILY
+           WHERE account_id = ? AND github_username IS NOT NULL
+           ORDER BY person_key, github_username`,
+          [accountId]
+        );
+        return result.rows;
+      },
+      (value) =>
+        Array.isArray(value) &&
+        value.every((row) => row !== null && typeof row === 'object' && typeof row.PERSON_KEY === 'string' && typeof row.GITHUB_USERNAME === 'string')
+    ).catch((error: unknown) => {
+      // Catch outside the fetcher: failed identity reads must not become successful empty cache entries.
+      logger.warning(undefined, 'get_org_people_github_identities', 'GitHub identity enrichment failed; serving eligible rows without handles', {
+        org_uid: accountId,
+        err: error,
+      });
+      return null;
+    });
+    if (rows === null) return null;
+    const usernames = new Map<string, string[]>();
+    for (const row of rows) {
+      const handle = parseGithubUsername(row.GITHUB_USERNAME);
+      // A value still containing @ is a masked warehouse email, not a GitHub handle.
+      if (!handle || handle.includes('@')) continue;
+      const handles = usernames.get(row.PERSON_KEY) ?? [];
+      if (!handles.some((known) => known.toLowerCase() === handle.toLowerCase())) handles.push(handle);
+      usernames.set(row.PERSON_KEY, handles);
+    }
+    for (const handles of usernames.values()) handles.sort();
+    return usernames;
   }
 
   /**
@@ -1631,8 +1681,7 @@ function offRosterDisplayName(row: OrgPeopleIdentityRow): string | null {
 /**
  * Sums People → Contributors (person, project) rows per person (lfx-self-serve#4735): each row credits a commit to one
  * project in the scope, so the sums are that tab's row; the foundations are those of the projects, as its Foundations
- * filter reads them. The GitHub handles are the parsed, case-insensitively distinct `GITHUB_USERNAME`s of those rows
- * (lfx-self-serve#5687); a value still holding `@` after parsing is the warehouse's masked email, not a handle.
+ * filter reads them. Search identities are read separately, without activity filtering or lossy project aggregation.
  */
 function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiveCode {
   const people = new Map<string, OrgPersonLiveCode>();
@@ -1640,7 +1689,7 @@ function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiv
   for (const row of rows) {
     let person = people.get(row.PERSON_KEY);
     if (!person) {
-      person = { identity: row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0, foundationIds: [], githubUsernames: [] };
+      person = { identity: row, commitsCount: 0, mergedCommitsCount: 0, codeActivitiesCount: 0, foundationIds: [] };
       people.set(row.PERSON_KEY, person);
     }
     person.commitsCount += row.COMMITS ?? 0;
@@ -1650,14 +1699,9 @@ function sumLiveCode(rows: readonly ContributorPersonProjectRow[]): OrgPeopleLiv
       if (!person.foundationIds.includes(row.FOUNDATION_ID)) person.foundationIds.push(row.FOUNDATION_ID);
       if (row.FOUNDATION_NAME) foundationNames.set(row.FOUNDATION_ID, row.FOUNDATION_NAME);
     }
-    const handle = parseGithubUsername(row.GITHUB_USERNAME);
-    if (handle && !handle.includes('@') && !person.githubUsernames.some((known) => known.toLowerCase() === handle.toLowerCase())) {
-      person.githubUsernames.push(handle);
-    }
   }
   for (const person of people.values()) {
     person.foundationIds.sort();
-    person.githubUsernames.sort();
   }
   return { people, foundationNames };
 }
@@ -1678,7 +1722,6 @@ function withLiveCode(row: OrgAllEmployeeRowInternal, code: OrgPersonLiveCode | 
     mergedCommitsCount: code?.mergedCommitsCount ?? 0,
     codeActivitiesCount: code?.codeActivitiesCount ?? 0,
     engagedFoundationIds: [...new Set([...row.engagedFoundationIds, ...(code?.foundationIds ?? [])])].sort(),
-    githubUsernames: code?.githubUsernames ?? [],
   };
 }
 

@@ -123,7 +123,7 @@ export interface OrgAllEmployeeRow {
    */
   lfUsername: string | null;
   /**
-   * GitHub usernames linked to the person's code in the request's range and scopes (lfx-self-serve#5687) — not the LF
+   * GitHub usernames linked to the person's code in the account's retained history, independent of activity filters (lfx-self-serve#5687) — not the LF
    * username, which is their Linux Foundation account. Searchable only, never shown. Absent when they have none.
    */
   githubUsernames?: string[];

@@ -1084,7 +1084,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
 
     describe('searching by name order and GitHub username (lfx-self-serve#5687)', () => {
       const search = async (term: string): Promise<string[]> => {
-        (fixture.componentInstance as unknown as { searchTerm: WritableSignal<string> }).searchTerm.set(term);
+        const input = el().querySelector<HTMLInputElement>('[data-test="org-people-all-employees-search-input"]');
+        if (!input) throw new Error('All Employees search input is missing');
+        input.value = term;
+        input.dispatchEvent(new Event('input'));
         await settle();
         return rowKeys().sort();
       };
@@ -1126,8 +1129,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       });
 
       it('still applies the other filters to a GitHub username match', async () => {
-        const component = fixture.componentInstance as unknown as { filterForm: FormGroup<{ activity: FormControl<string> }> };
-        component.filterForm.controls.activity.setValue('code');
+        fixture.componentInstance['filterForm'].controls.activity.setValue('code');
 
         expect(await search('example-gh-user')).toEqual([]);
       });
