@@ -171,7 +171,7 @@
                     <i class="fa-light fa-calendar text-xl"></i>
                   </div>
                   <div class="flex flex-col gap-0.5">
-                    @if (fpUpcomingCountLoading()) {
+                    @if (fpUpcomingLoading()) {
                       <p class="text-xl font-medium text-gray-400">&mdash;</p>
                     } @else {
                       <p class="text-xl font-medium text-gray-900">{{ fpUpcomingCount() }}</p>
@@ -254,6 +254,7 @@
             [projectFilter]="projectFilter()"
             [showRollupFilters]="canShowCalendarView()"
             [rollupProjectOptions]="rollupProjectOptions()"
+            [rollupProjectsPlaceholder]="rollupProjectsPlaceholder()"
             [groupOptions]="groupOptions()"
             [groupTypeOptions]="groupTypeOptions()"
             [rollupProjectsFilter]="rollupProjectsFilter()"
@@ -343,6 +344,16 @@
             </div>
           }
         </div>
+      } @else if (showRootOnlyHint() && !isFiltered() && (timeFilter() === 'upcoming' ? upcomingMeetings().length === 0 : pastMeetings().length === 0)) {
+        <lfx-empty-state
+          icon="fa-light fa-folder-tree"
+          [title]="rootOnlyEmptyTitle()"
+          subtitle="Its sub-projects may have meetings. Pick them in the project filter, or show all projects."
+          ctaLabel="Show all projects"
+          ctaIcon="fa-light fa-folder-tree"
+          (ctaClick)="showAllRollupProjects()"
+          data-testid="meetings-empty-state-root-only">
+        </lfx-empty-state>
       } @else if (upcomingMeetings().length === 0 && timeFilter() === 'upcoming' && !isFiltered()) {
         <lfx-empty-state
           icon="fa-light fa-calendar"

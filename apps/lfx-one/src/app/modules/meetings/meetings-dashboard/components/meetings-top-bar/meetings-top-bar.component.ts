@@ -41,6 +41,8 @@ export class MeetingsTopBarComponent {
   // Roll-up filters (foundation/project lens): the projects in the tree, their groups and group types.
   public readonly showRollupFilters = input<boolean>(false);
   public readonly rollupProjectOptions = input<{ label: string; value: string }[]>([]);
+  // Shown when no project is checked, which is the default view: only the root's own meetings.
+  public readonly rollupProjectsPlaceholder = input<string>('All projects');
   public readonly groupOptions = input<{ label: string; value: string }[]>([]);
   public readonly groupTypeOptions = input<{ label: string; value: string }[]>([]);
   public readonly rollupProjectsFilter = input<string[]>([]);

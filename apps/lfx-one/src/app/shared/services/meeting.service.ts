@@ -35,6 +35,8 @@ import {
   MeetingJoinURL,
   MeetingProjectQueryOptions,
   MeetingRollupFilterOptions,
+  MeetingRollupProjectsPreference,
+  MeetingRollupProjectsPreferenceRequest,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
@@ -204,6 +206,36 @@ export class MeetingService {
       catchError((error) => {
         console.error('Failed to load meeting roll-up filter options:', error);
         return of({ projects: [], groups: [], complete: false });
+      })
+    );
+  }
+
+  /**
+   * The signed-in user's saved project selection for a roll-up root: `null` when nothing is saved (or it
+   * cannot be read), an empty list for a saved choice of all projects.
+   */
+  public getRollupProjectsPreference(rootUid: string): Observable<string[] | null> {
+    const params = new HttpParams().set('root_project_uid', rootUid);
+    return this.http.get<MeetingRollupProjectsPreference>('/api/meetings/rollup-projects', { params }).pipe(
+      map((response) => response.project_uids),
+      catchError((error) => {
+        console.error('Failed to load the saved meeting project selection:', error);
+        return of(null);
+      })
+    );
+  }
+
+  /**
+   * Saves the signed-in user's project selection for a roll-up root (empty = all projects). Emits whether
+   * it was saved; a failure is logged and reported as `false` rather than thrown, so a save queue keeps going.
+   */
+  public saveRollupProjectsPreference(rootUid: string, projectUids: string[]): Observable<boolean> {
+    const body: MeetingRollupProjectsPreferenceRequest = { root_project_uid: rootUid, project_uids: projectUids };
+    return this.http.put<MeetingRollupProjectsPreference>('/api/meetings/rollup-projects', body).pipe(
+      map(() => true),
+      catchError((error) => {
+        console.error('Failed to save the meeting project selection:', error);
+        return of(false);
       })
     );
   }
@@ -1073,6 +1105,8 @@ export class MeetingService {
     let params = new HttpParams().set('root_project_uid', uid);
     if (options.projectUids?.length) {
       params = params.set('project_uids', options.projectUids.join(','));
+    } else if (options.rootOnly) {
+      params = params.set('project_uids', uid);
     }
     if (options.committeeUid) {
       params = params.set('committee_uid', options.committeeUid);

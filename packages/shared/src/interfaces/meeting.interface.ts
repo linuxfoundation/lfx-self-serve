@@ -2465,6 +2465,8 @@ export interface MeetingProjectQueryOptions {
   pageSize?: number;
   /** With `includeSubProjects`: limit the roll-up to these project UIDs (each must be in the tree). */
   projectUids?: string[];
+  /** With `includeSubProjects` and no `projectUids`: only the root's own meetings, the dashboard's default view. */
+  rootOnly?: boolean;
   /** With `includeSubProjects`: only meetings of this group (committee UID). */
   committeeUid?: string | null;
   /** With `includeSubProjects`: only meetings of groups with this category. */
@@ -2505,4 +2507,19 @@ export interface MeetingRollupFilterOptions {
    * loaded. Only then does checking every listed project mean "all projects"; otherwise it stays a subset.
    */
   complete: boolean;
+}
+
+/**
+ * A user's saved project selection for one roll-up root (GH-5566).
+ * @description `null` when nothing is saved, so the page shows only the root's own meetings; an empty
+ * list is a saved choice of all projects.
+ */
+export interface MeetingRollupProjectsPreference {
+  project_uids: string[] | null;
+}
+
+/** Saves a user's project selection for one roll-up root; an empty list records all projects. */
+export interface MeetingRollupProjectsPreferenceRequest {
+  root_project_uid: string;
+  project_uids: string[];
 }
