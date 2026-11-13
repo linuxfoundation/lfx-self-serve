@@ -426,8 +426,32 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 
     const response = (nextError(next) as MicroserviceError).toResponse();
     expect(response['upstreamCode']).toBe('campaign_account_mismatch');
-    expect(response['error']).toContain('created under more than one ad account');
+    expect(response['error']).toContain('not all created under one ad account');
     expect(JSON.stringify(response)).not.toContain('24447438160');
+  });
+
+  // The same 409 comes back when the project's own connection is bound to one account and its
+  // campaigns were created under another, so the sentence must not claim there are several accounts.
+  it('answers a mismatch on the connection account with a sentence that covers it', async () => {
+    flag(true);
+    connected();
+    svcGoogle.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(
+        409,
+        'Conflict',
+        { reason: 'campaign_account_mismatch', message: 'campaign 24447438160 recorded under 2222222222' },
+        'LFX_V2_CAMPAIGN_SERVICE',
+        '/p'
+      )
+    );
+    const next = vi.fn();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
+
+    const response = (nextError(next) as MicroserviceError).toResponse();
+    expect(response['upstreamCode']).toBe('campaign_account_mismatch');
+    expect(response['error']).toContain('not under the account being monitored');
+    expect(JSON.stringify(response)).not.toContain('2222222222');
   });
 
   /**

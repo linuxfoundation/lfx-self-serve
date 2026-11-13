@@ -519,7 +519,7 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
   const reason = statusCode === 409 ? (error.errorBody as { reason?: unknown } | undefined)?.reason : undefined;
   const message =
     reason === 'campaign_account_mismatch'
-      ? `This project's ${platformLabel} campaigns were created under more than one ad account, or one of them does not record its account, so there is no single account to monitor.`
+      ? `This project's ${platformLabel} campaigns were not all created under one ad account (or not under the account being monitored), or one of them does not record its account, so the monitor cannot read them together.`
       : monitorErrorMessage(statusCode, platformLabel);
   return new MicroserviceError(message, statusCode, getCodeForStatus(statusCode), {
     operation,
