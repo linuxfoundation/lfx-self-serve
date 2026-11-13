@@ -49,7 +49,7 @@ interface Harness {
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
   listUpstreamFailed: WritableSignal<boolean>;
-  claOnlyPending: WritableSignal<boolean>;
+  selectionUndecided: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
   /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
@@ -89,7 +89,7 @@ function setup(): Harness {
   const listLoaded = signal(false);
   const listLoading = signal(false);
   const listUpstreamFailed = signal(false);
-  const claOnlyPending = signal(false);
+  const selectionUndecided = signal(false);
   const listGeneration = signal(0);
   const startListFetch = (): number => {
     listGeneration.update((g) => g + 1);
@@ -149,7 +149,7 @@ function setup(): Harness {
           loaded: listLoaded,
           loading: listLoading,
           upstreamFailed: listUpstreamFailed,
-          claOnlyPending,
+          selectionUndecided,
           generation: listGeneration,
           firstPageLandedGeneration: firstPageLanded,
           refreshList,
@@ -181,7 +181,7 @@ function setup(): Harness {
     listLoaded,
     listLoading,
     listUpstreamFailed,
-    claOnlyPending,
+    selectionUndecided,
     grantsLoading,
     refreshList,
     startListFetch,
@@ -849,7 +849,7 @@ describe('OrgLensEmptyStateService — a selection the CLA-only rows have not cl
     h.hasOrgSelectorAccess.set(true);
     h.writerSet.set(new Set([HELD]));
     h.listLoaded.set(true);
-    h.claOnlyPending.set(true);
+    h.selectionUndecided.set(true);
     h.selectedAccount.set(account(OTHER));
   });
 
@@ -859,7 +859,7 @@ describe('OrgLensEmptyStateService — a selection the CLA-only rows have not cl
     expect(h.service.pageState()).toBeNull();
 
     h.claOnlyUids.set(new Set([OTHER]));
-    h.claOnlyPending.set(false);
+    h.selectionUndecided.set(false);
 
     expect(h.service.pageReady()).toBe(true);
     expect(h.service.pageState()).toBeNull();
@@ -868,7 +868,7 @@ describe('OrgLensEmptyStateService — a selection the CLA-only rows have not cl
   it('holds the page until the rows answer when the selection turns out not to be CLA-only', () => {
     expect(h.service.pageReady()).toBe(false);
 
-    h.claOnlyPending.set(false);
+    h.selectionUndecided.set(false);
 
     expect(h.service.pageReady()).toBe(true);
   });
@@ -887,7 +887,7 @@ describe('OrgLensEmptyStateService — a selection the CLA-only rows have not cl
     expect(h.service.pageState()).toBeNull();
 
     h.claOnlyUids.set(new Set([OTHER]));
-    h.claOnlyPending.set(false);
+    h.selectionUndecided.set(false);
     TestBed.tick();
 
     expect(h.readCheck).not.toHaveBeenCalled();
@@ -900,11 +900,21 @@ describe('OrgLensEmptyStateService — a selection the CLA-only rows have not cl
     TestBed.tick();
     expect(h.readCheck).not.toHaveBeenCalled();
 
-    h.claOnlyPending.set(false);
+    h.selectionUndecided.set(false);
     TestBed.tick();
 
     expect(h.readCheck).toHaveBeenCalledWith(OTHER);
     h.readAnswers[0].next(false);
     expect(h.service.pageState()).toBe('contractor-no-grant');
+  });
+
+  it('holds a contractor on the skeleton before the first list page lands, and asks the read gate nothing', () => {
+    h.listLoaded.set(false);
+    h.isContractor.set(true);
+    TestBed.tick();
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
   });
 });

@@ -102,13 +102,17 @@ export class OrgLensEmptyStateService {
   });
 
   private readonly selectionAwaitsClaOnlyRows: Signal<boolean> = computed(() => {
-    if (!this.orgNavigation.claOnlyPending()) {
+    if (!this.orgNavigation.selectionUndecided()) {
       return false;
     }
     const uid = this.accountContext.selectedAccount().uid;
     return !!uid && !isOrgRollUpSegment(uid) && !this.selectedHeld() && !this.selectedClaOnly();
   });
 
+  /**
+   * Grants and persona have answered, an owed contractor read check has answered, and the selection is
+   * not waiting on a grant holder's CLA-only rows; before this, pages render a skeleton, never a state.
+   */
   public readonly settled: Signal<boolean> = computed(
     () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.selectionAwaitsClaOnlyRows()
   );
