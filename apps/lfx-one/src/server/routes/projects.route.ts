@@ -30,11 +30,15 @@ router.get('/:slug', (req, res, next) => projectController.getProjectBySlug(req,
 router.get('/:slug/participating-orgs/summary', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
   participatingOrgsController.getSummary(req, res, next)
 );
-router.get('/:slug/participating-orgs/export', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.export(req, res, next));
+router.get('/:slug/participating-orgs/export', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.export(req, res, next)
+);
 router.get('/:slug/participating-orgs/org-lens-links', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
   participatingOrgsController.getOrgLensLinks(req, res, next)
 );
-router.get('/:slug/participating-orgs', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) => participatingOrgsController.getList(req, res, next));
+router.get('/:slug/participating-orgs', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getList(req, res, next)
+);
 
 router.get('/:uid/permissions', (req, res, next) => projectController.getProjectPermissions(req, res, next));
 

@@ -428,10 +428,11 @@ export const routes: Routes = [
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
       // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). Executive directors
-      // and LF staff only (as Health Metrics); the BFF enforces that plus project `viewer` on every read.
+      // and LF staff only (as Health Metrics). The guard checks the role only; the BFF additionally scopes an ED to
+      // projects under a foundation they direct (403 renders the no-access state) and requires project `viewer`.
       {
         path: 'project/participating-orgs',
-        title: 'Participating Organizations',
+        title: 'Participating Companies',
         data: { lens: 'project', accessDeniedRedirect: '/project/overview' },
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.

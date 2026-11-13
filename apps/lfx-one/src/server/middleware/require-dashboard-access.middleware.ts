@@ -1,15 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PersonaType } from '@lfx-one/shared/interfaces';
+import { PROJECT_ANCESTRY_MAX_DEPTH, PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import type { PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError } from '../errors';
+import { AuthorizationError, ServiceValidationError } from '../errors';
 import { personaDetectionService } from '../utils/persona-helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
-
-import type { Project } from '@lfx-one/shared/interfaces';
 
 const ED: PersonaType = 'executive-director';
 
@@ -82,15 +81,23 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
 }
 
 // Variant for routes keyed by a *project* slug (e.g. `/api/projects/:slug/participating-orgs*`), where
-// `foundationSlug` is absent so `requireDashboardAccess` would skip scoping. It admits LF Staff outright, and an
-// executive director only for a project that is, or sits under, a foundation they direct: the project's parent
-// chain is resolved server-side and matched against the ED's scoped projects. The route's own project `viewer`
-// check still runs after this gate.
-const MAX_PARENT_DEPTH = 6;
+// `foundationSlug` is absent so `requireDashboardAccess` would skip scoping. LF Staff pass outright. An executive
+// director passes only for a project that is, or sits under, a foundation they direct: the project's parent chain
+// is read server-side (metadata only) and matched against the ED's scoped projects. A root writer, who carries the
+// ED persona without ED scopes, passes only with writer access on the confirmed topmost foundation (the project
+// just below the hidden ROOT), never on ROOT itself and never when the chain could not be fully resolved.
+// The route's own `requireProjectParticipatingOrgsAccess` (project `viewer`) still runs after this gate.
 const projectService = new ProjectService();
 
 export async function requireExecutiveOrLFStaff(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const operation = 'require_executive_or_lf_staff';
+
   try {
+    const slug = req.params['slug'];
+    if (typeof slug !== 'string' || !PROJECT_PARTICIPATING_ORGS_SLUG_PATTERN.test(slug)) {
+      throw ServiceValidationError.forField('slug', 'Invalid project slug format', { operation });
+    }
+
     const result = await personaDetectionService.getPersonas(req);
 
     if (result.isLFStaff) {
@@ -98,62 +105,79 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
       return;
     }
 
-    if (result.personas.includes(ED)) {
-      const edProjects = result.personaProjects?.[ED] ?? [];
-      const edUids = new Set(edProjects.map((project) => project.projectUid));
-      const edSlugs = new Set(edProjects.map((project) => project.projectSlug.toLowerCase()));
-      const slug = String(req.params['slug'] ?? '');
+    if (!result.personas.includes(ED)) {
+      logger.warning(req, operation, 'User without dashboard access attempted an executive-only project endpoint', {
+        path: req.path,
+        personas: result.personas,
+      });
+      next(denied(req, operation));
+      return;
+    }
 
-      // Walk project -> parent -> ... until an ED-scoped project is found or the chain ends. Lookups are
-      // metadata-only (`access: false`) and fail closed: a missing or unreadable ancestor (e.g. the hidden
-      // ROOT parent of a top-level project) ends the climb as "not in scope" rather than surfacing a 5xx.
-      let topmost: { slug: string } | null = null;
-      try {
-        let project: Project | null = slug ? await projectService.getProjectBySlug(req, slug) : null;
-        for (let depth = 0; project && depth < MAX_PARENT_DEPTH; depth++) {
-          topmost = { slug: project.slug };
-          if (edUids.has(project.uid) || edSlugs.has(String(project.slug ?? '').toLowerCase()) || (project.parent_uid && edUids.has(project.parent_uid))) {
-            next();
-            return;
-          }
-          project = project.parent_uid && depth + 1 < MAX_PARENT_DEPTH ? await projectService.getProjectById(req, project.parent_uid, false) : null;
-        }
-      } catch (error) {
-        logger.warning(req, 'require_executive_or_lf_staff', 'Project ancestry lookup ended before a scoped foundation was found', {
-          path: req.path,
-          requested_slug: slug,
-          err: error,
-        });
+    const edProjects = result.personaProjects?.[ED] ?? [];
+    const edUids = new Set(edProjects.map((project) => project.projectUid));
+    const edSlugs = new Set(edProjects.map((project) => project.projectSlug.toLowerCase()));
+
+    // The requested project: an unknown slug is left to the viewer gate (404); an outage surfaces as itself.
+    const { uid, exists } = await projectService.getProjectIdBySlug(req, slug, { unavailableAsMissing: false });
+    if (!exists) {
+      next();
+      return;
+    }
+
+    // Climb project -> parent -> ... Ancestor reads are metadata-only (`access: false`) and fail closed: an
+    // unreadable ancestor ends the climb as "incomplete", which can never grant the root-writer fallback.
+    let project: Project = await projectService.getProjectById(req, uid, false);
+    let foundation: Project | null = null;
+    let complete = false;
+    for (let depth = 0; depth < PROJECT_ANCESTRY_MAX_DEPTH; depth++) {
+      if (edUids.has(project.uid) || edSlugs.has((project.slug ?? '').toLowerCase())) {
+        next();
+        return;
       }
+      foundation = project;
 
-      // A root writer carries the ED persona without ED scopes: trust it per foundation, not across the board,
-      // as `requireDashboardAccess` does — it must also hold writer access on the project's topmost foundation.
-      if (result.isRootWriter && topmost && (await personaDetectionService.checkProjectWriter(req, topmost.slug))) {
+      if (!project.parent_uid) {
+        complete = true;
+        break;
+      }
+      if (edUids.has(project.parent_uid)) {
         next();
         return;
       }
 
-      logger.warning(req, 'require_executive_or_lf_staff', 'ED requested a project outside their foundation scope', {
-        path: req.path,
-        requested_slug: slug,
-        scoped_slugs: [...edSlugs],
-      });
-    } else {
-      logger.warning(req, 'require_executive_or_lf_staff', 'User without dashboard access attempted an executive-only project endpoint', {
-        path: req.path,
-        personas: result.personas,
-      });
+      let parent: Project;
+      try {
+        parent = await projectService.getProjectById(req, project.parent_uid, false);
+      } catch (error) {
+        // Caller-reachable (an unreadable ancestor), so DEBUG rather than a floodable WARN.
+        logger.debug(req, operation, 'Project ancestry lookup ended before a foundation was confirmed', { slug, err: error });
+        break;
+      }
+      if (parent.slug === ROOT_PROJECT_SLUG) {
+        complete = true;
+        break;
+      }
+      project = parent;
     }
 
-    next(
-      new AuthorizationError('Executive dashboard access required for this resource', {
-        operation: 'require_executive_or_lf_staff',
-        service: 'authorization',
-        path: req.path,
-        code: 'DASHBOARD_ACCESS_REQUIRED',
-      })
-    );
+    if (complete && result.isRootWriter && foundation && (await personaDetectionService.checkProjectWriter(req, foundation.slug))) {
+      next();
+      return;
+    }
+
+    logger.warning(req, operation, 'ED requested a project outside their foundation scope', { path: req.path, requested_slug: slug });
+    next(denied(req, operation));
   } catch (error) {
     next(error);
   }
+}
+
+function denied(req: Request, operation: string): AuthorizationError {
+  return new AuthorizationError('Executive dashboard access required for this resource', {
+    operation,
+    service: 'authorization',
+    path: req.path,
+    code: 'DASHBOARD_ACCESS_REQUIRED',
+  });
 }

@@ -230,7 +230,7 @@ export class SidebarNavService {
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
         // Participating Organizations (#2091) is shown to executive directors and LF staff only, matching Health
-        // Metrics (the route guard and BFF enforce the same rule, plus project `viewer`).
+        // Metrics. This is a role check; the BFF also scopes an ED to foundations they direct and requires project `viewer`.
         const participatingOrgsItems = this.personaService.canViewExecutiveDashboards() ? [this.projectParticipatingOrgsNavItem] : [];
         const items = [...coreItems, ...participatingOrgsItems, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a

@@ -18,11 +18,11 @@ vi.mock('../utils/persona-helper', () => ({
   },
 }));
 
-const getProjectBySlug = vi.fn();
+const getProjectIdBySlug = vi.fn();
 const getProjectById = vi.fn();
 vi.mock('../services/project.service', () => ({
   ProjectService: class {
-    public getProjectBySlug = (...args: unknown[]) => getProjectBySlug(...args);
+    public getProjectIdBySlug = (...args: unknown[]) => getProjectIdBySlug(...args);
     public getProjectById = (...args: unknown[]) => getProjectById(...args);
   },
 }));
@@ -243,23 +243,41 @@ describe('requireDashboardAccess', () => {
 
 describe('requireExecutiveOrLFStaff', () => {
   const projectReq = (slug = 'child') => ({ method: 'GET', path: '/api/projects/x/participating-orgs', query: {}, params: { slug } }) as unknown as Request;
-  const run = async (req: Request) => {
+  const run = async (req: Request = projectReq()) => {
     const next = vi.fn();
     await requireExecutiveOrLFStaff(req, {} as Response, next as unknown as NextFunction);
     return next;
   };
+  const rootWriter = (): PersonaResult => ({ personas: ['executive-director'], personaProjects: {}, isRootWriter: true, isLFStaff: false });
+  const proj = (uid: string, slug: string, parent_uid = '') => ({ uid, slug, parent_uid });
+
+  /** Wires the slug lookup plus a uid -> project map for getProjectById. */
+  const projects = (...list: ReturnType<typeof proj>[]) => {
+    getProjectIdBySlug.mockResolvedValue({ exists: true, uid: list[0].uid });
+    getProjectById.mockImplementation(async (_req: unknown, uid: string) => {
+      const found = list.find((p) => p.uid === uid);
+      if (!found) throw new Error('404');
+      return found;
+    });
+  };
 
   beforeEach(() => {
     getPersonas.mockReset();
-    getProjectBySlug.mockReset();
+    getProjectIdBySlug.mockReset();
     getProjectById.mockReset();
     checkProjectWriter.mockReset();
   });
 
   it('allows LF staff without resolving the project', async () => {
     getPersonas.mockResolvedValue({ personas: ['contributor'], isLFStaff: true });
-    expect(verdict(await run(projectReq()))).toBe('allow');
-    expect(getProjectBySlug).not.toHaveBeenCalled();
+    expect(verdict(await run())).toBe('allow');
+    expect(getProjectIdBySlug).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed slug with a validation error before any persona or project lookup', async () => {
+    const next = await run(projectReq('Bad Slug!'));
+    expect(verdict(next)).toBe('deny');
+    expect(getPersonas).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -268,57 +286,69 @@ describe('requireExecutiveOrLFStaff', () => {
     ['a plain viewer', ['contributor']],
   ])('denies %s', async (_label, personas) => {
     getPersonas.mockResolvedValue({ personas, personaProjects: {}, isLFStaff: false });
-    expect(verdict(await run(projectReq()))).toBe('deny');
-    expect(getProjectBySlug).not.toHaveBeenCalled();
+    expect(verdict(await run())).toBe('deny');
+    expect(getProjectIdBySlug).not.toHaveBeenCalled();
   });
 
   it('allows an ED for a project directly in their scope', async () => {
     getPersonas.mockResolvedValue(edFor(['child']));
-    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-parent' });
-    expect(verdict(await run(projectReq()))).toBe('allow');
+    projects(proj('uid-child', 'child', 'uid-parent'));
+    expect(verdict(await run())).toBe('allow');
   });
 
-  it('allows an ED for a project under a foundation they direct', async () => {
+  it('allows an ED for a project under a foundation they direct without reading past it', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
-    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-foundation-a' });
-    getProjectById.mockResolvedValue({ uid: 'uid-foundation-a', slug: 'foundation-a', parent_uid: '' });
-    expect(verdict(await run(projectReq()))).toBe('allow');
+    projects(proj('uid-child', 'child', 'uid-foundation-a'));
+    expect(verdict(await run())).toBe('allow');
+    expect(getProjectById).toHaveBeenCalledTimes(1);
+    expect(getProjectById).toHaveBeenCalledWith(expect.anything(), 'uid-child', false);
   });
 
   it('denies an ED for a project under a different foundation', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
-    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-foundation-b' });
-    getProjectById.mockResolvedValue({ uid: 'uid-foundation-b', slug: 'foundation-b', parent_uid: '' });
-    expect(verdict(await run(projectReq()))).toBe('deny');
+    projects(proj('uid-child', 'child', 'uid-b'), proj('uid-b', 'foundation-b', 'uid-root'), proj('uid-root', 'ROOT'));
+    expect(verdict(await run())).toBe('deny');
   });
 
-  it('denies (not 5xx) when the ancestry lookup fails, and reads parents metadata-only', async () => {
+  it('leaves an unknown project to the viewer gate (404) instead of denying', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a']));
-    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-root' });
-    getProjectById.mockRejectedValue(new Error('404'));
-    expect(verdict(await run(projectReq()))).toBe('deny');
-    expect(getProjectById).toHaveBeenCalledWith(expect.anything(), 'uid-root', false);
+    getProjectIdBySlug.mockResolvedValue({ exists: false });
+    expect(verdict(await run())).toBe('allow');
   });
 
-  it('allows a root writer without ED scopes only with writer access on the topmost foundation', async () => {
-    getPersonas.mockResolvedValue({ personas: ['executive-director'], personaProjects: {}, isRootWriter: true, isLFStaff: false });
-    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: 'uid-f' });
-    getProjectById.mockResolvedValue({ uid: 'uid-f', slug: 'f', parent_uid: '' });
+  it('denies when an ancestor lookup fails (fails closed, no 5xx)', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a']));
+    projects(proj('uid-child', 'child', 'uid-missing'));
+    expect(verdict(await run())).toBe('deny');
+  });
 
+  it('allows a root writer only with writer access on the foundation below ROOT', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-root'), proj('uid-root', 'ROOT'));
     checkProjectWriter.mockResolvedValue(true);
-    expect(verdict(await run(projectReq()))).toBe('allow');
+    expect(verdict(await run())).toBe('allow');
+    expect(checkProjectWriter).toHaveBeenCalledTimes(1);
     expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'f');
   });
 
-  it('denies a root writer lacking writer access on the foundation', async () => {
-    getPersonas.mockResolvedValue({ personas: ['executive-director'], personaProjects: {}, isRootWriter: true, isLFStaff: false });
-    getProjectBySlug.mockResolvedValue({ uid: 'uid-child', slug: 'child', parent_uid: '' });
+  it('denies a root writer without writer access on the foundation (never checks ROOT)', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-root'), proj('uid-root', 'ROOT'));
     checkProjectWriter.mockResolvedValue(false);
-    expect(verdict(await run(projectReq()))).toBe('deny');
+    expect(verdict(await run())).toBe('deny');
+    expect(checkProjectWriter).not.toHaveBeenCalledWith(expect.anything(), 'ROOT');
+  });
+
+  it('denies a root writer when the ancestry cannot be fully resolved, even with child writer access', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child', 'uid-missing'));
+    checkProjectWriter.mockResolvedValue(true);
+    expect(verdict(await run())).toBe('deny');
+    expect(checkProjectWriter).not.toHaveBeenCalled();
   });
 
   it('forwards a persona lookup failure instead of allowing', async () => {
     getPersonas.mockRejectedValue(new Error('boom'));
-    expect(verdict(await run(projectReq()))).toBe('deny');
+    expect(verdict(await run())).toBe('deny');
   });
 });
