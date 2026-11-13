@@ -190,7 +190,14 @@ export class NavbarCollapseService {
     }
   }
 
-  /** This tab is leaving the page (reload, redirect, Back/Forward): the next load in it restores the preference. */
+  /**
+   * This tab is leaving the page (reload, redirect, Back/Forward): the next load in it restores the preference.
+   *
+   * Accepted edge case: a tab that leaves for another site and never returns keeps the mark until it closes. If a tab is
+   * then duplicated, or opened with an opener from that site, and the browser copies this origin's session storage, the
+   * new tab starts on the rail. It takes a specific sequence and only costs a collapsed sidebar, so the mark has no expiry,
+   * which would also break slow sign-in or account-linking round trips.
+   */
   private markLeftPage(): void {
     try {
       this.document.defaultView?.sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
