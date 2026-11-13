@@ -149,7 +149,16 @@ describe('OrgLensMembershipsService — family roll-up', () => {
   const PARENT_ORG = { accountId: PARENT, name: 'Parent Co' };
   const SUBSIDIARY_ORG = { accountId: SUBSIDIARY, name: 'Subsidiary Co' };
 
-  const active = (account: string, foundation: string, overrides: Record<string, unknown> = {}) => ({
+  const seatKeys = (account: string, foundation: string, board: number, committee: number) => [
+    ...Array.from({ length: board }, (_, i) => `seat-${account}-${foundation}-board-${i}`),
+    ...Array.from({ length: committee }, (_, i) => `seat-${account}-${foundation}-committee-${i}`),
+  ];
+  const active = (account: string, foundation: string, overrides: Record<string, unknown> = {}) => {
+    const row: Record<string, unknown> = { ...activeColumns(account, foundation), ...overrides };
+    row['GOVERNANCE_SEAT_KEYS'] ??= seatKeys(account, foundation, row['BOARD_MEMBER_SEAT_COUNT'] as number, row['COMMITTEE_MEMBER_SEAT_COUNT'] as number);
+    return row;
+  };
+  const activeColumns = (account: string, foundation: string) => ({
     ACCOUNT_ID: account,
     FAMILY_ACCOUNT_ID: PARENT,
     FOUNDATION_ID: foundation,
@@ -166,7 +175,6 @@ describe('OrgLensMembershipsService — family roll-up', () => {
     PROJECT_COUNT: 10,
     MEMBER_COUNT: 50,
     IS_RENEWING_WITHIN_90_DAYS: false,
-    ...overrides,
   });
   const expired = (account: string, foundation: string, expiration: string) => ({
     ACCOUNT_ID: account,
@@ -204,10 +212,10 @@ describe('OrgLensMembershipsService — family roll-up', () => {
       expect(execute).toHaveBeenCalledTimes(1);
       const [sql, binds] = execute.mock.calls[0];
       expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
-      expect(sql).not.toContain('SEAT_KEYS');
+      expect(sql).toContain('GOVERNANCE_SEAT_KEYS');
       expect(binds).toEqual([PARENT]);
       expect(withOrgCacheMock.mock.calls[0][0]).toBe(ROLL_UP);
-      expect(cacheKeys).toEqual(['memberships-active-family:v2']);
+      expect(cacheKeys).toEqual(['memberships-active-family:v3']);
     });
 
     it('lists one row per organization and foundation, each naming its organization, and counts each foundation once on the Active card', async () => {
@@ -238,7 +246,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
       expect(response.summary.renewingWithin90Days).toBe(2);
     });
 
-    it('adds up each organization’s board and committee seats on the Governance Roles card', async () => {
+    it('counts each organization’s seat keys on the Governance Roles card, so two companies’ seats at one foundation both count', async () => {
       tables.active = [
         active(PARENT, 'cncf', { COMMITTEE_MEMBER_SEAT_COUNT: 0 }),
         active(SUBSIDIARY, 'cncf', { COMMITTEE_MEMBER_SEAT_COUNT: 0 }),
@@ -249,6 +257,26 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       expect(response.memberships.map((m) => m.boardMembers)).toEqual([1, 1, 1]);
       expect(response.summary.governanceRoles).toBe(1 + 1 + 2);
+    });
+
+    it('counts a seat key the warehouse lists on two rows once', async () => {
+      tables.active = [
+        active(PARENT, 'cncf', { GOVERNANCE_SEAT_KEYS: ['seat-a', 'seat-b'] }),
+        active(SUBSIDIARY, 'cncf', { GOVERNANCE_SEAT_KEYS: ['seat-b', 'seat-c'] }),
+      ];
+
+      const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
+
+      expect(response.summary.governanceRoles).toBe(3);
+    });
+
+    it('never returns the seat keys', async () => {
+      tables.active = [active(PARENT, 'cncf'), active(SUBSIDIARY, 'cncf')];
+
+      const response = await new OrgLensMembershipsService().getFamilyActiveMemberships(scope());
+
+      expect(JSON.stringify(response)).not.toContain('seat-');
+      expect(response.memberships.every((m) => !('GOVERNANCE_SEAT_KEYS' in m))).toBe(true);
     });
 
     it('leaves out an organization of the family the caller cannot read, from the rows and the cards', async () => {
@@ -268,6 +296,9 @@ describe('OrgLensMembershipsService — family roll-up', () => {
         active(SUBSIDIARY, 'lfn', { MEMBERSHIP_TIER_DISPLAY_NAME: 'Silver Membership' }),
       ];
       const service = new OrgLensMembershipsService();
+
+      const family = await service.getFamilyActiveMemberships(scope());
+      expect(family.summary.governanceRoles).toBe(9);
 
       const subsidiary = await service.getFamilyActiveMemberships(scope(), { company: SUBSIDIARY });
       expect(subsidiary.memberships).toHaveLength(2);

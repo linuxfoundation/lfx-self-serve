@@ -13,6 +13,7 @@ export interface OrgLensMembershipSummaryRow {
   FIRST_MEMBERSHIP_STARTED_AT: string | null;
   BOARD_MEMBER_SEAT_COUNT: number;
   COMMITTEE_MEMBER_SEAT_COUNT: number;
+  GOVERNANCE_SEAT_KEYS?: string[];
   ORG_PROJECTS_COUNT: number;
   PROJECT_COUNT: number;
   MEMBER_COUNT: number;

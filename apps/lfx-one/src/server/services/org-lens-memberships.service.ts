@@ -285,7 +285,7 @@ export class OrgLensMembershipsService {
     return {
       activeMemberships: new Set(rows.map((row) => row.FOUNDATION_ID)).size,
       renewingWithin90Days: rows.filter((row) => row.IS_RENEWING_WITHIN_90_DAYS).length,
-      governanceRoles: rows.reduce((sum, row) => sum + row.BOARD_MEMBER_SEAT_COUNT + row.COMMITTEE_MEMBER_SEAT_COUNT, 0),
+      governanceRoles: new Set(rows.flatMap((row) => (Array.isArray(row.GOVERNANCE_SEAT_KEYS) ? row.GOVERNANCE_SEAT_KEYS : []))).size,
     };
   }
 
@@ -296,7 +296,7 @@ export class OrgLensMembershipsService {
   private getFamilyActiveMembershipRows(scope: OrgLensRollUpScope): Promise<OrgLensMembershipSummaryRow[]> {
     return withOrgCache(
       scope.rollUpKey,
-      'memberships-active-family:v2',
+      'memberships-active-family:v3',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchFamilyActiveMembershipRows(scope.rootUid),
       OrgLensMembershipsService.isRawRowArray
@@ -378,6 +378,7 @@ export class OrgLensMembershipsService {
         FIRST_MEMBERSHIP_STARTED_AT,
         BOARD_MEMBER_SEAT_COUNT,
         COMMITTEE_MEMBER_SEAT_COUNT,
+        GOVERNANCE_SEAT_KEYS,
         ORG_PROJECTS_COUNT,
         PROJECT_COUNT,
         MEMBER_COUNT,
