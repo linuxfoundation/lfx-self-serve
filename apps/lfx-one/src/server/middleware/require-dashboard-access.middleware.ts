@@ -12,6 +12,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { personaDetectionService } from '../utils/persona-helper';
+import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
 
@@ -94,6 +95,7 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
 // trusted, and a grant on an umbrella ancestor is not consulted.
 // The route's own `requireProjectParticipatingOrgsAccess` (project `viewer`) still runs after this gate.
 const projectService = new ProjectService();
+const accessCheckService = new AccessCheckService();
 
 export async function requireExecutiveOrLFStaff(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const operation = 'require_executive_or_lf_staff';
@@ -132,14 +134,7 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
       ({ uid, exists } = await projectService.getProjectIdBySlug(req, slug, { unavailableAsMissing: false }));
     } catch (error) {
       // Same outage contract as `requireProjectParticipatingOrgsAccess`: "couldn't check" is a 503, never a 500.
-      logger.warning(req, operation, 'Project slug lookup failed; cannot verify foundation scope', { slug, err: error });
-      throw new MicroserviceError(PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE, 503, 'ACCESS_CHECK_UNAVAILABLE', {
-        operation,
-        service: 'LFX_V2_SERVICE',
-        path: '/project-slug-to-uid',
-        clientMessage: PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
-        originalError: error instanceof Error ? error : undefined,
-      });
+      throw unavailable(req, operation, '/project-slug-to-uid', error);
     }
     if (!exists) {
       throw new MicroserviceError('Project not found', 404, 'NOT_FOUND', { operation });
@@ -148,7 +143,19 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
     // Climb project -> parent -> ... until an ED-scoped project is found. Ancestor reads are metadata-only
     // (`access: false`); an unreadable ancestor (or the hidden ROOT) simply ends the climb as "not in scope".
     // Skipped when the ED has no scoped projects (e.g. a root writer): there is nothing to match against.
-    let project: Project | null = edProjects.length > 0 ? await projectService.getProjectById(req, uid, false) : null;
+    let project: Project | null = null;
+    if (edProjects.length > 0) {
+      try {
+        project = await projectService.getProjectById(req, uid, false);
+      } catch (error) {
+        // A definite upstream answer (e.g. 403/404) passes through; anything else is "couldn't check" -> 503.
+        const status = (error as { statusCode?: unknown }).statusCode;
+        if (typeof status === 'number' && status < 500) {
+          throw error;
+        }
+        throw unavailable(req, operation, '/projects/:uid', error);
+      }
+    }
     for (let depth = 0; project && depth < PROJECT_ANCESTRY_MAX_DEPTH; depth++) {
       if (edUids.has(project.uid) || edSlugs.has((project.slug ?? '').toLowerCase())) {
         next();
@@ -176,9 +183,18 @@ export async function requireExecutiveOrLFStaff(req: Request, _res: Response, ne
       project = parent;
     }
 
-    if (result.isRootWriter && (await personaDetectionService.checkProjectWriter(req, slug))) {
-      next();
-      return;
+    if (result.isRootWriter) {
+      // Verified writer access on the uid already resolved above (no second slug lookup); a failed check is a 503, not a 403.
+      let isWriter: boolean;
+      try {
+        isWriter = await accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
+      } catch (error) {
+        throw unavailable(req, operation, '/access-check', error);
+      }
+      if (isWriter) {
+        next();
+        return;
+      }
     }
 
     logger.warning(req, operation, 'ED requested a project outside their foundation scope', { path: req.path, requested_slug: slug });
@@ -194,5 +210,16 @@ function denied(req: Request, operation: string): AuthorizationError {
     service: 'authorization',
     path: req.path,
     code: 'DASHBOARD_ACCESS_REQUIRED',
+  });
+}
+
+function unavailable(req: Request, operation: string, path: string, error: unknown): MicroserviceError {
+  logger.warning(req, operation, 'Upstream lookup failed; cannot verify foundation scope', { path, err: error });
+  return new MicroserviceError(PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE, 503, 'ACCESS_CHECK_UNAVAILABLE', {
+    operation,
+    service: 'LFX_V2_SERVICE',
+    path,
+    clientMessage: PROJECT_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE,
+    originalError: error instanceof Error ? error : undefined,
   });
 }

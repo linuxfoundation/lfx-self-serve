@@ -27,6 +27,12 @@ vi.mock('../services/project.service', () => ({
   },
 }));
 
+const checkSingleAccessStrict = vi.fn();
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = (...args: unknown[]) => checkSingleAccessStrict(...args);
+  },
+}));
 vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
 const { AuthorizationError, MicroserviceError, ServiceValidationError } = await import('../errors');
@@ -273,6 +279,7 @@ describe('requireExecutiveOrLFStaff', () => {
     getProjectIdBySlug.mockReset();
     getProjectById.mockReset();
     checkProjectWriter.mockReset();
+    checkSingleAccessStrict.mockReset();
   });
 
   it('allows LF staff without resolving the project', async () => {
@@ -350,29 +357,57 @@ describe('requireExecutiveOrLFStaff', () => {
     expect(error).toMatchObject({ statusCode: 503, code: 'ACCESS_CHECK_UNAVAILABLE' });
   });
 
-  it('allows a root writer only with verified writer access on the requested project', async () => {
-    getPersonas.mockResolvedValue(rootWriter());
-    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-tlf'), proj('uid-tlf', 'tlf', 'uid-root'), proj('uid-root', 'ROOT'));
-    checkProjectWriter.mockResolvedValue(true);
-    expect(verdict(await run())).toBe('allow');
-    expect(checkProjectWriter).toHaveBeenCalledTimes(1);
-    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'child');
-  });
-
   it('skips the ancestry climb for an ED with no scoped projects', async () => {
     getPersonas.mockResolvedValue(rootWriter());
     projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f'));
-    checkProjectWriter.mockResolvedValue(true);
+    checkSingleAccessStrict.mockResolvedValue(true);
     expect(verdict(await run())).toBe('allow');
     expect(getProjectById).not.toHaveBeenCalled();
   });
 
-  it('denies a root writer without writer access on the requested project, whatever its umbrella grants', async () => {
+  it('allows a root writer with writer_guard on the already-resolved project uid (no second slug lookup)', async () => {
     getPersonas.mockResolvedValue(rootWriter());
-    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-tlf'), proj('uid-tlf', 'tlf', 'uid-root'), proj('uid-root', 'ROOT'));
-    checkProjectWriter.mockImplementation(async (_req: unknown, slug: string) => slug === 'tlf');
+    projects(proj('uid-child', 'child'));
+    checkSingleAccessStrict.mockResolvedValue(true);
+    expect(verdict(await run())).toBe('allow');
+    expect(checkSingleAccessStrict).toHaveBeenCalledTimes(1);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'uid-child', access: 'writer_guard' });
+    expect(getProjectIdBySlug).toHaveBeenCalledTimes(1);
+  });
+
+  it('denies a root writer without writer_guard on the requested project', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child'));
+    checkSingleAccessStrict.mockResolvedValue(false);
     expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
-    expect(checkProjectWriter).not.toHaveBeenCalledWith(expect.anything(), 'tlf');
+  });
+
+  it('never consults an umbrella grant: ED scopes elsewhere + root writer, only tlf writable', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a'], { isRootWriter: true }));
+    projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-tlf'), proj('uid-tlf', 'tlf', 'uid-root'), proj('uid-root', 'ROOT'));
+    checkSingleAccessStrict.mockImplementation(async (_req: unknown, resource: { id: string }) => resource.id === 'uid-tlf');
+    expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
+    expect(getProjectById).toHaveBeenCalled();
+    expect(checkSingleAccessStrict).toHaveBeenCalledTimes(1);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'uid-child', access: 'writer_guard' });
+  });
+
+  it('maps a failed root-writer access check to 503, not 403', async () => {
+    getPersonas.mockResolvedValue(rootWriter());
+    projects(proj('uid-child', 'child'));
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga down'));
+    expect(errorOf(await run())).toMatchObject({ statusCode: 503, code: 'ACCESS_CHECK_UNAVAILABLE' });
+  });
+
+  it('maps a failed read of the requested project to 503, but passes a definite 404 through', async () => {
+    getPersonas.mockResolvedValue(edFor(['foundation-a']));
+    getProjectIdBySlug.mockResolvedValue({ exists: true, uid: 'uid-child' });
+    getProjectById.mockRejectedValue(new Error('ECONNRESET'));
+    expect(errorOf(await run())).toMatchObject({ statusCode: 503, code: 'ACCESS_CHECK_UNAVAILABLE' });
+
+    const notFound = Object.assign(new Error('nope'), { statusCode: 404 });
+    getProjectById.mockRejectedValue(notFound);
+    expect(errorOf(await run())).toBe(notFound);
   });
 
   it('forwards a persona lookup failure instead of allowing', async () => {
