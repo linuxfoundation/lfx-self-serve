@@ -203,6 +203,18 @@ describe('MeetingsTopBarComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="rollup-group-type-filter"]')).toBeNull();
     });
 
+    it('gives the group and group type filters distinct accessible names', async () => {
+      fixture.componentRef.setInput('showRollupFilters', true);
+      fixture.componentRef.setInput('groupOptions', [{ label: 'Board', value: 'g' }]);
+      fixture.componentRef.setInput('groupTypeOptions', [{ label: 'Board', value: 'Board' }]);
+      await fixture.whenStable();
+
+      const labels = ['rollup-group-filter', 'rollup-group-type-filter'].map((id) =>
+        fixture.nativeElement.querySelector(`[data-testid="${id}"] [aria-label]`)?.getAttribute('aria-label')
+      );
+      expect(labels).toEqual(['Filter by group', 'Filter by group type']);
+    });
+
     it('reports a project selection and reflects one set from outside without echoing it', async () => {
       const emitted: string[][] = [];
       fixture.componentInstance.rollupProjectsFilterChange.subscribe((value) => emitted.push(value));
