@@ -49,6 +49,9 @@ export class ProjectSelectorComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
 
+  /** False while impersonating — the BFF blocks favorite writes then, so the star is hidden. */
+  protected readonly favoritesAvailable = this.favoriteProjectsService.favoritesAvailable;
+
   /** GH-1955 — see `FORMATION_ENABLED_FLAG`'s doc comment for what this does and doesn't gate. */
   protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
