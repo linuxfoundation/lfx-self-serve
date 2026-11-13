@@ -996,6 +996,24 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
       expect(component.groupFilter()).toBeNull();
     });
 
+    it('drops a linked group or group type the loaded options do not offer', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ projects: 'scope', group: 'wg', group_type: 'Working Group' });
+      const component = mount();
+      openScope(component);
+
+      expect(component.groupFilter()).toBeNull();
+      expect(component.groupTypeFilter()).toBeNull();
+    });
+
+    it('keeps a linked group the loaded options offer', () => {
+      route.snapshot.queryParamMap = convertToParamMap({ group: 'wg', group_type: 'Working Group' });
+      const component = mount();
+      openScope(component);
+
+      expect(component.groupFilter()).toBe('wg');
+      expect(component.groupTypeFilter()).toBe('Working Group');
+    });
+
     it('clears the roll-up filters on the Me lens, which has no controls for them', () => {
       const component = mount();
       openScope(component);

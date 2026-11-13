@@ -381,6 +381,7 @@ export class MeetingsDashboardComponent {
     this.syncFiltersToUrl();
     this.resetRollupFiltersOnProjectChange();
     this.resetRollupFiltersOnMeLens();
+    this.reconcileGroupFiltersWhenOptionsLoad();
 
     toObservable(this.activeLens)
       .pipe(takeUntilDestroyed())
@@ -463,12 +464,7 @@ export class MeetingsDashboardComponent {
 
   public onRollupProjectsFilterChange(value: string[]): void {
     this.rollupProjectsFilter.set(value);
-    // A group type or group outside the selected projects would match nothing.
-    const groupType = this.groupTypeFilter();
-    if (groupType && !this.groupTypeOptions().some((option) => option.value === groupType)) {
-      this.groupTypeFilter.set(null);
-    }
-    this.clearGroupOutsideOptions();
+    this.reconcileGroupFilters();
   }
 
   public onGroupTypeFilterChange(value: string | null): void {
@@ -1273,6 +1269,28 @@ export class MeetingsDashboardComponent {
   }
 
   /** Clears the group filter once the project or group-type selection no longer offers it. */
+  /** Drops a group type, then a group, that the current project scope no longer offers: they would match nothing. */
+  private reconcileGroupFilters(): void {
+    const groupType = this.groupTypeFilter();
+    if (groupType && !this.groupTypeOptions().some((option) => option.value === groupType)) {
+      this.groupTypeFilter.set(null);
+    }
+    this.clearGroupOutsideOptions();
+  }
+
+  /**
+   * A linked `group` or `group_type` is applied before the filter options load; once they do, one that
+   * the scope does not offer is dropped, rather than kept in the query with no visible selection.
+   */
+  private reconcileGroupFiltersWhenOptionsLoad(): void {
+    toObservable(this.rollupFilterOptions)
+      .pipe(
+        filter((options) => options.projects.length > 0),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.reconcileGroupFilters());
+  }
+
   private clearGroupOutsideOptions(): void {
     const group = this.groupFilter();
     if (group && !this.groupOptions().some((option) => option.value === group)) {
