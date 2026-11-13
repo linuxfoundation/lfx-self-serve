@@ -127,16 +127,19 @@ export class SidebarNavService {
 
   /**
    * Mirrors the BFF gate for the project Participating companies page so the entry is hidden, not a dead end: LF staff,
-   * or an executive director with a scoped project that is the active project or its direct parent (the parent comes from the stored selection, else the fetched project record). The BFF stays
+   * or an executive director with a scoped project that is the active project or its direct parent (the parent comes from the stored selection, else the fetched record for that same project). The BFF stays
    * authoritative (it walks the full ancestry), so a deeper-nested project an ED directs is hidden here rather than shown.
    */
   private readonly canSeeParticipatingOrgs: Signal<boolean> = computed(() => {
     if (this.personaService.isLFStaff()) return true;
     if (this.personaService.currentPersona() !== 'executive-director') return false;
-    const project = this.projectContextService.selectedProject();
+    // The menu's own context (the previewed lens's while the mobile drawer previews Projects), not the page's.
+    const project = this.projectContextService.menuContext();
     if (!project) return false;
-    // The stored selection often carries no parent_uid; the fetched project record always does.
-    const parentUid = project.parent_uid || this.projectContextService.activeProject()?.parent_uid;
+    // The stored selection often carries no parent_uid; the fetched record does, but only trust it for this same project
+    // (it can describe the previous project, or the foundation under a preview, while a switch is in flight).
+    const fetched = this.projectContextService.menuProject();
+    const parentUid = project.parent_uid || (fetched?.uid === project.uid ? fetched.parent_uid : undefined);
     const scoped = this.personaService.personaProjects()['executive-director'] ?? [];
     return scoped.some(
       (scope) =>
