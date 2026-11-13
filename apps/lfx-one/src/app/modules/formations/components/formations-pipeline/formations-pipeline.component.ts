@@ -161,6 +161,8 @@ export class FormationsPipelineComponent {
   /** Who the server built this for (#5544). Until a response arrives it is the narrower `staff` view, so nothing a staff viewer must not see ever flashes. */
   protected readonly viewer: Signal<FormationPipelineViewer> = computed(() => this.response().viewer);
   protected readonly isStaffView = computed(() => this.viewer() === 'staff');
+  /** True once a response has said who the viewer is. Until then the narrower default only shapes what renders; it never rewrites the URL (a formation-team deep link to a Draft stage keeps its `stage` through loading, and through a failed load). */
+  private readonly viewerKnown = signal(false);
   /** A stage the viewer cannot see (a `?stage=prospect` link opened by staff) is the default view, never an empty one. */
   protected readonly selectedStage = computed<FormationPipelineStageFilter>(() => {
     const stage = this.stage();
@@ -171,7 +173,7 @@ export class FormationsPipelineComponent {
   /** The query params for the current filters and sort; the search is the debounced term. */
   private readonly urlParams = computed(() =>
     buildPipelineUrlParams({
-      stage: this.selectedStage(),
+      stage: this.viewerKnown() ? this.selectedStage() : this.stage(),
       foundationUid: this.foundationUid(),
       foundationKind: this.foundationKind(),
       search: this.searchTerm(),
@@ -388,6 +390,7 @@ export class FormationsPipelineComponent {
           this.loading.set(true);
           return this.formationService.getFormationPipeline(foundationUid).pipe(
             tap((response) => {
+              this.viewerKnown.set(true);
               this.pruneUnknownClassification(response);
               this.rememberFoundations(response, foundationUid);
               this.loadFoundationOptionsForDeepLink(foundationUid);

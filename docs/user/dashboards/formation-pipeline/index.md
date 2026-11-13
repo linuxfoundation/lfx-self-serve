@@ -12,7 +12,7 @@ The **Pipeline** tab lists every project the formation team is bringing into The
 
 ## Who can see it
 
-Formation team members see the **Pipeline** tab on the **Formations** page when The Linux Foundation is the selected foundation. It is the first tab and the one that opens by default. Everyone else sees the Formations page without it, and the page behind it refuses the request. The Formations feature must also be enabled for your account.
+Formation team members see the **Pipeline** tab on the **Formations** page when The Linux Foundation is the selected foundation. It is the first tab and the one that opens by default. Linux Foundation staff outside the formation team see a read-only version (below). Everyone else sees the Formations page without it, and the page behind it refuses the request. The Formations feature must also be enabled for your account.
 
 ### Linux Foundation staff
 

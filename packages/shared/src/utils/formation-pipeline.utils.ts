@@ -205,7 +205,7 @@ export function pruneUnknownPipelineClassification(
   return pruned;
 }
 
-/** Rows in the live pipeline (Draft, Exploratory, Engaged, On hold). */
+/** Rows in the live stages this viewer sees (Draft, Exploratory, Engaged, On hold; staff never see Draft). */
 export function countLivePipelineRows(counts: FormationPipelineCounts, viewer: FormationPipelineViewer = 'formation_team'): number {
   return getPipelineLiveStages(viewer).reduce((sum, stage) => sum + counts[stage], 0);
 }
@@ -328,7 +328,7 @@ export function sortPipelineRows(rows: readonly FormationPipelineRow[], sort: Fo
   });
 }
 
-/** Stage pills: `In pipeline` (the default), `All`, then every stage, with counts. Disengaged and Confidential appear only when they hold rows. */
+/** Stage pills: `In pipeline` (the default), `All`, then every stage the viewer sees, with counts. Disengaged and Confidential appear only when they hold rows; staff never get a Draft or Confidential pill. */
 export function buildPipelinePillOptions(counts: FormationPipelineCounts, viewer: FormationPipelineViewer = 'formation_team'): FilterPillOption[] {
   const stagePills = FORMATION_PIPELINE_STAGES.filter(
     (stage) => isPipelineStageVisible(stage, viewer) && (counts[stage] > 0 || !FORMATION_PIPELINE_HIDE_WHEN_EMPTY_STAGES.includes(stage))

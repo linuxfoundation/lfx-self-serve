@@ -922,6 +922,19 @@ describe('FormationsPipelineComponent (#5475)', () => {
       expect(pillLabels()[0]).toBe('In pipeline (2)');
     });
 
+    it('does not rewrite a formation-team ?stage=prospect link while loading, and keeps it through a failed load', async () => {
+      await render(of(response(ROWS)), { stage: 'prospect' });
+      expect(vi.mocked(TestBed.inject(Router).navigate)).not.toHaveBeenCalled();
+      expect(rowIds()).toEqual(['b']);
+
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await render(
+        throwError(() => new HttpErrorResponse({ status: 503 })),
+        { stage: 'prospect' }
+      );
+      expect(vi.mocked(TestBed.inject(Router).navigate)).not.toHaveBeenCalled();
+    });
+
     it('adds no write control: rows only link to the formation page', async () => {
       await render(of(response(staffRows, 'staff')));
 
