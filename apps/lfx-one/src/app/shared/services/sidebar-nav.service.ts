@@ -133,8 +133,9 @@ export class SidebarNavService {
   private readonly canSeeParticipatingOrgs: Signal<boolean> = computed(() => {
     if (this.personaService.isLFStaff()) return true;
     if (this.personaService.currentPersona() !== 'executive-director') return false;
-    // The menu's own context (the previewed lens's while the mobile drawer previews Projects), not the page's.
-    const project = this.projectContextService.menuContext();
+    // The project slot, which is what the project-lens menu shows (a Projects preview reads the same slot). `menuContext()`
+    // follows the route's lens instead, so it can point at the foundation while the project items are still on screen.
+    const project = this.projectContextService.selectedProject();
     if (!project) return false;
     // The stored selection often carries no parent_uid; the fetched record does, but only trust it for this same project
     // (it can describe the previous project, or the foundation under a preview, while a switch is in flight).
