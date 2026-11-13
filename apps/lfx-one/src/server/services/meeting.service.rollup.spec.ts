@@ -206,7 +206,18 @@ describe('MeetingService roll-up scope', () => {
       });
     });
 
-    it('caches the groups per user and root, but not those of an incomplete tree', async () => {
+    it('caches the groups of a complete tree per user and root', async () => {
+      proxyRequest.mockImplementation(async (_req: unknown, _svc: string, path: string) => (path === '/query/resources/count' ? { count: 4 } : committees));
+
+      await service.getMeetingsCount(req, { root_project_uid: ROOT, group_type: 'Board' }, 'v1_meeting');
+
+      // One tree walk feeds both caches, and both store what a complete walk produced.
+      expect(withPerUserCache.mock.calls.map((call) => call[0])).toEqual(['meeting-rollup-scope:v1', 'meeting-rollup-groups:v1']);
+      expect(storeDecisions).toEqual([true, true]);
+      expect(getFoundationProjectUids).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not cache or share the groups of an incomplete tree', async () => {
       proxyRequest.mockImplementation(async (_req: unknown, _svc: string, path: string) => (path === '/query/resources/count' ? { count: 4 } : committees));
       getFoundationProjectUids.mockImplementation(async (_req: unknown, root: string, options?: { onIncomplete?: () => void }) => {
         options?.onIncomplete?.();
