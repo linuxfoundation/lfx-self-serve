@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Foundation Lens → Participating Companies (#5697). Sorting, segments, tier badges and change colours reuse the project
-// page's constants; the ranges (this page adds 6 months and has no 30 days) and the paging limits are this page's own.
+// Foundation Lens → Participating Companies (#5697). Sorting, segments and tier badges reuse the project page's constants;
+// the ranges (this page adds 6 months and has no 30 days), the paging limits and the change colours (darker, for contrast
+// at 14px) are this page's own.
 
 import type {
   FoundationParticipatingOrgChangeTone,
@@ -36,6 +37,9 @@ export const FOUNDATION_PARTICIPATING_ORGS_RANGE_LABELS: Record<FoundationPartic
   '90d': 'Past 90 Days',
   all: 'All Time',
 };
+
+/** Group label for projects with no maturity stage in the project picker. */
+export const FOUNDATION_PARTICIPATING_ORGS_NO_MATURITY_LABEL = 'Projects';
 
 /** A company active in more than this many projects shows its top N, an "Other N projects" row, a filter and Show all. */
 export const FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N = 10;

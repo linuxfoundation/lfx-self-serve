@@ -4,6 +4,7 @@
 import {
   FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N,
   FOUNDATION_PARTICIPATING_ORGS_CHANGE_TONE_CLASSES,
+  FOUNDATION_PARTICIPATING_ORGS_NO_MATURITY_LABEL,
   PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES,
   PROJECT_PARTICIPATING_ORGS_TIER_BADGE_DEFAULT_CLASS,
 } from '@lfx-one/shared/constants';
@@ -19,7 +20,6 @@ import type {
   FoundationParticipatingOrgsProjectOptionGroup,
 } from '@lfx-one/shared/interfaces';
 
-const NO_MATURITY_LABEL = 'Projects';
 
 export function decorateFoundationOrgRow(row: FoundationParticipatingOrg): FoundationParticipatingOrgRowVm {
   const tier = row.isMember ? row.membershipTierClass : null;
@@ -95,12 +95,12 @@ export function splitBreakdown(
 export function groupProjectOptions(projects: FoundationParticipatingOrgsProject[]): FoundationParticipatingOrgsProjectOptionGroup[] {
   const groups = new Map<string, FoundationParticipatingOrgsProjectOptionGroup>();
   for (const project of projects) {
-    const label = project.maturity ?? NO_MATURITY_LABEL;
+    const label = project.maturity ?? FOUNDATION_PARTICIPATING_ORGS_NO_MATURITY_LABEL;
     const group = groups.get(label) ?? { label, items: [] };
     group.items.push({ label: project.name, value: project.slug });
     groups.set(label, group);
   }
-  return [...groups.values()].map((group) => ({ ...group, label: group.label === NO_MATURITY_LABEL ? group.label : `${group.label} · ${group.items.length}` }));
+  return [...groups.values()].map((group) => ({ ...group, label: group.label === FOUNDATION_PARTICIPATING_ORGS_NO_MATURITY_LABEL ? group.label : `${group.label} · ${group.items.length}` }));
 }
 
 function metric(value: number, fraction: number | null): FoundationParticipatingOrgMetricVm {

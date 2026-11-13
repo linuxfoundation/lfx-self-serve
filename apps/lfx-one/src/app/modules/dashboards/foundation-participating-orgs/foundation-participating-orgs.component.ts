@@ -3,7 +3,7 @@
 
 import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, linkedSignal, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -32,6 +32,7 @@ import {
   PROJECT_PARTICIPATING_ORGS_SEGMENTS,
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
+import { formatIsoDateShort } from '@lfx-one/shared/utils';
 import type {
   FilterPillOption,
   FoundationParticipatingOrgBreakdownState,
@@ -91,7 +92,6 @@ import { FoundationParticipatingOrgsService } from './services/foundation-partic
 export class FoundationParticipatingOrgsComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dataService = inject(FoundationParticipatingOrgsService);
-  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly rangeOptions = [...FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS];
   protected readonly maxSearchLength = FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH;
@@ -134,20 +134,8 @@ export class FoundationParticipatingOrgsComponent {
   private readonly search: Signal<string> = this.initSearch();
   // A chosen project or tier belongs to the foundation it was chosen for, so it stops counting the moment the foundation
   // changes, before any reset runs and without a request that mixes the new foundation with the old filter.
-  private readonly projectSelection = toSignal(this.filterForm.controls.project.valueChanges.pipe(map((value) => ({ slug: this.slug(), value }))), {
-    initialValue: { slug: '', value: null as string | null },
-  });
-  private readonly tierSelection = toSignal(this.filterForm.controls.tier.valueChanges.pipe(map((value) => ({ slug: this.slug(), value }))), {
-    initialValue: { slug: '', value: null as MembershipTierClass | null },
-  });
-  protected readonly projectSlug: Signal<string | null> = computed(() => {
-    const selection = this.projectSelection();
-    return selection.slug === this.slug() ? selection.value : null;
-  });
-  protected readonly tier: Signal<MembershipTierClass | null> = computed(() => {
-    const selection = this.tierSelection();
-    return selection.slug === this.slug() ? selection.value : null;
-  });
+  protected readonly projectSlug: Signal<string | null> = this.initFoundationScoped(this.filterForm.controls.project);
+  protected readonly tier: Signal<MembershipTierClass | null> = this.initFoundationScoped(this.filterForm.controls.tier);
 
   /** Switching foundation, or any filter, tab, range or sort change, returns the table to its first page. */
   protected readonly offset = linkedSignal({
@@ -361,6 +349,16 @@ export class FoundationParticipatingOrgsComponent {
     );
   }
 
+  private initFoundationScoped<T>(control: FormControl<T | null>): Signal<T | null> {
+    const selection = toSignal(control.valueChanges.pipe(map((value) => ({ slug: this.slug(), value }))), {
+      initialValue: { slug: '', value: null as T | null },
+    });
+    return computed(() => {
+      const current = selection();
+      return current.slug === this.slug() ? current.value : null;
+    });
+  }
+
   private initProjects(): Signal<{ slug: string; projects: FoundationParticipatingOrgsProject[] }> {
     return toSignal(
       combineLatest([
@@ -482,7 +480,7 @@ export class FoundationParticipatingOrgsComponent {
     const summary = this.summary();
     // Nothing is claimed about the source until a summary says what the figures are.
     if (!summary) return '';
-    const date = formatDate(summary.asOfDate);
+    const date = formatIsoDateShort(summary.asOfDate);
     return summary.dataSource === 'demo' ? `Fictional demo data, generated ${date} · not from LFX Insights` : `Data through ${date} · Source: LFX Insights`;
   }
 
@@ -550,8 +548,8 @@ export class FoundationParticipatingOrgsComponent {
 
   private initExportMenu(): MenuItem[] {
     return [
-      { id: 'summary', label: 'Company summary', title: 'One row per company · foundation totals', command: () => this.export('summary') },
-      { id: 'by-project', label: 'Companies by project', title: 'One row per company and project', command: () => this.export('by-project') },
+      { id: 'foundation-participating-orgs-export-summary', label: 'Company summary', title: 'One row per company · foundation totals', command: () => this.export('summary') },
+      { id: 'foundation-participating-orgs-export-by-project', label: 'Companies by project', title: 'One row per company and project', command: () => this.export('by-project') },
     ];
   }
 
@@ -633,10 +631,4 @@ export class FoundationParticipatingOrgsComponent {
       dir: this.dir(),
     };
   }
-}
-
-/** `2026-11-11` → `Nov 11, 2026`, pinned to en-US and UTC so SSR and the browser render the same text. */
-function formatDate(iso: string): string {
-  const date = new Date(`${iso}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }

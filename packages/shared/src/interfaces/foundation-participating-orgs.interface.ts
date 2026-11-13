@@ -267,7 +267,11 @@ export interface FoundationCompanyActivity {
 export interface FoundationParticipatingOrgsDataSource {
   /** What the figures are, so the page can say so: `demo` for the fictional set, `warehouse` for real data. */
   readonly kind: FoundationParticipatingOrgsDataSourceKind;
-  /** Multiplier from the source's 12 month commit figures to each range (a warehouse source reports every range itself, so it uses 1). */
+  /**
+   * Multiplier from the source's 12 month commit figures to each range. `getFoundation` takes no range, so a source can only
+   * report the 12 month window; the warehouse source (#5707) must add a range parameter to `getFoundation` and drop this scale,
+   * since setting every entry to 1 would show the 12 month figures under every range.
+   */
   readonly rangeScale: Record<FoundationParticipatingOrgsRange, number>;
   getFoundation(slug: string): FoundationParticipatingOrgsSourceFoundation;
 }

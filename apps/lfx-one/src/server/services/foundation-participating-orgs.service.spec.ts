@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MEMBERSHIP_TIER_ORDER } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -121,7 +122,7 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
   });
 
   it('keeps companies with no tier or no comparison last, and orders the rest by the direction', () => {
-    const tierRank = (tier: string | null): number => ['Platinum', 'Gold', 'Silver'].indexOf(tier ?? '');
+    const tierRank = (tier: string | null): number => (MEMBERSHIP_TIER_ORDER as readonly string[]).indexOf(tier ?? '');
     for (const dir of ['asc', 'desc'] as const) {
       const sign = dir === 'asc' ? 1 : -1;
 
@@ -136,7 +137,8 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
       const present = byChange.filter((row) => row.commitsChange !== null);
       expect(byChange.slice(0, present.length).every((row) => row.commitsChange !== null)).toBe(true);
       expect(present.map((row) => row.commitsChange as number)).toEqual([...present.map((row) => row.commitsChange as number)].sort((a, b) => (a - b) * sign));
-      expect(byChange.length).toBeGreaterThan(present.length - 1);
+      expect(byChange.slice(present.length).every((row) => row.commitsChange === null)).toBe(true);
+      expect(byChange).toHaveLength(service.getPage(req, { ...base, dir }).rows.length);
 
       // All Time has no comparison for anyone, so nothing is dropped and the order falls back to name.
       const allTime = service.getPage(req, { ...base, range: 'all', sort: 'commits_change', dir }).rows;

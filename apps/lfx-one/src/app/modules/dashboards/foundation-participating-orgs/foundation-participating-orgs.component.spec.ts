@@ -4,11 +4,14 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import type {
   FoundationParticipatingOrg,
   FoundationParticipatingOrgBreakdown,
   FoundationParticipatingOrgProjectLine,
+  FoundationParticipatingOrgsExportFilters,
+  FoundationParticipatingOrgsExportKind,
   FoundationParticipatingOrgsPage,
   FoundationParticipatingOrgsProjectsResponse,
   FoundationParticipatingOrgsQuery,
@@ -94,6 +97,7 @@ describe('FoundationParticipatingOrgsComponent', () => {
   let getPage: Mock<(query: FoundationParticipatingOrgsQuery) => Observable<FoundationParticipatingOrgsPage>>;
   let getProjects: Mock<(slug: string, range: FoundationParticipatingOrgsRange) => Observable<FoundationParticipatingOrgsProjectsResponse>>;
   let getBreakdown: Mock<(slug: string, range: FoundationParticipatingOrgsRange, key: string) => Observable<FoundationParticipatingOrgBreakdown>>;
+  let exportCsv: Mock<(filters: FoundationParticipatingOrgsExportFilters, kind: FoundationParticipatingOrgsExportKind) => Observable<string | null>>;
   let selectedFoundation: WritableSignal<ProjectContext | null>;
 
   async function render(): Promise<void> {
@@ -101,9 +105,10 @@ describe('FoundationParticipatingOrgsComponent', () => {
       imports: [FoundationParticipatingOrgsComponent],
       providers: [
         provideRouter([]),
+        provideNoopAnimations(),
         MessageService,
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        { provide: FoundationParticipatingOrgsService, useValue: { getSummary, getPage, getProjects, getBreakdown, exportCsv: vi.fn(() => of(null)) } },
+        { provide: FoundationParticipatingOrgsService, useValue: { getSummary, getPage, getProjects, getBreakdown, exportCsv } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(FoundationParticipatingOrgsComponent);
@@ -129,6 +134,7 @@ describe('FoundationParticipatingOrgsComponent', () => {
     getPage = vi.fn(() => of({ rows: [company()], totalRecords: 1 }));
     getProjects = vi.fn(() => of({ projects: [{ slug: 'project-1', name: 'Synthetic Project 1', maturity: 'Graduated' }] }));
     getBreakdown = vi.fn(() => of(breakdown()));
+    exportCsv = vi.fn(() => of(null));
     selectedFoundation = signal<ProjectContext | null>({ uid: 'foundation-uid', name: 'Synthetic Foundation', slug: FOUNDATION_SLUG });
   });
 
@@ -239,15 +245,25 @@ describe('FoundationParticipatingOrgsComponent', () => {
     }
   });
 
-  it('Clear all applies a cleared search at once, with no intermediate request for the old search', async () => {
+  it('Clear all applies every cleared filter at once, with no intermediate request that keeps any of them', async () => {
     await render();
-    fixture.componentInstance['filterForm'].controls.search.setValue('acme');
+    const controls = fixture.componentInstance['filterForm'].controls;
+    controls.search.setValue('acme');
+    controls.project.setValue('project-1');
+    controls.tier.setValue('Platinum');
+    controls.range.setValue('90d');
     await new Promise((resolve) => setTimeout(resolve, 400));
     await settle();
     getPage.mockClear();
     fixture.componentInstance['clearFilters']();
     await settle();
-    expect(getPage.mock.calls.every(([query]) => query.search === undefined)).toBe(true);
+    expect(getPage).toHaveBeenCalled();
+    for (const [request] of getPage.mock.calls) {
+      expect(request.search).toBeUndefined();
+      expect(request.projectSlug).toBeUndefined();
+      expect(request.tier).toBeUndefined();
+      expect(request.range).toBe('12mo');
+    }
     expect(fixture.componentInstance['hasActiveFilters']()).toBe(false);
   });
 
@@ -265,15 +281,26 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(text('foundation-participating-orgs-projects-error')).toContain('may be out of date');
   });
 
-  it('names the scoped project by its slug, not as a foundation total, when the project list fails', async () => {
-    await render();
-    fixture.componentInstance['filterForm'].controls.project.setValue('project-9');
-    await settle();
+  it('names the scoped project by its slug, not as a foundation total, when the project list never loaded', async () => {
     getProjects.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
-    fixture.componentInstance['filterForm'].controls.range.setValue('90d');
+    await render();
+    expect(fixture.componentInstance['projects']()).toEqual([]);
+    fixture.componentInstance['filterForm'].controls.project.setValue('project-9');
     await settle();
     expect(fixture.componentInstance['selectedProjectName']()).toBe('project-9');
     expect(query('foundation-participating-orgs-totals-note')).toBeNull();
+  });
+
+  it('runs the export when a menu item is activated', async () => {
+    await render();
+    query('foundation-participating-orgs-export-csv')?.querySelector('button')?.click();
+    await settle();
+    const item = document.querySelector<HTMLElement>('[data-testid="foundation-participating-orgs-export-by-project"]');
+    expect(item).not.toBeNull();
+    item?.click();
+    await settle();
+    expect(exportCsv).toHaveBeenCalledTimes(1);
+    expect(exportCsv.mock.calls[0][1]).toBe('by-project');
   });
 
   it('says nothing about the data source until a summary arrives', async () => {
