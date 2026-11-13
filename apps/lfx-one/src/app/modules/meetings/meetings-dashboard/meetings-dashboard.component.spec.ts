@@ -1111,6 +1111,46 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         expect(component.rollupProjectsFilter()).toEqual([]);
       });
 
+      it('keeps a saved project the options do not list when the list is incomplete', () => {
+        vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of(['child', 'missing-branch']));
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({
+            projects: [
+              { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+              { uid: 'child', name: 'Child project', slug: 'child' },
+            ],
+            groups: [],
+            complete: false,
+          })
+        );
+        const component = mount();
+        openScope(component);
+
+        expect(component.rollupProjectsFilter()).toEqual(['child', 'missing-branch']);
+      });
+
+      it('saves Show all projects as all projects even from an incomplete list', () => {
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({
+            projects: [
+              { uid: 'scope', name: 'Synthetic scope', slug: 'scope' },
+              { uid: 'child', name: 'Child project', slug: 'child' },
+            ],
+            groups: [],
+            complete: false,
+          })
+        );
+        const component = mount();
+        openScope(component);
+
+        component.showAllRollupProjects();
+        vi.advanceTimersByTime(600);
+        flush();
+
+        expect(meetings.saveRollupProjectsPreference).toHaveBeenLastCalledWith('scope', []);
+        expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
+      });
+
       it('lets a link with projects win over the saved choice', () => {
         route.snapshot.queryParamMap = convertToParamMap({ projects: 'child' });
         vi.mocked(meetings.getRollupProjectsPreference).mockReturnValue(of([]));

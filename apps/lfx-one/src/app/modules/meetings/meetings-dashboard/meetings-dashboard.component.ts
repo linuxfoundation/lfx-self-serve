@@ -512,7 +512,16 @@ export class MeetingsDashboardComponent {
 
   /** "Show all projects" on the root-only empty state: checks every project, as the user's own choice. */
   public showAllRollupProjects(): void {
-    this.onRollupProjectsFilterChange(this.rollupProjectOptions().map((option) => option.value));
+    // An explicit choice of every project, saved as such: from an incomplete list, checking every listed
+    // project would only be a subset (see rollupProjectsMode), and projects it misses would stay excluded.
+    this.rollupProjectsFilter.set(this.rollupProjectOptions().map((option) => option.value));
+    this.rollupAllProjects.set(true);
+    this.rollupProjectsTouched = true;
+    const rootUid = this.project()?.uid;
+    if (rootUid) {
+      this.rollupPreference.save(rootUid, []);
+    }
+    this.reconcileGroupFilters();
   }
 
   public onGroupTypeFilterChange(value: string | null): void {
@@ -1473,9 +1482,11 @@ export class MeetingsDashboardComponent {
         if (choice !== null && MeetingsDashboardComponent.isAllRollupProjectsChoice(choice)) {
           this.rollupProjectsFilter.set(all);
         } else if (choice !== null) {
-          const valid = choice.filter((uid) => all.includes(uid) && uid !== rootUid);
+          // Drop projects the options do not list only when they list the whole tree: from an incomplete list a
+          // missing project may just be in a branch that failed to load, and the server checks the scope anyway.
+          const kept = options.complete ? choice.filter((uid) => all.includes(uid)) : choice;
           // The root alone is the default, shown as an empty picker; otherwise keep the root if it was chosen.
-          this.rollupProjectsFilter.set(valid.length > 0 ? choice.filter((uid) => all.includes(uid)) : []);
+          this.rollupProjectsFilter.set(kept.some((uid) => uid !== rootUid) ? kept : []);
         }
         // A group or group type from a link may sit outside the seeded scope; drop it rather than match nothing.
         // Only a complete list can say so: from an incomplete one (a missed branch) the linked filter stays.
