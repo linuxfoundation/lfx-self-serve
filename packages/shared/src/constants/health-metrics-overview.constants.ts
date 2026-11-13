@@ -419,6 +419,14 @@ export const HEALTH_METRICS_OVERVIEW_EVENT_LEGEND = Object.entries(HEALTH_METRIC
   dotClass: status.fillClass,
 }));
 
+/** The stacked events list's left line by status level, and gray-200 for a cell with no status. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES = {
+  high: 'border-l-emerald-500',
+  mid: 'border-l-amber-400',
+  low: 'border-l-red-400',
+  none: 'border-l-gray-200',
+} as const;
+
 /** The upcoming share of the total events bar: the purple hatched over its lightest tint. */
 export const HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH = `repeating-linear-gradient(135deg, ${HEALTH_METRICS_OVERVIEW_PURPLE} 0 2px, ${lfxColors.violet[100]} 2px 5px)`;
 

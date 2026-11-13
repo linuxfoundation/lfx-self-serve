@@ -7,6 +7,7 @@ import {
   HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE,
   HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX,
   HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES,
+  HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES,
   HEALTH_METRICS_OVERVIEW_EVENT_PACE,
   HEALTH_METRICS_OVERVIEW_EVENT_STATUS,
   HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
@@ -62,6 +63,7 @@ import type {
   HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventDialogBadgesView,
   HealthMetricsOverviewEventGaugeView,
+  HealthMetricsOverviewEventTalksView,
   HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
@@ -1174,28 +1176,49 @@ function buildSponsorshipView(revenue: number | null, goal: number | null, model
 }
 
 function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRowView {
-  const accepted = event.acceptedTalks ?? 0;
-  const proposals = event.totalProposals ?? 0;
-
   return {
     eventId: event.eventId,
     name: event.eventName,
     meta: buildHealthMetricsOverviewEventMeta(event),
     isPast,
     registrations: buildRegistrationsBar(event, isPast),
-    talks: {
-      hasProposals: proposals > 0,
-      countLabel: formatCount(accepted),
-      sideLabel: 'Received:',
-      sideValue: formatCount(proposals),
-      widthPct: proposals > 0 ? clampPct((accepted / proposals) * 100) : 0,
-      // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
-      barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
-      neutral: false,
-      gauge: isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE,
-      note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A',
-    },
+    talks: buildTalksBar(event, isPast),
   };
+}
+
+/** Accepted speaking proposals out of those received; with none received, the stage of the call for proposals. */
+function buildTalksBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventTalksView {
+  const accepted = event.acceptedTalks ?? 0;
+  const proposals = event.totalProposals ?? 0;
+  const hasProposals = proposals > 0;
+  const note = event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A';
+  const gauge: HealthMetricsOverviewEventGaugeView = isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE;
+
+  return {
+    hasProposals,
+    countLabel: formatCount(accepted),
+    sideLabel: 'Received:',
+    sideValue: formatCount(proposals),
+    widthPct: hasProposals ? clampPct((accepted / proposals) * 100) : 0,
+    // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
+    barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
+    neutral: false,
+    gauge,
+    note,
+    compactValue: hasProposals ? `${formatCount(accepted)} (Received: ${formatCount(proposals)})` : note,
+    // A row with no proposals keeps its gray line.
+    lineClass: hasProposals ? eventLineClass(gauge) : HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
+  };
+}
+
+/** The stacked list's line follows the status level alone, never the progress. */
+function eventLineClass(gauge: HealthMetricsOverviewEventGaugeView): string {
+  return gauge.tone === 'level' && gauge.level ? HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES[gauge.level] : HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none;
+}
+
+/** "620 (Goal: 1,000)" or "620 (No goal set)": a registrations figure with its side text in brackets. */
+function compactRegistrations(countLabel: string, sideLabel: string, sideValue: string): string {
+  return `${countLabel} (${[sideLabel, sideValue].filter(Boolean).join(' ')})`;
 }
 
 /**
@@ -1215,15 +1238,31 @@ function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolea
       neutral: true,
       statusLabel: null,
       gauge: { ...ACCENT_GAUGE, empty: true },
+      compactValue: compactRegistrations(countLabel, 'No goal set', ''),
+      lineClass: HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
     };
   }
-  const side = { countLabel, sideLabel: 'Goal:', sideValue: formatCount(goal), neutral: false };
+  const side = {
+    countLabel,
+    sideLabel: 'Goal:',
+    sideValue: formatCount(goal),
+    neutral: false,
+    compactValue: compactRegistrations(countLabel, 'Goal:', formatCount(goal)),
+  };
   if (event.registrations === null) {
-    return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null, gauge: { ...ACCENT_GAUGE, unmeasured: true } };
+    return {
+      ...side,
+      widthPct: 0,
+      barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted,
+      statusLabel: null,
+      gauge: { ...ACCENT_GAUGE, unmeasured: true },
+      lineClass: HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
+    };
   }
 
   const share = event.registrations / goal;
-  return { ...side, widthPct: clampPct(share * 100), ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)) };
+  const status = statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore));
+  return { ...side, widthPct: clampPct(share * 100), ...status, lineClass: eventLineClass(status.gauge) };
 }
 
 function statusFields(

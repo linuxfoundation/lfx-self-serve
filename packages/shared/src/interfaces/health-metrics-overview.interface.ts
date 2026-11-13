@@ -429,6 +429,10 @@ export interface HealthMetricsOverviewEventBarView {
   barClass: string;
   neutral: boolean;
   gauge: HealthMetricsOverviewEventGaugeView;
+  /** The stacked list's value, e.g. "620 (Goal: 1,000)", "620 (No goal set)" or "40 (Received: 185)". */
+  compactValue: string;
+  /** The stacked list's 3px left line, coloured by status only: gray-200 with none. */
+  lineClass: string;
 }
 
 /** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
