@@ -68,7 +68,7 @@
             [tooltip]="totalRecords() === 0 ? 'No rows to export' : undefined"
             (onClick)="exportMenuRef.toggle($event)"
             data-testid="foundation-participating-orgs-export-csv" />
-          <p-menu #exportMenuRef [model]="exportMenu()" [popup]="true" appendTo="body" data-testid="foundation-participating-orgs-export-menu">
+          <lfx-menu #exportMenuRef [model]="exportMenu()" [popup]="true" appendTo="body" data-testid="foundation-participating-orgs-export-menu">
             <ng-template #item let-item>
               <button
                 type="button"
@@ -78,7 +78,7 @@
                 <span class="text-xs text-gray-500">{{ item.title }}</span>
               </button>
             </ng-template>
-          </p-menu>
+          </lfx-menu>
         </lfx-card-tabs-bar>
 
         <div class="flex flex-col gap-3 px-5 pt-4 pb-3 lg:flex-row lg:items-center" data-testid="foundation-participating-orgs-filter-bar">
@@ -136,6 +136,16 @@
               dataTest="foundation-participating-orgs-range-filter" />
           </div>
         </div>
+
+        @if (projectsFailed()) {
+          <div
+            class="mx-5 mb-3 flex flex-wrap items-center gap-2 text-sm text-gray-700"
+            role="alert"
+            data-testid="foundation-participating-orgs-projects-error">
+            <span>We couldn't load the project list, so you can't scope to a project yet.</span>
+            <lfx-button label="Try again" severity="secondary" [outlined]="true" size="small" (onClick)="retryProjects()" />
+          </div>
+        }
 
         @if (selectedProjectName(); as projectName) {
           <div
@@ -258,14 +268,14 @@
                     <button
                       type="button"
                       class="flex h-7 w-7 items-center justify-center rounded text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                      [attr.aria-expanded]="isExpanded(row.participantKey)"
+                      [attr.aria-expanded]="expanded().has(row.participantKey)"
                       [attr.aria-controls]="'foundation-participating-orgs-panel-' + row.participantKey"
-                      [attr.aria-label]="(isExpanded(row.participantKey) ? 'Hide projects for ' : 'Show projects for ') + row.name"
+                      [attr.aria-label]="(expanded().has(row.participantKey) ? 'Hide projects for ' : 'Show projects for ') + row.name"
                       [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-toggle'"
                       (click)="toggleRow(row.participantKey)">
                       <i
                         class="text-xs"
-                        [class]="isExpanded(row.participantKey) ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"
+                        [class]="expanded().has(row.participantKey) ? 'fa-light fa-chevron-up' : 'fa-light fa-chevron-down'"
                         aria-hidden="true"></i>
                     </button>
                   </td>
@@ -327,7 +337,7 @@
                     </div>
                   </td>
                 </tr>
-                @if (isExpanded(row.participantKey)) {
+                @if (expanded().has(row.participantKey)) {
                   <tr
                     [id]="'foundation-participating-orgs-panel-' + row.participantKey"
                     class="bg-gray-50"
@@ -363,19 +373,22 @@
 
 <!-- One company's project breakdown: the foundation total first, then each project it is active in (top 10 for a large company). -->
 <ng-template #breakdownPanel let-row>
-  @let view = breakdownView(row.participantKey);
+  @let view = breakdownViews()[row.participantKey];
   <div class="flex flex-col gap-3" [attr.aria-busy]="view?.state?.status === 'loading'">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-600">Projects involved ({{ row.projectsInvolvedLabel.split(' ')[0] }})</h3>
-      @if (view?.canExpand) {
+      @if (view?.canFilter) {
         <div class="w-56">
           <label class="sr-only" [for]="'foundation-participating-orgs-filter-' + row.participantKey">Filter {{ row.name }} projects</label>
-          <input
-            type="search"
-            class="w-full rounded-md border border-gray-300 bg-white px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-            [id]="'foundation-participating-orgs-filter-' + row.participantKey"
-            [placeholder]="'Filter ' + row.projectsInvolvedLabel.split(' ')[0] + ' projects'"
-            (input)="setBreakdownFilter(row.participantKey, $any($event.target).value)" />
+          <lfx-input-text
+            [form]="breakdownFilterForm"
+            [control]="row.participantKey"
+            [inputId]="'foundation-participating-orgs-filter-' + row.participantKey"
+            placeholder="Filter projects"
+            icon="fa-light fa-search"
+            size="small"
+            styleClass="w-full"
+            [dataTest]="'foundation-participating-orgs-breakdown-filter-' + row.participantKey" />
         </div>
       }
     </div>

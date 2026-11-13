@@ -3,10 +3,11 @@
 
 import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, linkedSignal, type Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, linkedSignal, type Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -17,6 +18,7 @@ import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid
 import { TableComponent } from '@components/table/table.component';
 import {
   EMPTY_FOUNDATION_PARTICIPATING_ORGS_PAGE,
+  FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N,
   FOUNDATION_PARTICIPATING_ORGS_COMMIT_SHARE_TOOLTIP,
   FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE,
   FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
@@ -33,8 +35,8 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   FilterPillOption,
-  FoundationParticipatingOrgBreakdown,
-  FoundationParticipatingOrgProjectLineVm,
+  FoundationParticipatingOrgBreakdownState,
+  FoundationParticipatingOrgBreakdownView,
   FoundationParticipatingOrgRowVm,
   FoundationParticipatingOrgsExportFilters,
   FoundationParticipatingOrgsExportKind,
@@ -52,20 +54,11 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MenuItem } from 'primeng/api';
-import { MenuModule } from 'primeng/menu';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, pairwise, switchMap, take, tap } from 'rxjs';
 
 import { decorateFoundationOrgRow, decorateProjectLine, formatCommits, groupProjectOptions, splitBreakdown } from './foundation-participating-orgs.util';
 import { FoundationParticipatingOrgsService } from './services/foundation-participating-orgs.service';
-
-/** One expanded row's project breakdown, loaded when the row opens. */
-interface BreakdownState {
-  status: 'loading' | 'ready' | 'error';
-  data: FoundationParticipatingOrgBreakdown | null;
-  showAll: boolean;
-  filter: string;
-}
 
 /**
  * Foundation Lens → Participating Companies (#5697): every company contributing to any project of the foundation,
@@ -78,7 +71,7 @@ interface BreakdownState {
     DecimalPipe,
     NgTemplateOutlet,
     ReactiveFormsModule,
-    MenuModule,
+    MenuComponent,
     TooltipModule,
     ButtonComponent,
     CardComponent,
@@ -95,6 +88,7 @@ interface BreakdownState {
 export class FoundationParticipatingOrgsComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dataService = inject(FoundationParticipatingOrgsService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly rangeOptions = [...FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS];
   protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
@@ -109,14 +103,19 @@ export class FoundationParticipatingOrgsComponent {
     range: new FormControl<FoundationParticipatingOrgsRange>(FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE, { nonNullable: true }),
   });
 
+  /** One filter control per expanded company, added when its row opens and kept while the scope holds. */
+  protected readonly breakdownFilterForm = new FormGroup<Record<string, FormControl<string>>>({});
+
   protected readonly segment = signal<FoundationParticipatingOrgsSegment>('all');
   protected readonly sort = signal<FoundationParticipatingOrgsSortField>(PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT);
   protected readonly dir = signal<FoundationParticipatingOrgsSortDirection>(PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR);
   protected readonly pageSize = signal<number>(FOUNDATION_PARTICIPATING_ORGS_PAGE_SIZE);
   protected readonly exporting = signal(false);
   protected readonly expanded = signal<ReadonlySet<string>>(new Set());
-  protected readonly breakdowns = signal<Record<string, BreakdownState>>({});
+  protected readonly breakdowns = signal<Record<string, FoundationParticipatingOrgBreakdownState>>({});
+  protected readonly projectsFailed = signal(false);
   private readonly retryTrigger = signal(0);
+  private readonly projectsRetryTrigger = signal(0);
   private breakdownScope = '';
 
   private readonly summaryLoadingState = signal(true);
@@ -147,6 +146,12 @@ export class FoundationParticipatingOrgsComponent {
     source: () => `${this.slug()}|${this.range()}|${this.segment()}|${this.search()}|${this.projectSlug()}|${this.tier()}|${this.sort()}|${this.dir()}`,
     computation: () => 0,
   });
+
+  private readonly query: Signal<FoundationParticipatingOrgsQuery> = computed(() => ({
+    ...this.exportFilters(),
+    pageSize: this.pageSize(),
+    offset: this.offset(),
+  }));
 
   private readonly projectsState: Signal<{ slug: string; projects: FoundationParticipatingOrgsProject[] }> = this.initProjects();
   protected readonly projects = computed(() => {
@@ -179,16 +184,14 @@ export class FoundationParticipatingOrgsComponent {
     return this.selectedProjectName() ?? `All ${summary?.projectCount ?? ''} projects`.replace('  ', ' ');
   });
   protected readonly foundationName = computed(() => this.summary()?.foundationName ?? this.foundation()?.name ?? 'this foundation');
-  protected readonly dataLine = computed(() => {
-    const date = this.summary()?.asOfDate;
-    return date ? `Data through ${formatDate(date)} · Source: LFX Insights` : 'Source: LFX Insights';
-  });
+  protected readonly dataLine = computed(() => this.initDataLine());
   protected readonly subtitle = computed(() => this.initSubtitle());
   protected readonly tiles: Signal<StatCardItem[]> = computed(() => this.initTiles());
   protected readonly tabs: Signal<FilterPillOption[]> = computed(() => this.initTabs());
   protected readonly exportMenu: Signal<MenuItem[]> = computed(() => this.initExportMenu());
   protected readonly activeFilters = computed(() => this.initActiveFilters());
   protected readonly hasActiveFilters = computed(() => this.activeFilters().length > 0);
+  protected readonly breakdownViews: Signal<Record<string, FoundationParticipatingOrgBreakdownView>> = computed(() => this.initBreakdownViews());
   protected readonly sortIconMap: Signal<Record<FoundationParticipatingOrgsSortField, string>> = computed(() => this.initSortIconMap());
   protected readonly ariaSortMap: Signal<Record<FoundationParticipatingOrgsSortField, 'ascending' | 'descending' | 'none'>> = computed(() =>
     this.initAriaSortMap()
@@ -198,11 +201,16 @@ export class FoundationParticipatingOrgsComponent {
   );
   protected readonly noActivityRange = computed(() => (this.range() === 'all' ? null : this.rangeLabel()));
 
-  private readonly query: Signal<FoundationParticipatingOrgsQuery> = computed(() => ({
-    ...this.exportFilters(),
-    pageSize: this.pageSize(),
-    offset: this.offset(),
-  }));
+  public constructor() {
+    // A project slug belongs to one foundation, so switching foundation drops the project scope.
+    toObservable(this.slug)
+      .pipe(
+        pairwise(),
+        filter(([previous, current]) => previous !== '' && previous !== current),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.filterForm.controls.project.setValue(null));
+  }
 
   protected onSegmentChange(id: string): void {
     const segment = PROJECT_PARTICIPATING_ORGS_SEGMENTS.find((value) => value === id);
@@ -236,7 +244,7 @@ export class FoundationParticipatingOrgsComponent {
   }
 
   protected clearFilters(): void {
-    this.filterForm.patchValue({ search: '', project: null, tier: null });
+    this.filterForm.patchValue({ search: '', project: null, tier: null, range: FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE });
   }
 
   protected removeFilter(id: 'search' | 'project' | 'tier' | 'range'): void {
@@ -262,6 +270,11 @@ export class FoundationParticipatingOrgsComponent {
 
   protected retry(): void {
     this.retryTrigger.update((value) => value + 1);
+    this.projectsRetryTrigger.update((value) => value + 1);
+  }
+
+  protected retryProjects(): void {
+    this.projectsRetryTrigger.update((value) => value + 1);
   }
 
   protected export(kind: FoundationParticipatingOrgsExportKind): void {
@@ -276,10 +289,6 @@ export class FoundationParticipatingOrgsComponent {
       .subscribe();
   }
 
-  protected isExpanded(key: string): boolean {
-    return this.expanded().has(key);
-  }
-
   /** Opens or closes a company's project breakdown; it loads on first open, not with the page. */
   protected toggleRow(key: string): void {
     const next = new Set(this.expanded());
@@ -290,36 +299,12 @@ export class FoundationParticipatingOrgsComponent {
     }
     next.add(key);
     this.expanded.set(next);
+    this.ensureBreakdownFilter(key);
     if (!this.breakdowns()[key]) this.loadBreakdown(key);
   }
 
   protected retryBreakdown(key: string): void {
     this.loadBreakdown(key);
-  }
-
-  protected breakdownView(key: string): {
-    state: BreakdownState;
-    total: FoundationParticipatingOrgProjectLineVm | null;
-    lines: FoundationParticipatingOrgProjectLineVm[];
-    other: ReturnType<typeof splitBreakdown>['other'];
-    canExpand: boolean;
-  } | null {
-    const state = this.breakdowns()[key];
-    if (!state) return null;
-    if (!state.data) return { state, total: null, lines: [], other: null, canExpand: false };
-    const { shown, other } = splitBreakdown(state.data.projects, state.showAll, state.filter);
-    const scope = this.projectSlug();
-    return {
-      state,
-      total: decorateProjectLine(state.data.total),
-      lines: shown.map((line) => ({ ...decorateProjectLine(line), inView: scope === line.projectSlug })),
-      other,
-      canExpand: state.data.projects.length > 10,
-    };
-  }
-
-  protected setBreakdownFilter(key: string, value: string): void {
-    this.patchBreakdown(key, { filter: value });
   }
 
   protected showAllProjects(key: string): void {
@@ -328,18 +313,31 @@ export class FoundationParticipatingOrgsComponent {
 
   private loadBreakdown(key: string): void {
     const slug = this.slug();
+    const range = this.range();
     this.patchBreakdown(key, { status: 'loading', data: null });
     this.dataService
-      .getBreakdown(slug, this.range(), key)
+      .getBreakdown(slug, range, key)
       .pipe(take(1))
       .subscribe({
-        next: (data) => this.patchBreakdown(key, { status: 'ready', data }),
-        error: () => this.patchBreakdown(key, { status: 'error' }),
+        // A response for a foundation or range the page has since left must not land in the new scope's cache.
+        next: (data) => {
+          if (slug === this.slug() && range === this.range()) this.patchBreakdown(key, { status: 'ready', data });
+        },
+        error: () => {
+          if (slug === this.slug() && range === this.range()) this.patchBreakdown(key, { status: 'error' });
+        },
       });
   }
 
-  private patchBreakdown(key: string, patch: Partial<BreakdownState>): void {
-    const initial: BreakdownState = { status: 'loading', data: null, showAll: false, filter: '' };
+  private ensureBreakdownFilter(key: string): void {
+    if (this.breakdownFilterForm.contains(key)) return;
+    const control = new FormControl<string>('', { nonNullable: true });
+    this.breakdownFilterForm.addControl(key, control);
+    control.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.patchBreakdown(key, { filter: value }));
+  }
+
+  private patchBreakdown(key: string, patch: Partial<FoundationParticipatingOrgBreakdownState>): void {
+    const initial: FoundationParticipatingOrgBreakdownState = { status: 'loading', data: null, showAll: false, filter: '' };
     this.breakdowns.update((current) => ({ ...current, [key]: { ...initial, ...current[key], ...patch } }));
   }
 
@@ -361,13 +359,21 @@ export class FoundationParticipatingOrgsComponent {
 
   private initProjects(): Signal<{ slug: string; projects: FoundationParticipatingOrgsProject[] }> {
     return toSignal(
-      toObservable(computed(() => ({ slug: this.slug(), range: this.range() }))).pipe(
-        filter(({ slug }) => slug.length > 0),
-        distinctUntilChanged((a, b) => a.slug === b.slug && a.range === b.range),
-        switchMap(({ slug, range }) =>
+      combineLatest([
+        toObservable(computed(() => ({ slug: this.slug(), range: this.range() }))).pipe(
+          filter(({ slug }) => slug.length > 0),
+          distinctUntilChanged((a, b) => a.slug === b.slug && a.range === b.range)
+        ),
+        toObservable(this.projectsRetryTrigger),
+      ]).pipe(
+        tap(() => this.projectsFailed.set(false)),
+        switchMap(([{ slug, range }]) =>
           this.dataService.getProjects(slug, range).pipe(
             map((response) => ({ slug, projects: response.projects })),
-            catchError(() => of({ slug, projects: [] as FoundationParticipatingOrgsProject[] }))
+            catchError(() => {
+              this.projectsFailed.set(true);
+              return of({ slug, projects: [] as FoundationParticipatingOrgsProject[] });
+            })
           )
         )
       ),
@@ -378,9 +384,11 @@ export class FoundationParticipatingOrgsComponent {
   private initSummary(): Signal<{ slug: string; summary: FoundationParticipatingOrgsSummary | null }> {
     return toSignal(
       combineLatest([
-        toObservable(computed(() => ({ slug: this.slug(), range: this.range(), projectSlug: this.projectSlug() }))).pipe(
+        toObservable(
+          computed(() => ({ slug: this.slug(), range: this.range(), projectSlug: this.projectSlug(), search: this.search(), tier: this.tier() }))
+        ).pipe(
           filter(({ slug }) => slug.length > 0),
-          distinctUntilChanged((a, b) => a.slug === b.slug && a.range === b.range && a.projectSlug === b.projectSlug)
+          distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
         ),
         toObservable(this.retryTrigger),
       ]).pipe(
@@ -388,16 +396,18 @@ export class FoundationParticipatingOrgsComponent {
           this.summaryLoadingState.set(true);
           this.summaryErrorStatus.set(null);
         }),
-        switchMap(([{ slug, range, projectSlug }]) =>
-          this.dataService.getSummary(slug, range, projectSlug).pipe(
-            map((response) => ({ slug, summary: response.summary })),
-            tap(() => this.summaryLoadingState.set(false)),
-            catchError((error: unknown) => {
-              this.summaryErrorStatus.set(error instanceof HttpErrorResponse ? error.status : 0);
-              this.summaryLoadingState.set(false);
-              return of({ slug, summary: null });
-            })
-          )
+        switchMap(([{ slug, range, projectSlug, search, tier }]) =>
+          this.dataService
+            .getSummary({ foundationSlug: slug, range, projectSlug: projectSlug ?? undefined, search: search || undefined, tier: tier ?? undefined })
+            .pipe(
+              map((response) => ({ slug, summary: response.summary })),
+              tap(() => this.summaryLoadingState.set(false)),
+              catchError((error: unknown) => {
+                this.summaryErrorStatus.set(error instanceof HttpErrorResponse ? error.status : 0);
+                this.summaryLoadingState.set(false);
+                return of({ slug, summary: null });
+              })
+            )
         )
       ),
       { initialValue: { slug: '', summary: null } }
@@ -437,6 +447,34 @@ export class FoundationParticipatingOrgsComponent {
       ),
       { initialValue: { slug: '', page: EMPTY_FOUNDATION_PARTICIPATING_ORGS_PAGE } }
     );
+  }
+
+  private initBreakdownViews(): Record<string, FoundationParticipatingOrgBreakdownView> {
+    const scope = this.projectSlug();
+    return Object.fromEntries(
+      Object.entries(this.breakdowns()).map(([key, state]) => {
+        if (!state.data) return [key, { state, total: null, lines: [], other: null, canFilter: false }];
+        const { shown, other } = splitBreakdown(state.data.projects, state.showAll, state.filter);
+        return [
+          key,
+          {
+            state,
+            total: decorateProjectLine(state.data.total),
+            lines: shown.map((line) => ({ ...decorateProjectLine(line), inView: scope === line.projectSlug })),
+            other,
+            canFilter: state.data.projects.length > FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N,
+          },
+        ];
+      })
+    );
+  }
+
+  /** Demo figures are named as such and dated by generation; only warehouse figures claim LFX Insights as their source. */
+  private initDataLine(): string {
+    const summary = this.summary();
+    if (!summary) return 'Source: LFX Insights';
+    const date = formatDate(summary.asOfDate);
+    return summary.dataSource === 'demo' ? `Fictional demo data, generated ${date} · not from LFX Insights` : `Data through ${date} · Source: LFX Insights`;
   }
 
   /** A 403 on either read is the viewer lacking access to the foundation; any other failure (503 included) is retryable. */
@@ -495,8 +533,8 @@ export class FoundationParticipatingOrgsComponent {
     const summary = this.summary();
     const label = (name: string, count: number | undefined): string => (count === undefined ? name : `${name} (${count.toLocaleString('en-US')})`);
     return [
-      { id: 'all', label: label('All', summary ? summary.membersCount + summary.nonMembersCount : undefined) },
-      { id: 'members', label: label('Members', summary?.membersCount) },
+      { id: 'all', label: label('All', summary?.companiesCount) },
+      { id: 'members', label: label('Members', summary?.contributingMembersCount) },
       { id: 'non_members', label: label('Non-Members', summary?.nonMembersCount) },
     ];
   }

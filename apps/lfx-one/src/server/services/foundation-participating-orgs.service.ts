@@ -12,6 +12,7 @@ import type {
   FoundationParticipatingOrgsQuery,
   FoundationParticipatingOrgsRange,
   FoundationParticipatingOrgsSummary,
+  FoundationParticipatingOrgsSummaryQuery,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -62,28 +63,33 @@ export class FoundationParticipatingOrgsService {
       .sort((a, b) => b.commits - a.commits);
   }
 
-  public getSummary(req: Request, slug: string, range: FoundationParticipatingOrgsRange, projectSlug?: string): FoundationParticipatingOrgsSummary | null {
+  public getSummary(req: Request, query: FoundationParticipatingOrgsSummaryQuery): FoundationParticipatingOrgsSummary | null {
+    const { foundationSlug: slug, range, projectSlug } = query;
     logger.debug(req, 'get_foundation_participating_orgs_summary', 'Building summary', { slug, range, project_slug: projectSlug });
     const foundation = this.source.getFoundation(slug);
     const project = this.resolveProject(foundation, projectSlug);
-    const activity = this.activities(foundation, range, projectSlug);
-    if (activity.length === 0) return null;
+    const base = this.activities(foundation, range, projectSlug);
+    // No activity at all in scope is the empty state; a search or tier that matches nothing still gets its zeros.
+    if (base.length === 0) return null;
 
-    const members = activity.filter((item) => item.row.isMember);
-    const commits = activity.reduce((sum, item) => sum + item.row.commits, 0);
+    const matching = base.filter(({ row }) => matches(row, query));
+    const members = matching.filter((item) => item.row.isMember);
+    const commits = matching.reduce((sum, item) => sum + item.row.commits, 0);
     const memberCommits = members.reduce((sum, item) => sum + item.row.commits, 0);
     return {
       foundationSlug: slug,
+      dataSource: 'demo',
       foundationName: foundation.name,
       projectCount: foundation.projects.length,
       projectSlug: project?.slug ?? null,
       projectName: project?.name ?? null,
       range,
       asOfDate: new Date().toISOString().slice(0, 10),
-      companiesCount: activity.length,
-      membersCount: foundation.companies.filter((company) => company.tier !== null).length,
+      companiesCount: matching.length,
+      membersCount: foundation.companies.filter((company) => company.tier !== null && matches({ name: company.name, membershipTierClass: company.tier }, query))
+        .length,
       contributingMembersCount: members.length,
-      nonMembersCount: activity.length - members.length,
+      nonMembersCount: matching.length - members.length,
       memberCommitShare: commits > 0 ? memberCommits / commits : null,
     };
   }
@@ -122,18 +128,20 @@ export class FoundationParticipatingOrgsService {
   public getExportRows(req: Request, filters: FoundationParticipatingOrgsExportFilters): { items: FoundationCompanyActivity[]; truncated: boolean } {
     logger.debug(req, 'export_foundation_participating_orgs', 'Building export rows', { slug: filters.foundationSlug });
     const items = this.filtered(filters);
-    return { items: items.slice(0, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS), truncated: items.length > FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS };
+    // Under a project scope the by-project file lists that project only, matching the table and the summary file.
+    const scoped = filters.projectSlug
+      ? items.map((item) => ({ ...item, lines: item.lines.filter((line) => line.projectSlug === filters.projectSlug) }))
+      : items;
+    return { items: scoped.slice(0, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS), truncated: scoped.length > FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS };
   }
 
   private filtered(filters: FoundationParticipatingOrgsExportFilters): FoundationCompanyActivity[] {
     const foundation = this.source.getFoundation(filters.foundationSlug);
     this.resolveProject(foundation, filters.projectSlug);
-    const search = filters.search?.toLowerCase();
     const items = this.activities(foundation, filters.range, filters.projectSlug).filter(({ row }) => {
       if (filters.segment === 'members' && !row.isMember) return false;
       if (filters.segment === 'non_members' && row.isMember) return false;
-      if (filters.tier && row.membershipTierClass !== filters.tier) return false;
-      return !search || row.name.toLowerCase().includes(search);
+      return matches(row, filters);
     });
     return items.sort((a, b) => compare(a.row, b.row, filters.sort) * (filters.dir === 'asc' ? 1 : -1) || a.row.name.localeCompare(b.row.name));
   }
@@ -194,6 +202,16 @@ export class FoundationParticipatingOrgsService {
     }
     return items;
   }
+}
+
+/** Search (name substring) and tier narrow every figure on the page; the tab and project scope are applied separately. */
+function matches(
+  row: { name: string; membershipTierClass: FoundationParticipatingOrg['membershipTierClass'] },
+  filters: { search?: string; tier?: FoundationParticipatingOrg['membershipTierClass'] | undefined }
+): boolean {
+  if (filters.tier && row.membershipTierClass !== filters.tier) return false;
+  const search = filters.search?.toLowerCase();
+  return !search || row.name.toLowerCase().includes(search);
 }
 
 function compare(a: FoundationParticipatingOrg, b: FoundationParticipatingOrg, field: FoundationParticipatingOrgsQuery['sort']): number {

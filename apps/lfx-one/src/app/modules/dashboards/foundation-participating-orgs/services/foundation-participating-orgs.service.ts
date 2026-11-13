@@ -18,6 +18,7 @@ import type {
   FoundationParticipatingOrgsProjectsResponse,
   FoundationParticipatingOrgsQuery,
   FoundationParticipatingOrgsRange,
+  FoundationParticipatingOrgsSummaryQuery,
   FoundationParticipatingOrgsSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { downloadFromUrl, parseContentDispositionFilename } from '@lfx-one/shared/utils';
@@ -42,13 +43,12 @@ export class FoundationParticipatingOrgsService {
     return this.http.get<FoundationParticipatingOrgsProjectsResponse>(`${BASE_URL}/projects`, { params }).pipe(catchError(this.propagate('getProjects')));
   }
 
-  public getSummary(
-    foundationSlug: string,
-    range: FoundationParticipatingOrgsRange,
-    projectSlug: string | null
-  ): Observable<FoundationParticipatingOrgsSummaryResponse> {
-    let params = strictHttpParams().set('foundationSlug', foundationSlug).set('range', range);
-    if (projectSlug) params = params.set('projectSlug', projectSlug);
+  /** Cards and tab counts for the foundation (or one project), narrowed by the same search and tier as the list. */
+  public getSummary(query: FoundationParticipatingOrgsSummaryQuery): Observable<FoundationParticipatingOrgsSummaryResponse> {
+    let params = strictHttpParams().set('foundationSlug', query.foundationSlug).set('range', query.range);
+    if (query.projectSlug) params = params.set('projectSlug', query.projectSlug);
+    if (query.search) params = params.set('search', query.search);
+    if (query.tier) params = params.set('tier', query.tier);
     return this.http.get<FoundationParticipatingOrgsSummaryResponse>(`${BASE_URL}/summary`, { params }).pipe(catchError(this.propagate('getSummary')));
   }
 

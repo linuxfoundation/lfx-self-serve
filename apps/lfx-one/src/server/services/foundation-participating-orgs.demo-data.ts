@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// TEMP-DEMO-DATA (#5707): the foundation-level LFX Insights / warehouse model does not exist yet, so the page is
+// Demo data (#5707): the foundation-level LFX Insights / warehouse model does not exist yet, so the page is
 // built against this deterministic, fictional data set. Every name and number below is invented. The service reads
 // it through `FoundationParticipatingOrgsDataSource`, so a warehouse-backed source replaces this file without
 // touching the controller, the routes or the client.

@@ -19,7 +19,12 @@ import {
   PROJECT_PARTICIPATING_ORGS_SORT_DIRECTIONS,
   PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
 } from '@lfx-one/shared/constants';
-import type { FoundationParticipatingOrgsExportFilters, FoundationParticipatingOrgsRange, MembershipTierClass } from '@lfx-one/shared/interfaces';
+import type {
+  FoundationParticipatingOrgsExportFilters,
+  FoundationParticipatingOrgsRange,
+  FoundationParticipatingOrgsSummaryQuery,
+  MembershipTierClass,
+} from '@lfx-one/shared/interfaces';
 import { rowsToCsv } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -57,10 +62,9 @@ export class FoundationParticipatingOrgsController {
     const operation = 'get_foundation_participating_orgs_summary';
     const startTime = logger.startOperation(req, operation);
     try {
-      const slug = parseSlug(req, operation);
-      const range = parseRange(req, operation);
-      const summary = this.service.getSummary(req, slug, range, parseProjectSlug(req, operation));
-      logger.success(req, operation, startTime, { slug, range, has_summary: summary !== null });
+      const { foundationSlug, range, projectSlug, search, tier } = parseSummaryQuery(req, operation);
+      const summary = this.service.getSummary(req, { foundationSlug, range, projectSlug, search, tier });
+      logger.success(req, operation, startTime, { slug: foundationSlug, range, has_summary: summary !== null });
       res.json({ summary });
     } catch (error) {
       next(error);
@@ -134,9 +138,9 @@ export class FoundationParticipatingOrgsController {
                 row.otherMemberships.join('; '),
                 row.projectsInvolved,
                 row.commits,
-                '',
+                changeLabel(row.commitsChange),
                 row.contributors,
-                '',
+                changeLabel(row.contributorsChange),
               ]),
             ]
           : [
@@ -202,6 +206,19 @@ function parseProjectSlug(req: Request, operation: string): string | undefined {
 
 function parseRange(req: Request, operation: string): FoundationParticipatingOrgsRange {
   return parseEnum(req, 'range', FOUNDATION_PARTICIPATING_ORGS_RANGES, FOUNDATION_PARTICIPATING_ORGS_DEFAULT_RANGE, operation);
+}
+
+/** The list filters without the tab, sorting and paging; the summary covers every tab. */
+function parseSummaryQuery(req: Request, operation: string): FoundationParticipatingOrgsSummaryQuery {
+  const { foundationSlug, range, projectSlug, search, tier } = parseFilters(req, operation);
+  return { foundationSlug, range, projectSlug, search, tier };
+}
+
+/** A change fraction as a whole percent for the CSV (`0.3` → `+30%`); blank when there is no comparison. */
+function changeLabel(fraction: number | null): string {
+  if (fraction === null) return '';
+  const percent = Math.round(fraction * 100) + 0;
+  return percent > 0 ? `+${percent}%` : `${percent}%`;
 }
 
 function parseFilters(req: Request, operation: string): FoundationParticipatingOrgsExportFilters {

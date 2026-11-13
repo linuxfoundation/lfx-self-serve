@@ -37,9 +37,17 @@ export interface FoundationParticipatingOrgsProjectsResponse {
   projects: FoundationParticipatingOrgsProject[];
 }
 
-/** Cards and tab counts for one foundation, range and scope (the whole foundation, or one project). Counts ignore search and tier. */
+/** Cards and tab counts for one foundation, range and scope (the whole foundation, or one project), narrowed by the search and tier filters. */
+/** Where the figures come from. `demo` is the fictional data set used until the warehouse model exists (#5707). */
+export type FoundationParticipatingOrgsDataSourceKind = 'demo' | 'warehouse';
+
+/** Summary request: the list filters without the tab, sorting and paging (the tab counts cover every tab). */
+export type FoundationParticipatingOrgsSummaryQuery = Pick<FoundationParticipatingOrgsQuery, 'foundationSlug' | 'range' | 'projectSlug' | 'search' | 'tier'>;
+
 export interface FoundationParticipatingOrgsSummary {
   foundationSlug: string;
+  /** Marks fictional demo figures so the page never presents them as warehouse data. */
+  dataSource: FoundationParticipatingOrgsDataSourceKind;
   foundationName: string;
   /** Number of projects in the foundation. */
   projectCount: number;
@@ -47,11 +55,15 @@ export interface FoundationParticipatingOrgsSummary {
   projectSlug: string | null;
   projectName: string | null;
   range: FoundationParticipatingOrgsRange;
-  /** Build date (ISO `YYYY-MM-DD`). */
+  /** Build date (ISO `YYYY-MM-DD`). For demo data it is the day the figures were generated. */
   asOfDate: string;
+  /** Companies with activity in the range that match the search and tier filters (the All tab). */
   companiesCount: number;
+  /** The full membership roster matching the search and tier filters, contributing or not. */
   membersCount: number;
+  /** Matching members with activity in the range (the Members tab). */
   contributingMembersCount: number;
+  /** Matching non-members with activity in the range (the Non-Members tab). */
   nonMembersCount: number;
   /** Commits from member companies divided by all commits in scope, in [0, 1]; null when there are no commits. */
   memberCommitShare: number | null;
@@ -174,4 +186,22 @@ export interface FoundationParticipatingOrgProjectLineVm extends FoundationParti
 export interface FoundationParticipatingOrgsProjectOptionGroup {
   label: string;
   items: { label: string; value: string; commits: number }[];
+}
+
+/** One expanded company's project breakdown while it loads, after it loads, or when it failed. */
+export interface FoundationParticipatingOrgBreakdownState {
+  status: 'loading' | 'ready' | 'error';
+  data: FoundationParticipatingOrgBreakdown | null;
+  showAll: boolean;
+  filter: string;
+}
+
+/** What the breakdown panel renders for one company: the total row, the shown lines and the folded remainder. */
+export interface FoundationParticipatingOrgBreakdownView {
+  state: FoundationParticipatingOrgBreakdownState;
+  total: FoundationParticipatingOrgProjectLineVm | null;
+  lines: FoundationParticipatingOrgProjectLineVm[];
+  other: FoundationParticipatingOrgOtherProjects | null;
+  /** More projects than the top-N, so the panel offers a filter. */
+  canFilter: boolean;
 }

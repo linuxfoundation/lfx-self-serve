@@ -52,9 +52,9 @@ export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_SUMMARY_HEADER: readonly strin
   'Other LF membership',
   'Projects involved',
   'Commits',
-  'Commits (previous period)',
+  'Commits change',
   'Contributors',
-  'Contributors (previous period)',
+  'Contributors change',
 ];
 
 export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_HEADER: readonly string[] = [

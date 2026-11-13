@@ -24,7 +24,7 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
   });
 
   it('splits members and non-members, and the tab counts add up to the companies', () => {
-    const summary = service.getSummary(req, SLUG, '12mo');
+    const summary = service.getSummary(req, { foundationSlug: SLUG, range: '12mo' });
     const members = service.getPage(req, { ...base, segment: 'members' });
     const nonMembers = service.getPage(req, { ...base, segment: 'non_members' });
     expect(members.rows.every((row) => row.isMember)).toBe(true);
@@ -42,8 +42,8 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
 
   it('scopes cards and rows to one project, whose figures are part of the foundation total', () => {
     const [project] = service.getProjects(req, SLUG, '12mo');
-    const scoped = service.getSummary(req, SLUG, '12mo', project.slug);
-    const all = service.getSummary(req, SLUG, '12mo');
+    const scoped = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', projectSlug: project.slug });
+    const all = service.getSummary(req, { foundationSlug: SLUG, range: '12mo' });
     expect(scoped?.projectSlug).toBe(project.slug);
     expect(scoped!.companiesCount).toBeLessThanOrEqual(all!.companiesCount);
     const page = service.getPage(req, { ...base, projectSlug: project.slug });
@@ -66,6 +66,27 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
     const { items } = service.getExportRows(req, base);
     expect(items.some((item) => item.lines.length > 10)).toBe(true);
     for (const item of items) expect(item.lines.length).toBe(item.row.projectsInvolved);
+  });
+
+  it('narrows the cards and tab counts by search and tier, like the table', () => {
+    const search = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', search: 'northwind' });
+    expect(search?.companiesCount).toBe(1);
+    const platinum = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', tier: 'Platinum' });
+    expect(platinum?.companiesCount).toBe(service.getPage(req, { ...base, tier: 'Platinum' }).totalRecords);
+    expect(platinum?.nonMembersCount).toBe(0);
+    const none = service.getSummary(req, { foundationSlug: SLUG, range: '12mo', search: 'no such company' });
+    expect(none?.companiesCount).toBe(0);
+  });
+
+  it('marks the figures as demo data', () => {
+    expect(service.getSummary(req, { foundationSlug: SLUG, range: '12mo' })?.dataSource).toBe('demo');
+  });
+
+  it('limits the by-project export to the selected project under a project scope', () => {
+    const [project] = service.getProjects(req, SLUG, '12mo');
+    const { items } = service.getExportRows(req, { ...base, projectSlug: project.slug });
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) expect(item.lines.map((line) => line.projectSlug)).toEqual([project.slug]);
   });
 
   it('is deterministic for a foundation', () => {
