@@ -203,7 +203,7 @@ export class MeetingService {
     return this.http.get<MeetingRollupFilterOptions>('/api/meetings/rollup-filters', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load meeting roll-up filter options:', error);
-        return of({ projects: [], groups: [] });
+        return of({ projects: [], groups: [], complete: false });
       })
     );
   }

@@ -237,6 +237,15 @@ describe('MeetingService roll-up scope', () => {
       expect(countCall()).toEqual({ tags: ['committee_uid:w1'], filters_or: [`project_uid:${ROOT}`, 'project_uid:child-uid'], type: 'v1_meeting' });
     });
 
+    it('marks the options incomplete when a resolved project has no details', async () => {
+      proxyRequest.mockResolvedValue(committees);
+      getProjectsByIds.mockResolvedValue(new Map([[ROOT, { uid: ROOT, name: 'FINOS', slug: 'finos' }]]));
+
+      const options = await service.getRollupFilterOptions(req, ROOT);
+
+      expect(options.complete).toBe(false);
+    });
+
     it('returns the tree projects and their groups as filter options, sorted and trimmed', async () => {
       proxyRequest.mockResolvedValue(committees);
       getProjectsByIds.mockResolvedValue(
@@ -253,6 +262,7 @@ describe('MeetingService roll-up scope', () => {
         { uid: 'child-uid', name: 'Zenith', slug: 'zenith' },
       ]);
       expect(options.groups.map((group) => group.name)).toEqual(['Board One', 'Board Two', 'Working Group']);
+      expect(options.complete).toBe(true);
       expect(options.groups[0]).toEqual({ uid: 'b1', name: 'Board One', category: 'Board', project_uid: ROOT });
     });
   });

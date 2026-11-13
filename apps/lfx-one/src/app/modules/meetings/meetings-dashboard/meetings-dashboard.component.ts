@@ -189,11 +189,13 @@ export class MeetingsDashboardComponent {
   // What every foundation/project fetch sends: the roll-up plus the filters above.
   // The project subset actually applied: every project selected is the whole roll-up, so it sends no
   // subset (also keeping a large tree's "select all" under the server's project_uids cap), while the
-  // picker keeps showing the full selection.
+  // picker keeps showing the full selection. Only when the options list the whole tree, though: from an
+  // incomplete list, "everything listed" is still a subset and is sent as one.
   private readonly effectiveRollupProjects: Signal<string[]> = computed(() => {
     const selected = this.rollupProjectsFilter();
     const all = this.rollupProjectOptions();
-    return all.length > 0 && all.every((option) => selected.includes(option.value)) ? [] : selected;
+    const wholeTree = this.rollupFilterOptions().complete;
+    return wholeTree && all.length > 0 && all.every((option) => selected.includes(option.value)) ? [] : selected;
   });
   private readonly rollupQueryOptions: Signal<MeetingProjectQueryOptions> = computed(() => {
     const projectUids = this.effectiveRollupProjects();
@@ -1226,7 +1228,7 @@ export class MeetingsDashboardComponent {
 
   /** The roll-up's projects and groups, loaded per foundation/project; none on the Me lens or before hydration. */
   private initRollupFilterOptions(): Signal<MeetingRollupFilterOptions> {
-    const empty: MeetingRollupFilterOptions = { projects: [], groups: [] };
+    const empty: MeetingRollupFilterOptions = { projects: [], groups: [], complete: false };
     return toSignal(
       combineLatest([toObservable(this.project), toObservable(this.activeLens)]).pipe(
         map(([project, lens]) => (lens === 'me' || !isPlatformBrowser(this.platformId) ? null : (project?.uid ?? null))),
