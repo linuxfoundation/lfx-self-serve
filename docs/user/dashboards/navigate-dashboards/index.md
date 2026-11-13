@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, organization, company, employer]
-last_updated: 2026-11-12
+last_updated: 2026-11-13
 intercom_collection: Dashboards
 ---
 

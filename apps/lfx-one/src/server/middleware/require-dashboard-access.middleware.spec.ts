@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getPersonas = vi.fn();
 const checkProjectWriter = vi.fn();
+const checkSingleAccessStrict = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
   personaDetectionService: {
@@ -27,6 +28,11 @@ vi.mock('../services/project.service', () => ({
   },
 }));
 
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = (...args: unknown[]) => checkSingleAccessStrict(...args);
+  },
+}));
 vi.mock('../services/logger.service', () => ({ logger: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 
 const { AuthorizationError, MicroserviceError, ServiceValidationError } = await import('../errors');
@@ -273,6 +279,7 @@ describe('requireExecutiveOrLFStaff', () => {
     getProjectIdBySlug.mockReset();
     getProjectById.mockReset();
     checkProjectWriter.mockReset();
+    checkSingleAccessStrict.mockReset();
   });
 
   it('allows LF staff without resolving the project', async () => {
@@ -353,19 +360,19 @@ describe('requireExecutiveOrLFStaff', () => {
   it('denies a root writer with no ED scopes, with no project lookups (view-only page: write grants are irrelevant)', async () => {
     getPersonas.mockResolvedValue(rootWriter());
     projects(proj('uid-child', 'child'));
-    checkProjectWriter.mockResolvedValue(true);
+    checkSingleAccessStrict.mockResolvedValue(true);
     expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
     expect(getProjectIdBySlug).not.toHaveBeenCalled();
     expect(getProjectById).not.toHaveBeenCalled();
-    expect(checkProjectWriter).not.toHaveBeenCalled();
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
   it('does not admit an ED on a write grant elsewhere: scopes on another foundation, only tlf-level grants', async () => {
     getPersonas.mockResolvedValue(edFor(['foundation-a'], { isRootWriter: true }));
     projects(proj('uid-child', 'child', 'uid-f'), proj('uid-f', 'f', 'uid-tlf'), proj('uid-tlf', 'tlf', 'uid-root'), proj('uid-root', 'ROOT'));
-    checkProjectWriter.mockResolvedValue(true);
+    checkSingleAccessStrict.mockResolvedValue(true);
     expect(errorOf(await run())).toBeInstanceOf(AuthorizationError);
-    expect(checkProjectWriter).not.toHaveBeenCalled();
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
   it('maps a failed read of the requested project to 503, but passes a definite 404 through', async () => {
