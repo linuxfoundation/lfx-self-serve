@@ -133,6 +133,14 @@ describe('FoundationParticipatingOrgsService (demo data)', () => {
     }
   });
 
+  it('keeps the contributor total of a company between its busiest project and the sum of its projects', () => {
+    for (const { participantKey, contributors } of service.getPage(req, base).rows) {
+      const lines = service.getBreakdown(req, SLUG, '12mo', participantKey).projects;
+      expect(contributors).toBeGreaterThanOrEqual(Math.max(...lines.map((line) => line.contributors)));
+      expect(contributors).toBeLessThanOrEqual(lines.reduce((sum, line) => sum + line.contributors, 0));
+    }
+  });
+
   it('is deterministic for a foundation', () => {
     expect(service.getPage(req, base)).toEqual(service.getPage(req, base));
   });

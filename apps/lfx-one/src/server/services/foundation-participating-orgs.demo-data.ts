@@ -184,12 +184,14 @@ export function getDemoFoundation(slug: string): FoundationParticipatingOrgsSour
       };
     });
     const summed = activity.reduce((total, item) => total + item.contributors, 0);
+    const largest = Math.max(...activity.map((item) => item.contributors));
     return {
       key: `demo-${slugify(name)}`,
       name,
       tier,
       otherMemberships: tier && rand() < 0.25 ? ['Project member'] : [],
-      foundationContributors: Math.max(1, Math.round(summed * (0.7 + rand() * 0.25))),
+      // A person active in several projects counts once, so the total sits between the busiest project and the plain sum.
+      foundationContributors: Math.min(summed, Math.max(largest, Math.round(summed * (0.7 + rand() * 0.25)))),
       foundationContributorsChange: change(rand),
       projects: activity,
     };
