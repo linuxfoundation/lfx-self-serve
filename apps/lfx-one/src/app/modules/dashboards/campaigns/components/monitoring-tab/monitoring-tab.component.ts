@@ -286,6 +286,20 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly keywordCurrencyNote = computed(() => this.keywordsData()?.amountsInAccountCurrency === true);
   /** True when the Google amounts on screen are in the connected account's own, unnamed currency. */
   protected readonly googleCurrencyNote = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
+  /**
+   * Which Google Ads account was read, when campaign-service chose it (#5622): the project has no
+   * usable connection of its own, so the read is of the customer its campaigns were created under.
+   * NULL when the account came from the project's own connection, or the read named none.
+   */
+  protected readonly googleRecordedAccountNote = computed((): string | null => {
+    const data = this.monitorData();
+    if (data?.accountSource !== 'recorded_campaigns' || !data.accountId) {
+      return null;
+    }
+    return `Read from Google Ads account ${data.accountId}, the account this project's campaigns were created under. This project has no Google Ads connection of its own.`;
+  });
+  /** The empty state's text: the read's own explanation when it gave one (#5622), else the default. */
+  protected readonly googleEmptyMessage = computed(() => this.monitorData()?.message ?? 'No active campaigns found for the selected date range.');
   /** What the Google totals leave out on the campaign-service path (#4526); null on the legacy read, which sets no flags. */
   protected readonly googleTotalsNote = computed(() => this.totalsCoverageNote(this.campaigns()));
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');

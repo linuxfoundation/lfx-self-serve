@@ -1397,7 +1397,7 @@ export const ACCOUNT_MONITOR_DEFAULT_DAYS = 30;
  * upstream (`AccountMonitorConflictError`). The BFF forwards a reason only when it is one of these,
  * so no other upstream text reaches the client.
  */
-export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported'] as const;
+export const ACCOUNT_MONITOR_CONFLICT_REASONS = ['account_too_many_active_campaigns', 'account_timezone_unsupported', 'campaign_account_mismatch'] as const;
 
 /**
  * The message campaign-service's account monitors answer their 400 with when the platform's

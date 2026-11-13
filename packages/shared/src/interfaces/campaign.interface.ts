@@ -4694,6 +4694,18 @@ export interface CampaignMonitorResponse {
    * legacy read is the LF's own USD account and leaves it unset.
    */
   amountsInAccountCurrency?: boolean;
+  /**
+   * Campaign-service path only: the Google Ads customer that was read. ABSENT on the legacy read, and
+   * on a campaign-service read that had no account to read (no campaigns recorded for the project).
+   */
+  accountId?: string;
+  /**
+   * Campaign-service path only: where the account came from. `connection` is the project's own
+   * Google Ads connection; `recorded_campaigns` means the project has no usable connection of its own
+   * and campaign-service read the customer its campaigns were created under, through the LF system
+   * account when needed (#5622, campaign-service #592).
+   */
+  accountSource?: 'connection' | 'recorded_campaigns';
 }
 
 // ---------------------------------------------------------------------------

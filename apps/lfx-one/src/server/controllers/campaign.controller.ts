@@ -332,6 +332,7 @@ import { CampaignProxyService } from '../services/campaign-proxy.service';
 import { toAudienceDemographics, toKeywordMetricsResponse, toMicrosoftKeywordMetricsResponse, windowForDays } from '../services/campaign-insights-mapper';
 import { applyKeywordActionsViaCampaignService } from '../services/campaign-keyword-actions';
 import {
+  isAccountIdRequiredByUpstream,
   toAccountMonitorClientError,
   toGoogleMonitorConnectionError,
   toGoogleMonitorResponse,
@@ -339,6 +340,7 @@ import {
   toLinkedInMonitorResponse,
   toMetaMonitorResponse,
   toMonitorConnectionAccount,
+  toRecordedCampaignsGoogleMonitorResponse,
   toRedditMonitorResponse,
   toReportBackedMonitorResponse,
 } from '../services/campaign-monitor-mapper';
@@ -5655,9 +5657,12 @@ export class CampaignController {
       operation: string;
       platformLabel: string;
       days: number;
-      accountId: string;
+      /** The account asked for, for the log; NULL when campaign-service picks it (#5622). */
+      accountId: string | null;
       read: (projectSlug: string) => Promise<CampaignServiceAccountMonitor>;
       toResponse: (payload: CampaignServiceAccountMonitor) => T;
+      /** A failure this caller answers itself; return undefined to use the shared mapping. */
+      mapError?: (error: unknown) => unknown;
     }
   ): Promise<void> {
     const projectSlug = this.requireMonitorProject(req, next, opts.operation);
@@ -5676,31 +5681,57 @@ export class CampaignController {
       });
       res.json(data);
     } catch (error) {
-      next(toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
+      next(opts.mapError?.(error) ?? toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
     }
   }
 
   /**
-   * The campaign-service arm of the Google Ads monitor (#4526): resolve the account from the project's
-   * own connection, then read it as the LinkedIn, Meta and Reddit arms do. A connection that cannot be
-   * read through is the panel's error, never a fallback to the legacy account-wide read.
+   * The campaign-service arm of the Google Ads monitor (#4526).
+   *
+   * A project whose own connection has an ad account bound reads that account, as before. A project
+   * with no connection of its own, or one with no account bound, omits the account (#5622): its
+   * campaigns may have been created through the LF system account, and campaign-service (#592, from
+   * 1.0.36) then reads the customer those campaigns were created under and names it in the response.
+   * A connection read that was refused or failed is still the panel's error, never a fallback to the
+   * legacy account-wide read.
+   *
+   * Against campaign-service before 1.0.36, which requires the account, the omitted read is answered
+   * with a 400 `missing_field`; that becomes the connection-state error this route returned before,
+   * so nothing changes until the release lands.
    */
   private async serveGoogleConnectionMonitor(req: Request, res: Response, next: NextFunction, projectSlug: string): Promise<void> {
     const operation = 'campaign_monitor';
     const connection = await this.readMonitorConnection(req, projectSlug, 'google-ads', operation);
-    if (connection.state !== 'connected' || connection.accountId === null) {
-      next(toGoogleMonitorConnectionError(connection.state === 'connected' ? 'no_account' : connection.state, operation));
+    if (connection.state === 'forbidden' || connection.state === 'unavailable') {
+      next(toGoogleMonitorConnectionError(connection.state, operation));
       return;
     }
-    const accountId = connection.accountId;
     const days = this.parseMonitorDays(req);
+    const ownAccountId = connection.state === 'connected' ? connection.accountId : null;
+    if (ownAccountId !== null) {
+      await this.serveLegacyShapedMonitor(req, res, next, {
+        operation,
+        platformLabel: 'Google Ads',
+        days,
+        accountId: ownAccountId,
+        read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, ownAccountId, days),
+        toResponse: (payload) => ({
+          ...toGoogleMonitorResponse(payload, new Date().toISOString()),
+          accountId: ownAccountId,
+          accountSource: 'connection' as const,
+        }),
+      });
+      return;
+    }
+    const priorState = connection.state === 'no_account' ? 'no_account' : 'no_connection';
     await this.serveLegacyShapedMonitor(req, res, next, {
       operation,
       platformLabel: 'Google Ads',
       days,
-      accountId,
-      read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, accountId, days),
-      toResponse: (payload) => toGoogleMonitorResponse(payload, new Date().toISOString()),
+      accountId: null,
+      read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, undefined, days),
+      toResponse: (payload) => toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()),
+      mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toGoogleMonitorConnectionError(priorState, operation) : undefined),
     });
   }
 

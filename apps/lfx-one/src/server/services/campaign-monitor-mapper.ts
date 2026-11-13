@@ -194,6 +194,24 @@ export function toLinkedInMonitorResponse(payload: CampaignServiceAccountMonitor
  * could not pace (a $0 daily budget, for one), so an item's `pacingUnknown` marks a pacing figure
  * that is a placeholder, as the row's own flags do.
  */
+/**
+ * `toGoogleMonitorResponse` for a read where campaign-service picked the account (#5622): it names the
+ * customer it read, and an EMPTY `account_id` means the project has no campaigns recorded, so there
+ * was no account to read. That case carries a message saying so rather than the generic empty state.
+ */
+export function toRecordedCampaignsGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
+  const response = toGoogleMonitorResponse(payload, pulledAt);
+  const accountId = typeof payload.account_id === 'string' ? payload.account_id.trim() : '';
+  if (accountId === '') {
+    return {
+      ...response,
+      accountSource: 'recorded_campaigns',
+      message: 'This project has no Google Ads connection of its own and no campaigns recorded yet, so there is no account to read.',
+    };
+  }
+  return { ...response, accountId, accountSource: 'recorded_campaigns' };
+}
+
 export function toGoogleMonitorResponse(payload: CampaignServiceAccountMonitor, pulledAt: string): CampaignMonitorResponse {
   const days = payload.days;
   const endDate = pulledAt.slice(0, 10);
@@ -498,7 +516,11 @@ export function toAccountMonitorClientError(error: unknown, platformLabel: strin
     );
   }
   const reason = statusCode === 409 ? (error.errorBody as { reason?: unknown } | undefined)?.reason : undefined;
-  return new MicroserviceError(monitorErrorMessage(statusCode, platformLabel), statusCode, getCodeForStatus(statusCode), {
+  const message =
+    reason === 'campaign_account_mismatch'
+      ? `This project's ${platformLabel} campaigns were created under more than one ad account, or one of them does not record its account, so there is no single account to monitor.`
+      : monitorErrorMessage(statusCode, platformLabel);
+  return new MicroserviceError(message, statusCode, getCodeForStatus(statusCode), {
     operation,
     service: 'campaign_controller',
     originalError: error,
@@ -548,6 +570,21 @@ export function toGoogleMonitorConnectionError(state: Exclude<MonitorConnectionS
         context
       );
   }
+}
+
+/**
+ * Whether a failed Google Ads monitor read WITHOUT `account_id` came from a campaign-service that
+ * still requires it (before 1.0.36, #5622): Goa answers a missing required query parameter with a
+ * 400 named `missing_field`. The controller then reports the project's connection state, exactly as
+ * it did before the account became optional, rather than a 400 about an unusable connection.
+ */
+export function isAccountIdRequiredByUpstream(error: unknown): boolean {
+  return (
+    error instanceof MicroserviceError &&
+    !error.transportFailure &&
+    error.statusCode === 400 &&
+    (error.errorBody as { name?: unknown } | undefined)?.name === 'missing_field'
+  );
 }
 
 /**
