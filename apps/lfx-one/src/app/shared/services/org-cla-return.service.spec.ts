@@ -7,6 +7,7 @@ import { firstValueFrom } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgClaReturnService } from './org-cla-return.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -21,15 +22,17 @@ describe('OrgClaReturnService', () => {
   let claOnlyPending: ReturnType<typeof signal<boolean>>;
   let generation: ReturnType<typeof signal<number>>;
   let firstPageLandedGeneration: ReturnType<typeof signal<number>>;
+  let writerSet: ReturnType<typeof signal<Set<string>>>;
   let resetAndReload: ReturnType<typeof vi.fn>;
   let adoptFromAddress: ReturnType<typeof vi.fn>;
   let service: OrgClaReturnService;
+  let claOnlyAccess: OrgClaOnlyAccessService;
 
-  /** A reload's first page landing, as the real service reports it. */
+  /** A reload's first page landing, in the order the real service writes it: landed generation, then pending, then items. */
   const landReload = (rows: ReturnType<typeof catalogueItem>[], claOnlyRowsPending = false): void => {
-    items.set(rows);
-    claOnlyPending.set(claOnlyRowsPending);
     firstPageLandedGeneration.set(generation());
+    claOnlyPending.set(claOnlyRowsPending);
+    items.set(rows);
   };
 
   beforeEach(() => {
@@ -38,6 +41,7 @@ describe('OrgClaReturnService', () => {
     claOnlyPending = signal(false);
     generation = signal(1);
     firstPageLandedGeneration = signal(1);
+    writerSet = signal(new Set([ELSEWHERE.uid]));
     // Like the real service: the reload starts a new generation and clears the CLA-only rows at once.
     resetAndReload = vi.fn(() => {
       generation.update((g) => g + 1);
@@ -57,11 +61,24 @@ describe('OrgClaReturnService', () => {
           },
         },
         { provide: OrgNavigationService, useValue: { items, loaded, claOnlyPending, generation, firstPageLandedGeneration, resetAndReload } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            loaded: signal(true),
+            isStaff: signal(false),
+            writerSet,
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set<string>()),
+            inheritedAuditorSet: signal(new Set<string>()),
+            claManagerOrgSet: signal(new Set<string>()),
+            claManagerLookupFailed: signal(false),
+          },
+        },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       ],
     });
     service = TestBed.inject(OrgClaReturnService);
+    claOnlyAccess = TestBed.inject(OrgClaOnlyAccessService);
   });
 
   afterEach(() => {
@@ -135,8 +152,37 @@ describe('OrgClaReturnService', () => {
 
     await expect(result).resolves.toEqual(expect.objectContaining({ uid: NAMED.uid }));
   });
+
+  it('records a CLA-only company as CLA-only before adopting it, while the viewer holds another organization', async () => {
+    items.set([catalogueItem(ELSEWHERE), { ...catalogueItem(NAMED), claOnly: true }]);
+    adoptFromAddress.mockImplementation(() => {
+      expect(claOnlyAccess.isClaOnly(NAMED.uid)).toBe(true);
+    });
+
+    const match = await firstValueFrom(service.adopt(NAMED.uid));
+
+    expect(match?.uid).toBe(NAMED.uid);
+    expect(adoptFromAddress).toHaveBeenCalledTimes(1);
+    expect(claOnlyAccess.isClaOnly(NAMED.uid)).toBe(true);
+    expect(claOnlyAccess.isClaOnly(ELSEWHERE.uid)).toBe(false);
+  });
+
+  it('lets a held grant win over the CLA-only row a signing return adopts', async () => {
+    writerSet.set(new Set([ELSEWHERE.uid, NAMED.uid]));
+    items.set([catalogueItem(ELSEWHERE), { ...catalogueItem(NAMED), claOnly: true }]);
+
+    await firstValueFrom(service.adopt(NAMED.uid));
+
+    expect(claOnlyAccess.isClaOnly(NAMED.uid)).toBe(false);
+  });
 });
 
-function catalogueItem(org: { uid: string; accountId: string; name: string }): { uid: string; accountId: string; name: string; logoUrl: null } {
+function catalogueItem(org: { uid: string; accountId: string; name: string }): {
+  uid: string;
+  accountId: string;
+  name: string;
+  logoUrl: null;
+  claOnly?: boolean;
+} {
   return { uid: org.uid, accountId: org.accountId, name: org.name, logoUrl: null };
 }
