@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
@@ -91,7 +91,7 @@ import {
  * because upstream reports a row that was already written as an existing member. Each row keeps its
  * own outcome; Retry resubmits rows that were not sent and failures that can still succeed, and
  * Close returns confirmed counts and any unresolved attempt so the roster refreshes. An inline spinner
- * shows activity while a chunk is in flight; the processed count and row statuses come only from results.
+ * shows activity throughout the run, including automatic recovery; processed counts come only from results.
  * Never resolves organizations, creates invitations, or changes permissions.
  * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
  * instead of writing them; the wizard saves them with Done or Update Group.
@@ -99,7 +99,6 @@ import {
 @Component({
   selector: 'lfx-import-members-dialog',
   imports: [
-    DatePipe,
     ReactiveFormsModule,
     ButtonComponent,
     CheckboxComponent,
@@ -157,13 +156,10 @@ export class ImportMembersDialogComponent {
   public batchSettled = signal(0);
   /** Epoch ms when a paused run resumes automatically; null while not paused. */
   public resumeAt = signal<number | null>(null);
-  /** Length of the current pause, rounded up to whole seconds, for the paused notice. */
-  public resumeInSeconds = signal(0);
   /** Automatic pauses taken by the current run (at most MEMBER_IMPORT_MAX_PAUSES). */
   public pauseCount = signal(0);
   /** Minimum server deadline, retained even if automatic recovery or a pause is stopped. */
   public retryNotBefore = signal(0);
-  public readonly maxPauses = MEMBER_IMPORT_MAX_PAUSES;
   public readonly tablePageSize = MEMBER_IMPORT_PAGE_SIZE;
   /** Status chosen in the table's filter pills; see activeStatusFilter for the one applied. */
   public statusFilter = signal<MemberImportStatusFilter>('all');
@@ -445,9 +441,6 @@ export class ImportMembersDialogComponent {
           return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.${notices}`;
         }
         case 'importing':
-          if (this.paused()) {
-            return `Paused: ${this.resumeInSeconds()}-second recovery pause (pause ${this.pauseCount()} of ${MEMBER_IMPORT_MAX_PAUSES}). The import will resume automatically.`;
-          }
           if (this.stopping()) {
             return `Stopping after the current batch: ${this.batchSettled()} of ${this.batchTotal()} processed.`;
           }
@@ -692,7 +685,6 @@ export class ImportMembersDialogComponent {
 
       this.patchRows(rows, { status: 'waiting' });
       this.pauseCount.update((count) => count + 1);
-      this.resumeInSeconds.set(Math.ceil(delay / 1000));
       this.resumeAt.set(Date.now() + delay);
 
       return race(
