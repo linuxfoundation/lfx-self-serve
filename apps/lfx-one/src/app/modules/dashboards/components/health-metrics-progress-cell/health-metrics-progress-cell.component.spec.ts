@@ -48,4 +48,14 @@ describe('HealthMetricsProgressCellComponent', () => {
     await render({ pct: null });
     expect(query('health-metrics-progress-fill')?.style.width).toBe('0%');
   });
+
+  it('greys out a dash', async () => {
+    await render({ value: '640', pct: 64 });
+    expect(query('health-metrics-progress-value')?.className).toContain('text-gray-900');
+
+    await render({ value: '—', pct: null });
+    expect(query('health-metrics-progress-value')?.className).toContain('text-gray-400');
+    expect(query('health-metrics-progress-value')?.className).not.toContain('text-gray-900');
+    expect(query('health-metrics-progress-value')?.className).toContain('text-[14px]');
+  });
 });
