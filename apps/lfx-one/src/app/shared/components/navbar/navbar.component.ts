@@ -499,8 +499,10 @@ export class NavbarComponent extends NavMenuBase {
         this.pointerOnTooltip = false;
         if (this.collapse.peek() && !this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
       };
+      // A press outside closes any peek, pinned or not: one opened from the keyboard has no pointer position to leave from,
+      // and a narrow viewport's peek has no toggle to close it with.
       const onDown = (event: MouseEvent): void => {
-        if (!this.collapse.peekPinned() || this.navbarMenuOpen()) return;
+        if (!this.collapse.peek() || this.navbarMenuOpen()) return;
         const target = event.target instanceof Element ? event.target : null;
         if (target && (panel?.contains(target) || target.closest('.lfxn-tooltip'))) return;
         this.morph(() => this.collapse.closePeek());

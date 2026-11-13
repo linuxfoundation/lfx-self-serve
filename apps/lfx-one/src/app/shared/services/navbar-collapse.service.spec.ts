@@ -105,6 +105,25 @@ describe('NavbarCollapseService', () => {
     expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBeNull();
   });
 
+  it('starts docked open in a fresh tab that inherited a collapsed preference (duplicated, or opened from a link)', () => {
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'navigate' } as PerformanceNavigationTiming]);
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+    expect(sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
+  });
+
+  it('restores the collapsed preference on a reload', () => {
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming]);
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(true);
+  });
+
   it('keeps the docked preference out of localStorage, so it never outlives the session', () => {
     const service = setup();
     service.init();

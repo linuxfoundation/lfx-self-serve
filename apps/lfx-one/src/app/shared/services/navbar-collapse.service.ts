@@ -10,8 +10,9 @@ import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_NARROW_MAX_WIDTH_PX, NAVBAR_PEEK_O
  * open over the page from the rail. The layouts read it to size the page gutter; the desktop navbar
  * drives it (pointer, FLIP morph) and renders it.
  *
- * - `collapsed` is the viewer's docked preference, kept in `sessionStorage`: it holds across reloads in the tab, and a new
- *   tab or browser session always starts docked open.
+ * - `collapsed` is the viewer's docked preference, kept in `sessionStorage` and restored only on a reload: a new tab or
+ *   browser session always starts docked open, including a duplicated tab or one opened from a link, which inherit a copy
+ *   of the opener's session storage.
  * - `narrow` (a non-touch viewport under {@link NAVBAR_NARROW_MAX_WIDTH_PX}) forces the rail without
  *   touching the preference, which returns once the viewport widens again.
  * - A non-touch device keeps the navbar (as the rail) at every width; the hamburger + drawer below `lg`
@@ -82,7 +83,8 @@ export class NavbarCollapseService {
     if (!this.isBrowser || this.initialized) return;
     this.initialized = true;
     this.clearLegacyPreference();
-    this.collapsedPreference.set(this.readPreference());
+    if (this.isReload()) this.collapsedPreference.set(this.readPreference());
+    else this.writePreference(false);
     this.initializedState.set(true);
 
     const view = this.document.defaultView;
@@ -167,6 +169,19 @@ export class NavbarCollapseService {
       this.document.defaultView?.sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, String(collapsed));
     } catch {
       // Storage blocked (private mode, policy): the choice still holds for this page.
+    }
+  }
+
+  /**
+   * The page was reloaded, rather than opened fresh (a new or duplicated tab, a link, a typed address). Browsers without
+   * the Navigation Timing entry count as a reload, so they keep the stored preference.
+   */
+  private isReload(): boolean {
+    try {
+      const entry = this.document.defaultView?.performance?.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined;
+      return !entry || entry.type === 'reload';
+    } catch {
+      return true;
     }
   }
 

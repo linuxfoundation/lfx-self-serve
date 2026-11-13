@@ -972,6 +972,17 @@ describe('NavbarComponent', () => {
         expect(collapse.peek()).toBe(false);
       });
 
+      it('closes an unpinned peek opened from the keyboard on an outside click, before the pointer has moved', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        panel.querySelector('.inside')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(true);
+
+        (fixture.nativeElement.querySelector('.outside') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(false);
+      });
+
       it('closes a pinned peek when keyboard focus leaves it', async () => {
         const { fixture, panel, collapse } = await createPeekFixture();
         collapse.openPeek(true);
