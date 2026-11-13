@@ -1270,7 +1270,6 @@ export class MeetingsDashboardComponent {
     });
   }
 
-  /** Clears the group filter once the project or group-type selection no longer offers it. */
   /** Drops a group type, then a group, that the current project scope no longer offers: they would match nothing. */
   private reconcileGroupFilters(): void {
     const groupType = this.groupTypeFilter();
@@ -1282,17 +1281,20 @@ export class MeetingsDashboardComponent {
 
   /**
    * A linked `group` or `group_type` is applied before the filter options load; once they do, one that
-   * the scope does not offer is dropped, rather than kept in the query with no visible selection.
+   * the scope does not offer is dropped, rather than kept in the query with no visible selection. Only a
+   * complete list can say a group is out of scope: from an incomplete one (a missed branch) the linked
+   * filter stays, so a transient lookup failure never widens a shared link.
    */
   private reconcileGroupFiltersWhenOptionsLoad(): void {
     toObservable(this.rollupFilterOptions)
       .pipe(
-        filter((options) => options.projects.length > 0),
+        filter((options) => options.complete && options.projects.length > 0),
         takeUntilDestroyed()
       )
       .subscribe(() => this.reconcileGroupFilters());
   }
 
+  /** Clears the group filter once the project or group-type selection no longer offers it. */
   private clearGroupOutsideOptions(): void {
     const group = this.groupFilter();
     if (group && !this.groupOptions().some((option) => option.value === group)) {
