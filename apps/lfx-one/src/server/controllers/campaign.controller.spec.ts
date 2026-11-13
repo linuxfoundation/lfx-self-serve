@@ -7002,7 +7002,8 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     // #1614 (F13): Google refused "Register" at adGroupAds:mutate, after the campaign existed, and
-    // campaign-service checks only the call to action's length, so the BFF holds it to the list.
+    // The BFF holds each ad's call to action to the list Google accepted for that ad (13 Nov probe), so
+    // an unaccepted one is refused before campaign-service creates anything.
     it.each([
       [
         'a Display call to action off the documented list',
@@ -7012,12 +7013,37 @@ describe('CampaignController.createCampaign cutover', () => {
         'a Display ad group call to action off the list',
         { campaignTypes: ['display'], displayAdGroups: [{ name: 'Retargeting', creative: { headlines: ['Join us'], callToActionText: 'Register' } }] },
       ],
-      ['any Demand Gen image call to action', { campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Learn More' } }],
+      [
+        'a Demand Gen image call to action off its list',
+        { campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Register' } },
+      ],
+      [
+        'a Display-only call to action on a Demand Gen image ad',
+        { campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Install' } },
+      ],
     ])('refuses %s by name, creating nothing', async (_label, overrides) => {
       await controller.createCampaign(buildReq(googleBody(overrides), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
       expect(createCampaigns).not.toHaveBeenCalled();
       expect(refusalFrom()).toMatchObject({ statusCode: 400, field: 'callToActionText', message: expect.stringContaining('does not accept') });
+    });
+
+    it('sends a listed Demand Gen image call to action unchanged', async () => {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-000000005229', error: null });
+
+      await controller.createCampaign(
+        buildReq(googleBody({ campaignTypes: ['demand-gen'], demandGenCreative: { headlines: ['Join us'], callToActionText: 'Donate Now' } }), {
+          project: 'tlf',
+          brief_id: 'b-1',
+        }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['demandGenCreative']).toMatchObject({
+        callToActionText: 'Donate Now',
+      });
     });
 
     it('sends a listed Display call to action unchanged', async () => {

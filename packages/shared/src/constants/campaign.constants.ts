@@ -5229,43 +5229,73 @@ export const GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN = /^customers\/[0-9]+\/userLi
 export const GOOGLE_ADS_CUSTOM_AUDIENCE_RESOURCE_PATTERN = /^customers\/[0-9]+\/customAudiences\/[0-9]+$/;
 
 /**
- * The call-to-action texts a responsive display ad accepts (#1614, F13): the English list Google
- * documents for `ResponsiveDisplayAdInfo.callToActionText` on "Call-to-action translations"
- * (https://developers.google.com/google-ads/api/data/call-to-action-translations), spelled as that page
- * spells them. The API reference types the field as a free string of display width 30
+ * The call-to-action texts a responsive display ad accepts (#1614, F13), each one accepted by a
+ * validateOnly `adGroupAds:mutate` against the live API on 13 November 2026 (v23), copying a live ad and
+ * varying only this field. The API types `ResponsiveDisplayAdInfo.callToActionText` as free text
  * (https://developers.google.com/google-ads/api/reference/rpc/latest/ResponsiveDisplayAdInfo), but Google
- * refuses text outside its list at `adGroupAds:mutate` — after the campaign, ad group and image assets
- * already exist. A live create with "Register" failed exactly there on 7 and 9 November 2026, and the same
- * creates with no call to action succeeded. campaign-service checks only the 30-rune cap
- * (`maxDisplayCallToActionRunes`, `display_creative.go`, v1.0.35), so this list is the only guard.
+ * refuses text outside a fixed set with `INVALID_CALL_TO_ACTION_TEXT` at `adGroupAds:mutate`, after the
+ * campaign, ad group and image assets exist. "Register" failed exactly there on 7 and 9 November 2026.
+ *
+ * Spelled as probed. Google's matching is not plain case-insensitive: "Try Now" was REFUSED where
+ * "Try now" was accepted, so that one value keeps Google's lower-case spelling. campaign-service
+ * (#595, `displayCallToActions`) now checks the same set before any write and sends its own probed
+ * spelling. Refused on this ad: Register, Get Started, Watch Now, Buy Tickets, Join Now, Donate Now.
  * Leaving it empty sends none, and Google chooses the button (the UI's "Automated").
  */
 export const GOOGLE_DISPLAY_CALLS_TO_ACTION = [
   { value: 'Apply Now', label: 'Apply Now' },
   { value: 'Book Now', label: 'Book Now' },
+  { value: 'Call Now', label: 'Call Now' },
   { value: 'Contact Us', label: 'Contact Us' },
   { value: 'Download', label: 'Download' },
-  { value: 'Learn More', label: 'Learn More' },
+  { value: 'Explore', label: 'Explore' },
+  { value: 'Get Offer', label: 'Get Offer' },
+  { value: 'Get Quote', label: 'Get Quote' },
   { value: 'Install', label: 'Install' },
-  { value: 'Visit Site', label: 'Visit Site' },
+  { value: 'Learn More', label: 'Learn More' },
+  { value: 'Order Now', label: 'Order Now' },
+  { value: 'Read More', label: 'Read More' },
+  { value: 'See More', label: 'See More' },
   { value: 'Shop Now', label: 'Shop Now' },
   { value: 'Sign Up', label: 'Sign Up' },
-  { value: 'Get Quote', label: 'Get Quote' },
   { value: 'Subscribe', label: 'Subscribe' },
-  { value: 'See More', label: 'See More' },
+  { value: 'Try now', label: 'Try now' },
+  { value: 'Visit Site', label: 'Visit Site' },
 ] as const;
 
 /**
- * The call-to-action texts the Demand Gen IMAGE ad is offered (#1614, F13): none. Google documents
- * `DemandGenMultiAssetAdInfo.callToActionText` only as "Call to action text."
- * (https://developers.google.com/google-ads/api/reference/rpc/latest/DemandGenMultiAssetAdInfo), with no
- * list, and the translations page above names responsive display ads only. campaign-service checks only
- * the 30-rune cap (`maxDemandGenCallToActionRunes`, `demandgen_creative.go`, v1.0.35) and has probed no
- * value for this ad. "Register" failed live at `adGroupAds:mutate` on 7 and 9 November 2026, and a blank
- * call to action succeeded, so blank is the one value known to work. Widen this value by value, each
- * with a validateOnly probe, as campaign-service did for the video ad (`demandGenVideoCallToActions`).
+ * The call-to-action texts the Demand Gen IMAGE (multi-asset) ad accepts (#1614, F13), each one
+ * accepted by the same validateOnly probe on 13 November 2026 against `DemandGenMultiAssetAdInfo`.
+ * It is NOT the Display set: Demand Gen refused Install, Order Now, Try Now, Read More and Explore, and
+ * accepted Donate Now, which Display refused. campaign-service (#595, `demandGenCallToActions`) checks
+ * the same set before any write. Refused on this ad as well: Register, Get Started, Watch Now, Buy
+ * Tickets, Join Now. Leaving it empty sends none, and Google chooses the button.
  */
-export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = [];
+export const GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = [
+  { value: 'Apply Now', label: 'Apply Now' },
+  { value: 'Book Now', label: 'Book Now' },
+  { value: 'Call Now', label: 'Call Now' },
+  { value: 'Contact Us', label: 'Contact Us' },
+  { value: 'Donate Now', label: 'Donate Now' },
+  { value: 'Download', label: 'Download' },
+  { value: 'Get Offer', label: 'Get Offer' },
+  { value: 'Get Quote', label: 'Get Quote' },
+  { value: 'Learn More', label: 'Learn More' },
+  { value: 'See More', label: 'See More' },
+  { value: 'Shop Now', label: 'Shop Now' },
+  { value: 'Sign Up', label: 'Sign Up' },
+  { value: 'Subscribe', label: 'Subscribe' },
+  { value: 'Visit Site', label: 'Visit Site' },
+];
+
+/**
+ * The calls to action BOTH the responsive display ad and the Demand Gen image ad accept, in the Display
+ * list's order. The brief generator writes one `google_display.call_to_action` that seeds both ads, so
+ * it is asked for one of these, and whichever it picks seeds both.
+ */
+export const GOOGLE_SHARED_CALLS_TO_ACTION: readonly GoogleCreativeFieldOption[] = GOOGLE_DISPLAY_CALLS_TO_ACTION.filter((display) =>
+  GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION.some((demandGen) => demandGen.value === display.value)
+);
 
 /**
  * What each Google channel's creative is made of — one ordered catalogue, read by the form that
@@ -5314,7 +5344,7 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
       kind: 'text',
       width: 30,
       options: GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION,
-      hint: 'None is sent, and Google chooses the button: Google documents no call-to-action values for this ad.',
+      hint: 'Optional. Leave it on none and Google chooses the button.',
     },
     {
       control: 'marketingImages',
