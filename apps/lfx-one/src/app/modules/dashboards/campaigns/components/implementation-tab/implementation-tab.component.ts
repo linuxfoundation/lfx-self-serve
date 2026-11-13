@@ -4755,7 +4755,8 @@ export class ImplementationTabComponent implements OnInit {
     });
 
     // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
-    // runs the initial load, so only later foundation switches should refetch the ad-account list.
+    // runs the initial load, so only later foundation switches should refetch the ad-account list
+    // and the targeting-profile catalogue (both project-scoped by requireCampaignManager).
     toObservable(this.activeFoundationSlug)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
