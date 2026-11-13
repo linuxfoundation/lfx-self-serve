@@ -515,6 +515,8 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: false,
       statusLabel: 'At risk',
       gauge: { tone: 'level', level: 'mid', empty: false, unmeasured: false },
+      compactValue: '328 (Goal: 1,000)',
+      lineClass: 'border-l-amber-400',
     });
     expect(noGoal.registrations).toEqual({
       countLabel: '328',
@@ -525,8 +527,15 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: true,
       statusLabel: null,
       gauge: { tone: 'accent', level: null, empty: true, unmeasured: false },
+      compactValue: '328 (No goal set)',
+      lineClass: 'border-l-gray-200',
     });
-    expect(onTrack.registrations).toMatchObject({ barClass: 'bg-emerald-500', statusLabel: 'On track', gauge: { level: 'high' } });
+    expect(onTrack.registrations).toMatchObject({
+      barClass: 'bg-emerald-500',
+      statusLabel: 'On track',
+      gauge: { level: 'high' },
+      lineClass: 'border-l-emerald-500',
+    });
   });
 
   it('keeps an upcoming event with a goal but no pace blue', () => {
@@ -535,6 +544,8 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, unscored, 'YTD').rows[0].registrations).toMatchObject({
       barClass: 'bg-blue-500',
       statusLabel: null,
+      // No status, so the stacked list's line stays grey whatever the progress.
+      lineClass: 'border-l-gray-200',
     });
   });
 
@@ -551,8 +562,11 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: false,
       gauge: { tone: 'accent', level: null, empty: false, unmeasured: false },
       note: 'N/A',
+      compactValue: '0 (Received: 185)',
+      // No rule rates upcoming proposals, so their line stays grey.
+      lineClass: 'border-l-gray-200',
     });
-    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review' });
+    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review', compactValue: 'CFP In Review', lineClass: 'border-l-gray-200' });
     expect(none.talks.note).toBe('N/A');
   });
 
@@ -567,7 +581,13 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       ['p2', true, 'Goal:', '1,000', 'bg-amber-400'],
       ['p4', true, 'No goal set', '', ''],
     ]);
-    expect(view.rows[0].talks).toMatchObject({ countLabel: '64', sideLabel: 'Received:', sideValue: '310', barClass: 'bg-emerald-500' });
+    expect(view.rows[0].talks).toMatchObject({
+      countLabel: '64',
+      sideLabel: 'Received:',
+      sideValue: '310',
+      barClass: 'bg-emerald-500',
+      lineClass: 'border-l-emerald-500',
+    });
   });
 
   it('turns a past event under 80% of its goal red', () => {
@@ -576,6 +596,7 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, missed, 'COMPLETED_YEAR').rows[0].registrations).toMatchObject({
       barClass: 'bg-red-400',
       statusLabel: 'Action required',
+      lineClass: 'border-l-red-400',
     });
   });
 
@@ -591,6 +612,8 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: false,
       statusLabel: null,
       gauge: { tone: 'accent', level: null, empty: false, unmeasured: true },
+      compactValue: '— (Goal: 1,000)',
+      lineClass: 'border-l-gray-200',
     });
   });
 

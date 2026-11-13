@@ -81,14 +81,26 @@
         <span class="inline-flex items-center gap-[6px] text-[13px] font-semibold text-gray-900" data-testid="overview-events-list-title"
           >{{ view.listTitle }}<lfx-overview-info-tip [text]="view.listInfo"
         /></span>
+        <!-- On a phone the legend moves under the title, above the list it explains. -->
+        <div class="hidden flex-wrap gap-x-[16px] gap-y-[6px] max-[640px]:flex" data-testid="overview-events-legend-top">
+          @for (item of legend; track item.key) {
+            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
+            >
+          }
+        </div>
 
         <!--
-          The design's breakpoints follow the table's own width, not the viewport: rings below 1000px, bars from it;
-          "Trend" for the first action below 961px; below 912px no actions, and the whole row opens the trend.
+          The design's breakpoints follow the table's own width, not the viewport: stacked rows with no header up to 560px;
+          rings below 1000px, bars from it; "Trend" for the first action below 961px; below 912px no actions, and the
+          whole row opens the trend.
         -->
         <div #table class="@container/evtbl min-w-0" data-testid="overview-events-table">
           <div class="flex min-w-0 flex-col" role="table" [attr.aria-label]="view.listTitle">
-            <div class="border-b border-gray-200 pb-[8px] text-[12px] text-gray-500 whitespace-nowrap" [class]="gridClasses" role="row">
+            <div
+              class="border-b border-gray-200 pb-[8px] text-[12px] text-gray-500 whitespace-nowrap"
+              [class]="gridClasses + ' hidden @[561px]/evtbl:grid'"
+              role="row">
               <span role="columnheader">Event</span>
               <span class="inline-flex items-center gap-[6px]" role="columnheader">Registrations<lfx-overview-info-tip [text]="info.registrations" /></span>
               <span class="inline-flex items-center gap-[6px]" role="columnheader"
@@ -98,11 +110,12 @@
             </div>
             @for (row of visibleRows(); track row.eventId) {
               <div
-                class="relative -mx-[12px] cursor-pointer items-center border-b border-gray-100 px-[12px] py-[12px] transition-colors hover:bg-[var(--ui-neutral-alpha-50)] @[912px]/evtbl:mx-0 @[912px]/evtbl:cursor-auto @[912px]/evtbl:px-0 @[912px]/evtbl:hover:bg-transparent"
+                class="relative -mx-[12px] cursor-pointer items-stretch border-b border-gray-100 px-[12px] py-[16px] transition-colors @[561px]/evtbl:items-center @[561px]/evtbl:py-[12px] hover:bg-[var(--ui-neutral-alpha-50)] @[912px]/evtbl:mx-0 @[912px]/evtbl:cursor-auto @[912px]/evtbl:px-0 @[912px]/evtbl:hover:bg-transparent"
                 [class]="gridClasses"
                 role="row"
                 [attr.data-testid]="'overview-events-row-' + row.eventId">
-                <div class="flex min-w-0 flex-col gap-[2px]" role="cell">
+                <!-- Stacked rows put the event across both halves, 4px over its figures. -->
+                <div class="col-span-2 mb-[4px] flex min-w-0 flex-col gap-[2px] @[561px]/evtbl:col-span-1 @[561px]/evtbl:mb-0" role="cell">
                   <!-- A narrow table's whole row opens the trend: the name becomes a button whose hit area and focus ring cover the row. -->
                   @if (narrow()) {
                     <button
@@ -119,9 +132,20 @@
                   <span class="text-[12px] text-gray-500">{{ row.meta }}</span>
                 </div>
 
-                <div class="flex min-w-0 items-center gap-[10px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations'">
+                <!-- Stacked, a cell is a label over its value beside a 3px line in its status colour; rings and bars hide. -->
+                <div
+                  class="flex min-w-0 flex-col justify-center border-l-[3px] pl-[8px] @[561px]/evtbl:flex-row @[561px]/evtbl:items-center @[561px]/evtbl:justify-start @[561px]/evtbl:gap-[10px] @[561px]/evtbl:border-l-0 @[561px]/evtbl:pl-0"
+                  [class]="row.registrations.lineClass"
+                  role="cell"
+                  [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations'">
+                  <span class="truncate text-[11px] font-medium leading-[15px] text-gray-500 @[561px]/evtbl:hidden">Registrations</span>
+                  <span
+                    class="truncate text-[13px] leading-[18px] text-gray-900 @[561px]/evtbl:hidden"
+                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-compact'"
+                    >{{ row.registrations.compactValue }}</span
+                  >
                   <div
-                    class="flex min-w-0 items-center gap-[10px] @[1000px]/evtbl:hidden"
+                    class="hidden min-w-0 items-center gap-[10px] @[561px]/evtbl:flex @[1000px]/evtbl:hidden"
                     [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-ring'">
                     <!-- 52px is the design's ring for a table cell. -->
                     <lfx-ui-gauge
@@ -159,10 +183,20 @@
                   }
                 </div>
 
-                <div class="flex min-w-0 items-center gap-[10px]" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks'">
+                <div
+                  class="flex min-w-0 flex-col justify-center border-l-[3px] pl-[8px] @[561px]/evtbl:flex-row @[561px]/evtbl:items-center @[561px]/evtbl:justify-start @[561px]/evtbl:gap-[10px] @[561px]/evtbl:border-l-0 @[561px]/evtbl:pl-0"
+                  [class]="row.talks.lineClass"
+                  role="cell"
+                  [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks'">
+                  <span class="truncate text-[11px] font-medium leading-[15px] text-gray-500 @[561px]/evtbl:hidden">Accepted proposals</span>
+                  <span
+                    class="truncate text-[13px] leading-[18px] text-gray-900 @[561px]/evtbl:hidden"
+                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks-compact'"
+                    >{{ row.talks.compactValue }}</span
+                  >
                   @if (row.talks.hasProposals) {
                     <div
-                      class="flex min-w-0 items-center gap-[10px] @[1000px]/evtbl:hidden"
+                      class="hidden min-w-0 items-center gap-[10px] @[561px]/evtbl:flex @[1000px]/evtbl:hidden"
                       [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks-ring'">
                       <lfx-ui-gauge
                         label="Accepted speaking proposals"
@@ -188,7 +222,7 @@
                       ></span>
                     </div>
                   } @else {
-                    <span class="text-[13px] text-gray-400">{{ row.talks.note }}</span>
+                    <span class="hidden text-[13px] text-gray-400 @[561px]/evtbl:inline">{{ row.talks.note }}</span>
                   }
                 </div>
 
@@ -237,7 +271,10 @@
             </button>
           }
         </div>
-        <div class="order-1 flex flex-wrap gap-x-[24px] gap-y-[6px] min-[1101px]:order-3 min-[1101px]:justify-end" data-testid="overview-events-legend">
+        <!-- A phone shows the legend above the list instead. -->
+        <div
+          class="order-1 flex flex-wrap gap-x-[24px] gap-y-[6px] max-[640px]:hidden min-[1101px]:order-3 min-[1101px]:justify-end"
+          data-testid="overview-events-legend">
           @for (item of legend; track item.key) {
             <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
               ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
