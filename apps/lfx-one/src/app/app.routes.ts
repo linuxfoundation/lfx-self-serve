@@ -427,16 +427,17 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
-      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
-      // project `viewer` on every read.
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). Executive directors
+      // and LF staff only (as Health Metrics). The guard checks the role only; the BFF additionally scopes an ED to
+      // projects under a foundation they direct (403 renders the no-access state) and requires project `viewer`.
       {
         path: 'project/participating-orgs',
-        title: 'Participating Organizations',
-        data: { lens: 'project' },
+        title: 'Participating Companies',
+        data: { lens: 'project', accessDeniedRedirect: '/project/overview' },
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.
         runGuardsAndResolvers: 'paramsOrQueryParamsChange',
-        canActivate: [projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
       // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling

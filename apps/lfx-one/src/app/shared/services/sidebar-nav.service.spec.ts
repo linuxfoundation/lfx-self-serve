@@ -252,7 +252,7 @@ describe('SidebarNavService', () => {
     expect(labels(items)).not.toContain('Governance');
   });
 
-  it('keeps the project-lens Marketing OS entry after Participating organizations and before Governance', () => {
+  it('keeps the project-lens Marketing OS entry after Participating companies and before Governance', () => {
     activeLens.set('project');
     mktgOsEnabled.set(true);
 
@@ -267,7 +267,7 @@ describe('SidebarNavService', () => {
       })
     );
     expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
-    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating organizations') + 1);
+    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating companies') + 1);
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
   });
 
@@ -286,8 +286,8 @@ describe('SidebarNavService', () => {
       expect(findByLink(items, `/${lens}/initiatives`)).toEqual(
         expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: `sidebar-${lens}-initiatives` })
       );
-      // On the project lens Participating organizations sits between Documents and Initiatives.
-      const anchor = lens === 'project' ? 'Participating organizations' : 'Documents';
+      // On the project lens Participating companies sits between Documents and Initiatives.
+      const anchor = lens === 'project' ? 'Participating companies' : 'Documents';
       expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf(anchor) + 1);
     }
   });
@@ -325,7 +325,7 @@ describe('SidebarNavService', () => {
     }
   });
 
-  it('shows Participating organizations right after Documents on the project lens, for non-writers too, and not on the foundation lens', () => {
+  it('shows Participating companies right after Documents on the project lens for executive directors and LF staff (non-writers too), and not on the foundation lens', () => {
     const service = TestBed.inject(SidebarNavService);
     activeLens.set('project');
     canWrite.set(false);
@@ -333,11 +333,19 @@ describe('SidebarNavService', () => {
     const items = service.sidebarItems();
     const itemLabels = labels(items);
     expect(findByLink(items, '/project/participating-orgs')).toEqual(
-      expect.objectContaining({ label: 'Participating organizations', testId: 'sidebar-project-participating-orgs' })
+      expect.objectContaining({ label: 'Participating companies', testId: 'sidebar-project-participating-orgs' })
     );
-    expect(itemLabels.indexOf('Participating organizations')).toBe(itemLabels.indexOf('Documents') + 1);
+    expect(itemLabels.indexOf('Participating companies')).toBe(itemLabels.indexOf('Documents') + 1);
 
     activeLens.set('foundation');
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+  });
+
+  it('hides Participating companies on the project lens from users who are not executive directors or LF staff', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('project');
+    hasFullFoundationAccess.set(false);
+
     expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 
