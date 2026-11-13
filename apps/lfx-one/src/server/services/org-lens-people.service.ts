@@ -916,7 +916,7 @@ export class OrgLensPeopleService {
 
   /**
    * The raw roster rows and foundation labels of a range and project scope, or of the unranged roster (`null`).
-   * `people-all:v8:{range}:{projectScope}` | `people-all:v8:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
+   * `people-all:v9:{range}:{projectScope}` | `people-all:v9:roster` (lfx-self-serve#4164, lfx-self-serve#4735): a
    * ranged entry carries no code count and no organization scope (`v5` was per scope, with an Insights listing gate),
    * so one entry serves every commit scope, metric and organization scope, and the off-roster read classifies against
    * the same entry the page lists. `v7` (lfx-self-serve#4287; the roster was `v4:roster`): training foundation labels
@@ -925,7 +925,7 @@ export class OrgLensPeopleService {
   private readRosterRaw(accountId: string, range: OrgLensTimeRange | null, projectScope: OrgProjectScope): Promise<OrgAllEmployeesRaw> {
     return withOrgCompactCache(
       accountId,
-      range ? `people-all:v8:${range}:${projectScope}` : 'people-all:v8:roster',
+      range ? `people-all:v9:${range}:${projectScope}` : 'people-all:v9:roster',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchAllEmployeesRaw(accountId, range, projectScope),
       {
@@ -1102,13 +1102,13 @@ export class OrgLensPeopleService {
 
   /**
    * Committee, event and training rows. `v6`: the training rows are one per course, read from
-   * ORG_PEOPLE_TRAINING_COURSE_STATUS (lfx-self-serve#4439), so a `v5` entry (one row per training record) must miss. `v7`: the people-list column is `IS_ON_PEOPLE_LIST`.
+   * ORG_PEOPLE_TRAINING_COURSE_STATUS (lfx-self-serve#4439), so a `v5` entry (one row per training record) must miss. `v7`: the people-list column is `IS_ON_PEOPLE_LIST`. `v8` (lfx-self-serve#5585): event rows count only registrations and speaker records made with a company email.
    */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     return this.withPersonCache(
       accountId,
       personKey,
-      `people-detail:v7:${personKey}`,
+      `people-detail:v8:${personKey}`,
       () => this.runEmployeeActivityFetch(accountId, personKey),
       isEmployeeActivityRaw
     );

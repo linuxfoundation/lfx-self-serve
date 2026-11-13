@@ -30,6 +30,8 @@ import {
   orgEventsCountColumn,
   orgEventsFootprintColumn,
   orgEventsRangeWindow,
+  orgEventsSpeakerPredicate,
+  orgEventsSubmittedSpeakerPredicate,
 } from '../helpers/org-events-filters.helper';
 import { isImpersonating } from '../utils/auth-helper';
 
@@ -43,8 +45,9 @@ const VALID_SORT_COLUMNS: ReadonlySet<string> = new Set(['EVENT_NAME', 'EVENT_ST
 
 /**
  * Service for the Org Lens Events page. dbt computes every count (per-event distinct people in ORG_EVENTS, person × event
- * participation in ORG_EVENT_PARTICIPATION); this service selects the Employee match (`_VERIFIED`) columns of the picked participation and applies
- * parameterized WHERE / ORDER BY / LIMIT.
+ * participation in ORG_EVENT_PARTICIPATION); this service selects the company-email (`_COMPANY_EMAIL`) columns of the picked participation and applies
+ * parameterized WHERE / ORDER BY / LIMIT. Attendees and speakers count only when the email on their own registration or speaker
+ * record is one of the company's addresses (lfx-self-serve#5582); speakers are read from ORG_EVENT_PARTICIPATION, never from EVENT_SPEAKERS.
  */
 export class OrgLensEventsService {
   private readonly snowflakeService: SnowflakeService;
@@ -104,7 +107,7 @@ export class OrgLensEventsService {
 
       rows = await withOrgCache(
         accountId,
-        `events:v6:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
+        `events:v7:${paramSignature([isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventRow>(sql, binds)).rows,
         isEventRowArray
@@ -148,7 +151,7 @@ export class OrgLensEventsService {
 
       const rows = await withOrgCache(
         accountId,
-        `events-summary:v3:${paramSignature([filters.scope, filters.foundation, filters.range])}`,
+        `events-summary:v4:${paramSignature([filters.scope, filters.foundation, filters.range])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, binds)).rows,
         isObjectRowArray
@@ -186,7 +189,7 @@ export class OrgLensEventsService {
       `;
       const rows = await withOrgCache(
         accountId,
-        `events-foundations:v3:${paramSignature([filters.scope])}`,
+        `events-foundations:v4:${paramSignature([filters.scope])}`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(sql, [accountId])).rows,
         isObjectRowArray
@@ -199,7 +202,7 @@ export class OrgLensEventsService {
   }
 
   /**
-   * GET /api/orgs/:accountId/lens/events/:eventId/attendees — everyone the picked option credits to the organization for one event,
+   * GET /api/orgs/:accountId/lens/events/:eventId/attendees — everyone who registered with a company email under the picked option for one event,
    * by name and title (lfx-self-serve#5158). No email is ever returned.
    */
   public async getEventAttendees(
@@ -225,10 +228,10 @@ export class OrgLensEventsService {
         ORDER BY DISPLAY_NAME ASC NULLS LAST, PARTICIPANT_REF ASC
       `;
 
-      // `v7`: Employee match only; a `v6` entry may hold the retired Self-reported only or All rows.
+      // `v8` (lfx-self-serve#5582): only registrations made with a company email; a `v7` entry holds the Employee match rows.
       const attendeeRows = await withOrgCache(
         accountId,
-        `event-attendees:v7:${paramSignature([eventId, servedParticipation])}`,
+        `event-attendees:v8:${paramSignature([eventId, servedParticipation])}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventAttendeesDrawerRow>(sql, [accountId, eventId])).rows,
         isObjectRowArray
@@ -264,26 +267,30 @@ export class OrgLensEventsService {
     }
   }
 
-  /** GET /api/orgs/:accountId/lens/events/:eventId/speakers — org speakers (accepted + submitted) for a specific event. */
+  /**
+   * GET /api/orgs/:accountId/lens/events/:eventId/speakers — the company's speakers (accepted + submitted) for a specific event.
+   * A speaker is listed only when the email on their own speaker record is a company address (lfx-self-serve#5582), so the rows
+   * come from ORG_EVENT_PARTICIPATION, the same rows the Speakers column and filter count.
+   */
   public async getEventSpeakers(req: Request, accountId: string, eventId: string, searchQuery?: string): Promise<OrgEventSpeakersResponse> {
     logger.debug(req, 'get_event_speakers', 'Fetching event speakers', { account_id: accountId, event_id: eventId });
 
-    // A name field holding an address is not a name; the search matches names only, as the attendees drawer does.
-    const speakerName = `CASE WHEN TRIM(es.SPEAKER_FIRST_NAME || ' ' || es.SPEAKER_LAST_NAME) LIKE '%@%' THEN NULL ELSE NULLIF(TRIM(es.SPEAKER_FIRST_NAME || ' ' || es.SPEAKER_LAST_NAME), '') END`;
-    const searchFilter = searchQuery ? `AND UPPER(${speakerName}) LIKE UPPER(?)` : '';
+    // DISPLAY_NAME is already NULL when the warehouse name holds an address; the search matches names only, as the attendees drawer does.
+    const searchFilter = searchQuery ? 'AND UPPER(p.DISPLAY_NAME) LIKE UPPER(?)' : '';
 
     const sql = `
       SELECT
-        es.SPEAKER_ID                                         AS SPEAKER_ID,
-        MAX(${speakerName})                                   AS NAME,
-        MAX(es.JOB_TITLE)                                     AS JOB_TITLE,
-        MAX(CASE WHEN es.SPEAKER_STATUS = 'Accepted' THEN 1 ELSE 0 END) AS IS_ACCEPTED,
-        MAX(es.EVENT_NAME)                                    AS EVENT_NAME
-      FROM ANALYTICS.SILVER_FACT.EVENT_SPEAKERS es
-      WHERE es.EVENT_ID = ?
-        AND es.ACCOUNT_ID = ?
+        CAST(p.PARTICIPANT_REF AS VARCHAR)                                              AS SPEAKER_ID,
+        MAX(p.DISPLAY_NAME)                                                             AS NAME,
+        MAX(p.JOB_TITLE)                                                                AS JOB_TITLE,
+        MAX(CASE WHEN p.${orgEventsSpeakerPredicate()} THEN 1 ELSE 0 END)               AS IS_ACCEPTED,
+        MAX(p.EVENT_NAME)                                                               AS EVENT_NAME
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p
+      WHERE p.EVENT_ID = ?
+        AND p.ACCOUNT_ID = ?
+        AND ${orgEventsSubmittedSpeakerPredicate('p')}
         ${searchFilter}
-      GROUP BY es.SPEAKER_ID
+      GROUP BY p.PARTICIPANT_REF
       ORDER BY NAME ASC NULLS LAST, SPEAKER_ID ASC
     `;
 
@@ -296,7 +303,7 @@ export class OrgLensEventsService {
     try {
       rows = await withOrgCache(
         accountId,
-        `event-speakers:v3:${paramSignature([eventId, searchQuery ?? null])}`,
+        `event-speakers:v4:${paramSignature([eventId, searchQuery ?? null])}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
         async () => (await this.snowflakeService.execute<OrgEventSpeakersDrawerRow>(sql, binds)).rows,
         isSpeakerRowArray
@@ -395,9 +402,9 @@ export class OrgLensEventsService {
     if (status === 'registered') {
       statusFilter = `AND oe.${registeredColumn} > 0`;
     } else if (status === 'speaker-submitted') {
-      statusFilter = 'AND oe.ORG_SPEAKER_SUBMITTED_COUNT > 0';
+      statusFilter = 'AND COALESCE(spk.SUBMITTED_COUNT, 0) > 0';
     } else if (status === 'speaker-accepted') {
-      statusFilter = 'AND oe.ORG_SPEAKER_ACCEPTED_COUNT > 0';
+      statusFilter = 'AND COALESCE(spk.ACCEPTED_COUNT, 0) > 0';
     } else if (status === 'event-sponsor') {
       statusFilter = 'AND oe.IS_ORG_SPONSOR = TRUE';
     }
@@ -408,7 +415,18 @@ export class OrgLensEventsService {
     const foundationFilter = foundation ? 'AND oe.FOUNDATION_ID = ?' : '';
     const searchFilter = searchQuery ? 'AND oe.EVENT_NAME ILIKE ?' : '';
 
+    // Speaker counts are the company's speakers per event whose own speaker record carries a company email, from the same rows
+    // the speakers drawer lists, so a filtered row never shows 0 and the column always equals the drawer.
     const sql = `
+      WITH spk AS (
+        SELECT
+          p.EVENT_ID,
+          COUNT(DISTINCT CASE WHEN p.${orgEventsSpeakerPredicate()} THEN p.PARTICIPANT_REF END) AS ACCEPTED_COUNT,
+          COUNT(DISTINCT CASE WHEN ${orgEventsSubmittedSpeakerPredicate('p')} THEN p.PARTICIPANT_REF END) AS SUBMITTED_COUNT
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p
+        WHERE p.ACCOUNT_ID = ?
+        GROUP BY p.EVENT_ID
+      )
       SELECT
         oe.EVENT_ID,
         oe.EVENT_NAME,
@@ -422,11 +440,12 @@ export class OrgLensEventsService {
         oe.EVENT_REGISTRATION_URL,
         oe.${countColumn} AS ORG_ATTENDEE_COUNT,
         NULLIF(oe.EVENT_REGISTRATIONS_GOAL, 0) AS EVENT_REGISTRATIONS_GOAL,
-        oe.ORG_SPEAKER_ACCEPTED_COUNT,
-        oe.ORG_SPEAKER_SUBMITTED_COUNT,
+        COALESCE(spk.ACCEPTED_COUNT, 0) AS ORG_SPEAKER_ACCEPTED_COUNT,
+        COALESCE(spk.SUBMITTED_COUNT, 0) AS ORG_SPEAKER_SUBMITTED_COUNT,
         oe.IS_ORG_SPONSOR,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
+      LEFT JOIN spk ON spk.EVENT_ID = oe.EVENT_ID
       WHERE oe.ACCOUNT_ID = ?
         ${tenseFilter}
         ${scopeFilter}
@@ -438,7 +457,7 @@ export class OrgLensEventsService {
     `;
 
     // Positional binds, in statement order.
-    const binds: string[] = [accountId];
+    const binds: string[] = [accountId, accountId];
     if (foundation) binds.push(foundation);
     if (searchQuery) binds.push(`%${searchQuery}%`);
     return { sql, binds };

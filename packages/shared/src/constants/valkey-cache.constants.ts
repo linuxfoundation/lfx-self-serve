@@ -279,7 +279,7 @@ export const VALKEY_CACHE = {
     // lf-dbt#3166 dev build: largest value 4.57 MB (largest org, All time). `v7` (lfx-self-serve#4287) reads training
     // foundation labels from people-list rows only, a few labels fewer at most, and also keys the unranged roster
     // (`v7:roster`, formerly `v4:roster`); the cap carries over. `v8` reads the renamed `IS_ON_PEOPLE_LIST` column, same rows.
-    'org-lens-sf:v1:people-all:v8': 6 * 1_048_576,
+    'org-lens-sf:v1:people-all:v9': 6 * 1_048_576,
     // `people-former` is stored as named-key JSON rows (`withOrgCache`, not columnar). `v3` measured 2026-10-27
     // on the dev build (lf-dbt#3118) as the JSON of the cached rows: largest `all`-range value 1,444,402 bytes
     // (largest org measured, 2,707 rows); the top three orgs exceed the 1 MiB default.
@@ -310,7 +310,9 @@ export const VALKEY_CACHE = {
     // subset of `all`), so no value is larger than `v4`; the cap carries over. `v6` (lfx-self-serve#5315) reads Self-reported
     // only through dbt's person-level ORG_EVENT_PARTICIPATION_RANGED (still a subset of `all`); same rows otherwise, the cap carries over.
     // `v7` (lfx-self-serve-ops#1441) reads Employee match only, the `verified` rows of `v6`, so no value is larger; the cap carries over.
-    'org-lens-sf:v1:people-event-attendees:v7': 2 * 1_048_576,
+    // `v8` (lfx-self-serve#5582) keeps only registrations and speaker records made with a company email, a subset of `v7`'s rows,
+    // so no value is larger; the cap carries over.
+    'org-lens-sf:v1:people-event-attendees:v8': 2 * 1_048_576,
     // `v4` (lfx-self-serve#4159) is read per range over enrollments of any age (lf-dbt#3118 lifted the 12-month cap).
     // Measured 2026-10-27 on the dev build with the same SQL size estimate and × 1.06 calibration as `people-all:v4`:
     // largest value 6,782,106 bytes (largest org measured, All time; the next two 5.39 MB and 3.20 MB). Only All time on those three

@@ -377,7 +377,7 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.locator('[data-test="org-events-scope-filter"]')).toBeVisible();
     await expect(page.getByTestId('org-events-participation-filter')).toHaveAttribute('title', /Upcoming events have no attendance yet/);
 
-    // Events count Employee match only (lfx-self-serve-ops#1441): no Counted by control and nothing behind More filters.
+    // Events count company-email registrations and speaker records only (lfx-self-serve-ops#1441): no Counted by control and nothing behind More filters.
     await expect(page.locator('[data-test="org-events-attribution-filter"]')).toHaveCount(0);
     await expect(page.getByTestId('org-events-more-filters-toggle')).toHaveCount(0);
 
@@ -415,7 +415,7 @@ test.describe('Org Events Dashboard', () => {
     await expect(page).toHaveURL(/tab=past/);
   });
 
-  // Events count Employee match only: an old link with any ?attribution= (Self-reported only, All, or the values
+  // Events count company-email registrations and speaker records only: an old link with any ?attribution= (Self-reported only, All, or the values
   // lfx-self-serve#5315 retired) reads the default and never forwards the param.
   for (const legacy of ['self_reported', 'all', 'company_email', 'account']) {
     test(`ignores the legacy ?attribution=${legacy}`, async ({ page }) => {

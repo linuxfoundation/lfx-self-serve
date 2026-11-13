@@ -44,7 +44,7 @@ import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
 /**
  * Event Attendees tab data access — one bundled GET: the person × event rows of ORG_EVENT_PARTICIPATION for the picked range and
- * participation (everyone Employee match credits to the organization, by name and title; ended events only; the
+ * participation (everyone who registered, or spoke, with a company email of the company, by name and title; ended events only; the
  * server applies the window, the browser does not), the summary row dbt computed for the same pick, and the foundation and
  * event dropdown options of that same row set.
  */
@@ -62,12 +62,12 @@ export class OrgPeopleEventAttendeesService {
 
     const { range, participation } = filters;
 
-    // Only the filters that select rows are in the key. `v7`: Employee match only; a `v6` entry may hold the retired Self-reported only
-    // or All row sets, so it must miss.
+    // Only the filters that select rows are in the key. `v8` (lfx-self-serve#5582): only registrations and speaker records made with
+    // a company email; a `v7` entry holds the old Employee match rows (company email OR roster user), so it must miss.
     const [{ detailRows, foundationRows, eventRows }, summary] = await Promise.all([
       withOrgCompactCache(
         accountId,
-        `people-event-attendees:v7:${range}:${participation}`,
+        `people-event-attendees:v8:${range}:${participation}`,
         VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
         () => this.fetchEventAttendeesRaw(accountId, range, participation),
         { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
@@ -107,7 +107,7 @@ export class OrgPeopleEventAttendeesService {
     return { accountId, details, summary, foundationOptions, eventOptions };
   }
 
-  /** The dbt summary row for (range, participation), Employee match; zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
+  /** The dbt summary row for (range, participation), company-email rows only; zeros when the account has none (no fallback to another attribution). Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
   public async readSummary(
     accountId: string,
     range: OrgEventsFilters['range'],
@@ -121,10 +121,10 @@ export class OrgPeopleEventAttendeesService {
         AND ATTRIBUTION = ?
         AND PARTICIPATION = ?
     `;
-    // `v3`: Employee match only; a `v2` entry may hold the retired Self-reported only and All rows.
+    // `v4` (lfx-self-serve#5582): company-email rows only; a `v3` entry holds the Employee match counts.
     const rows = await withOrgCache(
       accountId,
-      `people-event-attendees-summary:v3:${range}:${participation}`,
+      `people-event-attendees-summary:v4:${range}:${participation}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () =>
         (await this.snowflakeService.execute<OrgEventParticipationSummaryRow>(sql, [accountId, range, ORG_EVENTS_COUNTED_ATTRIBUTION, participation])).rows,
@@ -145,7 +145,7 @@ export class OrgPeopleEventAttendeesService {
     participation: OrgEventsFilters['participation']
   ): Promise<EventAttendeesRaw> {
     // One row set, two projections: the rows, and the dropdown options narrowed to what the rows hold. Everyone who
-    // credits the organization by Employee match for the participation, ended events only, inside the range window.
+    // registered or spoke with a company email of the company for the participation, ended events only, inside the range window.
     const where = `
       WHERE p.ACCOUNT_ID = ?
         AND p.${orgEventsAttendeePredicate(participation)}
