@@ -293,7 +293,7 @@ describe('OrgLensMembershipsService — family roll-up', () => {
       const single = await service.getActiveMemberships(PARENT);
 
       expect(family.summary).toEqual(single.summary);
-      expect(family.memberships.map(({ organization: _organization, ...row }) => row)).toEqual(single.memberships);
+      expect(family.memberships.map((row) => ({ ...row, organization: undefined }))).toEqual(single.memberships);
     });
 
     it('leaves the single-organization read unchanged: one account bound, no seat keys, no organization on the rows', async () => {
