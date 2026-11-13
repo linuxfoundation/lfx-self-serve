@@ -82,8 +82,7 @@
                     (mouseenter)="showTip(index, $event)"
                     (focus)="showTip(index, $event)"
                     (mouseleave)="hideTip(index)"
-                    (blur)="hideTip(index)"
-                    (keydown.escape)="hideTip(index)">
+                    (blur)="hideTip(index)">
                     <!-- Exact px: the design's 8px points, 10px for the latest newsletter. -->
                     <span
                       class="pointer-events-none absolute left-1/2 box-border -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
@@ -105,7 +104,8 @@
                       @if (open.index === index) {
                         <lfx-health-metrics-chart-tip
                           class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
-                          [class]="open.flip ? 'right-[calc(50%+12px)]' : 'left-[calc(50%+12px)]'"
+                          [class]="open.sideClass"
+                          [style.left]="open.shiftPx === null ? null : 'calc(50% + ' + open.shiftPx + 'px)'"
                           aria-hidden="true"
                           [tip]="point.tip"
                           [attr.data-testid]="'overview-newsletter-tip-' + point.key" />

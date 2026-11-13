@@ -110,7 +110,7 @@ describe('OverviewNewsletterCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-chart-tip-row"] strong')?.className).toContain('font-semibold');
     expect(column.className).toContain('z-20');
 
-    column.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    column.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     fixture.detectChanges();
     expect(query('overview-newsletter-tip-n1')).toBeNull();
 
@@ -120,6 +120,42 @@ describe('OverviewNewsletterCardComponent', () => {
     column.dispatchEvent(new Event('mouseleave'));
     fixture.detectChanges();
     expect(query('overview-newsletter-tip-n1')).toBeNull();
+  });
+
+  // Hovering doesn't move focus, so Escape reaches the page rather than the column.
+  it('closes a mouse-opened popover on Escape pressed anywhere', async () => {
+    await render();
+
+    query('overview-newsletter-column-n1')?.dispatchEvent(new Event('mouseenter'));
+    fixture.detectChanges();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fixture.detectChanges();
+
+    expect(query('overview-newsletter-tip-n1')).toBeNull();
+  });
+
+  it('opens the popover on whichever side has room, and shifts it onto a screen with room on neither', async () => {
+    await render();
+    const column = query('overview-newsletter-column-n1') as HTMLElement;
+    const open = (viewport: number, centre: number): HTMLElement => {
+      Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: viewport });
+      column.getBoundingClientRect = () => ({ left: centre - 20, width: 40 }) as DOMRect;
+      column.dispatchEvent(new Event('mouseenter'));
+      fixture.detectChanges();
+      return query('overview-newsletter-tip-n1') as HTMLElement;
+    };
+
+    try {
+      expect(open(1200, 300).className).toContain('left-[calc(50%+12px)]');
+      expect(open(1200, 1000).className).toContain('right-[calc(50%+12px)]');
+      // 375px wide with the column at 187px: the popover's left edge lands at 375 − 8 − 280 = 87px.
+      const shifted = open(375, 187);
+      expect(shifted.style.left).toBe('calc(50% - 100px)');
+      expect(shifted.className).not.toContain('left-[calc(50%+12px)]');
+      expect(shifted.className).not.toContain('right-[calc(50%+12px)]');
+    } finally {
+      Reflect.deleteProperty(document.documentElement, 'clientWidth');
+    }
   });
 
   it('draws no click point and a dash in the popover for a newsletter without a click rate', async () => {

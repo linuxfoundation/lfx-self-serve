@@ -543,6 +543,15 @@ export interface HealthMetricsOverviewNewsletterTickView {
   xPct: string;
 }
 
+/** Where an open chart popover sits: beside its column on either side, or shifted to stay on a screen too narrow for both. */
+export interface HealthMetricsOverviewChartTipPlacement {
+  index: number;
+  /** The side class, empty when `shiftPx` places it. */
+  sideClass: string;
+  /** The popover's left edge from the column's centre, for a screen with room on neither side. */
+  shiftPx: number | null;
+}
+
 /** The open and click rate lines, in a 600 × 200 viewBox drawn without keeping its aspect ratio. */
 export interface HealthMetricsOverviewNewsletterChartView {
   openPath: string;

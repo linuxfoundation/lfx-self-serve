@@ -6,7 +6,9 @@ import { Component, computed, ElementRef, inject, PLATFORM_ID, Signal, signal, v
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   HEALTH_METRICS_OVERVIEW_CARDS,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
   HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_CREATE_NEWSLETTER_LINK,
   HEALTH_METRICS_OVERVIEW_EMPTY_COPY,
   HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS,
@@ -26,14 +28,19 @@ import { OverviewCardComponent } from '../overview-card/overview-card.component'
 import { OverviewExploreLinkComponent } from '../overview-explore-link/overview-explore-link.component';
 import { OverviewKpiStripComponent } from '../overview-kpi-strip/overview-kpi-strip.component';
 
-import type { HealthMetricsOverviewNewsletterTickView, HealthMetricsOverviewNewsletterView } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsOverviewChartTipPlacement,
+  HealthMetricsOverviewNewsletterTickView,
+  HealthMetricsOverviewNewsletterView,
+} from '@lfx-one/shared/interfaces';
 
 /** Newsletters sent in the period: the summary, each newsletter's open and click rate, and how engaged subscribers are. */
 @Component({
   selector: 'lfx-overview-newsletter-card',
   imports: [HealthMetricsChartTipComponent, OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
   templateUrl: './overview-newsletter-card.component.html',
-  host: { class: 'flex min-w-0 flex-col' },
+  // Escape closes a popover however it opened, since hovering a column doesn't focus it.
+  host: { class: 'flex min-w-0 flex-col', '(document:keydown.escape)': 'tip.set(null)' },
 })
 export class OverviewNewsletterCardComponent {
   private readonly analyticsService = inject(AnalyticsService);
@@ -49,7 +56,7 @@ export class OverviewNewsletterCardComponent {
   protected readonly areaGradientId = 'overview-newsletter-area';
   protected readonly areaFill = `url(#${this.areaGradientId})`;
   protected readonly link = HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS.newsletters;
-  protected readonly tip = signal<{ index: number; flip: boolean } | null>(null);
+  protected readonly tip = signal<HealthMetricsOverviewChartTipPlacement | null>(null);
   protected readonly openTipIndex = computed(() => this.tip()?.index ?? null);
   protected readonly read = injectOverviewCardRead((foundationSlug) => this.analyticsService.getOverviewNewsletters({ foundationSlug }));
   protected readonly view = computed<HealthMetricsOverviewNewsletterView | null>(() => {
@@ -67,12 +74,25 @@ export class OverviewNewsletterCardComponent {
   private readonly plotWidthPx: Signal<number | null> = this.initPlotWidth();
   protected readonly ticks: Signal<HealthMetricsOverviewNewsletterTickView[]> = this.initTicks();
 
-  /** Opens a newsletter's popover beside its column, on the left only when the right has no room and the left has more. */
+  /**
+   * Opens a newsletter's popover on the right of its column, or on the left when only the left has room; a screen with
+   * room on neither side shifts it to stay inside the screen.
+   */
   protected showTip(index: number, event: Event): void {
     const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const centre = column.left + column.width / 2;
-    const roomRight = document.documentElement.clientWidth - centre;
-    this.tip.set({ index, flip: roomRight < HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX && centre > roomRight });
+    const viewport = document.documentElement.clientWidth;
+    if (viewport - centre >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) {
+      this.tip.set({ index, sideClass: 'left-[calc(50%+12px)]', shiftPx: null });
+    } else if (centre >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) {
+      this.tip.set({ index, sideClass: 'right-[calc(50%+12px)]', shiftPx: null });
+    } else {
+      const left = Math.max(
+        HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+        viewport - HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX - HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX
+      );
+      this.tip.set({ index, sideClass: '', shiftPx: Math.round(left - centre) });
+    }
   }
 
   protected hideTip(index: number): void {

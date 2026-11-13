@@ -395,8 +395,12 @@ export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN = 0.6;
 /** A newsletter label's slot below this width collides with its neighbours, so the chart labels each month once. */
 export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX = 28;
 
-/** The room the chart popover needs beside its column before it opens on the other side. */
+/** The room the chart popover needs beside its column before it opens on the other side: its 280px plus a 12px gap. */
 export const HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX = 292;
+
+/** The chart popover's widest, and the margin it keeps from the screen's edges when neither side has room. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX = 280;
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX = 8;
 
 /** The progress blue at 10%: the fill under the Engagement newsletter performance chart's open rate. */
 export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
