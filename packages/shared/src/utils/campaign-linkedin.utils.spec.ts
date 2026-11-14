@@ -6,9 +6,14 @@ import { describe, expect, it } from 'vitest';
 import { LINKEDIN_CHAR_LIMITS } from '../constants/campaign.constants';
 import type { LinkedInTargetingProfileConfig } from '../interfaces/campaign.interface';
 import {
+  isLinkedInCallToAction,
+  linkedInCreativeNameLength,
   linkedInCreativeTextLength,
   linkedInTargetingAfterRemovals,
+  linkedInVariantDescriptionError,
+  linkedInVariantNameErrors,
   linkedInVariantTextError,
+  normalizeLinkedInCreativeName,
   normalizeLinkedInCreativeText,
   resolveLinkedInTargetingProfileId,
 } from './campaign-linkedin.utils';
@@ -107,5 +112,69 @@ describe('linkedInTargetingAfterRemovals', () => {
       skills: profile.skills,
       groups: profile.groups,
     });
+  });
+});
+
+describe('normalizeLinkedInCreativeName', () => {
+  it('collapses every whitespace run to one space and trims, keeping dashes', () => {
+    expect(normalizeLinkedInCreativeName('  OSSNA 2026\t–\n Skill   Up  ')).toBe('OSSNA 2026 – Skill Up');
+  });
+
+  it('treats a Go-only space (U+0085, U+3000) as whitespace and a blank name as none', () => {
+    expect(normalizeLinkedInCreativeName('\u0085A\u3000B\u0085')).toBe('A B');
+    expect(normalizeLinkedInCreativeName(' \n ')).toBe('');
+  });
+
+  it('measures the normalized name in code points', () => {
+    expect(linkedInCreativeNameLength('  a  👋 ')).toBe(3);
+  });
+});
+
+describe('linkedInVariantNameErrors', () => {
+  it('accepts blank and distinct names', () => {
+    expect(linkedInVariantNameErrors(['', 'Skill Up', 'Keynotes'], 'OSSNA')).toEqual(['', '', '']);
+  });
+
+  it("refuses a name over LinkedIn's 255 characters rather than letting campaign-service cut it", () => {
+    expect(linkedInVariantNameErrors(['a'.repeat(LINKEDIN_CHAR_LIMITS.name)], 'E')).toEqual(['']);
+    expect(linkedInVariantNameErrors(['a'.repeat(LINKEDIN_CHAR_LIMITS.name + 1)], 'E')[0]).toBe("The name is 256 characters, over LinkedIn's 255. Shorten it.");
+  });
+
+  it('refuses the later of two names that match once whitespace is collapsed', () => {
+    expect(linkedInVariantNameErrors(['Skill Up', 'x', ' Skill   Up '], 'E')).toEqual([
+      '',
+      '',
+      "This name repeats variant 1's. Give each variant its own name.",
+    ]);
+  });
+
+  it("refuses a name equal to an unnamed variant's default, before or after it", () => {
+    expect(linkedInVariantNameErrors(['', 'OSSNA | variant-1'], 'OSSNA')[1]).toBe("This name repeats variant 1's. Give each variant its own name.");
+    expect(linkedInVariantNameErrors(['OSSNA | variant-2', ''], 'OSSNA')[0]).toBe("This name is variant 2's default name. Give each variant its own name.");
+    // A named variant has no default, so its own "variant-N" spelling is free.
+    expect(linkedInVariantNameErrors(['OSSNA | variant-2', 'B'], 'OSSNA')).toEqual(['', '']);
+  });
+});
+
+describe('linkedInVariantDescriptionError', () => {
+  it('accepts blank and up to 300 characters, measured like the intro text', () => {
+    expect(linkedInVariantDescriptionError('')).toBeNull();
+    expect(linkedInVariantDescriptionError(`  ${'a'.repeat(LINKEDIN_CHAR_LIMITS.description)}  `)).toBeNull();
+  });
+
+  it('refuses a description campaign-service would cut', () => {
+    expect(linkedInVariantDescriptionError('a'.repeat(LINKEDIN_CHAR_LIMITS.description + 1))).toBe(
+      "The description is 301 characters, over LinkedIn's 300. Shorten it."
+    );
+  });
+});
+
+describe('isLinkedInCallToAction', () => {
+  it('matches the upper-case LinkedIn labels exactly', () => {
+    expect(isLinkedInCallToAction('REGISTER')).toBe(true);
+    expect(isLinkedInCallToAction('SHOP_NOW')).toBe(true);
+    expect(isLinkedInCallToAction('register')).toBe(false);
+    expect(isLinkedInCallToAction('Register')).toBe(false);
+    expect(isLinkedInCallToAction('')).toBe(false);
   });
 });

@@ -54,6 +54,7 @@ import {
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   isCreativeAssetMimeType,
+  LINKEDIN_CALLS_TO_ACTION,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   LINKEDIN_IMAGE_MAX_BYTES,
@@ -244,6 +245,7 @@ import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
 import { DialogService } from 'primeng/dynamicdialog';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
@@ -451,10 +453,14 @@ import {
   googleUpperCodeList,
   googleUserListLabel,
   isHttpUrl,
+  isLinkedInCallToAction,
   isReversedCampaignFlight,
   joinAsSentenceList,
+  linkedInCreativeNameLength,
   linkedInCreativeTextLength,
   linkedInTargetingAfterRemovals,
+  linkedInVariantDescriptionError,
+  linkedInVariantNameErrors,
   linkedInVariantTextError,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
@@ -559,6 +565,7 @@ let linkedInVariantKeySequence = 0;
     UiInputComponent,
     UiMultiSelectComponent,
     UiOptionComponent,
+    UiSelectComponent,
     UiTextareaComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
@@ -789,6 +796,26 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInTargetingEditEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInTargetingEditAvailable = computed<boolean>(() => this.linkedInTargetingEditEnabled() === true);
+
+  /**
+   * Whether each LinkedIn variant may offer a creative name and an article description
+   * (`CampaignListResult.linkedInVariantFieldsEnabled`, #5764). `null` (unknown) and `false` hide the
+   * inputs and send neither key, which is the create exactly as it was before them.
+   */
+  public readonly linkedInVariantFieldsEnabled = input<boolean | null>(null);
+
+  /** @see linkedInVariantFieldsEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInVariantFieldsAvailable = computed<boolean>(() => this.linkedInVariantFieldsEnabled() === true);
+
+  /**
+   * Whether each LinkedIn variant may offer a call to action (`CampaignListResult.linkedInCallToActionEnabled`,
+   * #5764) — on only where campaign-service's `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED` is, since it
+   * refuses any call to action otherwise. `null` and `false` hide the picker and send no `callToAction`.
+   */
+  public readonly linkedInCallToActionEnabled = input<boolean | null>(null);
+
+  /** @see linkedInCallToActionEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInCallToActionAvailable = computed<boolean>(() => this.linkedInCallToActionEnabled() === true);
 
   /**
    * Whether the Microsoft section may offer an image UPLOAD (`CampaignListResult.microsoftAssetUploadEnabled`),
@@ -1156,6 +1183,13 @@ export class ImplementationTabComponent implements OnInit {
   // === Constants ===
   protected readonly charLimits = CAMPAIGN_CHAR_LIMITS;
   protected readonly linkedInCharLimits = LINKEDIN_CHAR_LIMITS;
+  /** The event name as typed, for the LinkedIn ad-name hint's `"<event> | variant-N"` default (#5764). */
+  protected readonly linkedInEventName = computed(() => {
+    void this.campaignFormRevision();
+    return this.campaignForm.controls.eventName.value.trim();
+  });
+  /** The LinkedIn call-to-action picker's options: the upper-case values campaign-service matches exactly. */
+  protected readonly linkedInCallsToAction = LINKEDIN_CALLS_TO_ACTION;
   protected readonly metaCharLimits = META_CHAR_LIMITS;
   protected readonly metaObjectiveLabels = META_OBJECTIVE_LABELS;
   /**
@@ -3469,9 +3503,15 @@ export class ImplementationTabComponent implements OnInit {
     () => this.linkedInVariantViews().find((view) => view.imageBlock !== null)?.imageBlock ?? null
   );
   protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
-  /** Whether any variant's intro text or headline is one campaign-service would refuse or cut. */
+  /**
+   * Whether any variant's copy is one campaign-service would refuse or cut: the intro text or headline,
+   * or (#5764) a name, description or call to action it would refuse, cut, or not be sent.
+   */
   protected readonly linkedInVariantTextInvalid = computed(() =>
-    this.linkedInVariantViews().some((view) => view.introTextError !== '' || view.headlineError !== '')
+    this.linkedInVariantViews().some(
+      (view) =>
+        view.introTextError !== '' || view.headlineError !== '' || view.nameError !== '' || view.descriptionError !== '' || view.callToActionError !== ''
+    )
   );
   /** The upload's status, announced with the variant it is for. */
   protected readonly linkedInImageUploadLiveMessage = computed(() => {
@@ -5064,9 +5104,9 @@ export class ImplementationTabComponent implements OnInit {
     }
     this.emitDraft();
   }
-  /** Edit one LinkedIn variant's intro text or headline. */
-  protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline', value: string): void {
-    this.linkedInVariants.update((variants) => variants.map((variant) => (variant.key === key ? { ...variant, [field]: value } : variant)));
+  /** Edit one LinkedIn variant's intro text, headline, or (#5764) name, description or call to action. */
+  protected onLinkedInVariantTextChange(key: string, field: 'introText' | 'headline' | 'name' | 'description' | 'callToAction', value: string | null): void {
+    this.linkedInVariants.update((variants) => variants.map((variant) => (variant.key === key ? { ...variant, [field]: value ?? '' } : variant)));
     this.emitDraft();
   }
 
@@ -7334,9 +7374,27 @@ export class ImplementationTabComponent implements OnInit {
   private linkedInVariantsForCreate(): LinkedInCreativeVariant[] {
     return this.linkedInVariants().map((variant) => {
       const { introText, headline } = variant;
-      if (this.linkedInVariantImageSent(variant)) return { introText, headline, imageAssetId: variant.imageAssetId };
-      return variant.imageUrn ? { introText, headline, imageUrn: variant.imageUrn } : { introText, headline };
+      const copy = { introText, headline, ...this.linkedInVariantOptionalFields(variant) };
+      if (this.linkedInVariantImageSent(variant)) return { ...copy, imageAssetId: variant.imageAssetId };
+      return variant.imageUrn ? { ...copy, imageUrn: variant.imageUrn } : copy;
     });
+  }
+
+  /**
+   * A variant's name, description and call to action as sent (#5764): each only when its capability
+   * is an explicit yes and it holds something, and otherwise OMITTED — never `""` or `null`, which
+   * campaign-service refuses (a `null`) or reads as a choice. One held while its capability is not a
+   * yes blocks Create (`linkedInVariantTextInvalid`), so omitting here never drops a value silently.
+   */
+  private linkedInVariantOptionalFields(variant: LinkedInVariantDraft): Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> {
+    const fields: Pick<LinkedInCreativeVariant, 'name' | 'description' | 'callToAction'> = {};
+    const name = variant.name ?? '';
+    const description = variant.description ?? '';
+    const callToAction = variant.callToAction ?? '';
+    if (this.linkedInVariantFieldsAvailable() && name.trim() !== '') fields.name = name;
+    if (this.linkedInVariantFieldsAvailable() && description.trim() !== '') fields.description = description;
+    if (this.linkedInCallToActionAvailable() && callToAction !== '') fields.callToAction = callToAction;
+    return fields;
   }
 
   /** Whether a variant's upload goes out: the upload capability is an explicit yes and the asset was made for the open brief. */
@@ -7409,6 +7467,12 @@ export class ImplementationTabComponent implements OnInit {
       const pickerBlocked = !this.briefPersistence().briefId || this.briefPersistence().status === 'saving';
       const variants = this.linkedInVariants();
       const slotIndex = variants.findIndex((variant) => variant.key === slotKey);
+      // The event name is the unnamed variants' default creative name, so a typed name equal to one is a repeat.
+      void this.campaignFormRevision();
+      const nameErrors = linkedInVariantNameErrors(
+        variants.map((variant) => variant.name ?? ''),
+        this.campaignForm.controls.eventName.value
+      );
       return variants.map((variant, index): LinkedInVariantView => {
         const ownsSlot = slotKey === variant.key;
         const imageUploading = ownsSlot && uploading;
@@ -7426,6 +7490,7 @@ export class ImplementationTabComponent implements OnInit {
           headlineLength: linkedInCreativeTextLength(variant.headline),
           introTextError: linkedInVariantTextError('introText', variant.introText) ?? '',
           headlineError: linkedInVariantTextError('headline', variant.headline) ?? '',
+          ...this.linkedInVariantOptionalFieldsView(variant, nameErrors[index]),
           imageStatusMessage,
           imageUploading,
           imageHeld: variant.imageAssetId !== '',
@@ -7436,6 +7501,41 @@ export class ImplementationTabComponent implements OnInit {
         };
       });
     });
+  }
+
+  /**
+   * One variant's name, description and call to action as the editor shows them (#5764). A value held
+   * while its capability is not an explicit yes — a draft restored after the flag went off — stays
+   * on screen with an error asking for it to be cleared, so Create never sends less than it shows.
+   */
+  private linkedInVariantOptionalFieldsView(
+    variant: LinkedInVariantDraft,
+    nameError: string
+  ): Pick<
+    LinkedInVariantView,
+    'name' | 'nameLength' | 'nameError' | 'description' | 'descriptionLength' | 'descriptionError' | 'callToAction' | 'callToActionError'
+  > {
+    const name = variant.name ?? '';
+    const description = variant.description ?? '';
+    const callToAction = variant.callToAction ?? '';
+    const fieldsAvailable = this.linkedInVariantFieldsAvailable();
+    let callToActionError = '';
+    if (callToAction !== '' && !this.linkedInCallToActionAvailable()) {
+      callToActionError = 'LinkedIn calls to action are not available on this deployment. Choose None.';
+    } else if (callToAction !== '' && !isLinkedInCallToAction(callToAction)) {
+      callToActionError = 'This is not a call to action LinkedIn accepts. Choose one from the list, or None.';
+    }
+    const unavailable = (label: string): string => `LinkedIn ad ${label}s are not available on this deployment. Clear the ${label}.`;
+    return {
+      name,
+      nameLength: linkedInCreativeNameLength(name),
+      nameError: name.trim() !== '' && !fieldsAvailable ? unavailable('name') : nameError,
+      description,
+      descriptionLength: linkedInCreativeTextLength(description),
+      descriptionError: description.trim() !== '' && !fieldsAvailable ? unavailable('description') : (linkedInVariantDescriptionError(description) ?? ''),
+      callToAction,
+      callToActionError,
+    };
   }
 
   /** `initMetaImageAssetBlock`'s sibling, for one variant's upload alone. */
@@ -7491,6 +7591,9 @@ export class ImplementationTabComponent implements OnInit {
       introText: copy.introText,
       headline: copy.headline,
       ...(copy.imageUrn ? { imageUrn: copy.imageUrn } : {}),
+      ...(copy.name ? { name: copy.name } : {}),
+      ...(copy.description ? { description: copy.description } : {}),
+      ...(copy.callToAction ? { callToAction: copy.callToAction } : {}),
       imageAssetId: '',
       imageAssetName: '',
       imageAssetBriefId: '',

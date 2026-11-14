@@ -386,6 +386,46 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
 
   /**
+   * Offers a creative name and an article description on each LinkedIn ad variant in the create
+   * flow (#5764), sent as `linkedInConfig.variants[].name` and `description`.
+   *
+   * A CAPABILITY flag, like `CampaignServiceMicrosoftSchedule`: it says the DEPLOYED
+   * campaign-service reads the two keys (linuxfoundation/lfx-v2-campaign-service#588/#589). An
+   * older one drops them — Go's decoder ignores unknown keys — and names every creative
+   * `"<event> | variant-N"` with no description while the job reports success. campaign-service
+   * gates neither key itself, so this is the only switch. Turn it on only once #588/#589 is deployed
+   * in the target environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * neither key, so the capability the client sees (`CampaignListResult.linkedInVariantFieldsEnabled`)
+   * needs both. With it off the inputs are hidden and the create route refuses a request carrying
+   * either key rather than dropping it.
+   *
+   * Turning it back off strands nothing: creatives already created keep their names. OFF by
+   * default. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInVariantFields = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VARIANT_FIELDS',
+
+  /**
+   * Offers a call to action on each LinkedIn ad variant in the create flow (#5764), sent as
+   * `linkedInConfig.variants[].callToAction`.
+   *
+   * The self-serve half of campaign-service's own `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED` (#588): while
+   * that is off campaign-service answers ANY call to action with a synchronous 400, because no call
+   * to action on an article dark post has yet been sent to a live LinkedIn account. Set this only
+   * once campaign-service has that flag on in the same environment; off here while it is on there
+   * merely hides the picker.
+   *
+   * Needs `CampaignServiceLinkedInVariantFields` and the create cutover too, so the capability the
+   * client sees (`CampaignListResult.linkedInCallToActionEnabled`) needs all three. With it off the
+   * picker is hidden and the create route refuses a request carrying `callToAction` rather than
+   * forwarding a value campaign-service would refuse anyway.
+   *
+   * Turning it back off strands nothing. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInCallToAction = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *

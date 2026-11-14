@@ -12988,6 +12988,154 @@ describe('CampaignController.createCampaign LinkedIn uploaded image', () => {
 });
 
 /**
+ * `linkedInConfig.variants[].name`, `description` and `callToAction` (#5764) are honoured only by a
+ * campaign-service with linuxfoundation/lfx-v2-campaign-service#588/#589, so they are refused — not
+ * dropped — unless the create cutover AND the variant-fields flag are on; a call to action also needs
+ * the call-to-action flag, which stands for campaign-service's LINKEDIN_ADS_CALL_TO_ACTION_ENABLED.
+ */
+describe('CampaignController.createCampaign LinkedIn variant name, description and call to action', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const linkedInConfig = (variants: Record<string, unknown>[]): Record<string, unknown> => ({ budgetUsd: 50, variants });
+
+  const flagsWith = (fields: boolean, cta: boolean, cutover = true): void => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInVariantFields) return fields;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInCallToAction) return cta;
+      return cutover;
+    });
+  };
+
+  const refusal = (): unknown => (vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError).toResponse()['errors'];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('forwards name, description and callToAction untouched when every gate is on', async () => {
+    flagsWith(true, true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['linkedin-ads'],
+          linkedInConfig: linkedInConfig([
+            { introText: 'i', headline: 'h', name: 'OSSNA – Skill Up', description: 'Two days of talks', callToAction: 'REGISTER' },
+            { introText: 'i2', headline: 'h2' },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, { variants: Record<string, unknown>[] }>;
+    expect(envelope['linkedInConfig'].variants).toEqual([
+      { introText: 'i', headline: 'h', name: 'OSSNA – Skill Up', description: 'Two days of talks', callToAction: 'REGISTER' },
+      { introText: 'i2', headline: 'h2' },
+    ]);
+  });
+
+  it('forwards a name and description without the call-to-action flag', async () => {
+    flagsWith(true, false);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['linkedin-ads'], linkedInConfig: linkedInConfig([{ introText: 'i', headline: 'h', name: 'A', description: 'D' }]) },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the variant-fields flag is off', false, true],
+    ['the create cutover is dark', true, false],
+  ])('refuses a variant name or description when %s, naming the variant and creating nothing', async (_label, fields, cutover) => {
+    flagsWith(fields, true, cutover);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['linkedin-ads'],
+          linkedInConfig: linkedInConfig([
+            { introText: 'i', headline: 'h' },
+            { introText: 'i2', headline: 'h2', description: 'D' },
+          ]),
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal()).toEqual([
+      {
+        field: 'linkedInConfig.variants[1].description',
+        message: 'LinkedIn ad names and descriptions are not enabled on this deployment; omit name and description from the variants',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it.each([
+    ['the call-to-action flag is off', true, false],
+    ['the variant-fields flag is off', false, true],
+  ])('refuses a callToAction when %s, even an explicit null', async (_label, fields, cta) => {
+    flagsWith(fields, cta);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['linkedin-ads'], linkedInConfig: linkedInConfig([{ introText: 'i', headline: 'h', callToAction: null }]) },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusal()).toEqual([
+      {
+        field: 'linkedInConfig.variants[0].callToAction',
+        message: 'LinkedIn calls to action are not enabled on this deployment; omit callToAction from the variants',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it('forwards variants with none of the three keys whatever the flags say', async () => {
+    flagsWith(false, false);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['linkedin-ads'], linkedInConfig: linkedInConfig([{ introText: 'i', headline: 'h' }]) }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+});
+
+/**
  * X create (`LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`). With the capability on, `twitterConfig`
  * reaches campaign-service as the wire shape `internal/dispatch/twitter.go` decodes, every field
  * judged by name first. With it off — the flag, or the create cutover the legacy creator needs for

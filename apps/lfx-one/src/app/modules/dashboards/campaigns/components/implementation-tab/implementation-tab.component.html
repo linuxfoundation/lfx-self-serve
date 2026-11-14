@@ -4067,6 +4067,54 @@
                   [hint]="view.headlineLength + '/' + linkedInCharLimits.headline + ' characters'"
                   [attr.data-testid]="'implementation-linkedin-variant-headline-' + i" />
 
+                <!-- The variant's creative name and article description (#5764), offered on an explicit yes from
+                     `linkedInVariantFieldsAvailable()`; one held without it stays shown, with the error asking to clear it. -->
+                @if (linkedInVariantFieldsAvailable() || view.name !== '') {
+                  <lfx-ui-input
+                    label="Ad name"
+                    size="small"
+                    [value]="view.name"
+                    (valueChange)="onLinkedInVariantTextChange(view.key, 'name', $event)"
+                    [error]="view.nameError"
+                    [hint]="
+                      'Optional. Shown in Campaign Manager and reports only. ' +
+                      view.nameLength +
+                      '/' +
+                      linkedInCharLimits.name +
+                      ' characters; blank names it ' +
+                      (linkedInEventName() || 'the event') +
+                      ' | variant-' +
+                      (i + 1) +
+                      '.'
+                    "
+                    [attr.data-testid]="'implementation-linkedin-variant-name-' + i" />
+                }
+                @if (linkedInCallToActionAvailable() || view.callToAction !== '') {
+                  <!-- A closed list LinkedIn accepts, sent as its upper-case value; "None" sends no button. -->
+                  <lfx-ui-select
+                    label="Call to action"
+                    size="small"
+                    hint="Optional. The button on the ad, linking to the registration page."
+                    [value]="view.callToAction"
+                    (valueChange)="onLinkedInVariantTextChange(view.key, 'callToAction', $event)"
+                    [error]="view.callToActionError"
+                    [attr.data-testid]="'implementation-linkedin-variant-cta-' + i">
+                    <lfx-ui-option value="" label="None" />
+                    @for (option of linkedInCallsToAction; track option.value) {
+                      <lfx-ui-option [value]="option.value" [label]="option.label" />
+                    }
+                  </lfx-ui-select>
+                }
+                @if (linkedInVariantFieldsAvailable() || view.description !== '') {
+                  <lfx-ui-textarea
+                    label="Description"
+                    [value]="view.description"
+                    (valueChange)="onLinkedInVariantTextChange(view.key, 'description', $event)"
+                    [error]="view.descriptionError"
+                    [hint]="'Optional. ' + view.descriptionLength + '/' + linkedInCharLimits.description + ' characters'"
+                    [attr.data-testid]="'implementation-linkedin-variant-description-' + i" />
+                }
+
                 <!-- The variant's own image. LinkedIn takes no image URL, so the upload is the whole control,
                      offered only on an explicit yes from `linkedInAssetUploadAvailable()`. -->
                 @if (linkedInAssetUploadAvailable()) {

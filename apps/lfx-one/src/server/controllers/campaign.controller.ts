@@ -357,6 +357,8 @@ import {
   canCreateWithGoogleCriteria,
   canEditLinkedInTargeting,
   canSearchGoogleGeoTargets,
+  canSetLinkedInCallToAction,
+  canSetLinkedInVariantFields,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1198,6 +1200,25 @@ export class CampaignController {
       if (linkedInTargetingRefusal !== null) {
         next(
           ServiceValidationError.forField(LINKEDIN_TARGETING_PROFILE_EDIT_FIELD, linkedInTargetingRefusal, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // A LinkedIn variant's name, description or call to action (#5764), refused rather than dropped
+      // on the same terms as the Microsoft dates: the legacy creator never reads them, and a
+      // campaign-service without linuxfoundation/lfx-v2-campaign-service#588/#589 ignores them, so
+      // either would create default-named creatives with no description or button. A call to action
+      // also needs its own flag, which stands for campaign-service's LINKEDIN_ADS_CALL_TO_ACTION_ENABLED
+      // (off, it refuses any call to action with a 400). The form never sends them in those states
+      // (`linkedInVariantFieldsEnabled` / `linkedInCallToActionEnabled` hide the inputs). Forwarded
+      // untouched otherwise: campaign-service judges the values and the repeated names.
+      const unservedLinkedInVariantField = this.unservedLinkedInVariantField(body);
+      if (unservedLinkedInVariantField !== null) {
+        next(
+          ServiceValidationError.forField(unservedLinkedInVariantField.field, unservedLinkedInVariantField.message, {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -6343,6 +6364,37 @@ export class CampaignController {
     if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
     const index = config.variants.findIndex((variant: unknown) => variant !== null && typeof variant === 'object' && 'imageAssetId' in variant);
     return index === -1 ? null : `linkedInConfig.variants[${index}].imageAssetId`;
+  }
+
+  /**
+   * The first `linkedInConfig.variants[i].name`, `description` or `callToAction` this deployment
+   * cannot honour (#5764), with the sentence to refuse it with, else `null`. `in`, as for the image:
+   * an explicit `name: null` is still the field.
+   */
+  private unservedLinkedInVariantField(body: CampaignCreateRequest): { field: string; message: string } | null {
+    const config: unknown = body?.linkedInConfig;
+    if (config === null || typeof config !== 'object' || !('variants' in config) || !Array.isArray(config.variants)) return null;
+    const fieldsServed = canSetLinkedInVariantFields();
+    const callToActionServed = canSetLinkedInCallToAction();
+    for (const [index, variant] of (config.variants as unknown[]).entries()) {
+      if (variant === null || typeof variant !== 'object') continue;
+      if (!fieldsServed) {
+        const key = (['name', 'description'] as const).find((candidate) => candidate in variant);
+        if (key) {
+          return {
+            field: `linkedInConfig.variants[${index}].${key}`,
+            message: 'LinkedIn ad names and descriptions are not enabled on this deployment; omit name and description from the variants',
+          };
+        }
+      }
+      if (!callToActionServed && 'callToAction' in variant) {
+        return {
+          field: `linkedInConfig.variants[${index}].callToAction`,
+          message: 'LinkedIn calls to action are not enabled on this deployment; omit callToAction from the variants',
+        };
+      }
+    }
+    return null;
   }
 
   /**

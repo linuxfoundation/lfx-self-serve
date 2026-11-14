@@ -4804,6 +4804,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      // OFF with every flag off: the LinkedIn variant fields need the cutover AND their flag (#5764).
+      linkedInVariantFieldsEnabled: false,
+      linkedInCallToActionEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5286,6 +5289,38 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The LinkedIn variant name/description capability (#5764): the cutover AND its own flag. The call
+   * to action needs all of that AND the call-to-action flag, and the call-to-action flag alone grants
+   * neither.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, fields: true, cta: false }, true, false],
+    [{ create: true, briefs: true, jobs: true, fields: true, cta: true }, true, true],
+    [{ create: true, briefs: true, jobs: true, fields: false, cta: true }, false, false],
+    [{ create: false, briefs: true, jobs: true, fields: true, cta: true }, false, false],
+    [{ create: true, briefs: true, jobs: false, fields: true, cta: true }, false, false],
+  ])('reports the LinkedIn variant-field and call-to-action capabilities (%o)', async (flags, fieldsExpected, ctaExpected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInVariantFields) return flags.fields;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInCallToAction) return flags.cta;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInVariantFieldsEnabled).toBe(fieldsExpected);
+      expect(result.linkedInCallToActionEnabled).toBe(ctaExpected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
   it.each([
     [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
@@ -5357,6 +5392,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      // OFF with every flag off: the LinkedIn variant fields need the cutover AND their flag (#5764).
+      linkedInVariantFieldsEnabled: false,
+      linkedInCallToActionEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,

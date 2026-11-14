@@ -16732,6 +16732,196 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
     });
   });
 
+  /**
+   * The per-variant creative name, article description and call to action (#5764,
+   * linuxfoundation/lfx-v2-campaign-service#588/#589): offered on an explicit yes from
+   * `linkedInVariantFieldsEnabled` / `linkedInCallToActionEnabled`, each key omitted rather than sent
+   * blank, and a repeated name or an over-long value held at Create.
+   */
+  describe('name, description and call to action', () => {
+    async function mountWith(
+      fields: boolean | null,
+      cta: boolean | null,
+      draft: CampaignImplementationDraft | null = null
+    ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+      const f = TestBed.createComponent(ImplementationTabComponent);
+      let captured: CampaignImplementationDraft | null = null;
+      f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+      if (draft) f.componentRef.setInput('draft', draft);
+      f.componentRef.setInput('linkedInAssetUploadEnabled', false);
+      f.componentRef.setInput('linkedInVariantFieldsEnabled', fields);
+      f.componentRef.setInput('linkedInCallToActionEnabled', cta);
+      f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
+      f.componentRef.setInput('briefData', brief());
+      at(f).selectedPlatforms.set(['linkedin-ads']);
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+      return { fixture: f, latest: () => captured };
+    }
+
+    /** Pick a call to action on a variant's select, as the operator's choice reaches the tab. */
+    function pick(f: ComponentFixture<ImplementationTabComponent>, variant: number, value: string): void {
+      const select = f.debugElement.query(By.css(`[data-testid="implementation-linkedin-variant-cta-${variant}"]`));
+      (select.componentInstance as { value: WritableSignal<string | null> }).value.set(value);
+      f.detectChanges();
+    }
+
+    it.each([
+      ['unanswered', null],
+      ['off', false],
+    ])('renders none of the three inputs while both capabilities are %s, and sends none of the keys', async (_label, capability) => {
+      const f = (await mountWith(capability, capability)).fixture;
+
+      expect(q(f, 'implementation-linkedin-variant-name-0')).toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-description-0')).toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-cta-0')).toBeNull();
+      expect(submitVariants(f)).toEqual(briefVariants());
+    });
+
+    it('offers a name and description, but no call to action, with only the variant-fields capability', async () => {
+      const f = (await mountWith(true, false)).fixture;
+
+      expect(q(f, 'implementation-linkedin-variant-name-1')).not.toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-description-1')).not.toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-cta-1')).toBeNull();
+    });
+
+    it('omits every blank field and sends only what was typed or picked, as typed and in upper case', async () => {
+      const f = (await mountWith(true, true)).fixture;
+      type(f, 'implementation-linkedin-variant-name-0', 'KubeCon – Skill Up');
+      type(f, 'implementation-linkedin-variant-description-1', 'Two days of talks');
+      pick(f, 1, 'REGISTER');
+
+      expect(submitVariants(f)).toEqual([
+        { introText: 'First intro', headline: 'First headline', name: 'KubeCon – Skill Up' },
+        {
+          introText: 'Second intro',
+          headline: 'Second headline',
+          imageUrn: 'urn:li:image:C4D10AQ',
+          description: 'Two days of talks',
+          callToAction: 'REGISTER',
+        },
+      ]);
+    });
+
+    it('offers the thirteen LinkedIn calls to action after None, by their upper-case values', async () => {
+      const f = (await mountWith(true, true)).fixture;
+      // The rows render only while the list is open, so read the options the select holds.
+      const select = f.debugElement.query(By.css('[data-testid="implementation-linkedin-variant-cta-0"]'));
+      const options = (select.componentInstance as { options: () => { value: string }[] }).options().map((option) => option.value);
+
+      expect(options).toEqual([
+        '',
+        'APPLY',
+        'DOWNLOAD',
+        'VIEW_QUOTE',
+        'LEARN_MORE',
+        'SIGN_UP',
+        'SUBSCRIBE',
+        'REGISTER',
+        'JOIN',
+        'ATTEND',
+        'REQUEST_DEMO',
+        'SEE_MORE',
+        'BUY_NOW',
+        'SHOP_NOW',
+      ]);
+    });
+
+    it('sends no callToAction once None is picked again, and a whitespace-only name or description not at all', async () => {
+      const f = (await mountWith(true, true)).fixture;
+      pick(f, 0, 'APPLY');
+      pick(f, 0, '');
+      type(f, 'implementation-linkedin-variant-name-0', '   ');
+      type(f, 'implementation-linkedin-variant-description-0', '  ');
+
+      expect(submitVariants(f)[0]).toEqual({ introText: 'First intro', headline: 'First headline' });
+    });
+
+    it('blocks Create on a name that repeats another variant, once whitespace is collapsed', async () => {
+      const f = (await mountWith(true, false)).fixture;
+      fillForm(f);
+      type(f, 'implementation-linkedin-variant-name-0', 'Skill Up');
+      type(f, 'implementation-linkedin-variant-name-1', '  Skill   Up ');
+
+      expect(q(f, 'implementation-linkedin-variant-name-1')?.textContent).toContain("This name repeats variant 1's. Give each variant its own name.");
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
+
+      type(f, 'implementation-linkedin-variant-name-1', 'Keynotes');
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it("blocks Create on a name equal to an unnamed variant's default, which uses the event name", async () => {
+      const f = (await mountWith(true, false)).fixture;
+      fillForm(f);
+      type(f, 'implementation-linkedin-variant-name-0', 'KubeCon EU 2026 | variant-2');
+
+      expect(q(f, 'implementation-linkedin-variant-name-0')?.textContent).toContain("This name is variant 2's default name.");
+      expect(at(f).canSubmit()).toBe(false);
+    });
+
+    it('blocks Create on a name over 255 or a description over 300 characters', async () => {
+      const f = (await mountWith(true, false)).fixture;
+      fillForm(f);
+      type(f, 'implementation-linkedin-variant-name-0', 'n'.repeat(256));
+      expect(q(f, 'implementation-linkedin-variant-name-0')?.textContent).toContain("The name is 256 characters, over LinkedIn's 255. Shorten it.");
+      expect(at(f).canSubmit()).toBe(false);
+
+      type(f, 'implementation-linkedin-variant-name-0', 'n'.repeat(255));
+      type(f, 'implementation-linkedin-variant-description-0', 'd'.repeat(301));
+      expect(q(f, 'implementation-linkedin-variant-description-0')?.textContent).toContain(
+        "The description is 301 characters, over LinkedIn's 300. Shorten it."
+      );
+      expect(at(f).canSubmit()).toBe(false);
+
+      type(f, 'implementation-linkedin-variant-description-0', 'd'.repeat(300));
+      expect(at(f).canSubmit()).toBe(true);
+    });
+
+    it('carries the fields in the draft, and a remount restores them', async () => {
+      const first = await mountWith(true, true);
+      type(first.fixture, 'implementation-linkedin-variant-name-0', 'Named');
+      pick(first.fixture, 0, 'SIGN_UP');
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      first.fixture.destroy();
+
+      const second = (await mountWith(true, true, draft)).fixture;
+      expect(submitVariants(second)[0]).toEqual({ introText: 'First intro', headline: 'First headline', name: 'Named', callToAction: 'SIGN_UP' });
+    });
+
+    it('keeps a restored call to action on screen and holds Create when the capability has gone, until None is picked', async () => {
+      const first = await mountWith(true, true);
+      pick(first.fixture, 0, 'SIGN_UP');
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      first.fixture.destroy();
+
+      const f = (await mountWith(true, false, draft)).fixture;
+      fillForm(f);
+      expect(q(f, 'implementation-linkedin-variant-cta-0')?.textContent).toContain(
+        'LinkedIn calls to action are not available on this deployment. Choose None.'
+      );
+      expect(at(f).canSubmit()).toBe(false);
+
+      pick(f, 0, '');
+      expect(q(f, 'implementation-linkedin-variant-cta-0')).toBeNull();
+      expect(submitVariants(f)[0]).toEqual({ introText: 'First intro', headline: 'First headline' });
+    });
+
+    it('restores a draft saved before the fields existed as blank', async () => {
+      const first = await mountWith(null, null);
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      first.fixture.destroy();
+      for (const variant of draft.linkedInVariants ?? []) {
+        expect(variant.name).toBeUndefined();
+      }
+
+      const f = (await mountWith(true, true, draft)).fixture;
+      expect((q(f, 'implementation-linkedin-variant-name-0')?.querySelector('input') as HTMLInputElement).value).toBe('');
+      expect(submitVariants(f)).toEqual(briefVariants());
+    });
+  });
+
   describe('images', () => {
     it.each([
       ['unanswered', null],

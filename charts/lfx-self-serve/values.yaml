@@ -737,6 +737,32 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS:
     value: "true"
 
+  # Offers a creative name and an article description on each LinkedIn ad variant in the create flow
+  # (#5764), sent as `linkedInConfig.variants[].name` / `description`.
+  #
+  # A CAPABILITY flag, like MICROSOFT_SCHEDULE. REQUIRES linuxfoundation/lfx-v2-campaign-service#588/#589
+  # DEPLOYED: an older campaign-service drops both keys and names every creative "<event> | variant-N"
+  # with no description, silently. campaign-service gates neither key itself. It also needs the
+  # create pipeline (CREATE, BRIEFS, JOBS) on.
+  #
+  # Off (the default), the inputs are hidden and a create request carrying either key is refused with
+  # a 400 rather than dropped. Turning it back off strands nothing. Order: deploy campaign-service
+  # #588/#589, confirm it, THEN set this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VARIANT_FIELDS:
+    value:
+
+  # Offers a call to action on each LinkedIn ad variant (#5764), sent as
+  # `linkedInConfig.variants[].callToAction`.
+  #
+  # Mirrors campaign-service's own LINKEDIN_ADS_CALL_TO_ACTION_ENABLED (#588): while that is not
+  # "true" campaign-service refuses ANY call to action with a 400. Set this only once campaign-service
+  # has it on in the same environment. Needs LINKEDIN_VARIANT_FIELDS and the create pipeline on too.
+  #
+  # Off (the default), the picker is hidden and a create request carrying `callToAction` is refused
+  # with a 400. Turning it back off strands nothing. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the

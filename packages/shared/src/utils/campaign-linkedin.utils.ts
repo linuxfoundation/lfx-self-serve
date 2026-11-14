@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LINKEDIN_CHAR_LIMITS, LINKEDIN_TARGETING_PROFILE_ALIASES } from '../constants/campaign.constants';
+import { LINKEDIN_CALLS_TO_ACTION, LINKEDIN_CHAR_LIMITS, LINKEDIN_TARGETING_PROFILE_ALIASES } from '../constants/campaign.constants';
 import type {
   LinkedInTargetingProfile,
   LinkedInTargetingFacets,
@@ -76,6 +76,77 @@ export function linkedInVariantTextError(field: 'introText' | 'headline', text: 
   const limit = LINKEDIN_CHAR_LIMITS[field];
   if (length > limit) return `The ${label} is ${length} characters, over LinkedIn's ${limit}. Shorten it.`;
   return null;
+}
+
+/**
+ * A LinkedIn creative name as campaign-service sends it: every run of whitespace collapsed to one
+ * space and the ends trimmed — `strings.Join(strings.Fields(name), " ")` in `normalizeCreativeName`
+ * (`internal/platform/linkedin/variants.go`). Dashes are kept, unlike ad copy. `''` means no name.
+ */
+export function normalizeLinkedInCreativeName(name: string): string {
+  const words: string[] = [];
+  let word = '';
+  for (let i = 0; i < name.length; i++) {
+    if (isGoSpace(name.charCodeAt(i))) {
+      if (word !== '') words.push(word);
+      word = '';
+    } else {
+      word += name[i];
+    }
+  }
+  if (word !== '') words.push(word);
+  return words.join(' ');
+}
+
+/** A creative name's length as campaign-service measures it: code points of the normalized name. */
+export function linkedInCreativeNameLength(name: string): number {
+  return Array.from(normalizeLinkedInCreativeName(name)).length;
+}
+
+/**
+ * Why each LinkedIn variant's creative name cannot be sent, by index (`''` when it can), for the
+ * names as typed and the event the campaign is for.
+ *
+ * campaign-service cuts a name longer than `LINKEDIN_CHAR_LIMITS.name` without saying so, and
+ * refuses two variants whose creative names match once normalized — including a typed name equal
+ * to an unnamed variant's `"<event> | variant-N"` default (`ValidateVariantFields` and
+ * `distinctCreativeNames`, `internal/platform/linkedin/variants.go`). Both are refused here instead,
+ * against the variant that repeats the other. A blank name is never an error: it keeps the default.
+ */
+export function linkedInVariantNameErrors(names: readonly string[], eventName: string): string[] {
+  const limit = LINKEDIN_CHAR_LIMITS.name;
+  const resolved = names.map((name, i) => {
+    const normalized = normalizeLinkedInCreativeName(name);
+    return normalized === '' ? `${eventName} | variant-${i + 1}` : normalized;
+  });
+  return names.map((name, i) => {
+    const normalized = normalizeLinkedInCreativeName(name);
+    if (normalized === '') return '';
+    const length = Array.from(normalized).length;
+    if (length > limit) return `The name is ${length} characters, over LinkedIn's ${limit}. Shorten it.`;
+    const earlier = resolved.findIndex((other, j) => j < i && other === resolved[i]);
+    if (earlier !== -1) return `This name repeats variant ${earlier + 1}'s. Give each variant its own name.`;
+    const defaulted = resolved.findIndex((other, j) => j > i && normalizeLinkedInCreativeName(names[j]) === '' && other === resolved[i]);
+    if (defaulted !== -1) return `This name is variant ${defaulted + 1}'s default name. Give each variant its own name.`;
+    return '';
+  });
+}
+
+/**
+ * Why a LinkedIn variant's article description cannot be sent, or `null` when it can. Blank is
+ * fine (no description); longer than `LINKEDIN_CHAR_LIMITS.description` once normalized like the
+ * intro text is refused, since campaign-service would cut it (`normalizeDescription`).
+ */
+export function linkedInVariantDescriptionError(description: string): string | null {
+  const length = linkedInCreativeTextLength(description);
+  const limit = LINKEDIN_CHAR_LIMITS.description;
+  if (length > limit) return `The description is ${length} characters, over LinkedIn's ${limit}. Shorten it.`;
+  return null;
+}
+
+/** Whether a value is one of `LINKEDIN_CALLS_TO_ACTION`'s, matched exactly as campaign-service matches it. `''` (none) is not. */
+export function isLinkedInCallToAction(value: string): boolean {
+  return LINKEDIN_CALLS_TO_ACTION.some((option) => option.value === value);
 }
 
 /** The configured profile id campaign-service reads the facets of for a selection (`custom` reads `cloud-native`). */
