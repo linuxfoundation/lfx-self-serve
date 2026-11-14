@@ -444,6 +444,19 @@ describe('NewsletterMemberBenefitService', () => {
     });
   });
 
+  describe('resolveEligibilityByRoster (My Newsletters grid)', () => {
+    it('checks several rosters with one b2b_org lookup and maps a roster that cannot load to null', async () => {
+      stubUpstream({ memberships: [ACME_ACTIVE, { ...ACME_ACTIVE, project_slug: 'aaif' }] });
+
+      const results = await service.resolveEligibilityByRoster(req, M2M, ['jane@acme-motors.example'], ['tlf', 'aaif', 'empty-roster']);
+
+      expect(results.get('tlf')?.match).toMatchObject({ b2b_org_uid: ORG_A });
+      expect(results.get('aaif')?.match).toMatchObject({ b2b_org_uid: ORG_A });
+      expect(results.get('empty-roster')).toBeNull();
+      expect(proxyRequest.mock.calls.filter((call) => call[4]['type'] === 'b2b_org')).toHaveLength(1);
+    });
+  });
+
   describe('TLF membership index cache', () => {
     it('loads once and serves later checks from the cache', async () => {
       stubUpstream({ memberships: [ACME_ACTIVE] });
