@@ -139,6 +139,10 @@ describe('NavbarCollapseService', () => {
     window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
     expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
     expect(service.collapsed()).toBe(true);
+
+    // The resumed page marks its next leave too, so a later same-tab redirect still restores the preference.
+    window.dispatchEvent(new Event('pagehide'));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
   });
 
   it('keeps the mark on a pageshow that is a fresh load, not a cache restore', () => {
@@ -150,18 +154,21 @@ describe('NavbarCollapseService', () => {
     expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
   });
 
-  it('restores the preference on a reload that left no mark (a discarded or crash-recovered tab)', () => {
+  it('restores the preference in a tab the browser discarded, which reloads without leaving a mark', () => {
     sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
-    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming]);
-    const service = setup();
-
-    service.init();
-    expect(service.collapsed()).toBe(true);
+    Object.defineProperty(document, 'wasDiscarded', { value: true, configurable: true });
+    try {
+      const service = setup();
+      service.init();
+      expect(service.collapsed()).toBe(true);
+    } finally {
+      delete (document as Document & { wasDiscarded?: boolean }).wasDiscarded;
+    }
   });
 
-  it('starts docked open on a back/forward navigation with no mark, which is how a duplicated tab loads', () => {
+  it.each(['reload', 'back_forward'])('starts docked open on a %s navigation with no mark, however a duplicated tab is classified', (type) => {
     sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
-    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'back_forward' } as PerformanceNavigationTiming]);
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type } as PerformanceNavigationTiming]);
     const service = setup();
 
     service.init();

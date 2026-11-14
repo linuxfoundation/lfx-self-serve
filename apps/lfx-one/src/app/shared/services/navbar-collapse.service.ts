@@ -10,13 +10,13 @@ import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_LEFT_PAGE_STORAGE_KEY, NAVBAR_NARR
  * open over the page from the rail. The layouts read it to size the page gutter; the desktop navbar
  * drives it (pointer, FLIP morph) and renders it.
  *
- * - `collapsed` is the viewer's docked preference, kept in `sessionStorage`. It is restored only when this tab itself left
- *   the page and came back: a reload, Back/Forward, or one of the app's own full-page redirects (sign-in, account linking,
- *   invites). Each page leaves a one-time mark on `pagehide` that the next load consumes (a back/forward-cache restore
- *   clears it, as the page resumes rather than loads). A reload with no mark, such as a tab the browser discarded to save
- *   memory or recovered after a crash, also restores it. A new tab or browser session
- *   always starts docked open, including a duplicated tab or one opened from a link: they inherit a copy of the opener's
- *   session storage, but the opener never left its page, so there is no mark to inherit.
+ * - `collapsed` is the viewer's docked preference, kept in `sessionStorage`. It is restored when this tab left the page and
+ *   came back: a reload, Back/Forward, or one of the app's own full-page redirects (sign-in, account linking, invites).
+ *   Each page leaves a one-time mark on `pagehide` that the next load consumes (a back/forward-cache restore clears it, as
+ *   the page resumes rather than loads). A tab the browser discarded to save memory, which reloads without a `pagehide`,
+ *   also restores it. A new tab or browser session starts docked open, including a duplicated tab or one opened from a
+ *   link: they inherit a copy of the opener's session storage, but the opener never left its page, so there is no mark to
+ *   inherit. See {@link markLeftPage} for the one accepted exception.
  * - `narrow` (a non-touch viewport under {@link NAVBAR_NARROW_MAX_WIDTH_PX}) forces the rail without
  *   touching the preference, which returns once the viewport widens again.
  * - A non-touch device keeps the navbar (as the rail) at every width; the hamburger + drawer below `lg`
@@ -88,9 +88,9 @@ export class NavbarCollapseService {
     if (!this.isBrowser || this.initialized) return;
     this.initialized = true;
     this.clearLegacyPreference();
-    // Both run: the mark is consumed even on a reload, so a tab duplicated later can't inherit it.
+    // Always consume the mark, even on a discarded tab's reload, so a tab duplicated later can't inherit it.
     const leftPage = this.consumeLeftPageMark();
-    if (leftPage || this.reloadedWithoutMark()) this.collapsedPreference.set(this.readPreference());
+    if (leftPage || this.wasDiscarded()) this.collapsedPreference.set(this.readPreference());
     else this.writePreference(false);
     this.initializedState.set(true);
 
@@ -207,18 +207,12 @@ export class NavbarCollapseService {
   }
 
   /**
-   * A reload that left no mark: the browser discarded the tab to save memory, or recovered it after a crash, without a
-   * `pagehide`. A duplicated tab reports a back/forward navigation, not a reload, so it still starts docked open.
+   * The browser discarded this tab to save memory and reloaded it without a `pagehide`, so it left no mark. The navigation
+   * type isn't used: how browsers classify a duplicated or restored tab (`back_forward` or `reload`) isn't specified and may
+   * change, and a duplicated tab must start docked open. A crashed tab the user reloads therefore starts docked open too.
    */
-  private reloadedWithoutMark(): boolean {
-    try {
-      const doc = this.document as Document & { wasDiscarded?: boolean };
-      if (doc.wasDiscarded) return true;
-      const entry = this.document.defaultView?.performance?.getEntriesByType?.('navigation')[0] as PerformanceNavigationTiming | undefined;
-      return entry?.type === 'reload';
-    } catch {
-      return false;
-    }
+  private wasDiscarded(): boolean {
+    return (this.document as Document & { wasDiscarded?: boolean }).wasDiscarded === true;
   }
 
   /** Whether this tab left the page and came back. The mark is removed, so a tab duplicated later can't inherit it. */
