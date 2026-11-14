@@ -109,8 +109,6 @@ import { NavMenuBase } from './nav-menu-base.directive';
     '[class.lfxn-host--dock]': '!mobile()',
     '[class.is-collapsed]': 'railVisible()',
     '[class.is-overlay]': '!mobile() && collapse.overlay()',
-    '[class.is-narrow]': '!mobile() && collapse.narrow()',
-    '[class.is-pinned]': '!mobile() && collapse.peekPinned()',
     '[class.is-animated]': '!mobile() && collapse.animated()',
     // The light sidebar theme is desktop-only: the mobile drawer always stays dark.
     '[class.is-light]': '!mobile() && sidebarTheme.light()',
@@ -299,11 +297,19 @@ export class NavbarComponent extends NavMenuBase {
   // ── Collapse / peek (desktop only) ───────────────────────────────────────────────────────────
   /** The panel shows as the slim rail. */
   protected readonly railVisible: Signal<boolean> = computed(() => !this.mobile() && this.collapse.visualCollapsed());
-  /** Docked to the rail (even while peeking): the footer actions then also live in the account menu. */
-  protected readonly railDocked: Signal<boolean> = computed(() => !this.mobile() && this.collapse.effectiveCollapsed());
+  /**
+   * The sidebar toggle shows on desktop, except over a narrow viewport's peek: the panel can't dock open there, so there is
+   * nothing to keep open. That peek closes as the pointer leaves, on an outside click, or on Escape.
+   */
+  protected readonly showSidebarToggle: Signal<boolean> = computed(() => !this.mobile() && (!this.collapse.narrow() || this.railVisible()));
+  /**
+   * The account menu repeats the footer's Documentation, What's New and Impersonate only on the rail, where the footer
+   * actions are out of reach. A peek or the docked-open panel shows the footer, so the menu leaves them out.
+   */
+  protected readonly showRailMenuItems: Signal<boolean> = computed(() => this.railVisible());
   /** Rail tooltips open beside the trigger; the open panel's below it. */
   protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
-  /** The rail's toggle shows the sidebar over the page; from a peek it docks open (wide) or pins it (narrow); otherwise it closes the sidebar. */
+  /** The rail's toggle shows the sidebar over the page; from a peek it docks open; otherwise it closes the sidebar. */
   protected readonly toggleLabel: Signal<string> = computed(() => {
     if (this.railVisible()) return 'Show sidebar';
     return this.collapse.peek() ? 'Keep sidebar open' : 'Close sidebar';
@@ -337,17 +343,13 @@ export class NavbarComponent extends NavMenuBase {
   /**
    * The sidebar toggle. On the rail it peeks the panel open over the page, closing once the pointer leaves it — pinned on a
    * touch device, which has no pointer to leave, so an outside tap closes it instead. From an open panel it docks open or
-   * closed on wide viewports; on narrow ones, which can't dock open, it pins the peek and closes a pinned one. A keyboard
-   * press (no click count) keeps focus in the navbar; a pointer click drops it.
+   * closed; a narrow viewport's peek has no toggle ({@link showSidebarToggle}). A keyboard press (no click count) keeps focus
+   * in the navbar; a pointer click drops it.
    */
   protected onToggleClick(event: MouseEvent): void {
     const focus: NavbarMorphFocus = event.detail === 0 ? 'keyboard' : 'pointer';
     if (this.railVisible()) {
       this.morph(() => this.collapse.openPeek(this.collapse.touch()), focus);
-      return;
-    }
-    if (this.collapse.narrow()) {
-      this.morph(() => (this.collapse.peekPinned() ? this.collapse.closePeek() : this.collapse.openPeek(true)), focus);
       return;
     }
     if (this.collapse.peek()) {
@@ -493,10 +495,10 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   /**
-   * Desktop only: restores the stored preference, then keeps a peek honest — it closes once the pointer has left the
-   * panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after an outside click or
-   * focus leaving it when pinned, on Escape, or on a navigation from it (from an unpinned peek, only once the pointer is off
-   * it) — but never while a menu or panel opened from it is still up.
+   * Desktop only: restores the stored preference on a reload, then keeps a peek honest — it closes once the pointer has
+   * left the panel (tracked by position, since `:hover` goes stale after a popover or dialog closes), after any outside
+   * click, when focus leaves a pinned peek, on Escape, or on a navigation from it (from an unpinned peek, only once the
+   * pointer is off it) — but never while a menu or panel opened from it is still up.
    */
   private initCollapse(): void {
     afterNextRender(() => {
@@ -519,8 +521,10 @@ export class NavbarComponent extends NavMenuBase {
         this.pointerOnTooltip = false;
         if (this.collapse.peek() && !this.collapse.peekPinned()) this.schedulePeekClose(NAVBAR_PEEK_CLOSE_DELAY_MS);
       };
+      // A press outside closes any peek, pinned or not: one opened from the keyboard has no pointer position to leave from,
+      // and a narrow viewport's peek has no toggle to close it with.
       const onDown = (event: MouseEvent): void => {
-        if (!this.collapse.peekPinned() || this.navbarMenuOpen()) return;
+        if (!this.collapse.peek() || this.navbarMenuOpen()) return;
         const target = event.target instanceof Element ? event.target : null;
         if (target && (panel?.contains(target) || target.closest('.lfxn-tooltip'))) return;
         this.morph(() => this.collapse.closePeek());

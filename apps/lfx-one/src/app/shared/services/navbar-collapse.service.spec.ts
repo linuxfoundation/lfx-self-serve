@@ -3,7 +3,7 @@
 
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_PEEK_OUT_MS } from '@lfx-one/shared/constants';
+import { NAVBAR_COLLAPSED_STORAGE_KEY, NAVBAR_LEFT_PAGE_STORAGE_KEY, NAVBAR_PEEK_OUT_MS } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NavbarCollapseService } from './navbar-collapse.service';
@@ -25,6 +25,7 @@ describe('NavbarCollapseService', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     queries = { narrow: { matches: false, listeners: [] }, touch: { matches: false, listeners: [] } };
     vi.stubGlobal(
       'matchMedia',
@@ -49,7 +50,8 @@ describe('NavbarCollapseService', () => {
   });
 
   it('starts docked open until init, so SSR and the first client render agree', () => {
-    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
     const service = setup();
 
     expect(service.collapsed()).toBe(false);
@@ -66,7 +68,8 @@ describe('NavbarCollapseService', () => {
     const resize = vi.fn();
     window.addEventListener('resize', resize);
 
-    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
     setup().init();
     expect(resize).toHaveBeenCalledTimes(1);
     window.removeEventListener('resize', resize);
@@ -88,21 +91,126 @@ describe('NavbarCollapseService', () => {
   });
 
   it('never reads storage on the server', () => {
-    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
     const service = setup('server');
 
     service.init();
     expect(service.collapsed()).toBe(false);
   });
 
-  it('remembers the docked preference', () => {
+  it('starts docked open in a new session, ignoring and clearing a preference left in localStorage', () => {
+    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
+  it('starts docked open in a fresh tab that inherited a collapsed preference (duplicated, or opened from a link)', () => {
+    // A copy of the opener's session storage: the preference, but no mark, since the opener never left its page.
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+    expect(sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
+  });
+
+  it('restores the collapsed preference when this tab left the page and came back (reload, redirect, Back/Forward)', () => {
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(true);
+    // Consumed, so a tab duplicated from this page later starts docked open.
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
+  });
+
+  it('drops the mark when the page resumes from the back/forward cache, so a tab duplicated later starts docked open', () => {
+    const service = setup();
+    service.init();
+    service.setCollapsed(true);
+
+    window.dispatchEvent(new Event('pagehide'));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
+
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
+    expect(service.collapsed()).toBe(true);
+  });
+
+  it('keeps the mark on a pageshow that is a fresh load, not a cache restore', () => {
+    const service = setup();
+    service.init();
+    window.dispatchEvent(new Event('pagehide'));
+
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
+  });
+
+  it('restores the preference on a reload that left no mark (a discarded or crash-recovered tab)', () => {
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming]);
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(true);
+  });
+
+  it('starts docked open on a back/forward navigation with no mark, which is how a duplicated tab loads', () => {
+    sessionStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'back_forward' } as PerformanceNavigationTiming]);
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+  });
+
+  it('ignores and clears the legacy localStorage key on a same-tab return too', () => {
+    localStorage.setItem(NAVBAR_COLLAPSED_STORAGE_KEY, 'true');
+    sessionStorage.setItem(NAVBAR_LEFT_PAGE_STORAGE_KEY, 'true');
+    const service = setup();
+
+    service.init();
+    expect(service.collapsed()).toBe(false);
+    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
+  it('marks the tab as leaving the page on pagehide, so its next load restores the preference', () => {
+    // Earlier services' listeners are removed when their injector is destroyed, so only this one's can write the mark.
+    TestBed.resetTestingModule();
+    const service = setup();
+    service.init();
+    service.setCollapsed(true);
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBeNull();
+
+    window.dispatchEvent(new Event('pagehide'));
+    expect(sessionStorage.getItem(NAVBAR_LEFT_PAGE_STORAGE_KEY)).toBe('true');
+
+    TestBed.resetTestingModule();
+    const next = setup();
+    next.init();
+    expect(next.collapsed()).toBe(true);
+  });
+
+  it('keeps the docked preference out of localStorage, so it never outlives the session', () => {
     const service = setup();
     service.init();
 
     service.setCollapsed(true);
-    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('true');
+    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
+  it('remembers the docked preference for the session', () => {
+    const service = setup();
+    service.init();
+
+    service.setCollapsed(true);
+    expect(sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('true');
     service.setCollapsed(false);
-    expect(localStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
+    expect(sessionStorage.getItem(NAVBAR_COLLAPSED_STORAGE_KEY)).toBe('false');
   });
 
   it('forces the rail on narrow non-touch viewports and restores the preference when they widen', () => {

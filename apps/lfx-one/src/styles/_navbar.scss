@@ -1076,18 +1076,19 @@
     border-top: 1px solid theme('colors.gray.600');
   }
 
+  // Account button: the avatar alone, in a 32px circle that tints on hover (open, rail and peek alike). The padding grows
+  // the hit area around the 24px avatar; the negative margin keeps the footer's layout.
   .lfxn__user {
     display: flex;
-    flex-direction: row;
-    gap: 8px;
     align-items: center;
-    flex: 0 1 auto;
-    min-width: 0;
-    // Same hover tint as the brand button: padding grows the hit area, negative margin keeps layout.
-    padding: 4px 6px;
-    margin: -4px -6px;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    padding: 4px;
+    margin: -4px;
     border: 0;
-    border-radius: 8px;
+    border-radius: 9999px;
     background: none;
     cursor: pointer;
     transition: background 0.15s;
@@ -1097,33 +1098,10 @@
       background: theme('colors.white / 14%');
     }
 
-    > i {
-      width: 15px;
-      height: 15px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      line-height: 1;
-      color: var(--color-slate-slate-600);
-      flex-shrink: 0;
-    }
-
     &:focus-visible {
       outline: 2px solid var(--color-azure-azure-500);
       outline-offset: 2px;
     }
-  }
-
-  .lfxn__user-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 16px;
-    white-space: nowrap;
-    color: theme('colors.gray.50');
   }
 
   .lfxn__foot-actions {
@@ -1221,12 +1199,6 @@
     align-self: flex-start;
   }
 
-  // The account button animates its max-width; its avatar never shrinks, so it can't squeeze into a sliver.
-  .lfxn__user {
-    max-width: 236px;
-    overflow: hidden;
-  }
-
   .lfxn__avatar {
     flex: 0 0 24px;
     min-width: 24px;
@@ -1277,28 +1249,18 @@
       display: block;
       width: 24px;
       height: 0;
-      border-top: 1.5px dotted theme('colors.gray.300 / 50%');
+      border-top: 1px solid theme('colors.gray.300 / 50%');
     }
 
     .lfxn__head > :not(.lfxn__brand-row),
     .lfxn__top > :not(.lfxn__head),
-    .lfxn__user-name,
-    .lfxn__user > i,
     .lfxn__foot-actions {
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
     }
 
-    // A round hover that hugs the avatar, and no divider above it.
-    .lfxn__user {
-      max-width: 32px;
-      height: 32px;
-      padding: 4px;
-      margin: -4px;
-      border-radius: 16px;
-    }
-
+    // No divider above the avatar.
     .lfxn__foot {
       border-top-color: transparent;
     }
@@ -1327,12 +1289,6 @@
     }
   }
 
-  // Narrow viewports can't dock open, so a pinned overlay has no toggle; Create closes the gap. An unpinned peek keeps it,
-  // so a second click on it pins the peek.
-  &.is-narrow.is-pinned:not(.is-collapsed) [data-flip='side'] {
-    display: none;
-  }
-
   // ---------- Morph timings ----------
   &.is-animated {
     $dock: 340ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -1349,20 +1305,9 @@
       transition: border-color 200ms ease;
     }
 
-    .lfxn__user {
-      transition:
-        max-width $dock,
-        padding $dock,
-        margin $dock,
-        border-radius 340ms ease,
-        background 150ms;
-    }
-
     // Fading back in on expand: after a short delay, once the panel has room.
     .lfxn__head > :not(.lfxn__brand-row),
     .lfxn__top > :not(.lfxn__head),
-    .lfxn__user-name,
-    .lfxn__user > i,
     .lfxn__foot-actions {
       transition:
         opacity 220ms ease 100ms,
@@ -1373,8 +1318,6 @@
     &.is-collapsed {
       .lfxn__head > :not(.lfxn__brand-row),
       .lfxn__top > :not(.lfxn__head),
-      .lfxn__user-name,
-      .lfxn__user > i,
       .lfxn__foot-actions {
         transition:
           opacity 140ms ease,
@@ -1389,19 +1332,8 @@
           box-shadow 220ms ease;
       }
 
-      .lfxn__user {
-        transition:
-          max-width $peek,
-          padding $peek,
-          margin $peek,
-          border-radius 220ms ease,
-          background 150ms;
-      }
-
       .lfxn__head > :not(.lfxn__brand-row),
       .lfxn__top > :not(.lfxn__head),
-      .lfxn__user-name,
-      .lfxn__user > i,
       .lfxn__foot-actions {
         transition:
           opacity 160ms ease 40ms,
@@ -1411,8 +1343,6 @@
       &.is-collapsed {
         .lfxn__head > :not(.lfxn__brand-row),
         .lfxn__top > :not(.lfxn__head),
-        .lfxn__user-name,
-        .lfxn__user > i,
         .lfxn__foot-actions {
           transition:
             opacity 100ms ease,
@@ -1713,14 +1643,6 @@
   // Footer.
   .lfxn__foot {
     border-top-color: var(--ui-neutral-alpha-200);
-  }
-
-  .lfxn__user-name {
-    color: var(--ui-neutral-900);
-  }
-
-  .lfxn__user > i {
-    color: var(--ui-neutral-500);
   }
 
   &.is-collapsed .lfxn__foot {

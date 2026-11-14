@@ -69,7 +69,8 @@ interface NavbarView {
   switchLens(lens: Lens): void;
   onOrgSelected(): void;
   railVisible: Signal<boolean>;
-  railDocked: Signal<boolean>;
+  showSidebarToggle: Signal<boolean>;
+  showRailMenuItems: Signal<boolean>;
   toggleLabel: Signal<string>;
   headTooltipPlacement: Signal<string>;
   onToggleClick(event: MouseEvent): void;
@@ -607,6 +608,7 @@ describe('NavbarComponent', () => {
       vi.restoreAllMocks();
       vi.unstubAllGlobals();
       localStorage.clear();
+      sessionStorage.clear();
     });
 
     /** Reports every viewport as narrow when `narrow`, and the device as touch when `touch`; otherwise matches nothing. */
@@ -659,7 +661,7 @@ describe('NavbarComponent', () => {
       expect(collapse.peekPinned()).toBe(false);
       expect(collapse.collapsed()).toBe(true);
       expect(collapse.overlay()).toBe(true);
-      expect(navbar.railDocked()).toBe(true);
+      expect(navbar.showSidebarToggle()).toBe(true);
       expect(fixture.nativeElement.classList).toContain('is-overlay');
       expect(fixture.nativeElement.classList).not.toContain('is-collapsed');
 
@@ -739,12 +741,11 @@ describe('NavbarComponent', () => {
       collapse.openPeek();
 
       expect(navbar.toggleLabel()).toBe('Keep sidebar open');
-      expect(navbar.railDocked()).toBe(true);
+      expect(navbar.showSidebarToggle()).toBe(true);
       navbar.onToggleClick(click);
 
       expect(collapse.collapsed()).toBe(false);
       expect(collapse.peek()).toBe(false);
-      expect(navbar.railDocked()).toBe(false);
     });
 
     it('opens a peek from the toggle on a narrow viewport that closes as the pointer leaves, without touching the preference', async () => {
@@ -980,6 +981,17 @@ describe('NavbarComponent', () => {
         expect(collapse.peek()).toBe(false);
       });
 
+      it('closes an unpinned peek opened from the keyboard on an outside click, before the pointer has moved', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        panel.querySelector('.inside')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(true);
+
+        (fixture.nativeElement.querySelector('.outside') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(false);
+      });
+
       it('closes a pinned peek when keyboard focus leaves it', async () => {
         const { fixture, panel, collapse } = await createPeekFixture();
         collapse.openPeek(true);
@@ -994,21 +1006,66 @@ describe('NavbarComponent', () => {
       });
     });
 
-    it('pins a narrow-viewport peek when its toggle is clicked again', async () => {
+    it('repeats the footer actions in the account menu on the rail only, not over a peek or the open panel', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      expect(navbar.showRailMenuItems()).toBe(false);
+
+      collapse.setCollapsed(true);
+      await fixture.whenStable();
+      expect(navbar.showRailMenuItems()).toBe(true);
+
+      collapse.openPeek();
+      await fixture.whenStable();
+      expect(navbar.showRailMenuItems()).toBe(false);
+    });
+
+    it('moves keyboard focus to the brand when a narrow-viewport peek hides the toggle, keeping it there once Escape returns the rail', async () => {
+      stubViewport(true);
+      // The head's controls as navbar.component.html renders them: the brand, and the toggle behind showSidebarToggle().
+      const headTemplate = `
+        <nav #panel>
+          <button type="button" class="lfxn__brand">Brand</button>
+          @if (showSidebarToggle()) {
+            <button type="button" data-flip="side" (click)="onToggleClick($event)">Toggle</button>
+          }
+        </nav>`;
+      const fixture = await createNavbarFixture([], [], {}, { template: headTemplate });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      const brand = fixture.nativeElement.querySelector('.lfxn__brand') as HTMLElement;
+      (fixture.nativeElement.querySelector('[data-flip="side"]') as HTMLElement).focus();
+
+      navbar.onToggleClick(new MouseEvent('click', { detail: 0 }));
+      await fixture.whenStable();
+      expect(collapse.peek()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-flip="side"]')).toBeNull();
+      expect(document.activeElement).toBe(brand);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      await fixture.whenStable();
+      expect(collapse.peek()).toBe(false);
+      // Back on the rail the toggle returns, and focus stays on the brand, which the rail still shows.
+      expect(fixture.nativeElement.querySelector('[data-flip="side"]')).not.toBeNull();
+      expect(document.activeElement).toBe(brand);
+    });
+
+    it('hides the toggle over a narrow-viewport peek, which cannot dock open, and shows it again on the rail', async () => {
       stubViewport(true);
       const fixture = await createNavbarFixture([]);
       const navbar = fixture.componentInstance as unknown as NavbarView;
       const collapse = TestBed.inject(NavbarCollapseService);
+      expect(navbar.showSidebarToggle()).toBe(true);
+
       collapse.openPeek();
       await fixture.whenStable();
-      expect(fixture.nativeElement.classList).not.toContain('is-pinned');
-      expect(navbar.toggleLabel()).toBe('Keep sidebar open');
+      expect(navbar.showSidebarToggle()).toBe(false);
 
-      navbar.onToggleClick(click);
+      collapse.resetPeek();
       await fixture.whenStable();
-      expect(collapse.peek()).toBe(true);
-      expect(collapse.peekPinned()).toBe(true);
-      expect(fixture.nativeElement.classList).toContain('is-pinned');
+      expect(navbar.showSidebarToggle()).toBe(true);
     });
 
     it('closes an unpinned peek on a navigation the viewer made', async () => {
@@ -1036,11 +1093,13 @@ describe('NavbarComponent', () => {
     });
 
     it('keeps a pinned peek open while a page rewrites its own address, and closes it on a real navigation', async () => {
-      stubViewport(true);
+      // A touch device pins its peeks: the only way a peek is pinned now.
+      stubViewport(false, true);
       const events = new Subject<unknown>();
       const navigation = { extras: { replaceUrl: true }, trigger: 'imperative' };
       await createNavbarFixture([], [], {}, { routerEvents: events, navigation });
       const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
       collapse.openPeek(true);
 
       events.next(new NavigationEnd(1, '/org/overview', '/org/overview?org=acme'));
@@ -1083,7 +1142,7 @@ describe('NavbarComponent', () => {
       const navbar = fixture.componentInstance as unknown as NavbarView;
 
       expect(navbar.railVisible()).toBe(false);
-      expect(navbar.railDocked()).toBe(false);
+      expect(navbar.showSidebarToggle()).toBe(false);
       expect(fixture.nativeElement.classList).not.toContain('lfxn-host--dock');
     });
   });
