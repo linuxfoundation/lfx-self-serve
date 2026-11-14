@@ -45,6 +45,8 @@ describe('MeetingDetailsArtifactsService', () => {
       state,
       organizer: computed(() => meeting().organizer === true),
       fullAccess: computed(() => hasMeetingFullAccess(meeting(), { organizer: meeting().organizer === true, member: !!meeting().invited })),
+      signedIn: signal(true),
+      signedInAccess: computed(() => hasMeetingFullAccess(meeting(), { organizer: meeting().organizer === true, member: !!meeting().invited })),
       pastMeetingId: computed(() => (state() === 'ended' ? 'synthetic-meeting-1762362000000' : null)),
     };
     TestBed.configureTestingModule({

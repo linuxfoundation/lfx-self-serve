@@ -40,6 +40,9 @@ describe('MeetingPageComponent', () => {
   let loadedViaPastMeetingId: ReturnType<typeof signal<boolean>>;
   let pastMeetingFullAccess: ReturnType<typeof signal<boolean>>;
   let liveMeetingFullAccess: ReturnType<typeof signal<boolean>>;
+  let liveMeetingCanJoin: ReturnType<typeof signal<boolean>>;
+  let authenticated: ReturnType<typeof signal<boolean>>;
+  let password: ReturnType<typeof signal<string | null>>;
   let meetingLoadFailed: ReturnType<typeof signal<boolean>>;
   let navigateByUrl: ReturnType<typeof vi.fn>;
   let refresh: ReturnType<typeof vi.fn>;
@@ -61,6 +64,9 @@ describe('MeetingPageComponent', () => {
     loadedViaPastMeetingId = signal(true);
     pastMeetingFullAccess = signal(true);
     liveMeetingFullAccess = signal(true);
+    liveMeetingCanJoin = signal(false);
+    authenticated = signal(true);
+    password = signal<string | null>(null);
     meetingLoadFailed = signal(false);
     navigateByUrl = vi.fn().mockResolvedValue(true);
     refresh = vi.fn();
@@ -73,7 +79,7 @@ describe('MeetingPageComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: Router, useValue: { url: '/meetings/123-1700000000000', navigateByUrl } },
-        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: UserService, useValue: { impersonating: signal(false), authenticated } },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -98,6 +104,8 @@ describe('MeetingPageComponent', () => {
               loadedViaPastMeetingId,
               pastMeetingFullAccess,
               liveMeetingFullAccess,
+              liveMeetingCanJoin,
+              password,
               resolveOccurrence,
               meetingLoadFailed,
               startClock: vi.fn(),
@@ -181,12 +189,64 @@ describe('MeetingPageComponent', () => {
   });
 
   it.each([
-    ['an ended meeting seen without full access', () => pastMeetingFullAccess.set(false)],
+    ['without full access', () => pastMeetingFullAccess.set(false)],
+    ['signed out', () => authenticated.set(false)],
+  ])('shows an ended meeting %s', (_case, arrange) => {
+    arrange();
+    const element = render();
+
+    expect(element.querySelector('lfx-meeting-page-details')).not.toBeNull();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('shows a signed-out visitor a live id whose date has ended', () => {
+    authenticated.set(false);
+    loadedViaPastMeetingId.set(false);
+    meeting.set({ ...LIVE_MEETING, start_time: '2020-01-01T10:00:00Z' });
+    const fixture = TestBed.createComponent(MeetingPageComponent);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.row()).toMatchObject({ startTime: '2020-01-01T10:00:00Z' });
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it('shows a signed-in passcode guest the guest copy with no date, carrying the passcode', () => {
+    loadedViaPastMeetingId.set(false);
+    liveMeetingFullAccess.set(false);
+    password.set('secret');
+    meeting.set({ id: '123', title: 'Weekly sync', visibility: 'private' } as unknown as Meeting);
+    const fixture = TestBed.createComponent(MeetingPageComponent);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.row()).toMatchObject({ key: '123', startTime: '', occurrence: null });
+    expect(fixture.componentInstance.row()?.meeting.password).toBe('secret');
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([
     [
-      'a password-only guest of an upcoming meeting',
+      'a passcode guest inside the join window',
       () => {
         loadedViaPastMeetingId.set(false);
         liveMeetingFullAccess.set(false);
+        liveMeetingCanJoin.set(true);
+        meeting.set(LIVE_MEETING);
+      },
+    ],
+    [
+      'a signed-out passcode guest',
+      () => {
+        authenticated.set(false);
+        loadedViaPastMeetingId.set(false);
+        liveMeetingFullAccess.set(false);
+        meeting.set(LIVE_MEETING);
+      },
+    ],
+    [
+      'a signed-out visitor of an upcoming meeting',
+      () => {
+        authenticated.set(false);
+        loadedViaPastMeetingId.set(false);
         meeting.set(LIVE_MEETING);
       },
     ],
@@ -278,10 +338,10 @@ describe('MeetingPageComponent', () => {
       ['whose start has passed', () => meeting.set(series([occurrence(-9, 'cancel'), occurrence(-2, 'cancel')], at(-9)))],
       ['whose start is in its join window', () => meeting.set(series([occurrence(0, 'cancel')], new Date(Date.now() + 5 * 60_000).toISOString()))],
       [
-        'opened without full access',
+        'opened signed out',
         () => {
           meeting.set(series([occurrence(2, 'cancel')]));
-          liveMeetingFullAccess.set(false);
+          authenticated.set(false);
         },
       ],
     ])('hands a fully cancelled series %s to the legacy page', (_case, arrange) => {

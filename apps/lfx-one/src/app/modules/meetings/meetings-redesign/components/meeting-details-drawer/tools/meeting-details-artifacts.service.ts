@@ -40,7 +40,7 @@ export class MeetingDetailsArtifactsService {
   });
 
   private initArtifacts(): Signal<MeetingDetailsArtifactData | null | undefined> {
-    const id = computed(() => (this.context.fullAccess() ? this.context.pastMeetingId() : null));
+    const id = computed(() => (this.context.signedInAccess() ? this.context.pastMeetingId() : null));
     const artifacts$ = toObservable(id).pipe(
       distinctUntilChanged(),
       switchMap((pastMeetingId) => {

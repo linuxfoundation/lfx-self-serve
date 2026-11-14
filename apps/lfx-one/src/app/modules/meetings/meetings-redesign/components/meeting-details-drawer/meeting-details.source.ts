@@ -25,6 +25,8 @@ export abstract class MeetingDetailsSource {
   public readonly occurrenceCancelled?: (meeting: Meeting, occurrence: MeetingOccurrence) => void;
   /** True once, when Join may open Zoom by itself as the page loads; the drawer never does. */
   public readonly claimJoinOnLoad?: () => boolean;
+  /** False when the host knows the viewer lacks full access, such as a passcode guest; the details then show no agenda or tools. */
+  public readonly fullAccess?: boolean;
   /** Joins with another email address in place; the drawer links to the meeting page instead. */
   public readonly joinWithOtherEmail?: () => void;
   /** Shows another row, such as an upcoming date picked from a past one. */

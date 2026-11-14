@@ -66,7 +66,10 @@ describe('MeetingPageDetailsComponent', () => {
     return fixture.debugElement.query(By.css('lfx-meeting-details-body')).injector.get(MeetingDetailsSource);
   };
 
+  const urlPassword = signal<string | null>(null);
+
   beforeEach(() => {
+    urlPassword.set(null);
     navigateByUrl = vi.fn().mockResolvedValue(true);
     navigate = vi.fn().mockResolvedValue(true);
     refresh = vi.fn();
@@ -85,10 +88,19 @@ describe('MeetingPageDetailsComponent', () => {
         { provide: MeetingPageRowHost, useValue: { row } },
         {
           provide: MeetingPageDataService,
-          useValue: { clock: signal(Date.parse('2026-01-01T00:00:00Z')), refresh, claimJoinOnLoad, reloadOnNextLoad: vi.fn() },
+          useValue: {
+            clock: signal(Date.parse('2026-01-01T00:00:00Z')),
+            refresh,
+            claimJoinOnLoad,
+            reloadOnNextLoad: vi.fn(),
+            loadedViaPastMeetingId: signal(false),
+            liveMeetingFullAccess: signal(true),
+            pastMeetingFullAccess: signal(true),
+            urlPassword,
+          },
         },
         { provide: MeetingService, useValue: { getMeetingDetail, getMeetingRsvpForCurrentUser } },
-        { provide: UserService, useValue: { confirmedMeetingRsvps: () => confirmed() } },
+        { provide: UserService, useValue: { authenticated: signal(true), confirmedMeetingRsvps: () => confirmed() } },
       ],
     });
     TestBed.overrideComponent(MeetingPageDetailsComponent, {
@@ -107,6 +119,7 @@ describe('MeetingPageDetailsComponent', () => {
     expect(page.now().toISOString()).toBe('2026-01-01T00:00:00.000Z');
     expect(page.hostRef).toBeNull();
     expect(page.upcomingRows()).toEqual([]);
+    expect(page.fullAccess).toBe(true);
   });
 
   it('opens a past row at its {id}-{ms} page', () => {
@@ -120,6 +133,14 @@ describe('MeetingPageDetailsComponent', () => {
     source().open({ ...PAST_ROW, meeting: { id: '123' } as Meeting, occurrenceId: 'occ-2', startTime: start });
 
     expect(navigateByUrl).toHaveBeenCalledWith(`/meetings/123?occurrence=${Date.parse(start)}`);
+  });
+
+  it('keeps the passcode from the address bar when opening another date of a series', () => {
+    urlPassword.set('secret');
+    const start = '2030-01-08T10:00:00.000Z';
+    source().open({ ...PAST_ROW, meeting: { id: '123' } as Meeting, occurrenceId: 'occ-2', startTime: start });
+
+    expect(navigateByUrl).toHaveBeenCalledWith(`/meetings/123?occurrence=${Date.parse(start)}&password=secret`);
   });
 
   it('gives another past date picked in place its own page', () => {

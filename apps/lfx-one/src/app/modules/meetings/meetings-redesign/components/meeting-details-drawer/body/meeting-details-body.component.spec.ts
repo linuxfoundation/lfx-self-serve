@@ -72,7 +72,7 @@ const configure = (row: MeetingHomeRow, extra: Partial<MeetingDetailsSource> = {
       { provide: MeetingDetailsSource, useValue: source },
       { provide: MeetingDetailsArtifactsService, useValue: { flags: signal(null) } },
       { provide: MeetingService, useValue: { getMeetingDetail: () => of(row.meeting), removedRegistrationMeetingIds: signal(new Set<string>()) } },
-      { provide: UserService, useValue: { viewerUsername: signal('synthetic-viewer') } },
+      { provide: UserService, useValue: { authenticated: signal(true), viewerUsername: signal('synthetic-viewer') } },
       { provide: UiToastService, useValue: { show: vi.fn() } },
       { provide: MeetingsHomeEditService, useValue: { edit: vi.fn() } },
       { provide: MeetingsHomeDeleteService, useValue: { cancelOccurrence } },

@@ -593,7 +593,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   }
 
   // After the impersonation override, so the flag context is the identity the browser evaluates.
-  const flags = auth.authenticated ? await resolveSsrFlags(req, auth.user) : {};
+  const flags = await resolveSsrFlags(req, auth.authenticated ? auth.user : null);
 
   const runtimeConfig: RuntimeConfig = {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',

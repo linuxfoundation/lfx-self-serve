@@ -83,6 +83,7 @@ describe('MeetingDetailsOwnActionsComponent', () => {
         {
           provide: UserService,
           useValue: {
+            authenticated: signal(true),
             user: signal({ sub: 'synthetic-viewer' }),
             viewerUsername: signal('synthetic-viewer'),
             clearConfirmedMeetingRsvps: vi.fn(),

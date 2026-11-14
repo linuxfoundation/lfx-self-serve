@@ -74,6 +74,7 @@ describe('MeetingDetailsScheduleComponent', () => {
   let meeting: WritableSignal<Meeting>;
   let source: { -readonly [K in keyof MeetingDetailsSource]?: MeetingDetailsSource[K] };
   let toastShow: ReturnType<typeof vi.fn>;
+  let shownRow: WritableSignal<MeetingHomeRow>;
 
   const render = async (): Promise<ComponentFixture<MeetingDetailsScheduleComponent>> => {
     const fixture = TestBed.createComponent(MeetingDetailsScheduleComponent);
@@ -95,13 +96,14 @@ describe('MeetingDetailsScheduleComponent', () => {
     meeting = signal(MEETING);
     source = { upcomingRows };
     toastShow = vi.fn();
+    shownRow = signal(ROW);
     TestBed.configureTestingModule({
       providers: [
         {
           provide: MeetingDetailsContext,
           useValue: {
             row: signal(ROW),
-            shownRow: signal(ROW),
+            shownRow,
             meeting,
             occurrence: signal(null),
             state,
@@ -132,6 +134,15 @@ describe('MeetingDetailsScheduleComponent', () => {
     expect(text(fixture, 'meeting-details-schedule-long-date')).toMatch(/^[A-Z][a-z]+day, Nov [56], 2026$/);
     expect(text(fixture, 'meeting-details-schedule-time')).toMatch(/· 30 min$/);
     expect(text(fixture, 'meeting-details-schedule-recurrence')).toBe('Weekly on Thursday, for 4 occurrences');
+  });
+
+  it("shows a passcode guest's copy without its date or the window note", async () => {
+    shownRow.set({ ...ROW, startTime: '' });
+    const fixture = await render();
+
+    expect(query(fixture, 'meeting-details-schedule-when')).toBeNull();
+    expect(query(fixture, 'meeting-details-schedule-join-window')).toBeNull();
+    expect(query(fixture, 'meeting-details-schedule-join')?.querySelector('button')?.disabled).toBe(true);
   });
 
   it('keeps Join off before its window and says when it opens', async () => {

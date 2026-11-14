@@ -162,6 +162,7 @@ describe('MeetingDetailsDrawerComponent', () => {
         {
           provide: UserService,
           useValue: {
+            authenticated: signal(true),
             viewerUsername: signal('synthetic-viewer'),
             user: signal(null),
             refreshUserMeetings,

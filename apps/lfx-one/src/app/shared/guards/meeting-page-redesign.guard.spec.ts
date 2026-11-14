@@ -9,7 +9,7 @@ import { AuthContext, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MEETING_PAGE_REDESIGN_KEY, meetingPageRedesignGuard } from './meeting-page-redesign.guard';
+import { MEETING_PAGE_ANONYMOUS_FLAG_KEY, MEETING_PAGE_REDESIGN_KEY, meetingPageRedesignGuard } from './meeting-page-redesign.guard';
 
 const AUTH_KEY = makeStateKey<AuthContext>('auth');
 
@@ -67,13 +67,22 @@ describe('meetingPageRedesignGuard', () => {
       expect(await runGuard()).toBe(true);
     });
 
-    it('keeps anonymous visitors on the legacy page', async () => {
+    it("follows the server's anonymous answer for a signed-out visitor, without asking LaunchDarkly", async () => {
       expect(await runGuard()).toBe(false);
+      TestBed.inject(TransferState).set(MEETING_PAGE_ANONYMOUS_FLAG_KEY, true);
+      expect(await runGuard()).toBe(true);
+      expect(getBooleanFlag).not.toHaveBeenCalled();
     });
 
-    it.each(['password=secret', 'action=leave'])('keeps a ?%s link on the legacy page', async (params) => {
+    it('matches a ?password= link', async () => {
       signIn();
-      query = params;
+      query = 'password=secret';
+      expect(await runGuard()).toBe(true);
+    });
+
+    it('keeps a ?action= link on the legacy page', async () => {
+      signIn();
+      query = 'action=leave';
       expect(await runGuard()).toBe(false);
     });
 
@@ -119,6 +128,14 @@ describe('meetingPageRedesignGuard', () => {
 
       expect(matched).toBe(true);
       expect(TestBed.inject(TransferState).get(MEETING_PAGE_REDESIGN_KEY, null)).toEqual({ id: '123', enabled: true });
+    });
+
+    it('follows the server flag for an anonymous visitor', async () => {
+      configure('server', { auth: { ...auth, authenticated: false }, flags: { meetingsRedesign: false } });
+
+      expect(await runGuard()).toBe(false);
+      expect(TestBed.inject(TransferState).get(MEETING_PAGE_REDESIGN_KEY, null)).toEqual({ id: '123', enabled: false });
+      expect(TestBed.inject(TransferState).get(MEETING_PAGE_ANONYMOUS_FLAG_KEY, null)).toBe(false);
     });
 
     it('defaults to the legacy page when the server did not evaluate the flag', async () => {

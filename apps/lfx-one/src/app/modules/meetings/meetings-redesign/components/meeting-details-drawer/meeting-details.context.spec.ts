@@ -31,6 +31,8 @@ describe('MeetingDetailsContext', () => {
   let refreshUserMeetings: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn<(row: MeetingHomeRow) => void>>;
   const upcomingRows = signal<MeetingHomeRow[]>([]);
+  const authenticated = signal(true);
+  let sourceExtras: Partial<MeetingDetailsSource> = {};
   const now = signal(new Date('2049-12-31T09:00:00.000Z'));
 
   const create = (row: MeetingHomeRow, detail$: Observable<Meeting> = of(row.meeting), hosted = true): MeetingDetailsContext => {
@@ -40,13 +42,13 @@ describe('MeetingDetailsContext', () => {
     refreshUserMeetings = vi.fn();
     open = vi.fn<(row: MeetingHomeRow) => void>();
     const hostRef = hosted ? ({ close } as unknown as DialogRef) : null;
-    const source: MeetingDetailsSource = { row, tab: 'agenda', now, upcomingRows, hostRef, open, applySummaryChange: vi.fn() };
+    const source: MeetingDetailsSource = { row, tab: 'agenda', now, upcomingRows, hostRef, open, applySummaryChange: vi.fn(), ...sourceExtras };
     TestBed.configureTestingModule({
       providers: [
         MeetingDetailsContext,
         { provide: MeetingDetailsSource, useValue: source },
         { provide: MeetingService, useValue: { getMeetingDetail: detail, removedRegistrationMeetingIds: signal(new Set<string>()) } },
-        { provide: UserService, useValue: { refreshUserMeetings, refreshUserPastMeetings: vi.fn() } },
+        { provide: UserService, useValue: { authenticated, refreshUserMeetings, refreshUserPastMeetings: vi.fn() } },
         { provide: UiToastService, useValue: { show: toast } },
       ],
     });
@@ -57,6 +59,8 @@ describe('MeetingDetailsContext', () => {
     TestBed.resetTestingModule();
     now.set(new Date('2049-12-31T09:00:00.000Z'));
     upcomingRows.set([]);
+    authenticated.set(true);
+    sourceExtras = {};
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
 
@@ -68,6 +72,38 @@ describe('MeetingDetailsContext', () => {
     expect(context.meeting().title).toBe('Renamed');
     expect(context.shownRow().title).toBe('Renamed');
     expect(context.invited()).toBe(false);
+  });
+
+  it('keeps the public copy for a signed-out visitor, who sees no guests', () => {
+    authenticated.set(false);
+    const context = create(buildRow({ ...MEETING, organizer: true }));
+
+    expect(detail).not.toHaveBeenCalled();
+    expect(context.canViewGuests()).toBe(false);
+    expect(context.fullAccess()).toBe(true);
+    expect(context.signedInAccess()).toBe(false);
+  });
+
+  it('keeps the public copy and no full access when the host says the viewer lacks it', () => {
+    sourceExtras = { fullAccess: false };
+    const context = create(buildRow({ ...MEETING, organizer: true }));
+
+    expect(detail).not.toHaveBeenCalled();
+    expect(context.fullAccess()).toBe(false);
+    expect(context.canViewGuests()).toBe(false);
+  });
+
+  it.each([
+    ['a signed-out visitor', () => authenticated.set(false)],
+    ['a viewer without full access', () => (sourceExtras = { fullAccess: false })],
+  ])('sends %s picking an upcoming date on a past row to that date of the series', (_case, arrange) => {
+    arrange();
+    const context = create({ ...buildRow(PAST as unknown as Meeting), key: 'past-1' });
+
+    context.showUpcoming(NEXT);
+
+    expect(detail).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ meeting: { id: 'mtg-1', title: 'Synthetic sync' }, startTime: NEXT.start_time }));
   });
 
   it('closes the drawer and reloads the list when the meeting is gone', () => {
