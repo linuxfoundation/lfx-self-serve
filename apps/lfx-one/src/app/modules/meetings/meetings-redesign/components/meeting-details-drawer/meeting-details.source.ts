@@ -27,8 +27,10 @@ export abstract class MeetingDetailsSource {
   public readonly claimJoinOnLoad?: () => boolean;
   /** False when the host knows the viewer lacks full access, such as a passcode guest; the details then show no agenda or tools. */
   public readonly fullAccess?: boolean;
-  /** Joins with another email address in place; the drawer links to the meeting page instead. */
-  public readonly joinWithOtherEmail?: () => void;
+  /** Takes guest details in place to join with another email address; the drawer links to the meeting page instead. */
+  public readonly guestJoinInPlace?: boolean;
+  /** The server's answer to whether the join window is open, for a passcode guest's copy, which has no start time. */
+  public readonly canJoin?: Signal<boolean>;
   /** Shows another row, such as an upcoming date picked from a past one. */
   public abstract open(row: MeetingHomeRow): void;
   /** Mirrors a summary edit into the host's list. */

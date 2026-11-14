@@ -32,7 +32,7 @@ import { OverlayStateService } from '@services/overlay-state.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS, MEETING_PAGE_GUEST_FORM_STATE } from '@lfx-one/shared/constants';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
 import { getTimezoneAbbreviation, getUserTimezone } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { installMatchMediaShim } from '@shared/testing/header-test-providers';
@@ -70,7 +70,6 @@ describe('MeetingJoinComponent', () => {
   let getMeetingRsvpForCurrentUser: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let toastAdd: ReturnType<typeof vi.fn>;
-  let navigationState: { extras: { state?: Record<string, unknown> } } | null;
   let paramMap$: BehaviorSubject<ParamMap>;
   let queryParamMap$: BehaviorSubject<ParamMap>;
   let authenticated: ReturnType<typeof signal<boolean>>;
@@ -149,7 +148,6 @@ describe('MeetingJoinComponent', () => {
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
-    navigationState = null;
     meetingsV2Enabled = signal(false);
 
     TestBed.configureTestingModule({
@@ -173,7 +171,7 @@ describe('MeetingJoinComponent', () => {
             },
           },
         },
-        { provide: Router, useValue: { navigate: vi.fn(), getCurrentNavigation: vi.fn(() => navigationState) } },
+        { provide: Router, useValue: { navigate: vi.fn(), getCurrentNavigation: vi.fn(() => null) } },
         {
           provide: MeetingService,
           useValue: {
@@ -271,14 +269,6 @@ describe('MeetingJoinComponent', () => {
     expect(component.meeting()).not.toHaveProperty('sessions');
     expect(component.meeting()).not.toHaveProperty('platform_meeting_id');
     expect(component.meeting()).not.toHaveProperty('organizers');
-  });
-
-  it('opens the guest form at once when the redesigned page hands over its "Click here"', async () => {
-    navigationState = { extras: { state: { [MEETING_PAGE_GUEST_FORM_STATE]: true } } };
-    expect((await createComponent()).showGuestForm()).toBe(true);
-
-    navigationState = null;
-    expect((await createComponent()).showGuestForm()).toBe(false);
   });
 
   it('clears registrantsLoading and yields no registrants when the viewer is unauthenticated', async () => {

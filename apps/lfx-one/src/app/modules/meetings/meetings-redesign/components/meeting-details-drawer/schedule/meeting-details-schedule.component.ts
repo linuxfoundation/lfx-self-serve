@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
@@ -17,6 +17,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -29,16 +30,26 @@ import { MeetingRsvpControlsComponent } from '../../meeting-rsvp-controls/meetin
 import { MeetingDetailsContext } from '../meeting-details.context';
 import { MeetingDetailsSource } from '../meeting-details.source';
 import { MeetingDetailsRegisterModalComponent } from '../register/meeting-details-register-modal.component';
+import { MeetingDetailsGuestJoinComponent } from './guest-join/meeting-details-guest-join.component';
 
 /**
  * Top of the meeting details drawer's card: the shown date, the viewer's RSVP, Join and Register.
  * @description Join opens the meeting's early-join time (default `DEFAULT_EARLY_JOIN_TIME`) before the start and stays open until 40 minutes after the end.
  * RSVP and Register show before that window only, as on the meeting page. A page whose join window was open when it
- * loaded opens Zoom once by itself, as the legacy meeting page does.
+ * loaded opens Zoom once by itself, as the legacy meeting page does. A signed-out visitor gets Sign In and the guest form,
+ * which a page also offers in place to a signed-in viewer whose email is not registered.
  */
 @Component({
   selector: 'lfx-meeting-details-schedule',
-  imports: [MeetingDateTileComponent, MeetingRsvpControlsComponent, UiButtonComponent, UiNoteComponent, UiTooltipDirective],
+  imports: [
+    MeetingDateTileComponent,
+    MeetingDetailsGuestJoinComponent,
+    MeetingRsvpControlsComponent,
+    NgTemplateOutlet,
+    UiButtonComponent,
+    UiNoteComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './meeting-details-schedule.component.html',
   styleUrl: './meeting-details-schedule.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -51,10 +62,13 @@ export class MeetingDetailsScheduleComponent {
   private readonly modal = inject(UiModalService);
   private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly drawer = inject(UiDrawerContext, { optional: true });
   protected readonly context = inject(MeetingDetailsContext);
 
   /** Registrant id of a registration made here, until the list shows it. */
   private readonly registrantId = signal<string | null>(null);
+  /** The guest form a signed-in viewer opened with "Click here". */
+  protected readonly guestFormOpen = signal(false);
 
   protected readonly row: Signal<MeetingHomeRow> = this.context.shownRow;
   protected readonly longDate: Signal<string> = computed(() => formatMeetingDetailsDate(this.row().startTime));
@@ -62,9 +76,7 @@ export class MeetingDetailsScheduleComponent {
   protected readonly recurrence: Signal<string | null> = computed(() => getMeetingDetailsRecurrence(this.context.meeting(), this.row().occurrence));
   protected readonly earlyJoinMinutes: Signal<number> = computed(() => this.context.meeting().early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME);
   /** Inside the join window, signed in. */
-  protected readonly canJoin: Signal<boolean> = computed(
-    () => (this.context.state() === 'soon' || this.context.state() === 'live') && this.userService.authenticated()
-  );
+  protected readonly canJoin: Signal<boolean> = computed(() => (this.context.state() === 'soon' || this.context.state() === 'live') && this.context.signedIn());
   /** The shown date with the refreshed meeting, so Join sends the current passcode. */
   private readonly joinRow: Signal<MeetingHomeRow> = computed(() => ({ ...this.row(), meeting: this.context.meeting() }));
   protected readonly joinLink: Signal<MeetingJoinLink> = this.joinService.joinLink(this.joinRow, this.canJoin);
@@ -76,7 +88,9 @@ export class MeetingDetailsScheduleComponent {
   protected readonly rsvpRow: Signal<MeetingHomeRow> = this.initRsvpRow();
   protected readonly canRegister: Signal<boolean> = this.initCanRegister();
   /** A page joins with another email in place, where the drawer links to the meeting page. */
-  protected readonly joinWithOtherEmail = this.source.joinWithOtherEmail;
+  protected readonly guestJoinInPlace = !!this.source.guestJoinInPlace && !this.drawer;
+  /** The real viewer's name, never an impersonated user's (MD-091). */
+  protected readonly viewerName: Signal<string> = computed(() => this.userService.meetingJoinIdentity()?.name ?? '');
 
   public constructor() {
     this.openJoinOnLoad();

@@ -31,12 +31,11 @@ import { MeetingPageTopBarComponent } from './top-bar/meeting-page-top-bar.compo
 /**
  * The redesigned `/meetings/:id` page, matched by `meetingPageRedesignGuard`: the meeting details, with loading and error
  * states. Not-found, such as a wrong passcode, goes to `/meetings/not-found` like the legacy page.
- * @description Fallback rule: an ended date renders here for every viewer, with what their access allows; an upcoming or
- * live date renders for a signed-in viewer with full access, and for a signed-in passcode guest, without its date, until
- * the join window opens. A signed-out visitor of an upcoming or live date, a passcode guest inside the join window and a
- * series with no date left re-navigate the same URL to the legacy page, on the server too, so hydration keeps the page it
- * rendered. A link to a cancelled date shows the date the page falls back to under a note; a series whose every date is
- * cancelled shows its series fields under a note while its start is still ahead of the join window.
+ * @description Every viewer renders here, with what their access allows: a signed-out visitor joins through the guest
+ * form, and a passcode guest sees the meeting without its date. A series with no date left, or fully cancelled past its start, re-navigates the same URL to
+ * the legacy page, on the server too, so hydration keeps the page it rendered. A link to a cancelled date shows the date
+ * the page falls back to under a note; a series whose every date is cancelled shows its series fields under a note while
+ * its start is still ahead of the join window.
  */
 @Component({
   selector: 'lfx-meeting-page',
@@ -120,12 +119,8 @@ export class MeetingPageComponent implements MeetingPageRowHost {
         return isPastMeetingCalendarRow(meeting) ? toPastMeetingHomeRow(meeting) : null;
       }
       if (!this.pageData.liveMeetingFullAccess()) return this.guestRow(meeting);
-      const row =
-        this.cancelledLink()?.kind === 'series'
-          ? this.cancelledSeriesRow(meeting)
-          : toUpcomingMeetingHomeRow(meeting, this.pageData.resolveOccurrence(meeting));
-      // shortcut: signed-out visitors keep the legacy guest join form until a date ends. revisit: when the page joins guests.
-      return row && (this.userService.authenticated() || this.rowState(row) === 'ended') ? row : null;
+      if (this.cancelledLink()?.kind === 'series') return this.cancelledSeriesRow(meeting);
+      return toUpcomingMeetingHomeRow(meeting, this.pageData.resolveOccurrence(meeting));
     });
   }
 
@@ -164,13 +159,8 @@ export class MeetingPageComponent implements MeetingPageRowHost {
     return series && this.rowState(series) === 'far' ? series : null;
   }
 
-  /**
-   * A passcode guest's copy: title, type, visibility and groups, with no date (MD-084), for a signed-in viewer before the join window.
-   * @description The server answers whether the window is open, since the copy carries no start.
-   */
-  private guestRow(meeting: Meeting): MeetingHomeRow | null {
-    // shortcut: a guest inside the join window keeps the legacy join. revisit: when the page joins guests.
-    if (!this.userService.authenticated() || this.pageData.liveMeetingCanJoin()) return null;
+  /** A passcode guest's copy: title, type, visibility and groups, with no date (MD-084); the server answers whether Join is open. */
+  private guestRow(meeting: Meeting): MeetingHomeRow {
     return { key: meeting.id, meeting, occurrence: null, title: meeting.title, occurrenceId: null, startTime: '', durationMinutes: 0 };
   }
 

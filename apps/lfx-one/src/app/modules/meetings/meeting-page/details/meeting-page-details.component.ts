@@ -5,7 +5,6 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Provi
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { MEETING_PAGE_GUEST_FORM_STATE, MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp } from '@lfx-one/shared/interfaces';
 import { getActiveOccurrences, getPastMeetingResourceId, isPastMeetingCalendarRow, isSameOccurrenceId, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -120,13 +119,8 @@ function provideMeetingPageSource(): Provider {
         occurrenceCancelled: (meeting, occurrence) => showOccurrence(router, route, pageData, meeting.id, nextOccurrenceStart(meeting, occurrence)),
         claimJoinOnLoad: () => pageData.claimJoinOnLoad(),
         fullAccess: pageData.loadedViaPastMeetingId() ? pageData.pastMeetingFullAccess() : pageData.liveMeetingFullAccess(),
-        // The legacy page holds the guest form that joins with another email address.
-        joinWithOtherEmail: () =>
-          void router.navigateByUrl(router.url, {
-            skipLocationChange: true,
-            onSameUrlNavigation: 'reload',
-            state: { [MEETING_PAGE_LEGACY_STATE]: true, [MEETING_PAGE_GUEST_FORM_STATE]: true },
-          }),
+        guestJoinInPlace: true,
+        canJoin: pageData.liveMeetingCanJoin,
       };
     },
   };

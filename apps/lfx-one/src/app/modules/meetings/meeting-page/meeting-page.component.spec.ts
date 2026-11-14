@@ -227,29 +227,29 @@ describe('MeetingPageComponent', () => {
     [
       'a passcode guest inside the join window',
       () => {
-        loadedViaPastMeetingId.set(false);
         liveMeetingFullAccess.set(false);
         liveMeetingCanJoin.set(true);
-        meeting.set(LIVE_MEETING);
       },
     ],
     [
       'a signed-out passcode guest',
       () => {
         authenticated.set(false);
-        loadedViaPastMeetingId.set(false);
         liveMeetingFullAccess.set(false);
-        meeting.set(LIVE_MEETING);
       },
     ],
-    [
-      'a signed-out visitor of an upcoming meeting',
-      () => {
-        authenticated.set(false);
-        loadedViaPastMeetingId.set(false);
-        meeting.set(LIVE_MEETING);
-      },
-    ],
+    ['a signed-out visitor of an upcoming meeting', () => authenticated.set(false)],
+  ])('shows %s', (_case, arrange) => {
+    loadedViaPastMeetingId.set(false);
+    meeting.set(LIVE_MEETING);
+    arrange();
+    const element = render();
+
+    expect(element.querySelector('lfx-meeting-page-details')).not.toBeNull();
+    expect(navigateByUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([
     [
       'a meeting with no date left to show',
       () => {
@@ -337,13 +337,6 @@ describe('MeetingPageComponent', () => {
     it.each([
       ['whose start has passed', () => meeting.set(series([occurrence(-9, 'cancel'), occurrence(-2, 'cancel')], at(-9)))],
       ['whose start is in its join window', () => meeting.set(series([occurrence(0, 'cancel')], new Date(Date.now() + 5 * 60_000).toISOString()))],
-      [
-        'opened signed out',
-        () => {
-          meeting.set(series([occurrence(2, 'cancel')]));
-          authenticated.set(false);
-        },
-      ],
     ])('hands a fully cancelled series %s to the legacy page', (_case, arrange) => {
       arrange();
 
