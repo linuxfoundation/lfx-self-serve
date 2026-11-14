@@ -49,6 +49,7 @@ describe('MeetingDetailsAgendaComponent', () => {
   let organizer: WritableSignal<boolean>;
   let pastMeetingId: WritableSignal<string | null>;
   let fullAccess: WritableSignal<boolean>;
+  let signedIn: WritableSignal<boolean>;
   let tab: WritableSignal<MeetingDetailsTab>;
   let getMeetingAttachments: ReturnType<typeof vi.fn>;
   let getPastMeetingAttachments: ReturnType<typeof vi.fn>;
@@ -77,6 +78,7 @@ describe('MeetingDetailsAgendaComponent', () => {
     organizer = signal(false);
     pastMeetingId = signal(null);
     fullAccess = signal(true);
+    signedIn = signal(true);
     tab = signal('agenda');
     getMeetingAttachments = vi.fn(() => of([FILE, LINK]));
     getPastMeetingAttachments = vi.fn(() => of([] as PastMeetingAttachment[]));
@@ -103,6 +105,9 @@ describe('MeetingDetailsAgendaComponent', () => {
             organizer,
             pastMeetingId,
             fullAccess,
+            signedIn,
+            signedInAccess: computed(() => signedIn() && fullAccess()),
+            signIn: vi.fn(),
             tab,
             refreshList: vi.fn(),
           },
@@ -146,6 +151,31 @@ describe('MeetingDetailsAgendaComponent', () => {
 
     expect(query('meeting-details-agenda-section')).toBeNull();
     expect(query('meeting-details-materials')).toBeNull();
+    expect(getMeetingAttachments).not.toHaveBeenCalled();
+  });
+
+  it('shows the private notice in place of the agenda on a page, by viewer', async () => {
+    fullAccess.set(false);
+    await render();
+    expect(query('meeting-details-private-notice')?.textContent).toContain('please contact the meeting organizer');
+    expect(query('meeting-details-private-sign-in')).toBeNull();
+
+    signedIn.set(false);
+    await fixture.whenStable();
+    expect(query('meeting-details-private-notice')?.textContent).toContain('join as a guest below if you have the meeting password');
+    expect(query('meeting-details-private-sign-in')).not.toBeNull();
+
+    state.set('ended');
+    await fixture.whenStable();
+    expect(query('meeting-details-private-notice')?.textContent).toContain('Sign in if you believe you should have access.');
+  });
+
+  it('keeps the agenda for a signed-out visitor and asks them to sign in for the materials, fetching none', async () => {
+    signedIn.set(false);
+    await render();
+
+    expect(query('meeting-details-agenda-text')?.textContent).toContain('Roadmap review');
+    expect(query('meeting-details-materials-sign-in')?.textContent).toContain('Sign in to view materials');
     expect(getMeetingAttachments).not.toHaveBeenCalled();
   });
 

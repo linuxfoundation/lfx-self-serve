@@ -28,6 +28,7 @@ import { MeetingService } from '@services/meeting.service';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiShowMoreComponent } from '@shared/uikit/show-more/show-more.component';
@@ -91,6 +92,16 @@ export class MeetingDetailsAgendaComponent {
     return isPastMeetingCalendarRow(meeting) ? meeting.meeting_id : meeting.id;
   });
   protected readonly fullAccess: Signal<boolean> = this.context.fullAccess;
+  protected readonly signedIn: Signal<boolean> = this.context.signedIn;
+  /** On a page, a viewer without full access gets the private notice here; the drawer keeps it in its side column. */
+  protected readonly page = !inject(UiDrawerContext, { optional: true });
+  protected readonly privateNotice: Signal<string> = computed(() => {
+    const lead = 'Meeting details, recordings, and summaries are only available to meeting participants and committee members.';
+    if (this.signedIn()) return `${lead} If you believe you should have access, please contact the meeting organizer.`;
+    return this.context.state() === 'ended'
+      ? `${lead} Sign in if you believe you should have access.`
+      : `${lead} Sign in or join as a guest below if you have the meeting password.`;
+  });
   protected readonly agenda: Signal<string> = computed(() => (this.context.occurrence()?.description || this.context.meeting().description || '').trim());
   // Upcoming dates of the series are editable; past materials and rows that hold a past record are not.
   protected readonly canEdit: Signal<boolean> = computed(
@@ -128,6 +139,10 @@ export class MeetingDetailsAgendaComponent {
       if (element?.scrollHeight === 0) return;
       this.agendaOverflows.set(!!element && element.scrollHeight > MEETING_DETAILS_AGENDA_COLLAPSED_PX);
     });
+  }
+
+  protected signIn(): void {
+    this.context.signIn();
   }
 
   protected edit(): void {
@@ -171,8 +186,8 @@ export class MeetingDetailsAgendaComponent {
 
   private initAttachments(): Signal<(MeetingAttachment | PastMeetingAttachment)[] | null> {
     // Keyed on the resource only, so the fresh detail replacing the row data does not refetch.
-    // Without full access nothing shows, so nothing is fetched.
-    const source = computed(() => (this.context.fullAccess() ? (this.context.pastMeetingId() ?? `meeting:${this.seriesId()}`) : null));
+    // Without full access, or signed out, no materials show, so nothing is fetched.
+    const source = computed(() => (this.context.signedInAccess() ? (this.context.pastMeetingId() ?? `meeting:${this.seriesId()}`) : null));
     const loaded$ = toObservable(source).pipe(
       distinctUntilChanged(),
       tap(() => this.pastChanges.set({ deletedUids: [], addedAttachments: [] })),

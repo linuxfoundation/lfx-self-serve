@@ -5,6 +5,7 @@ import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
 import { Meeting, MeetingDetailsState, MeetingDetailsTab, MeetingHomeRow, MeetingHostCandidate, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { canViewMeetingGuests, getMeetingDetailsState, getPastMeetingResourceId, hasMeetingFullAccess, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
@@ -26,6 +27,7 @@ export class MeetingDetailsContext {
   private readonly userService = inject(UserService);
   private readonly toast = inject(UiToastService);
   private readonly document = inject(DOCUMENT);
+  private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   /** Time read by the drawer's own clock; 0 until it first ticks. */
   private readonly tick = signal(0);
@@ -59,6 +61,8 @@ export class MeetingDetailsContext {
   /** Where the shown date stands, re-checked as the page clock ticks. */
   public readonly state: Signal<MeetingDetailsState> = this.initState();
   public readonly organizer: Signal<boolean> = computed(() => this.meeting().organizer === true);
+  /** Signed in; a signed-out visitor reaches only the public reads. */
+  public readonly signedIn: Signal<boolean> = computed(() => this.userService.authenticated());
   /** Invited, or listed as a guest, and not just removed from the meeting on this page. */
   public readonly invited: Signal<boolean> = computed(
     () =>
@@ -67,11 +71,15 @@ export class MeetingDetailsContext {
   );
   /** Invited, or on a past row: the past feed lists only meetings the viewer is a member of. */
   private readonly member: Signal<boolean> = computed(() => this.invited() || isPastMeetingCalendarRow(this.row().meeting));
-  public readonly canViewGuests: Signal<boolean> = computed(() =>
-    canViewMeetingGuests(this.meeting(), { organizer: this.organizer(), invited: this.member() })
-  );
   /** May see the agenda and materials. */
-  public readonly fullAccess: Signal<boolean> = computed(() => hasMeetingFullAccess(this.meeting(), { organizer: this.organizer(), member: this.member() }));
+  public readonly fullAccess: Signal<boolean> = computed(
+    () => this.source.fullAccess !== false && hasMeetingFullAccess(this.meeting(), { organizer: this.organizer(), member: this.member() })
+  );
+  /** Full access with a session, which the materials, recordings, summaries and participants reads need. */
+  public readonly signedInAccess: Signal<boolean> = computed(() => this.signedIn() && this.fullAccess());
+  public readonly canViewGuests: Signal<boolean> = computed(
+    () => this.signedInAccess() && canViewMeetingGuests(this.meeting(), { organizer: this.organizer(), invited: this.member() })
+  );
   /** Resource id of the shown date's past meeting record; null until the date has ended. */
   public readonly pastMeetingId: Signal<string | null> = this.initPastMeetingId();
   public readonly tab: WritableSignal<MeetingDetailsTab> = signal(this.source.tab);
@@ -119,7 +127,10 @@ export class MeetingDetailsContext {
       return;
     }
     // The feed's copy carries the viewer's invite and answers; the detail stands in when the feed does not list the series.
-    const live$ = listed.length ? of(listed[0].meeting) : this.meetingService.getMeetingDetail(seriesId);
+    // Without a session or full access the detail is denied, so the date's own page loads the series instead.
+    const pageSeries = of({ id: seriesId, title: row.meeting.title } as Meeting);
+    let live$ = listed.length ? of(listed[0].meeting) : pageSeries;
+    if (!listed.length && this.userService.authenticated() && this.source.fullAccess !== false) live$ = this.meetingService.getMeetingDetail(seriesId);
     const shown = this.occurrence();
     this.upcomingLoad = live$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (meeting) => {
@@ -149,6 +160,11 @@ export class MeetingDetailsContext {
     });
   }
 
+  /** Signs in and comes back to this page. */
+  public signIn(): void {
+    window.location.assign(`/login?returnTo=${encodeURIComponent(this.router.url)}`);
+  }
+
   /** Fetches the meeting again after a failed load. */
   public retryLoad(): void {
     this.retryingState.set(true);
@@ -166,7 +182,8 @@ export class MeetingDetailsContext {
 
   private initMeeting(): Signal<Meeting> {
     const row = this.source.row;
-    if (isPastMeetingCalendarRow(row.meeting)) return signal(row.meeting).asReadonly();
+    // The signed-in read serves only viewers with full access; anyone else keeps the host's public copy.
+    if (isPastMeetingCalendarRow(row.meeting) || !this.userService.authenticated() || this.source.fullAccess === false) return signal(row.meeting).asReadonly();
     const fresh$ = this.reload$.pipe(
       startWith(undefined),
       switchMap(() =>

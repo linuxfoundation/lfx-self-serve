@@ -65,7 +65,25 @@
       <p class="text-[12px] leading-[16px] text-gray-500">Documents provided to support meeting preparation, discussion, and governance record.</p>
     </div>
 
-    @if (loading()) {
+    @if (!signedIn()) {
+      <lfx-ui-empty-state
+        size="small"
+        icon="fa-light fa-folder-open"
+        heading="Sign in to view materials"
+        description="Meeting materials are only shown to signed-in participants."
+        [headingLevel]="4"
+        data-testid="meeting-details-materials-sign-in">
+        <lfx-ui-button
+          empty-state-action
+          variant="tertiary-accent"
+          size="small"
+          icon="fa-light fa-arrow-right-to-bracket"
+          (click)="signIn()"
+          data-testid="meeting-details-materials-sign-in-button">
+          Sign In
+        </lfx-ui-button>
+      </lfx-ui-empty-state>
+    } @else if (loading()) {
       <div class="flex flex-col gap-[8px]" data-testid="meeting-details-materials-loading">
         @for (placeholder of [1, 2]; track placeholder) {
           <div class="flex items-center gap-[12px] py-[8px]">
@@ -196,6 +214,26 @@
       </lfx-ui-empty-state>
     }
   </section>
+} @else if (page) {
+  <lfx-ui-empty-state
+    size="small"
+    icon="fa-light fa-lock"
+    heading="This is a private meeting"
+    [description]="privateNotice()"
+    [headingLevel]="3"
+    data-testid="meeting-details-private-notice">
+    @if (!signedIn()) {
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-arrow-right-to-bracket"
+        (click)="signIn()"
+        data-testid="meeting-details-private-sign-in">
+        Sign In
+      </lfx-ui-button>
+    }
+  </lfx-ui-empty-state>
 }
 
 <ng-template #scopeBadge let-uid>

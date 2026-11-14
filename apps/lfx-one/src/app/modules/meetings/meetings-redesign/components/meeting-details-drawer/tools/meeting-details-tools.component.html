@@ -10,7 +10,7 @@
   <lfx-meeting-details-rsvp />
 }
 
-@if (ended() && context.fullAccess()) {
+@if (ended() && context.signedInAccess()) {
   @if (attendance() === undefined) {
     <div class="flex flex-col gap-[6px]" aria-busy="true" data-testid="meeting-details-attendance-loading">
       <lfx-ui-skeleton width="60%" height="16px" />
@@ -115,7 +115,24 @@
   </section>
 }
 
-@if (!context.fullAccess()) {
+@if (ended() && !context.signedIn()) {
+  <div class="flex flex-col gap-[12px] rounded-ui-sm bg-gray-50 p-[12px]" data-testid="meeting-details-sign-in-past">
+    <span class="flex flex-col gap-[2px]">
+      <span class="text-[13px] font-semibold leading-[18px] text-gray-900">Sign in to view meeting details</span>
+      <span class="text-[12px] leading-[16px] text-gray-600">Access the agenda, recordings, summaries, and resources</span>
+    </span>
+    <lfx-ui-button
+      variant="secondary"
+      icon="fa-light fa-arrow-right-to-bracket"
+      fullWidth
+      (click)="context.signIn()"
+      data-testid="meeting-details-sign-in-past-button"
+      >Sign In</lfx-ui-button
+    >
+  </div>
+}
+
+@if (!context.fullAccess() && !page) {
   <lfx-ui-note variant="secondary" size="small" icon="fa-light fa-lock" label="This is a private meeting" data-testid="meeting-details-private"
     >Meeting details, recordings, and summaries are only available to meeting participants and committee members. If you believe you should have access, please
     contact the meeting organizer.</lfx-ui-note

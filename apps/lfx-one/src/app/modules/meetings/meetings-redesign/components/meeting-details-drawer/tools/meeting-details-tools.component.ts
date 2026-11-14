@@ -7,6 +7,7 @@ import { MeetingHomeAttendance, MeetingReconcileDialogData, PastMeetingParticipa
 import { getPastMeetingAttendance, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiDrawerContext } from '@shared/uikit/drawer/drawer.context';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
@@ -27,7 +28,8 @@ import { MeetingDetailsRsvpComponent } from './rsvp/meeting-details-rsvp.compone
 /**
  * Right column of the meeting details drawer under the schedule: host controls, the RSVP counts, attendance,
  * the organizer's Reconcile Attendance, the recording, AI summary and transcript, and the private-meeting notice.
- * @description Follows the legacy meeting page's gates and copy.
+ * @description Follows the legacy meeting page's gates and copy. On a page the private notice sits with the agenda, and a
+ * signed-out visitor of an ended date is asked to sign in.
  */
 @Component({
   selector: 'lfx-meeting-details-tools',
@@ -54,6 +56,8 @@ export class MeetingDetailsToolsComponent {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly context = inject(MeetingDetailsContext);
   protected readonly artifactsService = inject(MeetingDetailsArtifactsService);
+  /** Outside a drawer, where the agenda slot carries the private notice. */
+  protected readonly page = !inject(UiDrawerContext, { optional: true });
 
   protected readonly ended: Signal<boolean> = computed(() => this.context.state() === 'ended');
   /** Organizers always; guests read-only when the meeting shares its guest list and takes RSVPs. */
@@ -107,7 +111,7 @@ export class MeetingDetailsToolsComponent {
   }
 
   private initParticipants(): Signal<PastMeetingParticipant[] | null | undefined> {
-    const id = computed(() => (this.context.fullAccess() ? this.context.pastMeetingId() : null));
+    const id = computed(() => (this.context.signedInAccess() ? this.context.pastMeetingId() : null));
     const version$ = toObservable(this.context.participantsVersion);
     const participants$ = toObservable(id).pipe(
       distinctUntilChanged(),

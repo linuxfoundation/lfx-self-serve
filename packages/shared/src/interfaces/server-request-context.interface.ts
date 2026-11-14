@@ -16,11 +16,13 @@ export interface ServerFlagUserContext {
   key: string;
   name?: string;
   email?: string;
+  /** A signed-out visitor, which LaunchDarkly evaluates without storing a user. */
+  anonymous?: boolean;
 }
 
 /** Flags the server evaluated for this render, so SSR and hydration pick the same page. */
 export interface ServerRequestFlags {
-  /** `MEETINGS_REDESIGN_FLAG` for the viewer; set only on `/meetings/:id` for a signed-in viewer. */
+  /** `MEETINGS_REDESIGN_FLAG` for the viewer; set only on `/meetings/:id`. */
   meetingsRedesign?: boolean;
 }
 

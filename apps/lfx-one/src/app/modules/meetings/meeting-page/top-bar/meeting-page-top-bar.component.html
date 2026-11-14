@@ -24,8 +24,10 @@
     data-testid="meeting-page-top-bar-meeting">
     @if (row(); as row) {
       <span class="h-[28px] w-px flex-none bg-gray-200 max-sm:hidden" aria-hidden="true"></span>
+      <!-- A passcode guest's copy has no date. -->
       <span
         class="flex size-[40px] flex-none flex-col overflow-hidden rounded-[8px] border border-gray-200 bg-white max-sm:size-[32px] max-sm:rounded-[6px]"
+        [class.hidden]="!row.startTime"
         aria-hidden="true">
         <span
           class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold leading-none tracking-[0.08em] max-sm:h-[10px] max-sm:text-[7px]"
@@ -52,29 +54,38 @@
     }
   </div>
 
-  <div class="flex flex-none items-center gap-[12px] max-sm:gap-[8px]">
-    <lfx-ui-button class="max-sm:hidden" variant="tertiary" icon="fa-light fa-calendar" (click)="openMyMeetings()" data-testid="meeting-page-my-meetings"
-      >My Meetings</lfx-ui-button
-    >
-    <button
-      type="button"
-      class="flex h-[48px] items-center gap-[10px] rounded-[8px] border border-gray-200 bg-white pl-[10px] pr-[14px] text-left text-gray-900 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:bg-gray-100 max-sm:h-[36px] max-sm:gap-[6px] max-sm:pl-[6px] max-sm:pr-[8px]"
-      aria-labelledby="meeting-page-account-name meeting-page-account-hint"
-      data-dd-action-name="Account menu"
-      [cdkMenuTriggerFor]="accountMenu"
-      [cdkMenuPosition]="menuPositions"
-      data-testid="meeting-page-account">
-      <lfx-ui-avatar [size]="28" [name]="userService.user()?.name ?? ''" [src]="userService.effectiveAvatarUrl()" decorative />
-      <!-- Masked in Session Replay: the viewer's name and email. -->
-      <span class="flex min-w-0 max-w-[170px] flex-col max-sm:hidden" data-dd-privacy="mask">
-        <!-- Names the button, from inside the mask; phones hide it but it still labels. -->
-        <span id="meeting-page-account-name" class="truncate text-[14px] font-semibold leading-[18px]">{{ userService.user()?.name }}</span>
-        <span class="truncate text-[12px] leading-[16px] text-gray-500">{{ userService.user()?.email }}</span>
-      </span>
-      <span id="meeting-page-account-hint" class="sr-only">account menu</span>
-      <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
-    </button>
-  </div>
+  @if (!userService.authenticated()) {
+    <div class="flex flex-none items-center gap-[12px]" data-testid="meeting-page-signed-out">
+      <span class="whitespace-nowrap text-[13px] text-gray-500 max-sm:hidden">Sign in with your LFX account to join meetings</span>
+      <!-- The LF sign-in page offers account creation. -->
+      <lfx-ui-button class="max-sm:hidden" variant="secondary" (click)="signIn()" data-testid="meeting-page-create-account">Create LFX account</lfx-ui-button>
+      <lfx-ui-button variant="secondary-accent" (click)="signIn()" data-testid="meeting-page-sign-in">Sign in</lfx-ui-button>
+    </div>
+  } @else {
+    <div class="flex flex-none items-center gap-[12px] max-sm:gap-[8px]">
+      <lfx-ui-button class="max-sm:hidden" variant="tertiary" icon="fa-light fa-calendar" (click)="openMyMeetings()" data-testid="meeting-page-my-meetings"
+        >My Meetings</lfx-ui-button
+      >
+      <button
+        type="button"
+        class="flex h-[48px] items-center gap-[10px] rounded-[8px] border border-gray-200 bg-white pl-[10px] pr-[14px] text-left text-gray-900 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:bg-gray-100 max-sm:h-[36px] max-sm:gap-[6px] max-sm:pl-[6px] max-sm:pr-[8px]"
+        aria-labelledby="meeting-page-account-name meeting-page-account-hint"
+        data-dd-action-name="Account menu"
+        [cdkMenuTriggerFor]="accountMenu"
+        [cdkMenuPosition]="menuPositions"
+        data-testid="meeting-page-account">
+        <lfx-ui-avatar [size]="28" [name]="userService.user()?.name ?? ''" [src]="userService.effectiveAvatarUrl()" decorative />
+        <!-- Masked in Session Replay: the viewer's name and email. -->
+        <span class="flex min-w-0 max-w-[170px] flex-col max-sm:hidden" data-dd-privacy="mask">
+          <!-- Names the button, from inside the mask; phones hide it but it still labels. -->
+          <span id="meeting-page-account-name" class="truncate text-[14px] font-semibold leading-[18px]">{{ userService.user()?.name }}</span>
+          <span class="truncate text-[12px] leading-[16px] text-gray-500">{{ userService.user()?.email }}</span>
+        </span>
+        <span id="meeting-page-account-hint" class="sr-only">account menu</span>
+        <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
+      </button>
+    </div>
+  }
 </header>
 
 <ng-template #accountMenu>

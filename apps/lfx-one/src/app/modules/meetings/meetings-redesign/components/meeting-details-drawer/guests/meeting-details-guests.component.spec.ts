@@ -170,6 +170,7 @@ describe('MeetingDetailsGuestsComponent', () => {
         {
           provide: UserService,
           useValue: {
+            authenticated: signal(true),
             viewerUsername: signal('viewer'),
             user: signal({ email: 'bo@acme.example' }),
             refreshUserMeetings: vi.fn(),
