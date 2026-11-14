@@ -105,5 +105,16 @@ describe('OverviewKpiStripComponent', () => {
     expect(delta.className).toContain('text-red-700');
     expect(item('k1')).toContain('gap-[2px]');
     expect(item('k1')).toContain('pl-[20px]');
+    expect(fixture.nativeElement.querySelector('[data-testid="strip-k1-delta-suffix"]')).toBeNull();
+  });
+
+  it('mutes the context after a change, keeping its leading space', async () => {
+    await render([{ ...kpi('k0'), delta: { label: '39%', direction: 'up', good: true, suffix: ' since Jan' } }]);
+    const suffix: HTMLElement = fixture.nativeElement.querySelector('[data-testid="strip-k0-delta-suffix"]');
+
+    expect(suffix.textContent).toBe(' since Jan');
+    expect(suffix.className).toContain('text-gray-400');
+    expect(suffix.className).toContain('font-normal');
+    expect(suffix.className).toContain('whitespace-pre');
   });
 });

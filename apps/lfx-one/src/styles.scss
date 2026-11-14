@@ -321,6 +321,15 @@
   background: theme('colors.gray.50');
 }
 
+/* The Health Metrics event dialog on a phone, 12px from the screen's edges: PrimeNG sets the desktop inset inline. */
+@media (max-width: 640px) {
+  .p-dialog.hm-event-dialog {
+    width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    margin-top: 12px !important;
+  }
+}
+
 .p-menu .p-menu-item.text-red-500 .p-menu-item-content,
 .p-menu .p-menu-item.text-red-500 .p-menu-item-label,
 .p-menu .p-menu-item.text-red-500 .p-menu-item-icon {

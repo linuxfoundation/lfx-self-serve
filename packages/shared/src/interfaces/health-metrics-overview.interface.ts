@@ -4,7 +4,7 @@
 import type { Signal } from '@angular/core';
 
 import type { HealthMetricsEventsForecast, HealthMetricsEventsForecastCurve } from './health-metrics-events.interface';
-import type { HealthMetricsL2Range } from './health-metrics-l2.interface';
+import type { HealthMetricsChartTipView, HealthMetricsL2Range } from './health-metrics-l2.interface';
 import type { UiBadgeTone, UiBadgeVariant } from './uikit.interface';
 
 /** Every Overview card read is foundation-wide and carries all four periods, so a period change never re-reads. */
@@ -267,6 +267,8 @@ export interface HealthMetricsOverviewDelta {
   label: string;
   direction: 'up' | 'down';
   good: boolean;
+  /** Muted context after the change, such as " since Jan". */
+  suffix?: string;
 }
 
 /** A labelled KPI figure, with an optional change and a note under it. */
@@ -429,6 +431,10 @@ export interface HealthMetricsOverviewEventBarView {
   barClass: string;
   neutral: boolean;
   gauge: HealthMetricsOverviewEventGaugeView;
+  /** The stacked list's value, e.g. "620 (Goal: 1,000)", "620 (No goal set)" or "40 (Received: 185)". */
+  compactValue: string;
+  /** The stacked list's 3px left line, coloured by status only: gray-200 with none. */
+  lineClass: string;
 }
 
 /** The bar's fill carries the status, with no badge; `statusLabel` names it for screen readers, `null` without one. */
@@ -521,22 +527,39 @@ export interface HealthMetricsOverviewCodeView {
   roles: HealthMetricsOverviewCodeRoleView[];
 }
 
-/** One newsletter's point on the rate chart; `x` and the `y`s are percentages of the plot, `y` from the top. */
+/** One newsletter's points and hover column on the rate chart; positions are percentages of the plot, `y` from the top. */
 export interface HealthMetricsOverviewNewsletterPointView {
   key: string;
   xPct: string;
+  /** The hover column: an equal share of the plot centred on the points, cut off at the plot's edges. */
+  columnLeftPct: string;
+  columnWidthPct: string;
+  /** Where the points, hairline and popover sit across the column; 50 except in a column cut off at an edge. */
+  pointOffsetPct: string;
   openYPct: string;
+  /** Empty when the newsletter has no click rate, which draws no click point. */
   clickYPct: string;
-  /** "Name · Mon D, YYYY · open N%, click N%", the point's tooltip and its screen-reader text. */
-  label: string;
-  /** Which way the tooltip extends from the point, so one at either end stays inside the card. */
-  tipAlign: 'start' | 'center' | 'end';
+  /** The latest newsletter's points are larger. */
+  latest: boolean;
+  /** "Name, Mon D, YYYY: open rate N%, click rate N%", the column's screen-reader text. */
+  ariaLabel: string;
+  tip: HealthMetricsChartTipView;
 }
 
-/** A month label under the first newsletter sent in that month. */
+/** A sent-month label centred under a newsletter's points. */
 export interface HealthMetricsOverviewNewsletterTickView {
   label: string;
   xPct: string;
+}
+
+/**
+ * Where an open chart popover sits, as CSS offsets inside its column: beside the point on either side, or shifted to stay
+ * on a screen too narrow for both. One of `left` and `right` is set.
+ */
+export interface HealthMetricsOverviewChartTipPlacement {
+  index: number;
+  left: string | null;
+  right: string | null;
 }
 
 /** The open and click rate lines, in a 600 × 200 viewBox drawn without keeping its aspect ratio. */
@@ -545,7 +568,10 @@ export interface HealthMetricsOverviewNewsletterChartView {
   openAreaPath: string;
   clickPath: string;
   points: HealthMetricsOverviewNewsletterPointView[];
+  /** One label per newsletter. */
   ticks: HealthMetricsOverviewNewsletterTickView[];
+  /** The first newsletter of each month only, for a plot too narrow for every label. */
+  monthTicks: HealthMetricsOverviewNewsletterTickView[];
 }
 
 /** One High / Medium / Low row of the subscriber engagement split. */
@@ -722,6 +748,8 @@ export interface HealthMetricsOverviewSnapshotChangeView {
   tone: UiBadgeTone;
   /** A solid circle arrow; `null` for no change. */
   icon: string | null;
+  /** The change's colour as phone text under today's value: `text-emerald-600`, `text-red-600` or `text-gray-500`. */
+  inkClass: string;
 }
 
 /** One Snapshot row: the level at the window's start and at its end, and the change between. */
@@ -742,8 +770,12 @@ export interface HealthMetricsOverviewSnapshotSectionView {
   title: string;
   /** e.g. `Oct 25, 2026`. */
   startHeader: string;
+  /** The phone header, e.g. `Oct 25, 26`. */
+  startHeaderShort: string;
   /** e.g. `Nov 4, 2026 (today)`. */
   endHeader: string;
+  /** e.g. `Nov 4, 26 (today)`. */
+  endHeaderShort: string;
   rows: HealthMetricsOverviewSnapshotRowView[];
   /** Shown below the rows when no package has sold. */
   emptyCopy: string | null;

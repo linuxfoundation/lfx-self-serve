@@ -5,7 +5,9 @@ import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_OVERVIEW_BLANK_COPY,
   HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE,
+  HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX,
   HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES,
+  HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES,
   HEALTH_METRICS_OVERVIEW_EVENT_PACE,
   HEALTH_METRICS_OVERVIEW_EVENT_STATUS,
   HEALTH_METRICS_OVERVIEW_EVENTS_INFO,
@@ -15,6 +17,7 @@ import {
   HEALTH_METRICS_OVERVIEW_KPI_MIN_HALF_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX,
   HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT,
+  HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN,
   HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE,
   HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS,
   HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY,
@@ -61,6 +64,7 @@ import type {
   HealthMetricsOverviewEventDialogBadgeView,
   HealthMetricsOverviewEventDialogBadgesView,
   HealthMetricsOverviewEventGaugeView,
+  HealthMetricsOverviewEventTalksView,
   HealthMetricsOverviewEventStatus,
   HealthMetricsOverviewEventRegistrationsView,
   HealthMetricsOverviewEventRowView,
@@ -419,9 +423,8 @@ export function buildHealthMetricsOverviewNewsletterView(
     kpis: [
       {
         ...kpi('subscribers', 'Subscribers', formatCount(period?.subscribers)),
-        delta: buildPctDelta(
-          period?.subscribersGrowth ?? null,
-          true,
+        delta: withDeltaSuffix(
+          buildPctDelta(period?.subscribersGrowth ?? null, true),
           formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, getYearForRange(range))
         ),
       },
@@ -506,6 +509,13 @@ export function sortHealthMetricsOverviewBoardRows(
 /** "Missing a meeting?" goes to PCC's add-past-meeting page for the foundation, by its Salesforce id. */
 export function buildHealthMetricsOverviewAddPastMeetingUrl(pccUrl: string, foundationSfid: string | null): string | null {
   return foundationSfid ? `${pccUrl}/project/${encodeURIComponent(foundationSfid)}/collaboration/meetings/manage-meeting?isPast=true` : null;
+}
+
+/** The event dialog body's mask: it fades out over 32px at each edge with more to scroll, and not at all otherwise. */
+export function buildHealthMetricsOverviewScrollFadeMask(fadeTop: boolean, fadeBottom: boolean): string {
+  const top = fadeTop ? HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX : 0;
+  const bottom = fadeBottom ? HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX : 0;
+  return `linear-gradient(to bottom, transparent 0, black ${top}px, black calc(100% - ${bottom}px), transparent 100%)`;
 }
 
 /**
@@ -596,12 +606,15 @@ export function buildHealthMetricsOverviewSnapshotView(
   const days = HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS.find((option) => option.value === period)?.days ?? 7;
   const today = snapshot.today;
   const endHeader = today ? `${formatIsoDateLabel(shiftIsoDate(today, -1))} (today)` : '';
-  const rollingStartHeader = today ? formatIsoDateLabel(shiftIsoDate(today, -days)) : '';
+  const endHeaderShort = today ? `${formatIsoShortYearDate(shiftIsoDate(today, -1))} (today)` : '';
+  const rollingStart = today ? shiftIsoDate(today, -days) : '';
+  const rollingStartHeader = rollingStart ? formatIsoDateLabel(rollingStart) : '';
 
   const { weeks } = snapshot;
   const firstIndex = weeks.findIndex((week) => week.inPeriod[period]);
   const first = firstIndex >= 0 ? weeks[firstIndex] : null;
   const before = firstIndex > 0 ? weeks[firstIndex - 1] : null;
+  const registrationStart = first ? shiftIsoDate(first.weekStartDate, -1) : rollingStart;
   const latest = weeks.at(-1) ?? null;
   const weekly = (level: (week: HealthMetricsEventsSnapshotWeek) => number, delta: (week: HealthMetricsEventsSnapshotWeek) => number) => {
     const end = latest ? level(latest) : 0;
@@ -624,8 +637,10 @@ export function buildHealthMetricsOverviewSnapshotView(
     {
       key: 'registration',
       title: 'Registration',
-      startHeader: first ? formatIsoDateLabel(shiftIsoDate(first.weekStartDate, -1)) : rollingStartHeader,
+      startHeader: registrationStart ? formatIsoDateLabel(registrationStart) : '',
+      startHeaderShort: registrationStart ? formatIsoShortYearDate(registrationStart) : '',
       endHeader,
+      endHeaderShort,
       rows: [
         snapshotRow('registrations', 'Registrations', registrations, formatCount),
         snapshotRow(
@@ -642,7 +657,9 @@ export function buildHealthMetricsOverviewSnapshotView(
       key: 'sponsorship',
       title: 'Sponsorship',
       startHeader: rollingStartHeader,
+      startHeaderShort: rollingStart ? formatIsoShortYearDate(rollingStart) : '',
       endHeader,
+      endHeaderShort,
       rows: [
         ...packages.map((item) => snapshotRow(`package-${item.key}`, item.key, item, formatCount)),
         ...(packages.length ? [{ ...snapshotRow('totals', 'Totals', totals, formatCount), totals: true }] : []),
@@ -923,7 +940,7 @@ function formatIsoMonth(iso: string): string {
 
 /**
  * One point per newsletter sent in the period's year, oldest first and evenly spaced, as the design spaces them. The
- * read only carries newsletters with engagement data. The scale tops out at the highest rate of either line, rounded up to the next 10%.
+ * read only carries newsletters with engagement data. The scale is 0–60%, growing in 10-point steps above that.
  */
 function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, year: number): HealthMetricsOverviewNewsletterChartView | null {
   const sends = newsletters.newsletters
@@ -933,7 +950,7 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
 
   // Rounded to a tenth of a point first, so a peak of exactly 70% tops out at 70% rather than 80%.
   const peak = Math.round(Math.max(...sends.flatMap((send) => [send.openRate as number, send.clickRate ?? 0])) * 1000) / 1000;
-  const top = Math.min(1, Math.max(0.1, Math.ceil(peak * 10) / 10));
+  const top = Math.min(1, Math.max(HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN, Math.ceil(peak * 10) / 10));
   const x = (index: number): number => (sends.length === 1 ? 300 : (index / (sends.length - 1)) * 600);
   const y = (rate: number): number => 200 - (Math.min(rate, top) / top) * 200;
   const points = sends.map((send, index) => {
@@ -945,39 +962,61 @@ function buildNewsletterChart(newsletters: HealthMetricsOverviewNewsletters, yea
   const openCoords = points.map((point): [number, number] => [point.x, point.openY]);
   const first = points[0];
   const last = points[points.length - 1];
-  const seenMonths = new Set<string>();
+  const xPct = (px: number): string => ((px / 600) * 100).toFixed(2);
+  const ticks = points.map((point) => ({
+    label: point.send.sentDate ? formatIsoMonth(point.send.sentDate) : '',
+    xPct: xPct(point.x),
+    month: point.send.sentDate?.slice(0, 7) ?? '',
+  }));
 
   return {
     openPath: path(openCoords),
     openAreaPath: first && last ? `${path(openCoords)} L${last.x.toFixed(1)} 200 L${first.x.toFixed(1)} 200 Z` : '',
     clickPath: path(points.filter((point) => point.clickY !== null).map((point): [number, number] => [point.x, point.clickY as number])),
-    points: points.map((point) => ({
-      key: point.send.key,
-      xPct: ((point.x / 600) * 100).toFixed(2),
-      openYPct: ((point.openY / 200) * 100).toFixed(2),
-      clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
-      tipAlign: tipAlign(point.x / 600),
-      label: [
-        point.send.name,
-        point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : '',
-        `open ${formatShare(point.open, false)}, click ${formatShare(point.click)}`,
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    })),
-    ticks: points.flatMap((point) => {
-      const month = point.send.sentDate?.slice(0, 7) ?? '';
-      if (!month || seenMonths.has(month)) return [];
-      seenMonths.add(month);
-      return [{ label: formatIsoMonth(`${month}-01`), xPct: ((point.x / 600) * 100).toFixed(2) }];
+    points: points.map((point, index) => {
+      const parts = [point.send.name, point.send.sentDate ? formatIsoDateLabel(point.send.sentDate) : ''].filter(Boolean);
+      const open = formatShare(point.open, false);
+      // A click rate under 1% reads "<1%" rather than rounding to a misleading 0%.
+      const click = formatShare(point.click);
+      return {
+        key: point.send.key,
+        xPct: xPct(point.x),
+        ...newsletterColumn((point.x / 600) * 100, points.length),
+        openYPct: ((point.openY / 200) * 100).toFixed(2),
+        clickYPct: point.clickY === null ? '' : ((point.clickY / 200) * 100).toFixed(2),
+        latest: index === points.length - 1,
+        ariaLabel: `${parts.join(', ')}: open rate ${open}, click rate ${click}`,
+        tip: {
+          title: parts.join(' · '),
+          rows: [
+            { label: 'Open rate', value: open, color: HEALTH_METRICS_OVERVIEW_STROKES.progress, separated: false, inline: true },
+            { label: 'Click rate', value: click, color: HEALTH_METRICS_OVERVIEW_STROKES.thisYear, separated: false, inline: true },
+          ],
+        },
+      };
     }),
+    ticks: ticks.map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
+    monthTicks: ticks.filter((tick, index) => tick.month && tick.month !== ticks[index - 1]?.month).map(({ label, xPct: tickX }) => ({ label, xPct: tickX })),
   };
 }
 
-/** A point near either edge opens its tooltip inward. */
-function tipAlign(fraction: number): HealthMetricsOverviewNewsletterPointView['tipAlign'] {
-  if (fraction < 0.2) return 'start';
-  return fraction > 0.8 ? 'end' : 'center';
+/**
+ * A newsletter's hover column: 1/N of the plot wide and centred on its points, as designed, but cut off at the plot's
+ * edges so an end column never covers the panel beside it. The points sit `pointOffsetPct` across it.
+ */
+function newsletterColumn(
+  centrePct: number,
+  count: number
+): Pick<HealthMetricsOverviewNewsletterPointView, 'columnLeftPct' | 'columnWidthPct' | 'pointOffsetPct'> {
+  const half = 50 / count;
+  const left = Math.max(0, centrePct - half);
+  const width = Math.min(100, centrePct + half) - left;
+  return { columnLeftPct: left.toFixed(2), columnWidthPct: width.toFixed(2), pointOffsetPct: (((centrePct - left) / width) * 100).toFixed(2) };
+}
+
+/** A change with muted context after it; no change shows neither. */
+function withDeltaSuffix(delta: HealthMetricsOverviewDelta | null, suffix: string): HealthMetricsOverviewDelta | null {
+  return delta && suffix ? { ...delta, suffix } : delta;
 }
 
 /** High / Medium / Low with the view's share of each; a level too small to see keeps a sliver of the bar. */
@@ -1159,28 +1198,49 @@ function buildSponsorshipView(revenue: number | null, goal: number | null, model
 }
 
 function buildEventRow(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventRowView {
-  const accepted = event.acceptedTalks ?? 0;
-  const proposals = event.totalProposals ?? 0;
-
   return {
     eventId: event.eventId,
     name: event.eventName,
     meta: buildHealthMetricsOverviewEventMeta(event),
     isPast,
     registrations: buildRegistrationsBar(event, isPast),
-    talks: {
-      hasProposals: proposals > 0,
-      countLabel: formatCount(accepted),
-      sideLabel: 'Received:',
-      sideValue: formatCount(proposals),
-      widthPct: proposals > 0 ? clampPct((accepted / proposals) * 100) : 0,
-      // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
-      barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
-      neutral: false,
-      gauge: isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE,
-      note: event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A',
-    },
+    talks: buildTalksBar(event, isPast),
   };
+}
+
+/** Accepted speaking proposals out of those received; with none received, the stage of the call for proposals. */
+function buildTalksBar(event: HealthMetricsOverviewEvent, isPast: boolean): HealthMetricsOverviewEventTalksView {
+  const accepted = event.acceptedTalks ?? 0;
+  const proposals = event.totalProposals ?? 0;
+  const hasProposals = proposals > 0;
+  const note = event.cfpStatus?.toLowerCase() === 'in review' ? 'CFP In Review' : 'N/A';
+  const gauge: HealthMetricsOverviewEventGaugeView = isPast ? { ...ACCENT_GAUGE, tone: 'level', level: 'high' } : ACCENT_GAUGE;
+
+  return {
+    hasProposals,
+    countLabel: formatCount(accepted),
+    sideLabel: 'Received:',
+    sideValue: formatCount(proposals),
+    widthPct: hasProposals ? clampPct((accepted / proposals) * 100) : 0,
+    // No rule colors upcoming proposals yet, so they stay blue; past ones are green, as the design draws them.
+    barClass: isPast ? HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high : HEALTH_METRICS_OVERVIEW_FILL_CLASSES.blue,
+    neutral: false,
+    gauge,
+    note,
+    compactValue: hasProposals ? `${formatCount(accepted)} (Received: ${formatCount(proposals)})` : note,
+    // A row with no proposals keeps its gray line.
+    lineClass: hasProposals ? eventLineClass(gauge) : HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
+  };
+}
+
+/** The stacked list's line follows the status level alone, never the progress. */
+function eventLineClass(gauge: HealthMetricsOverviewEventGaugeView): string {
+  return gauge.tone === 'level' && gauge.level ? HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES[gauge.level] : HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none;
+}
+
+/** "620 (Goal: 1,000)" or "620 (No goal set)": a registrations figure with its side text in brackets. */
+function compactRegistrations(countLabel: string, sideLabel: string, sideValue: string): string {
+  return `${countLabel} (${[sideLabel, sideValue].filter(Boolean).join(' ')})`;
 }
 
 /**
@@ -1200,15 +1260,31 @@ function buildRegistrationsBar(event: HealthMetricsOverviewEvent, isPast: boolea
       neutral: true,
       statusLabel: null,
       gauge: { ...ACCENT_GAUGE, empty: true },
+      compactValue: compactRegistrations(countLabel, 'No goal set', ''),
+      lineClass: HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
     };
   }
-  const side = { countLabel, sideLabel: 'Goal:', sideValue: formatCount(goal), neutral: false };
+  const side = {
+    countLabel,
+    sideLabel: 'Goal:',
+    sideValue: formatCount(goal),
+    neutral: false,
+    compactValue: compactRegistrations(countLabel, 'Goal:', formatCount(goal)),
+  };
   if (event.registrations === null) {
-    return { ...side, widthPct: 0, barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted, statusLabel: null, gauge: { ...ACCENT_GAUGE, unmeasured: true } };
+    return {
+      ...side,
+      widthPct: 0,
+      barClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.muted,
+      statusLabel: null,
+      gauge: { ...ACCENT_GAUGE, unmeasured: true },
+      lineClass: HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES.none,
+    };
   }
 
   const share = event.registrations / goal;
-  return { ...side, widthPct: clampPct(share * 100), ...statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore)) };
+  const status = statusFields(isPast ? goalShareStatus(share) : paceStatus(event.compScore));
+  return { ...side, widthPct: clampPct(share * 100), ...status, lineClass: eventLineClass(status.gauge) };
 }
 
 function statusFields(
@@ -1365,12 +1441,20 @@ function snapshotRow(
 /** "+139 (74%)" against the start; no share when the start is zero. A change under one unit reads as none. */
 function snapshotChange(start: number, end: number, format: (value: number) => string): HealthMetricsOverviewSnapshotChangeView {
   const change = Math.round(end - start);
-  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null };
+  if (change === 0) return { label: 'No change', tone: 'neutral', icon: null, inkClass: 'text-gray-500' };
 
   const share = start > 0 ? ` (${Math.abs(Math.round((change / start) * 100))}%)` : '';
   return change > 0
-    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up' }
-    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' };
+    ? { label: `+${format(change)}${share}`, tone: 'success', icon: 'fa-solid fa-circle-arrow-up', inkClass: 'text-emerald-600' }
+    : { label: `−${format(-change)}${share}`, tone: 'danger', icon: 'fa-solid fa-circle-arrow-down', inkClass: 'text-red-600' };
+}
+
+/** "Nov 6, 26": the Snapshot's phone headers shorten the year. */
+function formatIsoShortYearDate(iso: string): string {
+  const parsed = parseIsoDateAsUtcMidnight(iso);
+  if (!parsed) return iso;
+  const monthDay = parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${monthDay}, ${String(parsed.getUTCFullYear()).slice(-2)}`;
 }
 
 /** Whole dollars with separators, as the Snapshot shows money: `$4,575,877`. */

@@ -179,6 +179,33 @@ describe('OverviewEventsCardComponent', () => {
     expect(text('overview-events-list-title')).toBe('Upcoming events');
   });
 
+  it('stacks each row by default, with a status line, a label and a dark value per cell, and the table from 561px', async () => {
+    await render();
+
+    const header = query('overview-events-table')?.querySelector('[role="row"]');
+    expect(header?.className).toContain('hidden');
+    expect(header?.className).toContain('@[561px]/evtbl:grid');
+    const registrations = query('overview-events-row-u0-registrations');
+    expect(registrations?.className).toContain('border-l-[3px]');
+    // The line follows the status alone: at risk is amber, and upcoming proposals have no status, so stay grey.
+    expect(registrations?.className).toContain('border-l-amber-400');
+    expect(query('overview-events-row-u0-talks')?.className).toContain('border-l-gray-200');
+    expect(registrations?.firstElementChild?.textContent?.trim()).toBe('Registrations');
+    expect(query('overview-events-row-u0-registrations-compact')?.textContent?.trim()).toBe('328 (Goal: 1,000)');
+    expect(query('overview-events-row-u0-registrations-compact')?.className).toContain('text-gray-900');
+    expect(query('overview-events-row-u0-talks-compact')?.textContent?.trim()).toBe('0 (Received: 185)');
+    expect(query('overview-events-row-u0-registrations-ring')?.className).toContain('hidden');
+    expect(query('overview-events-row-u0-registrations-ring')?.className).toContain('@[561px]/evtbl:flex');
+  });
+
+  it('moves the legend above the list on a phone', async () => {
+    await render();
+
+    expect(query('overview-events-legend-top')?.className).toContain('max-[640px]:flex');
+    expect(text('overview-events-legend-top')).toBe('On trackAt riskAction required');
+    expect(query('overview-events-legend')?.className).toContain('max-[640px]:hidden');
+  });
+
   it('draws an empty ring and an unfilled outlined track, in the quiet colour, for an event without a goal', async () => {
     EVENTS.upcoming[0] = event('u0', { registrationsGoal: null });
     try {

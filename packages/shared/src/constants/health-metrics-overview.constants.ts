@@ -392,7 +392,20 @@ export const HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP =
 /** The narrowest span, in days, the trend's navigator lets the reader zoom to. */
 export const HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS = 7;
 
-/** The progress blue at 10%: the fill under the newsletter charts' open rate. */
+/** The newsletter rate chart's fixed top, 60%; a higher rate grows it in 10-point steps. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN = 0.6;
+
+/** A newsletter label's slot below this width collides with its neighbours, so the chart labels each month once. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX = 28;
+
+/** The room the chart popover needs beside its column before it opens on the other side: its 280px plus a 12px gap. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX = 292;
+
+/** The chart popover's widest, and the margin it keeps from the screen's edges when neither side has room. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX = 280;
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX = 8;
+
+/** The progress blue at 10%: the fill under the Engagement newsletter performance chart's open rate. */
 export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
 
 /** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
@@ -418,6 +431,14 @@ export const HEALTH_METRICS_OVERVIEW_EVENT_LEGEND = Object.entries(HEALTH_METRIC
   label: status.label,
   dotClass: status.fillClass,
 }));
+
+/** The stacked events list's left line by status level, and gray-200 for a cell with no status. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES = {
+  high: 'border-l-emerald-500',
+  mid: 'border-l-amber-400',
+  low: 'border-l-red-400',
+  none: 'border-l-gray-200',
+} as const;
 
 /** The upcoming share of the total events bar: the purple hatched over its lightest tint. */
 export const HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH = `repeating-linear-gradient(135deg, ${HEALTH_METRICS_OVERVIEW_PURPLE} 0 2px, ${lfxColors.violet[100]} 2px 5px)`;
@@ -460,6 +481,12 @@ export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_TABS = [
   { value: 'trend', label: 'Registration trend', icon: 'fa-light fa-chart-line' },
   { value: 'snapshot', label: 'Snapshot', icon: 'fa-light fa-table-list' },
 ] as const;
+
+/** The event dialog's phone layout, which the design starts at 640px, that width included. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_PHONE_QUERY = '(max-width: 640px)';
+
+/** How far the event dialog's body fades out at an edge with more to scroll. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX = 32;
 
 /** The Snapshot tab's row tips and empty copy, from the design. */
 export const HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY = {

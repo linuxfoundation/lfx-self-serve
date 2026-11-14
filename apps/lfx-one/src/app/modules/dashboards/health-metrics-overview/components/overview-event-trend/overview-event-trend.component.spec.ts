@@ -145,7 +145,7 @@ describe('OverviewEventTrendComponent', () => {
     expect(query('overview-trend-reset')).toBeNull();
   });
 
-  it('offers a format toggle only when the event has both, opening on the larger', async () => {
+  it('offers no format filter, charting the format with the most registrations when the event has both', async () => {
     await render({
       eventId: 'e1',
       formats: [
@@ -154,8 +154,25 @@ describe('OverviewEventTrendComponent', () => {
       ],
     });
 
-    expect(query('overview-trend-format')).not.toBeNull();
-    expect(fixture.componentInstance['format']()).toBe('In Person');
+    expect(query('overview-trend-format')).toBeNull();
+    expect(fixture.componentInstance['series']()?.format).toBe('In Person');
+  });
+
+  it('drops the rotated axis label, and lays the metrics out for a phone with Current spanning both rows', async () => {
+    await render(oneFormat);
+
+    expect(fixture.nativeElement.textContent).not.toContain('Registration count');
+    expect(query('overview-trend-grid')?.className).toContain('grid-cols-[44px_1fr]');
+    expect(query('overview-trend-grid')?.className).toContain('max-[640px]:grid-cols-[0_1fr]');
+    // A short phone scrolls rather than squeezing the chart under its tracks' minimum into the navigator.
+    expect(query('overview-trend-grid')?.className).toContain('max-[640px]:min-h-min');
+    // The phone legend wraps only when Reset leaves it no room, so the two never overlap.
+    expect(query('overview-trend-legend')?.className).not.toContain('flex-nowrap');
+    expect(query('overview-trend-kpi-current')?.className).toContain('max-[640px]:row-span-2');
+    expect(query('overview-trend-kpi-predicted')?.className).toContain('max-[640px]:row-start-1');
+    expect(query('overview-trend-kpi-last-year')?.className).toContain('max-[640px]:row-start-2');
+    expect(query('overview-trend-kpi-current-value')?.className).toContain('max-[640px]:text-[40px]');
+    expect(query('overview-trend-kpi-predicted-range')?.className).toContain('max-[640px]:hidden');
   });
 
   it("shows a past event's history with its final count and no forecast", async () => {

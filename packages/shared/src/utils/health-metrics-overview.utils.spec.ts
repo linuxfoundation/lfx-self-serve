@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
+import { lfxColors } from '../constants/colors.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
@@ -22,6 +23,7 @@ import {
   buildHealthMetricsOverviewChurnView,
   buildHealthMetricsOverviewCodeView,
   buildHealthMetricsOverviewNewsletterView,
+  buildHealthMetricsOverviewScrollFadeMask,
   buildHealthMetricsOverviewEmptyCopy,
   buildHealthMetricsOverviewEventDialogBadges,
   buildHealthMetricsOverviewEventMeta,
@@ -515,6 +517,8 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: false,
       statusLabel: 'At risk',
       gauge: { tone: 'level', level: 'mid', empty: false, unmeasured: false },
+      compactValue: '328 (Goal: 1,000)',
+      lineClass: 'border-l-amber-400',
     });
     expect(noGoal.registrations).toEqual({
       countLabel: '328',
@@ -525,8 +529,15 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: true,
       statusLabel: null,
       gauge: { tone: 'accent', level: null, empty: true, unmeasured: false },
+      compactValue: '328 (No goal set)',
+      lineClass: 'border-l-gray-200',
     });
-    expect(onTrack.registrations).toMatchObject({ barClass: 'bg-emerald-500', statusLabel: 'On track', gauge: { level: 'high' } });
+    expect(onTrack.registrations).toMatchObject({
+      barClass: 'bg-emerald-500',
+      statusLabel: 'On track',
+      gauge: { level: 'high' },
+      lineClass: 'border-l-emerald-500',
+    });
   });
 
   it('keeps an upcoming event with a goal but no pace blue', () => {
@@ -535,6 +546,8 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, unscored, 'YTD').rows[0].registrations).toMatchObject({
       barClass: 'bg-blue-500',
       statusLabel: null,
+      // No status, so the stacked list's line stays grey whatever the progress.
+      lineClass: 'border-l-gray-200',
     });
   });
 
@@ -551,8 +564,11 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: false,
       gauge: { tone: 'accent', level: null, empty: false, unmeasured: false },
       note: 'N/A',
+      compactValue: '0 (Received: 185)',
+      // No rule rates upcoming proposals, so their line stays grey.
+      lineClass: 'border-l-gray-200',
     });
-    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review' });
+    expect(inReview.talks).toMatchObject({ hasProposals: false, note: 'CFP In Review', compactValue: 'CFP In Review', lineClass: 'border-l-gray-200' });
     expect(none.talks.note).toBe('N/A');
   });
 
@@ -567,7 +583,13 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       ['p2', true, 'Goal:', '1,000', 'bg-amber-400'],
       ['p4', true, 'No goal set', '', ''],
     ]);
-    expect(view.rows[0].talks).toMatchObject({ countLabel: '64', sideLabel: 'Received:', sideValue: '310', barClass: 'bg-emerald-500' });
+    expect(view.rows[0].talks).toMatchObject({
+      countLabel: '64',
+      sideLabel: 'Received:',
+      sideValue: '310',
+      barClass: 'bg-emerald-500',
+      lineClass: 'border-l-emerald-500',
+    });
   });
 
   it('turns a past event under 80% of its goal red', () => {
@@ -576,6 +598,7 @@ describe('buildHealthMetricsOverviewEventsView', () => {
     expect(buildHealthMetricsOverviewEventsView(glance, sponsorship, missed, 'COMPLETED_YEAR').rows[0].registrations).toMatchObject({
       barClass: 'bg-red-400',
       statusLabel: 'Action required',
+      lineClass: 'border-l-red-400',
     });
   });
 
@@ -591,6 +614,8 @@ describe('buildHealthMetricsOverviewEventsView', () => {
       neutral: false,
       statusLabel: null,
       gauge: { tone: 'accent', level: null, empty: false, unmeasured: true },
+      compactValue: '— (Goal: 1,000)',
+      lineClass: 'border-l-gray-200',
     });
   });
 
@@ -810,7 +835,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       ['Avg. open rate', '43%'],
       ['Avg. click-to-open rate', '9%'],
     ]);
-    expect(view.kpis[0]?.delta).toEqual({ label: '39% since Jan', direction: 'up', good: true });
+    expect(view.kpis[0]?.delta).toEqual({ label: '39%', direction: 'up', good: true, suffix: ' since Jan' });
     expect(view.engagementBasis).toBe('Based on opens and clicks across the last 10 newsletters');
     expect(view.mostEngaging).toEqual({ name: 'Monthly: Protocol ships', rateLabel: '12% click-to-open' });
   });
@@ -820,15 +845,37 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
 
     expect(chart?.points.map((point) => point.key)).toEqual(['n2', 'n3', 'n4']);
     expect(chart?.points.map((point) => point.xPct)).toEqual(['0.00', '50.00', '100.00']);
-    // Tooltips at either end open inward.
-    expect(chart?.points.map((point) => point.tipAlign)).toEqual(['start', 'center', 'end']);
-    // The scale tops out at 50%, the highest open rate rounded up to the next 10%.
-    expect(chart?.points.map((point) => point.openYPct)).toEqual(['40.00', '20.00', '0.00']);
-    expect(chart?.points[0]?.clickYPct).toBe('94.00');
+    // Each newsletter owns an equal share of the plot to hover, and the latest one's points are larger.
+    // The end columns stop at the plot's edges, so they never cover the panel beside the chart; the points stay put.
+    expect(chart?.points.map((point) => [point.columnLeftPct, point.columnWidthPct, point.pointOffsetPct])).toEqual([
+      ['0.00', '16.67', '0.00'],
+      ['33.33', '33.33', '50.00'],
+      ['83.33', '16.67', '100.00'],
+    ]);
+    expect(chart?.points.map((point) => point.latest)).toEqual([false, false, true]);
+    // The scale stays 0–60% while every rate is lower.
+    expect(chart?.points.map((point) => point.openYPct)).toEqual(['50.00', '33.33', '16.67']);
+    expect(chart?.points[0]?.clickYPct).toBe('95.00');
     expect(chart?.points[1]?.clickYPct).toBe('');
-    expect(chart?.points[2]?.label).toBe(`Newsletter n4 · Sep 21, ${year} · open 50%, click 6%`);
-    expect(chart?.points[1]?.label).toBe(`Newsletter n3 · Aug 24, ${year} · open 40%, click —`);
+    expect(chart?.points[2]?.tip).toEqual({
+      title: `Newsletter n4 · Sep 21, ${year}`,
+      rows: [
+        { label: 'Open rate', value: '50%', color: lfxColors.blue[500], separated: false, inline: true },
+        { label: 'Click rate', value: '6%', color: '#AD46FF', separated: false, inline: true },
+      ],
+    });
+    expect(chart?.points[1]?.tip.rows[1]?.value).toBe('—');
+    // A click rate under 1% is not rounded down to 0%.
+    expect(chart?.points[0]?.tip.rows[1]?.value).toBe('3%');
+    const faint = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.3, 0.004)] };
+    expect(buildHealthMetricsOverviewNewsletterView(faint, 'YTD').chart?.points[0]?.tip.rows[1]?.value).toBe('<1%');
+    expect(chart?.points[1]?.ariaLabel).toBe(`Newsletter n3, Aug 24, ${year}: open rate 40%, click rate —`);
     expect(chart?.ticks).toEqual([
+      { label: 'Aug', xPct: '0.00' },
+      { label: 'Aug', xPct: '50.00' },
+      { label: 'Sep', xPct: '100.00' },
+    ]);
+    expect(chart?.monthTicks).toEqual([
       { label: 'Aug', xPct: '0.00' },
       { label: 'Sep', xPct: '100.00' },
     ]);
@@ -837,19 +884,24 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     expect(chart?.openAreaPath.endsWith('L600.0 200 L0.0 200 Z')).toBe(true);
   });
 
-  it('scales to a click rate above every open rate, so neither line is clipped', () => {
-    const clicky = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.2, 0.4)] };
+  it('grows the scale past 60% for a click rate above it too, so neither line is clipped', () => {
+    const clicky = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.4, 0.8)] };
     expect(buildHealthMetricsOverviewNewsletterView(clicky, 'YTD').chart?.points[0]).toMatchObject({ openYPct: '50.00', clickYPct: '0.00' });
   });
 
-  it('tops the scale out at an exact tenth rather than the next one', () => {
+  it('grows the scale above 60% to an exact tenth rather than the next one', () => {
     const exact = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.7, 0.07), send('n2', `${year}-04-02`, 0.35, 0.03)] };
     expect(buildHealthMetricsOverviewNewsletterView(exact, 'YTD').chart?.points.map((point) => point.openYPct)).toEqual(['0.00', '50.00']);
   });
 
   it('centres a lone newsletter and has no chart when none in the period has an open rate', () => {
     const lone = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, 0.25, 0.05)] };
-    expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]?.xPct).toBe('50.00');
+    expect(buildHealthMetricsOverviewNewsletterView(lone, 'YTD').chart?.points[0]).toMatchObject({
+      xPct: '50.00',
+      columnLeftPct: '0.00',
+      columnWidthPct: '100.00',
+      pointOffsetPct: '50.00',
+    });
 
     const unrated = { ...newsletters, newsletters: [send('n1', `${year}-03-02`, null, null)] };
     expect(buildHealthMetricsOverviewNewsletterView(unrated, 'YTD').chart).toBeNull();
@@ -887,7 +939,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
       ...newsletters,
       periods: everyPeriod<HealthMetricsOverviewNewsletterPeriod | null>({ ...period, growthBaselineDate: `${year - 1}-03-09` }),
     };
-    expect(buildHealthMetricsOverviewNewsletterView(earlier, 'YTD').kpis[0]?.delta?.label).toBe(`39% since Mar ${year - 1}`);
+    expect(buildHealthMetricsOverviewNewsletterView(earlier, 'YTD').kpis[0]?.delta?.suffix).toBe(` since Mar ${year - 1}`);
   });
 
   it('drops the growth month and the basis when the view gives neither', () => {
@@ -897,7 +949,7 @@ describe('buildHealthMetricsOverviewNewsletterView', () => {
     };
     const view = buildHealthMetricsOverviewNewsletterView(bare, 'YTD');
 
-    expect(view.kpis[0]?.delta?.label).toBe('39%');
+    expect(view.kpis[0]?.delta).toEqual({ label: '39%', direction: 'up', good: true });
     expect(view.engagementBasis).toBe('');
   });
 });
@@ -1339,6 +1391,8 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
     const [registration] = buildHealthMetricsOverviewSnapshotView(snapshot, '7d');
 
     expect([registration.startHeader, registration.endHeader]).toEqual(['Oct 25, 2026', 'Nov 4, 2026 (today)']);
+    // Phones shorten the year.
+    expect([registration.startHeaderShort, registration.endHeaderShort]).toEqual(['Oct 25, 26', 'Nov 4, 26 (today)']);
     expect(rowsOf(registration)).toEqual([
       ['Registrations', '5,759', '6,969', '+1,210 (21%)'],
       ['Registration revenue', '$575,900', '$696,900', '+$121,000 (21%)'],
@@ -1357,6 +1411,7 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
     const [, sponsorship] = buildHealthMetricsOverviewSnapshotView(snapshot, '30d');
 
     expect([sponsorship.startHeader, sponsorship.endHeader, sponsorship.emptyCopy]).toEqual(['Oct 6, 2026', 'Nov 4, 2026 (today)', null]);
+    expect(sponsorship.startHeaderShort).toBe('Oct 6, 26');
     expect(rowsOf(sponsorship)).toEqual([
       ['Diamond', '10', '10', 'No change'],
       ['Gold', '35', '37', '+2 (6%)'],
@@ -1364,8 +1419,8 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
       ['Sponsorship revenue', '$4,920,534', '$5,080,534', '+$160,000 (3%)'],
     ]);
     expect(sponsorship.rows.map((row) => row.totals)).toEqual([false, false, true, false]);
-    expect(sponsorship.rows[0].change).toEqual({ label: 'No change', tone: 'neutral', icon: null });
-    expect(sponsorship.rows[1].change).toMatchObject({ tone: 'success', icon: 'fa-solid fa-circle-arrow-up' });
+    expect(sponsorship.rows[0].change).toEqual({ label: 'No change', tone: 'neutral', icon: null, inkClass: 'text-gray-500' });
+    expect(sponsorship.rows[1].change).toMatchObject({ tone: 'success', icon: 'fa-solid fa-circle-arrow-up', inkClass: 'text-emerald-600' });
   });
 
   it('says no package has sold, keeps the revenue row, and drops the share of a change from zero', () => {
@@ -1390,6 +1445,17 @@ describe('buildHealthMetricsOverviewSnapshotView', () => {
       '7d'
     );
 
-    expect(registration.rows[0].change).toEqual({ label: '−20 (17%)', tone: 'danger', icon: 'fa-solid fa-circle-arrow-down' });
+    expect(registration.rows[0].change).toEqual({ label: '−20 (17%)', tone: 'danger', icon: 'fa-solid fa-circle-arrow-down', inkClass: 'text-red-600' });
+  });
+});
+
+describe('buildHealthMetricsOverviewScrollFadeMask', () => {
+  it('fades 32px at each edge with more to scroll, and leaves a flush edge sharp', () => {
+    expect(buildHealthMetricsOverviewScrollFadeMask(true, true)).toBe(
+      'linear-gradient(to bottom, transparent 0, black 32px, black calc(100% - 32px), transparent 100%)'
+    );
+    expect(buildHealthMetricsOverviewScrollFadeMask(false, true)).toBe(
+      'linear-gradient(to bottom, transparent 0, black 0px, black calc(100% - 32px), transparent 100%)'
+    );
   });
 });
