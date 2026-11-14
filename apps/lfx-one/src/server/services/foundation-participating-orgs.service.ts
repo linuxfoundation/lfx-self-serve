@@ -133,7 +133,8 @@ export class FoundationParticipatingOrgsService {
       return { items: rows.slice(0, maxRows).map((row) => ({ row, lines: [] })), truncated: rows.length > maxRows };
     }
 
-    if (!foundation) return { items: [], truncated: false };
+    // No company passes the filters (or no foundation): nothing to read, so no warehouse query.
+    if (!foundation || rows.length === 0) return { items: [], truncated: false };
     // Only the matching companies' lines are read, as many companies as the cap can hold: the filters and the order apply first,
     // so unrelated companies never take the row budget. One past the cap says the warehouse had more than the file can hold.
     const companyKeys: string[] = [];
@@ -144,11 +145,11 @@ export class FoundationParticipatingOrgsService {
       budget += filters.projectSlug ? 1 : Math.max(1, row.projectsInvolved);
       if (budget > maxRows) break;
     }
-    const read = await this.dataSource().getProjectLines(req, filters.foundationSlug, filters.range, {
-      projectSlug: filters.projectSlug,
-      companyKeys,
-      limit: maxRows + 1,
-    });
+    // Under a project scope the table already reads that project's lines from the shared cache, one per company, so the file
+    // reuses that read and always matches the table; the foundation scope reads its named companies live, bounded by the cap.
+    const read = filters.projectSlug
+      ? await this.dataSource().getProjectLines(req, filters.foundationSlug, filters.range, { projectSlug: filters.projectSlug })
+      : await this.dataSource().getProjectLines(req, filters.foundationSlug, filters.range, { companyKeys, limit: maxRows + 1 });
     const byCompany = new Map<string, FoundationParticipatingOrgsSourceProjectLine[]>();
     for (const line of read) byCompany.set(line.companyKey, [...(byCompany.get(line.companyKey) ?? []), line]);
 
@@ -167,7 +168,7 @@ export class FoundationParticipatingOrgsService {
       remaining -= kept.length;
       if (kept.length < lines.length) return { items, truncated: true };
     }
-    return { items, truncated: read.length > maxRows };
+    return { items, truncated: false };
   }
 
   private dataSource(): FoundationParticipatingOrgsDataSource {

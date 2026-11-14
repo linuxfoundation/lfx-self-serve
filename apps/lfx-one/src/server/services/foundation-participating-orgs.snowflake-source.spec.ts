@@ -4,8 +4,9 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, withFoundationCache } = vi.hoisted(() => ({
+const { execute, viewRead, withFoundationCache } = vi.hoisted(() => ({
   execute: vi.fn(),
+  viewRead: vi.fn(),
   // Pass-through: these tests cover the reads; the key only has to separate every query that reads different rows.
   withFoundationCache: vi.fn((_slug: string, _resource: string, _discriminator: unknown[], fetcher: () => Promise<unknown>) => fetcher()),
 }));
@@ -20,7 +21,10 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./valkey.service', () => ({ withFoundationParticipatingOrgsCache: withFoundationCache }));
 // The shared view-read helper logs a missing object and rewrites the client message; here it only has to reach the warehouse.
 vi.mock('../helpers/snowflake-view-read.helper', () => ({
-  executeSnowflakeViewRead: (_service: unknown, _req: unknown, sql: string, binds: unknown[]) => execute(sql, binds, { expectMissingObject: true }),
+  executeSnowflakeViewRead: (service: unknown, requestArg: unknown, sql: string, binds: unknown[], context: unknown) => {
+    viewRead(service, requestArg, context);
+    return execute(sql, binds, { expectMissingObject: true });
+  },
 }));
 // `validation.helper` reaches the same barrel; `clampInteger` is restated so the clamp is still exercised.
 vi.mock('../helpers/validation.helper', () => ({
@@ -141,6 +145,19 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
     });
   });
 
+  it('reads through the shared view helper, so a missing grant is logged as an alertable error', async () => {
+    execute.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    await source.getFoundation(req, 'synthetic-foundation', '12mo');
+    expect(viewRead).toHaveBeenCalledTimes(2);
+    expect(viewRead.mock.calls[0][1]).toBe(req);
+    expect(viewRead.mock.calls.map((call) => call[2].operation)).toEqual([
+      'get_foundation_participating_orgs_roster',
+      'get_foundation_participating_orgs_projects',
+    ]);
+    expect(viewRead.mock.calls[0][2].view).toContain('PROJECT_PARTICIPATING_ORGS');
+    expect(viewRead.mock.calls[0][2].clientMessage).toEqual(expect.any(String));
+  });
+
   describe('getProjectLines', () => {
     const lineRow = (overrides: Record<string, unknown> = {}) => ({
       PARTICIPANT_KEY: '001SYNTHALPHA',
@@ -169,11 +186,11 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       ]);
     });
 
-    it('reads every line for the export in one bounded, uncached query', async () => {
+    it('reads the named companies lines for the export in one bounded, uncached query', async () => {
       execute.mockResolvedValueOnce({ rows: [lineRow(), lineRow({ PARTICIPANT_KEY: null })] });
-      const lines = await source.getProjectLines(req, 'synthetic-foundation', '12mo', { limit: 51 });
+      const lines = await source.getProjectLines(req, 'synthetic-foundation', '12mo', { companyKeys: ['001SYNTHALPHA'], limit: 51 });
       const [sql, binds] = execute.mock.calls[0];
-      expect(binds).toEqual(['synthetic-foundation', '12mo']);
+      expect(binds).toEqual(['["001SYNTHALPHA"]', 'synthetic-foundation', '12mo']);
       expect(sql).toContain('LIMIT 51');
       expect(withFoundationCache).not.toHaveBeenCalled();
       expect(lines).toHaveLength(1);
@@ -200,7 +217,7 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
 
     it('clamps a limit to the export cap plus one', async () => {
       execute.mockResolvedValueOnce({ rows: [] });
-      await source.getProjectLines(req, 'synthetic-foundation', '12mo', { limit: 10 ** 9 });
+      await source.getProjectLines(req, 'synthetic-foundation', '12mo', { companyKeys: ['a'], limit: 10 ** 9 });
       expect(execute.mock.calls[0][0]).toContain(`LIMIT ${FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1}`);
     });
   });

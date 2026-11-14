@@ -735,8 +735,8 @@ export function withSocialListeningCache<T>(
 }
 
 /**
- * Per-project Participating Organizations cache key (#2091): the query's discriminator is sha256-hashed
- * so a search value can't corrupt the key; null (fail-closed → direct fetch) for an unsafe slug.
+ * Participating-orgs cache key for the given namespace (project page #2091, Foundation Lens #5697): the discriminator is
+ * sha256-hashed so a search value can't corrupt the key; null (fail-closed → direct fetch) for an unsafe slug.
  */
 function buildParticipatingOrgsCacheKey(namespace: string, slug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
   if (!isFilterSafeIdentifier(slug)) return null;

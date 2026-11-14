@@ -25,12 +25,9 @@ export const FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS: readonly { label: stri
   PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS;
 
 /** Label used in card sublines and chips, per range. */
-export const FOUNDATION_PARTICIPATING_ORGS_RANGE_LABELS: Record<FoundationParticipatingOrgsRange, string> = {
-  '12mo': 'Past 12 Months',
-  '90d': 'Past 90 Days',
-  '30d': 'Past 30 Days',
-  all: 'All Time',
-};
+export const FOUNDATION_PARTICIPATING_ORGS_RANGE_LABELS = Object.fromEntries(
+  PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS.map((option) => [option.value, option.label])
+) as Record<FoundationParticipatingOrgsRange, string>;
 
 /** Group label for projects with no maturity stage in the project picker. */
 export const FOUNDATION_PARTICIPATING_ORGS_NO_MATURITY_LABEL = 'Projects';

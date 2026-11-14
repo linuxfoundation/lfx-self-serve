@@ -251,11 +251,23 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(getProjectLines.mock.calls[0][3].limit).toBeGreaterThan(0);
     });
 
-    it('budgets one line per company under a project scope, so a wide company does not cut the key list short', async () => {
+    it('reuses the cached project lines under a project scope, so the file matches the table and costs no extra query', async () => {
       await service.getExportRows(req, { ...base, projectSlug: 'busy' }, 'by-project', 2);
-      // Alpha is in 2 projects, but only its busy line counts here: the second in-scope company still gets read.
-      // The first read is the scoped row list; the export's own read is the last.
-      expect(getProjectLines.mock.calls.at(-1)?.[3].companyKeys).toEqual(['alpha', 'beta']);
+      for (const call of getProjectLines.mock.calls) expect(call[3]).toEqual({ projectSlug: 'busy' });
+    });
+
+    it('does not query the warehouse when no company matches the filters', async () => {
+      const { items, truncated } = await service.getExportRows(req, { ...base, search: 'zzz' }, 'by-project');
+      expect(items).toEqual([]);
+      expect(truncated).toBe(false);
+      expect(getProjectLines).not.toHaveBeenCalled();
+    });
+
+    it('does not flag a file that holds exactly the cap', async () => {
+      const { items, truncated } = await service.getExportRows(req, base, 'by-project', 4);
+      expect(items).toHaveLength(3);
+      expect(items.reduce((sum, item) => sum + item.lines.length, 0)).toBe(4);
+      expect(truncated).toBe(false);
     });
 
     it('reads only the matching companies lines, so filtered-out companies never use the row budget', async () => {

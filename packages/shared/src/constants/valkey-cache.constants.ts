@@ -360,7 +360,8 @@ export const VALKEY_CACHE = {
   MAX_VALUE_BYTES_BY_NAMESPACE: {
     // ESTIMATED, not yet measured against the warehouse: one named-key JSON company object is about 330 bytes (key, account id,
     // name, logo URL, tier, six figures), so the 9,000-company scale in the epic is about 3.0 MB plus a few hundred project rows;
-    // x 1.25 rounds up to 4 MiB. Re-measure the largest foundation on the dev build before the flag is enabled and replace this
+    // x 1.25 rounds up to 4 MiB. The namespace also holds a project's or company's lines (about 140 bytes a line, so a flagship
+    // project at that scale is about 1.3 MB). Re-measure the largest roster AND the largest lines entry on the dev build before the flag is enabled and replace this
     // comment with the measured size and date. Without it every write above 1 MiB is skipped and every page re-reads both queries.
     'foundation-participating-orgs-sf:v1': 4 * 1_048_576,
     // Measured 2026-09-28 from prod `valkey_set` oversize logs: largest compact per-user seat

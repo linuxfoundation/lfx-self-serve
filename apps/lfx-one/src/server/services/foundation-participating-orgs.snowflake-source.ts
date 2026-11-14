@@ -36,8 +36,8 @@ import { withFoundationParticipatingOrgsCache } from './valkey.service';
  *
  * Two figures are defined here because the table does not carry them: "projects involved" (projects other than the foundation's
  * own where the company has commits or contributors; an intermediate parent counts beside its children, as its row is a
- * rollup) and the picker's per-range commits. Both belong in lf-dbt eventually; the project page's own picker-style counts
- * are computed the same way today.
+ * rollup) and the picker's per-range commits. Both belong in lf-dbt as modeled columns; until then they are a tracked exception
+ * to the checklist's no-business-logic-in-SQL rule and need a maintainer's sign-off.
  */
 export class FoundationParticipatingOrgsSnowflakeSource implements FoundationParticipatingOrgsDataSource {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -60,8 +60,9 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     range: FoundationParticipatingOrgsRange,
     filter: FoundationParticipatingOrgsSourceLineFilter
   ): Promise<FoundationParticipatingOrgsSourceProjectLine[]> {
-    // The by-project export names its companies and is never cached; a project or a company is a small set worth sharing.
-    if (filter.companyKeys || (!filter.projectSlug && !filter.companyKey)) return this.fetchLines(req, slug, range, filter);
+    // The by-project export names its companies and is never cached; a project or a company is worth sharing, and a flagship
+    // project's lines can run past 1 MiB, which the namespace's own cap allows.
+    if (filter.companyKeys) return this.fetchLines(req, slug, range, filter);
     const entry = await withFoundationParticipatingOrgsCache(
       slug,
       'lines',
