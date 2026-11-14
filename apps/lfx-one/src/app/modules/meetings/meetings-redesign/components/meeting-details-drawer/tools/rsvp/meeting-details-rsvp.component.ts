@@ -89,7 +89,7 @@ export class MeetingDetailsRsvpComponent {
       const occurrenceId = this.context.shownRow().occurrenceId;
       const allDatesOnly = !!meeting.recurrence && !occurrenceId;
       // Answers saved here can be newer than the roster.
-      const confirmed = this.userService.confirmedMeetingRsvps(meeting.id).filter((rsvp) => !allDatesOnly || rsvp.scope === 'all');
+      const confirmed = this.context.savedRsvps().filter((rsvp) => !allDatesOnly || rsvp.scope === 'all');
       if (confirmed.length === 0) return roster;
       return roster.map((registrant) => {
         const own = confirmed.filter((rsvp) => rsvp.registrant_id === registrant.uid);

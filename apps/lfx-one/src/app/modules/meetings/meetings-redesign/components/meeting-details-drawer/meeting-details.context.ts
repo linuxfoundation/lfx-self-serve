@@ -3,11 +3,26 @@
 
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, linkedSignal, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { MEETING_CLOCK_TICK_MS } from '@lfx-one/shared/constants';
-import { Meeting, MeetingDetailsState, MeetingDetailsTab, MeetingHomeRow, MeetingHostCandidate, MeetingOccurrence } from '@lfx-one/shared/interfaces';
-import { canViewMeetingGuests, getMeetingDetailsState, getPastMeetingResourceId, hasMeetingFullAccess, isPastMeetingCalendarRow } from '@lfx-one/shared/utils';
+import {
+  Meeting,
+  MeetingDetailsState,
+  MeetingDetailsTab,
+  MeetingHomeRow,
+  MeetingHostCandidate,
+  MeetingOccurrence,
+  MeetingRsvp,
+} from '@lfx-one/shared/interfaces';
+import {
+  canViewMeetingGuests,
+  getMeetingDetailsState,
+  getPastMeetingResourceId,
+  hasMeetingFullAccess,
+  isPastMeetingCalendarRow,
+  isRsvpSupersededBy,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
@@ -85,6 +100,21 @@ export class MeetingDetailsContext {
   public readonly listedSelfRegistrantUids: WritableSignal<readonly string[]> = signal([]);
   /** Registrants removed in the drawer; every section drops them until it closes. */
   public readonly removedRegistrantUids: WritableSignal<ReadonlySet<string>> = signal(new Set());
+  /**
+   * The viewer's saved answers: the store's copies, plus ones a feed refresh retired while the drawer is open.
+   * @description The sections read an older roster, so an answer retired by indexing stays until the store supersedes it or its registration ends.
+   */
+  public readonly savedRsvps: Signal<MeetingRsvp[]> = linkedSignal<{ confirmed: MeetingRsvp[]; meeting: Meeting }, MeetingRsvp[]>({
+    source: () => ({ confirmed: this.userService.confirmedMeetingRsvps(this.row().meeting.id), meeting: this.meeting() }),
+    computation: ({ confirmed, meeting }, previous) => {
+      // Without the opening row's registrant ids, so only the service's ended-registration check applies.
+      const live = { ...meeting, my_registrant_ids: undefined };
+      const retired = (previous?.value ?? []).filter(
+        (kept) => !confirmed.some((rsvp) => rsvp.id === kept.id || isRsvpSupersededBy(kept, rsvp)) && this.userService.isMeetingRsvpCurrent(kept, live)
+      );
+      return [...confirmed, ...retired];
+    },
+  });
 
   public constructor() {
     this.startClock();
