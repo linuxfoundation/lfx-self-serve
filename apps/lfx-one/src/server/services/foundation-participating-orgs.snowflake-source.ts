@@ -167,15 +167,17 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
       predicateBinds.push(filter.companyKey);
     }
     // The given companies arrive in the order the caller ranked them. One JSON bind, however many companies, joined through
-    // FLATTEN so the rows come back in that order and a row limit drops the lowest-ranked companies' lines first.
-    const join = filter.companyKeys ? 'JOIN TABLE(FLATTEN(input => PARSE_JSON(?))) k ON l.participant_key = k.value::varchar' : '';
+    // a FLATTENed CTE so the rows come back in that order and a row limit drops the lowest-ranked companies' lines first.
+    const keyList = filter.companyKeys ? 'WITH k AS (SELECT value::varchar AS company_key, index AS position FROM TABLE(FLATTEN(input => PARSE_JSON(?))))' : '';
+    const join = filter.companyKeys ? 'JOIN k ON l.participant_key = k.company_key' : '';
     const joinBinds = filter.companyKeys ? [JSON.stringify(filter.companyKeys)] : [];
-    const order = filter.companyKeys ? 'k.index ASC, l.commits DESC, l.project_slug ASC' : 'l.participant_key ASC, l.commits DESC, l.project_slug ASC';
+    const order = filter.companyKeys ? 'k.position ASC, l.commits DESC, l.project_slug ASC' : 'l.participant_key ASC, l.commits DESC, l.project_slug ASC';
     // Inlined, not bound: clamped to a positive integer first.
     const limit = filter.limit
       ? `LIMIT ${clampInteger(filter.limit, 1, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1, FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS + 1)}`
       : '';
     const sql = `
+      ${keyList}
       SELECT l.participant_key, l.project_slug, l.commits, l.commits_change, l.contributors, l.contributors_change
       FROM ${tableName()} l
       ${join}

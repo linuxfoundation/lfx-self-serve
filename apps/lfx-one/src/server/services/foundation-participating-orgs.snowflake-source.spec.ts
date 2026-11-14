@@ -193,8 +193,9 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       execute.mockResolvedValueOnce({ rows: [] });
       await source.getProjectLines(req, 'synthetic-foundation', '12mo', { companyKeys: ['b', 'a'], limit: 9 });
       const sql: string = execute.mock.calls[0][0];
-      expect(sql).toMatch(/JOIN TABLE\(FLATTEN\(input => PARSE_JSON\(\?\)\)\) k ON l\.participant_key = k\.value::varchar/);
-      expect(sql).toMatch(/ORDER BY k\.index ASC, l\.commits DESC, l\.project_slug ASC\s+LIMIT 9/);
+      expect(sql).toMatch(/WITH k AS \(SELECT value::varchar AS company_key, index AS position FROM TABLE\(FLATTEN\(input => PARSE_JSON\(\?\)\)\)\)/);
+      expect(sql).toContain('JOIN k ON l.participant_key = k.company_key');
+      expect(sql).toMatch(/ORDER BY k\.position ASC, l\.commits DESC, l\.project_slug ASC\s+LIMIT 9/);
     });
 
     it('clamps a limit to the export cap plus one', async () => {
