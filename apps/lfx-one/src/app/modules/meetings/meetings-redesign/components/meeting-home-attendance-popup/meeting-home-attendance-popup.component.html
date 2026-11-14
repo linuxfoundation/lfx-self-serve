@@ -5,6 +5,7 @@
 <div
   cdkOverlayOrigin
   #origin="cdkOverlayOrigin"
+  #trigger
   role="button"
   tabindex="0"
   [id]="panelId + '-trigger'"
@@ -18,6 +19,7 @@
   (click)="show()"
   (keydown.enter)="show()"
   (keydown.space)="$event.preventDefault(); show()"
+  (keydown.tab)="onTriggerTab($event)"
   data-testid="meetings-home-attendance-trigger">
   <lfx-meeting-home-attendance variant="row" [attendance]="attendance()" />
 </div>
@@ -41,6 +43,8 @@
     (pointerenter)="cancelHide()"
     (pointerleave)="onPointerLeave($event)"
     (focusout)="onFocusOut($event)"
+    (keydown.tab)="onPanelTab($event)"
+    (keydown.shift.tab)="onPanelTab($event)"
     data-testid="meetings-home-attendance-popup">
     @if (people(); as people) {
       <lfx-meeting-attendee-grid [people]="people" [past]="past()" (viewAll)="viewAll()" />
