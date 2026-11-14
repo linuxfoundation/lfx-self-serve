@@ -5,7 +5,7 @@ import { isPlatformBrowser, Location } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
+import { openProjectIcalSubscribeDialog } from '@app/modules/committees/utils/ical-subscribe.util';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
@@ -14,7 +14,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
-import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import {
   MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
@@ -438,17 +437,7 @@ export class MeetingsDashboardComponent {
       return;
     }
 
-    const feedUrl = `${environment.urls.home}/public/api/projects/${encodeURIComponent(projectCtx.uid)}/calendar.ics`;
-    const name = projectCtx.name ?? (lens === 'foundation' ? 'Foundation' : 'Project');
-
-    this.dialogService.open(IcalSubscribeDialogComponent, {
-      header: `Subscribe — ${name}`,
-      width: '480px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: { feedUrl, name },
-    });
+    openProjectIcalSubscribeDialog(this.dialogService, projectCtx.uid, projectCtx.name ?? (lens === 'foundation' ? 'Foundation' : 'Project'));
   }
 
   public onMeetingTypeChange(value: string | null): void {

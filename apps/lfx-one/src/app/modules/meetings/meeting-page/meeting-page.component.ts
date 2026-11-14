@@ -111,6 +111,7 @@ export class MeetingPageComponent implements MeetingPageRowHost {
         project_name: loaded.project_name || project?.name,
         project_slug: loaded.project_slug || project?.slug,
         project_logo_url: loaded.project_logo_url || project?.logo_url,
+        project_uid: loaded.project_uid || project?.uid,
       };
       if (this.pageData.loadedViaPastMeetingId()) {
         return this.pageData.pastMeetingFullAccess() && isPastMeetingCalendarRow(meeting) ? toPastMeetingHomeRow(meeting) : null;

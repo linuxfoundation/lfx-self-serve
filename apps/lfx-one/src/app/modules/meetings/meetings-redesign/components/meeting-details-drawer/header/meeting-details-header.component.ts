@@ -26,7 +26,7 @@ import { MeetingDetailsOwnActionsComponent } from '../tools/own-actions/meeting-
 
 /**
  * Sticky top row of the meeting details drawer: the compact project and title once the big title scrolls away, Copy Link,
- * the ⋯ menu (organizer actions, and the viewer's own actions on phones) and Close. On a page it leads with the project instead.
+ * the ⋯ menu (organizer actions, Subscribe to Calendar on a page, and the viewer's own actions on phones) and Close. On a page it leads with the project instead.
  */
 @Component({
   selector: 'lfx-meeting-details-header',
@@ -72,6 +72,11 @@ export class MeetingDetailsHeaderComponent {
       !isPastMeetingCalendarRow(this.context.row().meeting)
   );
 
+  /** The page's project calendar feed, which lists public meetings only (the legacy page's rule). */
+  protected readonly canSubscribe: Signal<boolean> = computed(
+    () => !!this.source.subscribeToCalendar && this.context.meeting().visibility === 'public' && !!this.context.meeting().project_uid
+  );
+
   protected readonly canResend: Signal<boolean> = computed(() => this.phone() && !!this.ownActions()?.canResend());
   protected readonly canRemove: Signal<boolean> = computed(() => this.phone() && !!this.ownActions()?.canRemove());
 
@@ -98,6 +103,10 @@ export class MeetingDetailsHeaderComponent {
   protected editMeeting(): void {
     // A recurring meeting's scope question opens over the drawer, which closes only once the editor opens.
     this.editService.edit(this.context.shownRow(), undefined, this.source.hostRef);
+  }
+
+  protected subscribeToCalendar(): void {
+    this.source.subscribeToCalendar?.(this.context.meeting());
   }
 
   protected cancelOccurrence(): void {

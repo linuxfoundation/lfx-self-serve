@@ -153,7 +153,10 @@ describe('MeetingPageComponent', () => {
   });
 
   it('flattens the public project onto the row the details read', () => {
-    meeting.set({ ...PAST_MEETING, project: { name: 'Parity Project', slug: 'parity', logo_url: 'https://logo.example.org/p.png' } } as unknown as Meeting);
+    meeting.set({
+      ...PAST_MEETING,
+      project: { uid: 'project-uid', name: 'Parity Project', slug: 'parity', logo_url: 'https://logo.example.org/p.png' },
+    } as unknown as Meeting);
     const fixture = TestBed.createComponent(MeetingPageComponent);
     fixture.detectChanges();
 
@@ -161,6 +164,7 @@ describe('MeetingPageComponent', () => {
       project_name: 'Parity Project',
       project_slug: 'parity',
       project_logo_url: 'https://logo.example.org/p.png',
+      project_uid: 'project-uid',
     });
   });
 
