@@ -6,7 +6,6 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { MEETING_PAGE_GUEST_FORM_STATE, MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -95,6 +94,7 @@ describe('MeetingPageDetailsComponent', () => {
             reloadOnNextLoad: vi.fn(),
             loadedViaPastMeetingId: signal(false),
             liveMeetingFullAccess: signal(true),
+            liveMeetingCanJoin: signal(false),
             pastMeetingFullAccess: signal(true),
             urlPassword,
           },
@@ -156,16 +156,12 @@ describe('MeetingPageDetailsComponent', () => {
     fixture.destroy();
   });
 
-  it('lets Join open Zoom on load as the page allows, and joins with another email on the legacy page', () => {
+  it('lets Join open Zoom on load as the page allows, takes guest details in place and passes the server join answer', () => {
     const page = source();
 
     expect(page.claimJoinOnLoad?.()).toBe(true);
-    page.joinWithOtherEmail?.();
-    expect(navigateByUrl).toHaveBeenCalledWith('/meetings/123', {
-      skipLocationChange: true,
-      onSameUrlNavigation: 'reload',
-      state: { [MEETING_PAGE_LEGACY_STATE]: true, [MEETING_PAGE_GUEST_FORM_STATE]: true },
-    });
+    expect(page.guestJoinInPlace).toBe(true);
+    expect(page.canJoin?.()).toBe(false);
   });
 
   it('flips an upcoming date to ended in place instead of opening its past record', () => {

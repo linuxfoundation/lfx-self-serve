@@ -235,6 +235,7 @@ export class MeetingDetailsContext {
   private initState(): Signal<MeetingDetailsState> {
     return computed(() => {
       const row = this.shownRow();
+      if (!row.startTime) return this.source.canJoin?.() ? 'soon' : 'far';
       return getMeetingDetailsState(row.startTime, row.durationMinutes, this.now(), {
         past: !this.occurrence() && isPastMeetingCalendarRow(row.meeting),
         earlyJoinMinutes: this.meeting().early_join_time_minutes,
